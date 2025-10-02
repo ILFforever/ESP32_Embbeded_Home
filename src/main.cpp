@@ -20,7 +20,7 @@ void setup()
 {
   Serial.begin(115200);
   delay(1000);
-  Serial.println("TFT_eSPI ST7789 Demo Starting...");
+  Serial.println("TFT_eSPI ST7789 Demo Starting....");
 
   // Initialize display
   Serial.println("Initializing display...");
