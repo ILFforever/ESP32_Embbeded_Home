@@ -1,0 +1,10 @@
+{
+    "python-envs.pythonProjects": [
+        {
+            "path": "",
+            "envManager": "ms-python.python:conda",
+            "packageManager": "ms-python.python:conda"
+        }
+    ],
+    "cmake.sourceDirectory": "C:/Users/Asus/Desktop/ESP32_Embbeded_Home/lib/TFT_eSPI"
+}

@@ -1,0 +1,213 @@
+/*
+ * ESP32 ST7789 LCD Demo using TFT_eSPI
+ * Fixed configuration based on working Adafruit setup
+ */
+
+#include <TFT_eSPI.h>
+#include <SPI.h>
+
+// Create display object
+TFT_eSPI tft = TFT_eSPI();
+
+void demoColors();
+void demoShapes();
+void demoText();
+void demoGradient();
+void demoAnimation();
+void demoSprites();
+
+// Demo 1: Fast color fills
+void demoColors()
+{
+  Serial.println("Demo: Colors");
+  tft.fillScreen(TFT_RED);
+  delay(300);
+  tft.fillScreen(TFT_GREEN);
+  delay(300);
+  tft.fillScreen(TFT_BLUE);
+  delay(300);
+  tft.fillScreen(TFT_YELLOW);
+  delay(300);
+  tft.fillScreen(TFT_MAGENTA);
+  delay(300);
+  tft.fillScreen(TFT_CYAN);
+  delay(300);
+  tft.fillScreen(TFT_WHITE);
+  delay(300);
+  tft.fillScreen(TFT_BLACK);
+}
+
+// Demo 2: Shapes with smooth rendering
+void demoShapes()
+{
+  Serial.println("Demo: Shapes");
+  tft.fillScreen(TFT_BLACK);
+
+  // Filled rectangles with rounded corners
+  tft.fillRoundRect(10, 10, 100, 80, 10, TFT_RED);
+  tft.fillRoundRect(130, 10, 100, 80, 10, TFT_GREEN);
+
+  // Circles
+  tft.drawCircle(60, 150, 40, TFT_BLUE);
+  tft.fillCircle(180, 150, 40, TFT_YELLOW);
+
+  // Lines
+  for (int i = 0; i < 5; i++)
+  {
+    tft.drawLine(0, 220 + i, 240, 220 + i, TFT_CYAN);
+  }
+
+  // Triangles
+  tft.drawTriangle(30, 240, 60, 270, 0, 270, TFT_WHITE);
+  tft.fillTriangle(180, 240, 210, 270, 150, 270, TFT_ORANGE);
+}
+
+// Demo 3: Text with different fonts
+void demoText()
+{
+  Serial.println("Demo: Text");
+  tft.fillScreen(TFT_BLACK);
+
+  // Standard font
+  tft.setTextColor(TFT_WHITE, TFT_BLACK);
+  tft.setTextSize(2);
+  tft.setCursor(10, 10);
+  tft.println("TFT_eSPI");
+
+  tft.setTextColor(TFT_YELLOW);
+  tft.setTextSize(1);
+  tft.println();
+  tft.println(" High Performance");
+  tft.println(" Graphics Library");
+
+  // Larger text
+  tft.setTextColor(TFT_GREEN);
+  tft.setTextSize(3);
+  tft.setCursor(20, 100);
+  tft.println("ESP32");
+
+  // Using built-in fonts
+  tft.setTextColor(TFT_CYAN, TFT_BLACK);
+  tft.setTextSize(2);
+  tft.setCursor(10, 150);
+  tft.println("ST7789 LCD");
+
+  // Draw text with background
+  tft.fillRect(10, 200, 220, 40, TFT_BLUE);
+  tft.setTextColor(TFT_WHITE);
+  tft.setTextSize(2);
+  tft.setCursor(30, 212);
+  tft.println("Working!");
+}
+
+// Demo 4: Color gradients
+void demoGradient()
+{
+  Serial.println("Demo: Gradient");
+  tft.fillScreen(TFT_BLACK);
+
+  // Horizontal gradient
+  for (int x = 0; x < 240; x++)
+  {
+    uint16_t color = tft.color565(x, 0, 255 - x);
+    tft.drawFastVLine(x, 0, 140, color);
+  }
+
+  // Vertical gradient
+  for (int y = 140; y < 280; y++)
+  {
+    uint16_t color = tft.color565(0, (y - 140) * 2, 255 - (y - 140) * 2);
+    tft.drawFastHLine(0, y, 240, color);
+  }
+
+  // Text overlay
+  tft.setTextColor(TFT_WHITE);
+  tft.setTextSize(3);
+  tft.setCursor(30, 120);
+  tft.println("Gradient");
+}
+
+// Demo 5: Smooth animation
+void demoAnimation()
+{
+  Serial.println("Demo: Animation");
+  tft.fillScreen(TFT_BLACK);
+
+  // Draw title
+  tft.setTextColor(TFT_WHITE);
+  tft.setTextSize(2);
+  tft.setCursor(40, 10);
+  tft.println("Animation");
+
+  // Bouncing ball with color change
+  int x = 120;
+  int y = 140;
+  int dx = 4;
+  int dy = 3;
+  int radius = 12;
+
+  for (int i = 0; i < 300; i++)
+  {
+    // Erase old position
+    tft.fillCircle(x, y, radius, TFT_BLACK);
+
+    // Update position
+    x += dx;
+    y += dy;
+
+    // Bounce off edges
+    if (x - radius < 0 || x + radius > 240)
+    {
+      dx = -dx;
+    }
+    if (y - radius < 30 || y + radius > 280)
+    {
+      dy = -dy;
+    }
+
+    // Draw ball with changing color
+    uint16_t color = tft.color565(255, (i * 2) % 255, (255 - i) % 255);
+    tft.fillCircle(x, y, radius, color);
+    tft.drawCircle(x, y, radius, TFT_WHITE);
+
+    delay(10);
+  }
+}
+
+// Demo 6: Using sprites (off-screen rendering)
+void demoSprites()
+{
+  Serial.println("Demo: Sprites");
+  tft.fillScreen(TFT_BLACK);
+
+  // Create sprite (off-screen buffer)
+  TFT_eSprite sprite = TFT_eSprite(&tft);
+  sprite.createSprite(80, 80);
+
+  tft.setTextColor(TFT_WHITE);
+  tft.setTextSize(2);
+  tft.setCursor(50, 10);
+  tft.println("Sprites!");
+
+  // Animate sprite moving across screen
+  for (int x = 0; x < 160; x += 2)
+  {
+    // Draw to sprite buffer
+    sprite.fillSprite(TFT_BLUE);
+    sprite.fillCircle(40, 40, 30, TFT_YELLOW);
+    sprite.drawCircle(40, 40, 30, TFT_RED);
+    sprite.setTextColor(TFT_BLACK);
+    sprite.setTextSize(2);
+    sprite.setCursor(20, 32);
+    sprite.print("Hi!");
+
+    // Push sprite to screen
+    sprite.pushSprite(x, 100);
+
+    delay(10);
+  }
+
+  // Clean up
+  sprite.deleteSprite();
+  delay(1000);
+}
