@@ -1,5 +1,5 @@
 # ESP32_Embbeded_Home
-This is a IoT project simulating a full fledged smart home ecosystem using ESP32 boards, developed in according to  Chulalongkorn's 2110356 Embedded System class.
+This is an IoT project simulating a full-fledged smart home ecosystem using ESP32 boards, developed in accordance with Chulalongkorn's 2110356 Embedded System class.
 
 ## Branches Explanation
 - 3D-Models > holds project's 3d models for 3d printing (SketchUp and Cura files)
