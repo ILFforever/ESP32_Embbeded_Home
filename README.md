@@ -1,2 +1,2 @@
-# ESP32_Embbeded_Home
-This is a IoT project simulating a full fledged smart home ecosystem using ESP32 boards, developed in according to  Chulalongkorn's 2110356 Embedded System class.
+# ESP32_Embbeded_Home - Doorbell_lcd
+This branch contains code for the esp32 controlling the lcd screen on the doorbell. 
