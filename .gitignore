@@ -72,3 +72,4 @@ Makefile
 # Bootloader and partition tables (usually regenerated)
 bootloader.bin
 partition-table.bin
+CLAUDE.md

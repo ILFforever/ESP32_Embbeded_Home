@@ -1,0 +1,259 @@
+#include "frame_cap_pipeline.hpp"
+#include "who_detect_app_lcd.hpp"
+#include "who_detect_app_term.hpp"
+#include "human_face_detect.hpp"
+#include "driver/gpio.h"
+#include <stdio.h>
+#include <string.h>
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "driver/uart.h"
+#include "driver/gpio.h"
+#include "esp_log.h"
+#include <cJSON.h>
+
+using namespace who::frame_cap;
+using namespace who::app;
+
+
+static const char *TAG = "UART_CAMERA_SLAVE";
+int internal_status = 0; //0 = standby, -1 = disconneccted, 1 = camera_running, 2 = face_recog running
+
+
+#define LED_PIN GPIO_NUM_21
+
+// UART Configuration
+#define UART_MASTER     UART_NUM_1   // UART1 for Master communication
+#define TXD_PIN         43            // D6 on XIAO board
+#define RXD_PIN         44            // D7 on XIAO board
+#define UART_BAUD       115200
+#define BUF_SIZE        1024
+
+// Ping-Pong
+static uint32_t ping_seq = 0;
+static TickType_t last_ping_time = 0;
+
+// Initialize UART
+void uart_init(void) {
+    const uart_config_t uart_config = {
+        .baud_rate = UART_BAUD,
+        .data_bits = UART_DATA_8_BITS,
+        .parity = UART_PARITY_DISABLE,
+        .stop_bits = UART_STOP_BITS_1,
+        .flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
+        .source_clk = UART_SCLK_DEFAULT,
+    };
+    
+    // Configure UART parameters
+    ESP_ERROR_CHECK(uart_param_config(UART_MASTER, &uart_config));
+    
+    // Set UART pins (TX=GPIO43/D6, RX=GPIO44/D7)
+    ESP_ERROR_CHECK(uart_set_pin(UART_MASTER, TXD_PIN, RXD_PIN, 
+                                  UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE));
+    
+    // Install UART driver with buffer
+    ESP_ERROR_CHECK(uart_driver_install(UART_MASTER, BUF_SIZE * 2, 
+                                        BUF_SIZE * 2, 0, NULL, 0));
+    
+    ESP_LOGI(TAG, "UART initialized: TX=GPIO%d(D6), RX=GPIO%d(D7), Baud=%d", 
+             TXD_PIN, RXD_PIN, UART_BAUD);
+}
+
+void uart_send_json(const char* json_str) {
+    int len = strlen(json_str);
+    uart_write_bytes(UART_MASTER, json_str, len);
+    uart_write_bytes(UART_MASTER, "\n", 1);  // Newline delimiter
+    
+    // Debug to USB Serial
+    printf("TX→Master: %s\n", json_str);
+}
+
+// Send status message
+void send_status(const char* status, const char* message) {
+    cJSON *root = cJSON_CreateObject();
+    cJSON_AddStringToObject(root, "status", status);
+    if (message) {
+        cJSON_AddStringToObject(root, "msg", message);
+    }
+    cJSON_AddNumberToObject(root, "timestamp", xTaskGetTickCount());
+    
+    char *json_str = cJSON_PrintUnformatted(root);
+    uart_send_json(json_str);
+    
+    cJSON_Delete(root);
+    free(json_str);
+}
+
+// Send pong response
+void send_pong(uint32_t seq) {
+    cJSON *root = cJSON_CreateObject();
+    cJSON_AddStringToObject(root, "type", "pong");
+    cJSON_AddNumberToObject(root, "seq", seq);
+    cJSON_AddStringToObject(root, "status", "ok");
+    cJSON_AddNumberToObject(root, "uptime", xTaskGetTickCount() / 1000);
+    
+    char *json_str = cJSON_PrintUnformatted(root);
+    uart_send_json(json_str);
+    
+    cJSON_Delete(root);
+    free(json_str);
+}
+
+// Face detection
+void run_detect_term()
+{
+    ESP_LOGI(TAG, "Starting terminal face detection...");
+
+#if CONFIG_IDF_TARGET_ESP32S3
+    auto frame_cap = get_term_dvp_frame_cap_pipeline();
+#elif CONFIG_IDF_TARGET_ESP32P4
+    auto frame_cap = get_term_mipi_csi_frame_cap_pipeline();
+#endif
+
+    auto detect_app = new WhoDetectAppTerm(frame_cap);
+    detect_app->set_model(new HumanFaceDetect());
+
+    ESP_LOGI(TAG, "Face detection initialized, starting...");
+    detect_app->run();
+}
+
+// Handle incoming commands
+void handle_command(cJSON *json) {
+    cJSON *cmd = cJSON_GetObjectItem(json, "cmd");
+    cJSON *type = cJSON_GetObjectItem(json, "type");
+    
+    // Handle ping
+    if (type && strcmp(type->valuestring, "ping") == 0) {
+        cJSON *seq = cJSON_GetObjectItem(json, "seq");
+        if (seq) {
+            send_pong(seq->valueint);
+            last_ping_time = xTaskGetTickCount();
+        }
+        return;
+    }
+    
+    // Handle commands TODO: incorporate with camera via SPI
+    if (cmd) {
+        const char* command = cmd->valuestring;
+        
+        if (strcmp(command, "start_stream") == 0) {
+            ESP_LOGI(TAG, "Command: Start streaming");
+            send_status("ok", "Streaming started");
+            // TODO: Start camera streaming
+            
+        } else if (strcmp(command, "stop_stream") == 0) {
+            ESP_LOGI(TAG, "Command: Stop streaming");
+            send_status("ok", "Streaming stopped");
+            // TODO: Stop camera streaming
+            
+        } else if (strcmp(command, "get_status") == 0) {
+            ESP_LOGI(TAG, "Command: Get status");
+            cJSON *root = cJSON_CreateObject();
+            cJSON_AddStringToObject(root, "status", "ok");
+            cJSON_AddNumberToObject(root, "uptime", xTaskGetTickCount() / 1000);
+            cJSON_AddNumberToObject(root, "free_heap", esp_get_free_heap_size());
+            cJSON_AddNumberToObject(root, "enrolled_faces", 0); // TODO: Real count
+            
+            char *json_str = cJSON_PrintUnformatted(root);
+            uart_send_json(json_str);
+            cJSON_Delete(root);
+            free(json_str);
+            
+        } else {
+            ESP_LOGW(TAG, "Unknown command: %s", command);
+            send_status("error", "Unknown command");
+        }
+    }
+}
+
+// UART receive task
+void uart_rx_task(void *arg) {
+    uint8_t data[BUF_SIZE];
+    char line_buffer[BUF_SIZE];
+    int line_pos = 0;
+    
+    while (1) {
+        int len = uart_read_bytes(UART_MASTER, data, BUF_SIZE - 1, 
+                                  20 / portTICK_PERIOD_MS);
+        
+        if (len > 0) {
+            // Process byte by byte to find newline-delimited messages
+            for (int i = 0; i < len; i++) {
+                if (data[i] == '\n' || data[i] == '\r') {
+                    if (line_pos > 0) {
+                        line_buffer[line_pos] = '\0';
+                        
+                        // Debug to USB Serial
+                        printf("RX←Master: %s\n", line_buffer);
+                        
+                        // Parse JSON
+                        cJSON *json = cJSON_Parse(line_buffer);
+                        if (json) {
+                            handle_command(json);
+                            cJSON_Delete(json);
+                        } else {
+                            ESP_LOGW(TAG, "Invalid JSON: %s", line_buffer);
+                        }
+                        
+                        line_pos = 0;
+                    }
+                } else {
+                    if (line_pos < BUF_SIZE - 1) {
+                        line_buffer[line_pos++] = data[i];
+                    }
+                }
+            }
+        }
+    }
+}
+
+// Ping timeout monitor task
+void ping_monitor_task(void *arg) {
+    const TickType_t timeout = pdMS_TO_TICKS(5000);  // 5 second timeout
+    
+    vTaskDelay(pdMS_TO_TICKS(2000));  // Wait 2s after boot
+    last_ping_time = xTaskGetTickCount();
+    
+    while (1) {
+        vTaskDelay(pdMS_TO_TICKS(1000));  // Check every second
+        
+        TickType_t now = xTaskGetTickCount();
+        if (now - last_ping_time > timeout) {
+            ESP_LOGW(TAG, "No ping received for 5 seconds - connection lost?");
+            // TODO: Handle connection loss (restart? alert?)
+            last_ping_time = now;  // Reset to avoid spam
+        }
+    }
+}
+
+
+extern "C" void app_main(void)
+{
+    ESP_LOGI(TAG, "XIAO ESP32-S3 Sense - Face Detection Starting");
+    ESP_LOGI(TAG, "CPU Cores: %d", CONFIG_FREERTOS_NUMBER_OF_CORES);
+    printf("\n\n=================================\n");
+    printf("UART Slave Demo - XIAO ESP32S3 Sense\n");
+    printf("=================================\n\n");
+    gpio_config_t io_conf = {};
+    io_conf.mode = GPIO_MODE_OUTPUT;
+    io_conf.pin_bit_mask = (1ULL << LED_PIN);
+    gpio_config(&io_conf);
+    vTaskPrioritySet(xTaskGetCurrentTaskHandle(), 5);
+    uart_init();
+
+    send_status("ready", "System initialized");
+
+        // Create UART receive task
+    xTaskCreate(uart_rx_task, "uart_rx", 4096, NULL, 10, NULL);
+    
+    // Create ping monitor task
+    xTaskCreate(ping_monitor_task, "ping_monitor", 2048, NULL, 5, NULL);
+
+    ESP_LOGI(TAG, "All tasks started");
+
+#ifdef BSP_BOARD_ESP32_S3_EYE
+    ESP_ERROR_CHECK(bsp_leds_init());
+    ESP_ERROR_CHECK(bsp_led_set(BSP_LED_GREEN, false));
+#endif
+    //run_detect_term();
+}
