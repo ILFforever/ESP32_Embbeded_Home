@@ -31,6 +31,7 @@ static esp_err_t status_handler(httpd_req_t *req)
         "</head><body>"
         "<h1>Doorbell Camera Status</h1>"
         "<div class='status'><b>Power State:</b> %s</div>"
+        "<div class='status'><b>Active Tasks:</b> %u</div>"
         "<div class='status'><b>Free Heap:</b> %lu bytes</div>"
         "<div class='status'><b>PSRAM Free:</b> %zu bytes</div>"
         "<h2>Controls</h2>"
@@ -40,6 +41,7 @@ static esp_err_t status_handler(httpd_req_t *req)
         "<a href='/recognize'><button>Recognize</button></a>"
         "</body></html>",
         g_standby_ctrl ? g_standby_ctrl->get_power_state() : "UNKNOWN",
+        uxTaskGetNumberOfTasks(),
         esp_get_free_heap_size(),
         heap_caps_get_free_size(MALLOC_CAP_SPIRAM)
     );

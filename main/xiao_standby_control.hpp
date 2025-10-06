@@ -8,8 +8,8 @@ namespace who
     namespace standby
     {
 
-        // Complete standby/sleep control for XIAO ESP32-S3 Sense
-        // Properly stops camera and all processing tasks to save power
+        // Complete standby/power-saving control for XIAO ESP32-S3 Sense
+        // Destroys all recognition tasks and shuts down camera hardware
         class XiaoStandbyControl
         {
         public:
@@ -19,10 +19,10 @@ namespace who
 
             // ===== System Power State Control =====
 
-            // Enter standby mode (stop camera, pause all tasks)
+            // Enter standby mode (destroy tasks, shutdown camera)
             bool enter_standby();
 
-            // Exit standby mode (resume camera, resume all tasks)
+            // Exit standby mode (restart camera, recreate tasks)
             bool exit_standby();
 
             // Check if system is in standby
@@ -33,11 +33,13 @@ namespace who
             // Get current power state as string
             const char *get_power_state();
 
+            // Print power consumption statistics
+            void print_power_stats();
+
         private:
             recognition::WhoRecognition *m_recognition;
             frame_cap::WhoFrameCap *m_frame_cap;
             bool m_is_standby;
-            i2c_master_bus_handle_t m_i2c_bus_handle;
         };
     } // namespace standby
 } // namespace who

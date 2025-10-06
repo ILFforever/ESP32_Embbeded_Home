@@ -77,6 +77,9 @@ extern "C" void app_main(void)
 
     // Start recognition app (blocks here)
     recognition_app->run();
+
+    // Mark recognition system as running (for standby control)
+    recognition_app->get_recognition()->mark_running();
 }
 
 // ============================================================
