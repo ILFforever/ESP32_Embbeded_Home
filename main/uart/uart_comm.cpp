@@ -59,7 +59,7 @@ bool UartComm::start()
     }
 
     // Start RX task
-    if (xTaskCreate(uart_rx_task_wrapper, "uart_rx", 4096, this, 10, &m_rx_task_handle) != pdPASS) {
+    if (xTaskCreate(uart_rx_task_wrapper, "uart_rx", 8192, this, 10, &m_rx_task_handle) != pdPASS) {
         ESP_LOGE(TAG, "Failed to create RX task");
         return false;
     }
@@ -125,6 +125,22 @@ void UartComm::send_status(const char* status, const char* message)
         cJSON_AddStringToObject(root, "msg", message);
     }
     cJSON_AddNumberToObject(root, "timestamp", xTaskGetTickCount());
+
+    char *json_str = cJSON_PrintUnformatted(root);
+    send_json(json_str);
+
+    cJSON_Delete(root);
+    free(json_str);
+}
+
+void UartComm::send_status_with_heap(const char* status, const char* message)
+{
+    cJSON *root = cJSON_CreateObject();
+    cJSON_AddStringToObject(root, "status", status);
+    if (message) {
+        cJSON_AddStringToObject(root, "msg", message);
+    }
+    cJSON_AddNumberToObject(root, "free_heap", esp_get_free_heap_size());
 
     char *json_str = cJSON_PrintUnformatted(root);
     send_json(json_str);

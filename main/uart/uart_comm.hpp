@@ -58,6 +58,13 @@ public:
     void send_status(const char* status, const char* message = nullptr);
 
     /**
+     * Send status message with free heap information
+     * @param status Status string (e.g., "ok", "error")
+     * @param message Optional message
+     */
+    void send_status_with_heap(const char* status, const char* message = nullptr);
+
+    /**
      * Send custom JSON message
      * @param json_str JSON string to send
      */

@@ -127,10 +127,15 @@ void create_uart_commands()
             }
             // Stop camera
             enter_standby_mode();
+            g_camera_running = false;
             g_uart->send_status("ok", "Camera stopped");
         } else {
             g_uart->send_status("error", "Unknown camera action");
         } });
+    g_uart->register_command("get_status", [](const char *cmd, cJSON *params)
+                             {
+        const char *msg = g_camera_running ? "1" : "0";
+        g_uart->send_status_with_heap("ok", msg); });
 }
 
 // ============================================================
