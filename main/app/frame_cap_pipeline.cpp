@@ -8,8 +8,8 @@ using namespace who::frame_cap;
 #define MODEL_TIME 3
 #define MODEL_INPUT_W 160
 #define MODEL_INPUT_H 120
-// The size of the fb_count and ringbuf_len must be big enough. If you have no idea how to set them, try with 5 and
-// larger.
+
+
 WhoFrameCap *get_dvp_frame_cap_pipeline()
 {
     // The ringbuf_len of FetchNode equals cam_fb_count - 2. The WhoFetchNode fb will display on lcd, if you want to

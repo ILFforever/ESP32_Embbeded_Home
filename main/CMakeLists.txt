@@ -1,6 +1,6 @@
-set(src_dirs ./)
+set(src_dirs ./ app control network uart)
 
-set(include_dirs ./)
+set(include_dirs ./ app control network uart)
 
 set(requires who_detect_app
              who_detect

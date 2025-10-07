@@ -1,11 +1,12 @@
 // app_main.cpp for XIAO ESP32-S3 Sense
-#include "frame_cap_pipeline.hpp"
+#include "app/frame_cap_pipeline.hpp"
 #include "who_recognition_app_term.hpp"
-#include "xiao_recognition_button.hpp"
-#include "xiao_standby_control.hpp"
+#include "control/xiao_recognition_button.hpp"
+#include "control/xiao_standby_control.hpp"
 #include "who_spiflash_fatfs.hpp"
-#include "xiao_recognition_app.hpp"
-#include "http_server.h"
+#include "app/xiao_recognition_app.hpp"
+#include "network/http_server.h"
+#include "uart/uart_comm.hpp"
 
 using namespace who::frame_cap;
 using namespace who::app;
@@ -15,17 +16,22 @@ using namespace who::standby;
 // ============================================================
 // Function Declarations
 // ============================================================
-void serial_command_task(void *pvParameters);
 void example_enrollment_workflow(void *pvParameters);
 void example_standby_workflow(void *pvParameters);
 void example_power_saving_loop(void *pvParameters);
-
+void create_uart_commands();
+void exit_standby_mode();
+void enter_standby_mode();
+void start_camera_task(void *pvParameters);
 // ============================================================
 // Global Variables
 // ============================================================
 
 static XiaoRecognitionButton *g_button_handler = nullptr;
 static XiaoStandbyControl *g_standby_control = nullptr;
+who::uart::UartComm *g_uart = nullptr;
+static who::app::XiaoRecognitionAppTerm *g_recognition_app = nullptr;
+static bool g_camera_running = false;
 
 // ============================================================
 // Main Entry Point
@@ -48,38 +54,83 @@ extern "C" void app_main(void)
     auto frame_cap = get_term_dvp_frame_cap_pipeline();
 
     // Create terminal-based recognition app (no LCD)
-    auto recognition_app = new who::app::XiaoRecognitionAppTerm(frame_cap);
+    g_recognition_app = new who::app::XiaoRecognitionAppTerm(frame_cap);
 
     // Create standby control for power management
     g_standby_control = new XiaoStandbyControl(
-        recognition_app->get_recognition(),
+        g_recognition_app->get_recognition(),
         frame_cap);
 
     // Create button handler with ALL components
-    auto recognition_task = recognition_app->get_recognition()->get_recognition_task();
-    auto detect_task = recognition_app->get_recognition()->get_detect_task();
+    auto recognition_task = g_recognition_app->get_recognition()->get_recognition_task();
+    auto detect_task = g_recognition_app->get_recognition()->get_detect_task();
     g_button_handler = new XiaoRecognitionButton(
         recognition_task,
         detect_task,
         g_standby_control);
 
-    init_wifi_and_server();
-    set_http_server_refs(g_standby_control, recognition_app->get_recognition());
-    ESP_LOGI("Main", "HTTP server started. Access at http://<your-ip>/");
-
-    // Optional: Enable serial command interface
-    // xTaskCreate(serial_command_task, "serial_cmd", 3072, NULL, 5, NULL);
-
-    // Optional: Enable example workflows
-    // xTaskCreate(example_enrollment_workflow, "enrollment", 4096, NULL, 5, NULL);
-    // xTaskCreate(example_standby_workflow, "standby_test", 4096, NULL, 5, NULL);
-    // xTaskCreate(example_power_saving_loop, "power_save", 4096, NULL, 5, NULL);
+    g_uart = new who::uart::UartComm();
+    if (!g_uart->start())
+    { // Start UART tasks
+        ESP_LOGE("Main", "Failed to start UART");
+    }
+    create_uart_commands();
+    ESP_LOGI("Main", "System ready. Camera is OFF. Send UART command to start.");
+    // init_wifi_and_server();
+    // set_http_server_refs(g_standby_control, recognition_app->get_recognition());
+    // ESP_LOGI("Main", "HTTP server started. Access at http://<your-ip>/");
 
     // Start recognition app (blocks here)
-    recognition_app->run();
+    // recognition_app->run();
 
     // Mark recognition system as running (for standby control)
-    recognition_app->get_recognition()->mark_running();
+    // recognition_app->get_recognition()->mark_running();
+}
+
+// Task to run recognition app (blocks forever)
+void start_camera_task(void *pvParameters)
+{
+    g_recognition_app->run();
+    vTaskDelete(NULL); // Never reached
+}
+
+void create_uart_commands()
+{
+    g_uart->register_command("camera_control", [](const char *cmd, cJSON *params)
+                             {
+        if (!params) {
+            g_uart->send_status("error", "Missing parameters");
+            return;
+        }
+
+        cJSON* name = cJSON_GetObjectItem(params, "name");
+        if (!name || !cJSON_IsString(name)) {
+            g_uart->send_status("error", "Missing or invalid 'name' parameter");
+            return;
+        }
+
+        const char* action_str = name->valuestring;
+
+        if (strcmp(action_str, "camera_start") == 0) {
+            if (g_camera_running) {
+                g_uart->send_status("error", "Camera already running");
+                return;
+            }
+            // Start camera in separate task
+            xTaskCreate(start_camera_task, "camera_task", 4096, NULL, 5, NULL);
+            g_camera_running = true;
+            g_uart->send_status("ok", "Camera started");
+        } else if (strcmp(action_str, "camera_stop") == 0) {
+            if (!g_camera_running) {
+                g_uart->send_status("error", "Camera not running");
+                return;
+            }
+            // Stop camera
+            enter_standby_mode();
+            g_uart->send_status("ok", "Camera stopped");
+        } else {
+            g_uart->send_status("error", "Unknown camera action");
+        } });
 }
 
 // ============================================================
@@ -268,91 +319,5 @@ void example_power_saving_loop(void *pvParameters)
         ESP_LOGI("Example", "STANDBY: Sleeping for 30 seconds...");
         enter_standby_mode();
         vTaskDelay(pdMS_TO_TICKS(30000));
-    }
-}
-
-void serial_command_task(void *pvParameters)
-{
-    char buffer[64];
-    int len = 0;
-
-    ESP_LOGI("SerialCmd", "Serial command interface started");
-    ESP_LOGI("SerialCmd", "Commands:");
-    ESP_LOGI("SerialCmd", "  R - Recognize next face");
-    ESP_LOGI("SerialCmd", "  E - Enroll next face");
-    ESP_LOGI("SerialCmd", "  D - Delete last enrolled face");
-    ESP_LOGI("SerialCmd", "  P - Pause detection");
-    ESP_LOGI("SerialCmd", "  S - Resume (Start) detection");
-    ESP_LOGI("SerialCmd", "  Z - Enter standby mode (sleep)");
-    ESP_LOGI("SerialCmd", "  W - Wake from standby");
-    ESP_LOGI("SerialCmd", "  ? - Show this help");
-
-    while (true)
-    {
-        int c = getchar();
-        if (c != EOF)
-        {
-            char ch = (char)c;
-
-            if (ch == '\n' || ch == '\r')
-            {
-                buffer[len] = '\0';
-                if (len > 0)
-                {
-                    switch (buffer[0])
-                    {
-                    case 'r':
-                    case 'R':
-                        recognize_face();
-                        break;
-                    case 'e':
-                    case 'E':
-                        enroll_new_face();
-                        break;
-                    case 'd':
-                    case 'D':
-                        delete_last_face();
-                        break;
-                    case 'p':
-                    case 'P':
-                        pause_face_detection();
-                        break;
-                    case 's':
-                    case 'S':
-                        resume_face_detection();
-                        break;
-                    case 'z':
-                    case 'Z':
-                        enter_standby_mode();
-                        break;
-                    case 'w':
-                    case 'W':
-                        exit_standby_mode();
-                        break;
-                    case '?':
-                        ESP_LOGI("SerialCmd", "Commands:");
-                        ESP_LOGI("SerialCmd", "  R - Recognize");
-                        ESP_LOGI("SerialCmd", "  E - Enroll");
-                        ESP_LOGI("SerialCmd", "  D - Delete");
-                        ESP_LOGI("SerialCmd", "  P - Pause");
-                        ESP_LOGI("SerialCmd", "  S - Start");
-                        ESP_LOGI("SerialCmd", "  Z - Enter standby (sleep)");
-                        ESP_LOGI("SerialCmd", "  W - Wake from standby");
-                        ESP_LOGI("SerialCmd", "  ? - Show help");
-                        break;
-                    default:
-                        ESP_LOGW("SerialCmd", "Unknown command: %c", buffer[0]);
-                        ESP_LOGI("SerialCmd", "Type ? for help");
-                        break;
-                    }
-                }
-                len = 0;
-            }
-            else if (len < sizeof(buffer) - 1)
-            {
-                buffer[len++] = ch;
-            }
-        }
-        vTaskDelay(pdMS_TO_TICKS(10));
     }
 }

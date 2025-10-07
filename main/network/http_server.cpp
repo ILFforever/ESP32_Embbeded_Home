@@ -12,11 +12,10 @@
 
 static const char *TAG = "HTTP_SERVER";
 
-// Your WiFi credentials
 #define WIFI_SSID "ILFforever2"
 #define WIFI_PASS "19283746"
 
-// Global references (set these from your main app)
+// Global references
 static who::standby::XiaoStandbyControl *g_standby_ctrl = nullptr;
 static who::recognition::WhoRecognition *g_recognition = nullptr;
 
