@@ -4,6 +4,7 @@
 #include <TFT_eSPI.h>
 #include <SPI.h>
 #include <TaskScheduler.h>
+#include "uart_commands.h"
 
 #define RX2 16
 #define TX2 17
@@ -23,15 +24,13 @@ int slave_status = 0; // 0 = standby, -1 = disconneccted, 1 = camera_running, 2 
 void checkUARTData();
 void sendPingTask();
 void checkPingTimeout();
-void sendCommand(const char *cmd, const char *param = nullptr, int value = -1);
-void sendPing();
-void handleResponse(String line);
 void LCDhandler();
 
 Task taskCheckUART(20, TASK_FOREVER, &checkUARTData);         // Check UART buffer every 20ms
 Task taskSendPing(2500, TASK_FOREVER, &sendPingTask);         // Send ping every 3s
 Task taskCheckTimeout(1000, TASK_FOREVER, &checkPingTimeout); // Check timeout every 1s
 Task taskLCDhandler(50, TASK_FOREVER, &LCDhandler);           // handle display updates every 50ms (around 20 fps)
+
 
 void setup()
 {
@@ -64,11 +63,13 @@ void setup()
   taskLCDhandler.enable();
 
   last_pong_time = millis();
-  sendCommand("get_status");
+  sendUARTCommand("get_status");
 
   // Clear screen
   Serial.println("Clearing screen...");
   tft.fillScreen(TFT_RED);
+  sendUARTCommand("camera_control","camera_start");
+
 }
 
 void loop()
@@ -84,7 +85,7 @@ void checkUARTData()
     String line = SlaveSerial.readStringUntil('\n');
     if (line.length() > 0)
     {
-      handleResponse(line);
+      handleUARTResponse(line);
     }
   }
 }
@@ -96,11 +97,11 @@ void sendPingTask()
   if (tag < 5)
   {
     tag++;
-    sendPing();
+    sendUARTPing();
   }
   else
   {
-    sendCommand("get_status");
+    sendUARTCommand("get_status");
     tag = 0;
   }
 }
@@ -117,93 +118,6 @@ void checkPingTimeout()
   }
   else if (slave_status == -1)
     slave_status = 0; // back to standby
-}
-
-// Send command to Slave
-void sendCommand(const char *cmd, const char *param, int value)
-{
-  StaticJsonDocument<256> doc;
-  doc["cmd"] = cmd;
-
-  if (param != nullptr)
-  {
-    doc["name"] = param;
-  }
-
-  if (value >= 0)
-  {
-    doc["id"] = value;
-  }
-
-  String output;
-  serializeJson(doc, output);
-
-  SlaveSerial.println(output);
-  Serial.print("📤 TX→Slave: ");
-  Serial.println(output);
-}
-
-// Send ping message
-void sendPing()
-{
-  StaticJsonDocument<128> doc;
-  doc["type"] = "ping";
-  doc["seq"] = ping_counter++;
-  doc["timestamp"] = millis();
-
-  String output;
-  serializeJson(doc, output);
-
-  SlaveSerial.println(output);
-  // Serial.print("PING → ");
-  // Serial.println(ping_counter - 1);
-}
-
-// Handle response from Slave
-void handleResponse(String line)
-{
-  Serial.print("📥 RX←Slave: ");
-  Serial.println(line);
-
-  StaticJsonDocument<512> doc;
-  DeserializationError error = deserializeJson(doc, line);
-  if (error)
-  {
-    Serial.print("❌ JSON parse error: ");
-    Serial.println(error.c_str());
-    return;
-  }
-
-  // Handle pong response
-  if (doc.containsKey("type") && doc["type"] == "pong")
-  {
-    uint32_t seq = doc["seq"];
-    last_pong_time = millis();
-
-    Serial.printf("PONG ← seq=%u, uptime=%ds\n",
-                  seq, (int)doc["uptime"]);
-    return;
-  }
-
-  // Handle status response
-  if (doc.containsKey("status"))
-  {
-    const char *status = doc["status"];
-    Serial.printf("✅ Status: %s", status);
-
-    if (doc.containsKey("msg"))
-    {
-      Serial.printf(" - %s", (const char *)doc["msg"]);
-    }
-
-    if (doc.containsKey("free_heap"))
-    {
-      int heap = doc["free_heap"];
-      Serial.printf(" (Free heap: %d KB)", heap / 1024);
-    }
-
-    Serial.println();
-  }
 }
 
 void LCDhandler()
