@@ -9,7 +9,9 @@
 #include "uart/uart_comm.hpp"
 #include <cstdio>
 #include "spi/slave_spi.hpp"
-#include <idf_additions.h>
+#include "spi/spi_test.hpp"
+#include "jpeg/JpegEncoder.hpp"
+#include "esp_camera.h" // defines PIXFORMAT_JPEG and pixformat_t
 
 using namespace who::frame_cap;
 using namespace who::app;
@@ -28,21 +30,24 @@ void create_uart_commands();
 void exit_standby_mode();
 void enter_standby_mode();
 void start_camera_task(void *pvParameters);
-static void stats_task(void *pvParameters);
+//static void stats_task(void *pvParameters);
+static void spi_frame_sender_task(void *pvParameters);
+
 // ============================================================
 // Global Variables
 // ============================================================
-
 static XiaoRecognitionButton *g_button_handler = nullptr;
 static XiaoStandbyControl *g_standby_control = nullptr;
 who::uart::UartComm *g_uart = nullptr;
 static who::app::XiaoRecognitionAppTerm *g_recognition_app = nullptr;
+static who::frame_cap::WhoFrameCap *g_frame_cap = nullptr;
 static bool g_camera_running = false;
+static TaskHandle_t g_spi_sender_task_handle = nullptr;
+static uint16_t g_frame_id = 0;
 
 // ============================================================
 // Main Entry Point
 // ============================================================
-
 extern "C" void app_main(void)
 {
     vTaskPrioritySet(xTaskGetCurrentTaskHandle(), 5);
@@ -57,15 +62,15 @@ extern "C" void app_main(void)
 #endif
 
     // Get camera pipeline for ESP32-S3
-    auto frame_cap = get_term_dvp_frame_cap_pipeline();
+    g_frame_cap = get_term_dvp_frame_cap_pipeline();
 
     // Create terminal-based recognition app (no LCD)
-    g_recognition_app = new who::app::XiaoRecognitionAppTerm(frame_cap);
+    g_recognition_app = new who::app::XiaoRecognitionAppTerm(g_frame_cap);
 
     // Create standby control for power management
     g_standby_control = new XiaoStandbyControl(
         g_recognition_app->get_recognition(),
-        frame_cap);
+        g_frame_cap);
 
     // Create button handler with ALL components
     auto recognition_task = g_recognition_app->get_recognition()->get_recognition_task();
@@ -91,16 +96,16 @@ extern "C" void app_main(void)
         return;
     }
 
-    // Create statistics task on Core 0 (low priority, won't interfere)
-    xTaskCreatePinnedToCore(
-        stats_task,
-        "stats",
-        2048,
-        nullptr,
-        1, // Low priority
-        nullptr,
-        0 // Core 0
-    );
+    // // Create statistics task on Core 0 (low priority, won't interfere)
+    // xTaskCreatePinnedToCore(
+    //     stats_task,
+    //     "stats",
+    //     2048,
+    //     nullptr,
+    //     1, // Low priority
+    //     nullptr,
+    //     0 // Core 0
+    // );
 }
 
 // Task to run recognition app (blocks forever)
@@ -134,19 +139,44 @@ void create_uart_commands()
                 g_uart->send_status("error", "Camera already running");
                 return;
             }
+
+            // Exit standby to start camera
+            exit_standby_mode();
+
             // Start camera in separate task
             xTaskCreate(start_camera_task, "camera_task", 4096, NULL, 5, NULL);
+
+            // Start SPI frame sender task on Core 0
+            xTaskCreatePinnedToCore(
+                spi_frame_sender_task,
+                "spi_sender",
+                4096,
+                NULL,
+                4,  // Priority 4 (below camera/recognition tasks)
+                &g_spi_sender_task_handle,
+                0   // Core 0
+            );
+
             g_camera_running = true;
-            g_uart->send_status("ok", "Camera started");
+            g_uart->send_status("ok", "Camera and SPI sender started");
+
         } else if (strcmp(action_str, "camera_stop") == 0) {
             if (!g_camera_running) {
                 g_uart->send_status("error", "Camera not running");
                 return;
             }
+
+            // Stop SPI sender task first
+            if (g_spi_sender_task_handle != nullptr) {
+                vTaskDelete(g_spi_sender_task_handle);
+                g_spi_sender_task_handle = nullptr;
+            }
+
             // Stop camera
             enter_standby_mode();
             g_camera_running = false;
-            g_uart->send_status("ok", "Camera stopped");
+            g_uart->send_status("ok", "Camera and SPI sender stopped");
+
         } else {
             g_uart->send_status("error", "Unknown camera action");
         } });
@@ -156,6 +186,59 @@ void create_uart_commands()
                              {
         const char *msg = g_camera_running ? "1" : "0";
         g_uart->send_status_with_heap("ok", msg); });
+
+    // spi stats command
+    g_uart->register_command("spi_stats", [](const char *cmd, cJSON *params)
+                             {
+        char stats_msg[200];
+        snprintf(stats_msg, sizeof(stats_msg),
+                 "Sent:%lu Failed:%lu Dropped:%lu Heap:%lu",
+                 slave_spi_get_frames_sent(),
+                 slave_spi_get_frames_failed(),
+                 slave_spi_get_frames_dropped(),
+                 esp_get_free_heap_size());
+        g_uart->send_status("ok", stats_msg); });
+
+    // test command
+    g_uart->register_command("test", [](const char *cmd, cJSON *params)
+                             { g_uart->send_status("ok", "UART test successful!"); });
+
+    // spi_test command - sends 1KB packets every 2 seconds
+    g_uart->register_command("spi_test", [](const char *cmd, cJSON *params)
+                             {
+        g_uart->send_status("ok", "Starting SPI test (1KB packets every 2s)");
+        // Create test task on Core 0
+        xTaskCreatePinnedToCore(
+            [](void *pvParameters) {
+                spi_test_slave_send();
+            },
+            "spi_test",
+            4096,
+            nullptr,
+            4,
+            nullptr,
+            0
+        ); });
+
+    // spi_test_single command - sends one test packet
+    g_uart->register_command("spi_test_single", [](const char *cmd, cJSON *params)
+                             {
+        uint32_t size = 1024;  // Default 1KB
+        if (params) {
+            cJSON* sizeParam = cJSON_GetObjectItem(params, "size");
+            if (sizeParam && cJSON_IsNumber(sizeParam)) {
+                size = sizeParam->valueint;
+            }
+        }
+
+        esp_err_t ret = spi_send_test_packet(g_frame_id++, size);
+        if (ret == ESP_OK) {
+            char msg[50];
+            snprintf(msg, sizeof(msg), "Test packet queued (%lu bytes)", size);
+            g_uart->send_status("ok", msg);
+        } else {
+            g_uart->send_status("error", "Failed to queue test packet");
+        } });
 }
 
 // ============================================================
@@ -227,23 +310,104 @@ bool is_in_standby()
     return false;
 }
 
-static void stats_task(void *pvParameters)
+// Task that continuously grabs camera frames, encodes to JPEG, and sends over SPI
+static void spi_frame_sender_task(void *pvParameters)
 {
-    ESP_LOGI(TAG, "Statistics task started on Core %d", xPortGetCoreID());
-    
-    while (true) {
-        vTaskDelay(pdMS_TO_TICKS(5000));
-        
-        ESP_LOGI(TAG, "");
-        ESP_LOGI(TAG, "=== Statistics ===");
-        ESP_LOGI(TAG, "SPI Frames sent:    %lu", slave_spi_get_frames_sent());
-        ESP_LOGI(TAG, "SPI Frames failed:  %lu", slave_spi_get_frames_failed());
-        ESP_LOGI(TAG, "SPI Frames dropped: %lu", slave_spi_get_frames_dropped());
-        ESP_LOGI(TAG, "Free heap:          %lu bytes", esp_get_free_heap_size());
-        ESP_LOGI(TAG, "Min free heap:      %lu bytes", esp_get_minimum_free_heap_size());
-        ESP_LOGI(TAG, "");
+    ESP_LOGI(TAG, "SPI frame sender task started on Core %d", xPortGetCoreID());
+
+    auto frame_cap_node = g_frame_cap->get_last_node();
+    RawJpegEncoder encoder(80); // JPEG quality 80
+
+    while (true)
+    {
+        // Peek at the latest frame
+        who::cam::cam_fb_t *frame = frame_cap_node->cam_fb_peek(-1);
+
+        if (frame != nullptr && frame->buf != nullptr && frame->len > 0)
+        {
+            bool encoded = false;
+
+            // Encode to JPEG if not already JPEG
+            if (static_cast<pixformat_t>(frame->format) != PIXFORMAT_JPEG)
+            {
+                encoded = encoder.encode(
+                    static_cast<const uint8_t *>(frame->buf),
+                    frame->len,
+                    frame->width,
+                    frame->height,
+                    RawJpegEncoder::PixelFormat::RGB565);
+
+                if (!encoded)
+                {
+                    ESP_LOGW(TAG, "JPEG encoding failed, skipping frame");
+                    //frame_cap_node->cam_fb_skip(1); // mark frame consumed
+                    continue;
+                }
+            }
+            else
+            {
+                // Frame is already JPEG, just copy
+                encoded = encoder.encode(
+                    static_cast<const uint8_t *>(frame->buf),
+                    frame->len,
+                    frame->width,
+                    frame->height,
+                    RawJpegEncoder::PixelFormat::RGB565);
+
+                if (!encoded)
+                {
+                    ESP_LOGW(TAG, "Copying JPEG frame failed, skipping");
+                    //frame_cap_node->cam_fb_skip(1);
+                    continue;
+                }
+            }
+
+            // Send JPEG over SPI
+            esp_err_t ret = slave_spi_queue_frame(
+                g_frame_id++,
+                encoder.data(),
+                encoder.size());
+
+            if (ret == ESP_OK)
+            {
+                ESP_LOGD(TAG, "Frame %d queued for SPI (JPEG size: %zu bytes)", g_frame_id - 1, encoder.size());
+            }
+            else
+            {
+                ESP_LOGW(TAG, "Failed to queue frame %d", g_frame_id - 1);
+            }
+
+            // Mark frame consumed
+            //frame_cap_node->cam_fb_skip(1);
+        }
+        else
+        {
+            ESP_LOGD(TAG, "No valid frame available");
+        }
+
+        // Target ~20 FPS
+        vTaskDelay(pdMS_TO_TICKS(50));
     }
 }
+
+// static void stats_task(void *pvParameters)
+// {
+//     ESP_LOGI(TAG, "Statistics task started on Core %d", xPortGetCoreID());
+
+//     while (true)
+//     {
+//         vTaskDelay(pdMS_TO_TICKS(5000));
+
+//         ESP_LOGI(TAG, "");
+//         ESP_LOGI(TAG, "=== Statistics ===");
+//         ESP_LOGI(TAG, "SPI Frames sent:    %lu", slave_spi_get_frames_sent());
+//         ESP_LOGI(TAG, "SPI Frames failed:  %lu", slave_spi_get_frames_failed());
+//         ESP_LOGI(TAG, "SPI Frames dropped: %lu", slave_spi_get_frames_dropped());
+//         ESP_LOGI(TAG, "Free heap:          %lu bytes", esp_get_free_heap_size());
+//         ESP_LOGI(TAG, "Min free heap:      %lu bytes", esp_get_minimum_free_heap_size());
+//         ESP_LOGI(TAG, "");
+//     }
+// }
 
 // ============================================================
 // Example Workflows

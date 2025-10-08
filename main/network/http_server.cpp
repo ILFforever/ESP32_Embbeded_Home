@@ -166,6 +166,7 @@ static void wifi_event_handler(void* arg, esp_event_base_t event_base,
     }
 }
 
+//call this from main to start server
 void init_wifi_and_server()
 {
     ESP_ERROR_CHECK(nvs_flash_init());

@@ -17,6 +17,7 @@
   "idf.pythonInstallPath": "C:\\Users\\paeki\\.espressif\\tools\\idf-python\\3.11.2\\python.exe",
   "idf.flashType": "UART",
   "files.associations": {
-    "frame_cap_pipeline.hpp": "c"
+    "frame_cap_pipeline.hpp": "c",
+    "format": "cpp"
   }
 }
