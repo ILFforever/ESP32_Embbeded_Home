@@ -60,8 +60,8 @@ void handleUARTResponse(String line)
     return;
   }
 
-  Serial.print("📥 RX from Slave: ");
-  Serial.println(line);
+  // Serial.print("📥 RX from Slave: ");
+  // Serial.println(line);
 
   JsonDocument doc;
   DeserializationError error = deserializeJson(doc, line);

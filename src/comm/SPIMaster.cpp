@@ -90,20 +90,20 @@ void SPIMaster::update() {
 
 bool SPIMaster::_receiveHeader() {
     FrameHeader header;
-    uint8_t dummyTx[sizeof(FrameHeader)] = {0};
-    
+
     _spi.beginTransaction(SPISettings(SPI_SPEED, MSBFIRST, SPI_MODE0));
     _selectSlave();
     delayMicroseconds(10);
-    
+
+    // Read header byte-by-byte
     for (size_t i = 0; i < sizeof(FrameHeader); i++) {
-        ((uint8_t*)&header)[i] = _spi.transfer(dummyTx[i]);
+        ((uint8_t*)&header)[i] = _spi.transfer(0x00);
     }
-    
+
     delayMicroseconds(10);
     _deselectSlave();
     _spi.endTransaction();
-    
+
     // Validate magic bytes
     if (header.magic[0] != 0x55 || header.magic[1] != 0xAA) {
         // No valid header, not an error, just no data yet
@@ -154,22 +154,25 @@ void SPIMaster::_receiveDataChunk() {
     uint32_t remaining = _frameSize - _bytesReceived;
     uint32_t transferSize = (remaining > _chunkSize) ? _chunkSize : remaining;
 
-    uint8_t dummyTx[4096] = {0};  // Match slave DMA buffer size
-    
     _spi.beginTransaction(SPISettings(SPI_SPEED, MSBFIRST, SPI_MODE0));
     _selectSlave();
     delayMicroseconds(10);
-    
-    for (size_t i = 0; i < transferSize; i++) {
-        _frameBuffer[_bytesReceived + i] = _spi.transfer(dummyTx[i]);
-    }
-    
+
+    // Use writeBytes to send dummy data and read response
+    // This is much faster than byte-by-byte transfer()
+    uint8_t* rxBuf = &_frameBuffer[_bytesReceived];
+    memset(rxBuf, 0, transferSize);  // Initialize with zeros
+    _spi.transferBytes(rxBuf, rxBuf, transferSize);  // In-place transfer
+
     delayMicroseconds(10);
     _deselectSlave();
     _spi.endTransaction();
-    
+
     _bytesReceived += transferSize;
-    
+
+    // Small delay between chunks
+    delayMicroseconds(100);
+
     // Progress indicator every 5KB
     if (_bytesReceived % 5120 == 0) {
         Serial.print(".");

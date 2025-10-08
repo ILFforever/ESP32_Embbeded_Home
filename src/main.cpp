@@ -148,6 +148,10 @@ void ProcessFrame()
   if (!spiMaster.isFrameReady())
     return;
 
+  static unsigned long lastFrameTime = 0;
+  static unsigned long frameCount = 0;
+  static float currentFPS = 0.0;
+
   uint8_t *frame = spiMaster.getFrameData();
   uint32_t frameSize = spiMaster.getFrameSize();
   uint16_t frameId = spiMaster.getFrameId();
@@ -155,20 +159,39 @@ void ProcessFrame()
   if (!frame || frameSize == 0)
     return;
 
-  Serial.printf("[FRAME] Displaying frame %d, size %u bytes\n", frameId, frameSize); // RGB565 byte order for TFT_eSPI
-
-  // Decode and draw JPEG directly
-  if (!TJpgDec.drawJpg(0, 0, frame, frameSize))
-  {
-    // Failed to decode, clear screen and display error
-    tft.fillScreen(TFT_BLACK);
-    tft.setCursor(10, tft.height() / 2);
-    tft.setTextColor(TFT_RED, TFT_BLACK);
-    tft.print("JPEG decode failed");
-    Serial.println("!!! ERROR: JPEG decode failed !!!");
+  // Calculate FPS
+  unsigned long now = millis();
+  frameCount++;
+  if (now - lastFrameTime >= 1000) {  // Update every second
+    currentFPS = frameCount * 1000.0 / (now - lastFrameTime);
+    frameCount = 0;
+    lastFrameTime = now;
   }
 
-  // Acknowledge the SPI frame so the next can be received
+  // Quick validation (minimal logging)
+  if (frameSize < 100 || frame[0] != 0xFF || frame[1] != 0xD8) {
+    Serial.println("[ERROR] Invalid JPEG");
+    spiMaster.ackFrame();
+    return;
+  }
+
+  // Decode and draw JPEG
+  uint16_t result = TJpgDec.drawJpg(0, 0, frame, frameSize);
+
+  if (result != 0) {  // JDR_OK = 0 means success!
+    Serial.printf("[ERROR] JPEG decode failed: %d\n", result);
+  }
+
+  // Draw FPS counter at bottom
+  if (currentFPS > 0) {
+    int16_t textY = tft.height() - 40;
+    tft.fillRect(40, textY - 2, 80, 12, TFT_BLACK);
+    tft.setTextColor(TFT_GREEN, TFT_BLACK);
+    tft.setCursor(40, textY);
+    tft.setTextSize(1);
+    tft.printf("FPS: %.1f", currentFPS);
+  }
+
   spiMaster.ackFrame();
 }
 
