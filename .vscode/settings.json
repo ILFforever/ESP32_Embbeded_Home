@@ -1,20 +1,20 @@
 {
-  "idf.portWin": "COM13",
+  "idf.portWin": "COM6",
   "idf.openOcdConfigs": [
     "board/esp32s3-builtin.cfg"
   ],
   "idf.customExtraVars": {
     "IDF_TARGET": "esp32s3"
   },
-  "clangd.path": "C:\\Users\\Asus\\.espressif\\tools\\esp-clang\\esp-19.1.2_20250312\\esp-clang\\bin\\clangd.exe",
+  "clangd.path": "C:\\Users\\paeki\\.espressif\\tools\\esp-clang\\esp-19.1.2_20250312\\esp-clang\\bin\\clangd.exe",
   "clangd.arguments": [
     "--background-index",
-    "--query-driver=C:\\Users\\Asus\\.espressif\\tools\\xtensa-esp-elf\\esp-14.2.0_20241119\\xtensa-esp-elf\\bin\\xtensa-esp32s3-elf-gcc.exe",
-    "--compile-commands-dir=c:\\Users\\Asus\\esp\\components\\esp-who\\examples\\human_face_detect\\build"
+    "--query-driver=C:\\Users\\paeki\\.espressif\\tools\\xtensa-esp-elf\\esp-14.2.0_20241119\\xtensa-esp-elf\\bin\\xtensa-esp32s3-elf-gcc.exe",
+    "--compile-commands-dir=c:\\Users\\paeki\\esp\\components\\esp-who\\examples\\human_face_detect\\build"
   ],
-  "idf.espIdfPathWin": "C:\\Users\\Asus\\esp\\v5.5.1\\esp-idf",
-  "idf.toolsPathWin": "C:\\Users\\Asus\\.espressif",
-  "idf.pythonInstallPath": "C:\\Users\\Asus\\.espressif\\tools\\idf-python\\3.11.2\\python.exe",
+  "idf.espIdfPathWin": "C:\\Users\\paeki\\esp\\v5.5.1\\esp-idf",
+  "idf.toolsPathWin": "C:\\Users\\paeki\\.espressif",
+  "idf.pythonInstallPath": "C:\\Users\\paeki\\.espressif\\tools\\idf-python\\3.11.2\\python.exe",
   "idf.flashType": "UART",
   "files.associations": {
     "frame_cap_pipeline.hpp": "c"

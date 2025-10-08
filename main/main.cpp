@@ -7,11 +7,16 @@
 #include "app/xiao_recognition_app.hpp"
 #include "network/http_server.h"
 #include "uart/uart_comm.hpp"
+#include <cstdio>
+#include "spi/slave_spi.hpp"
+#include <idf_additions.h>
 
 using namespace who::frame_cap;
 using namespace who::app;
 using namespace who::button;
 using namespace who::standby;
+
+static const char *TAG = "Main";
 
 // ============================================================
 // Function Declarations
@@ -23,6 +28,7 @@ void create_uart_commands();
 void exit_standby_mode();
 void enter_standby_mode();
 void start_camera_task(void *pvParameters);
+static void stats_task(void *pvParameters);
 // ============================================================
 // Global Variables
 // ============================================================
@@ -76,15 +82,25 @@ extern "C" void app_main(void)
     }
     create_uart_commands();
     ESP_LOGI("Main", "System ready. Camera is OFF. Send UART command to start.");
-    // init_wifi_and_server();
-    // set_http_server_refs(g_standby_control, recognition_app->get_recognition());
-    // ESP_LOGI("Main", "HTTP server started. Access at http://<your-ip>/");
 
-    // Start recognition app (blocks here)
-    // recognition_app->run();
+    // Initialize SPI slave (creates task on Core 1)
+    esp_err_t ret = slave_spi_init();
+    if (ret != ESP_OK)
+    {
+        ESP_LOGE(TAG, "SPI init failed");
+        return;
+    }
 
-    // Mark recognition system as running (for standby control)
-    // recognition_app->get_recognition()->mark_running();
+    // Create statistics task on Core 0 (low priority, won't interfere)
+    xTaskCreatePinnedToCore(
+        stats_task,
+        "stats",
+        2048,
+        nullptr,
+        1, // Low priority
+        nullptr,
+        0 // Core 0
+    );
 }
 
 // Task to run recognition app (blocks forever)
@@ -96,6 +112,8 @@ void start_camera_task(void *pvParameters)
 
 void create_uart_commands()
 {
+
+    // Camera Start/Stop UART Commands ect...
     g_uart->register_command("camera_control", [](const char *cmd, cJSON *params)
                              {
         if (!params) {
@@ -132,6 +150,8 @@ void create_uart_commands()
         } else {
             g_uart->send_status("error", "Unknown camera action");
         } });
+
+    // get status command
     g_uart->register_command("get_status", [](const char *cmd, cJSON *params)
                              {
         const char *msg = g_camera_running ? "1" : "0";
@@ -205,6 +225,24 @@ bool is_in_standby()
         return g_button_handler->is_standby();
     }
     return false;
+}
+
+static void stats_task(void *pvParameters)
+{
+    ESP_LOGI(TAG, "Statistics task started on Core %d", xPortGetCoreID());
+    
+    while (true) {
+        vTaskDelay(pdMS_TO_TICKS(5000));
+        
+        ESP_LOGI(TAG, "");
+        ESP_LOGI(TAG, "=== Statistics ===");
+        ESP_LOGI(TAG, "SPI Frames sent:    %lu", slave_spi_get_frames_sent());
+        ESP_LOGI(TAG, "SPI Frames failed:  %lu", slave_spi_get_frames_failed());
+        ESP_LOGI(TAG, "SPI Frames dropped: %lu", slave_spi_get_frames_dropped());
+        ESP_LOGI(TAG, "Free heap:          %lu bytes", esp_get_free_heap_size());
+        ESP_LOGI(TAG, "Min free heap:      %lu bytes", esp_get_minimum_free_heap_size());
+        ESP_LOGI(TAG, "");
+    }
 }
 
 // ============================================================

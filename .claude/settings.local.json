@@ -1,7 +1,8 @@
 {
   "permissions": {
     "allow": [
-      "Bash(test:*)"
+      "Bash(test:*)",
+      "Read(//c/Users/paeki/esp/v5.5.1/esp-idf/components/esp-who/components/**)"
     ],
     "deny": [],
     "ask": []

@@ -29,7 +29,7 @@ public:
      * @param rx_pin RX GPIO pin (default: 44/D7 on XIAO)
      * @param baud_rate Baud rate (default: 115200)
      */
-    UartComm(int tx_pin = 43, int rx_pin = 44, int baud_rate = 115200);
+    UartComm(int tx_pin = 6, int rx_pin = 5, int baud_rate = 115200);
     ~UartComm();
 
     /**
