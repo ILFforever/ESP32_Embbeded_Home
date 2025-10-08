@@ -6,6 +6,9 @@
 #include <TaskScheduler.h>
 #include "uart_commands.h"
 #include "http_control.h"
+#include "SPIMaster.h"
+#include <TJpg_Decoder.h>
+#include <cstring>
 
 #define RX2 16
 #define TX2 17
@@ -15,6 +18,10 @@
 TFT_eSPI tft = TFT_eSPI();
 Scheduler myscheduler;
 HardwareSerial SlaveSerial(2); // Use UART2
+extern TFT_eSPI tft;           // Your initialized display object
+extern uint8_t *g_spiFrame;    // Pointer to SPI-received JPEG frame
+extern size_t g_spiFrameSize;  // Size of JPEG frame
+SPIMaster spiMaster;
 
 // Ping-Pong
 uint32_t ping_counter = 0;
@@ -27,13 +34,19 @@ void sendPingTask();
 void checkPingTimeout();
 void LCDhandler();
 void handleHTTPTask();
+void UpdateSPI();
+void ProcessFrame();
+void PrintStats();
+bool tft_jpg_render_callback(int16_t x, int16_t y, uint16_t w, uint16_t h, uint16_t *bitmap);
 
 Task taskCheckUART(20, TASK_FOREVER, &checkUARTData);         // Check UART buffer every 20ms
 Task taskSendPing(2500, TASK_FOREVER, &sendPingTask);         // Send ping every 3s
 Task taskCheckTimeout(1000, TASK_FOREVER, &checkPingTimeout); // Check timeout every 1s
 Task taskLCDhandler(50, TASK_FOREVER, &LCDhandler);           // handle display updates every 50ms (around 20 fps)
 Task taskHTTPHandler(10, TASK_FOREVER, &handleHTTPTask);      // Handle HTTP requests every 10ms
-
+Task taskUpdateSPI(10, TASK_FOREVER, &UpdateSPI);             // Update SPI every 10ms
+Task taskProcessFrame(5, TASK_FOREVER, &ProcessFrame);        // Check for frames every 50ms
+Task taskPrintStats(5000, TASK_FOREVER, &PrintStats);         // Print stats every 5s
 
 void setup()
 {
@@ -52,9 +65,22 @@ void setup()
   Serial.printf("UART initialized: RX=GPIO%d, TX=GPIO%d, Baud=%d\n", RX2, TX2, UART_BAUD);
   delay(100);
 
+  if (!spiMaster.begin())
+  {
+    Serial.println("[ERROR] SPI initialization failed");
+    while (1)
+      delay(100);
+  }
+  Serial.println("SPI initialization started");
+
   // Initialize HTTP server
   initHTTPServer();
   delay(100);
+
+  // Configure TJpg_Decoder
+  TJpgDec.setCallback(tft_jpg_render_callback); // Set the callback
+  TJpgDec.setJpgScale(1);                       // Full resolution
+  TJpgDec.setSwapBytes(true);
 
   last_pong_time = millis();
 
@@ -64,12 +90,18 @@ void setup()
   myscheduler.addTask(taskCheckTimeout);
   myscheduler.addTask(taskLCDhandler);
   myscheduler.addTask(taskHTTPHandler);
+  myscheduler.addTask(taskUpdateSPI);
+  myscheduler.addTask(taskProcessFrame);
+  myscheduler.addTask(taskPrintStats);
 
   taskCheckUART.enable();
   taskSendPing.enable();
   taskCheckTimeout.enable();
-  taskLCDhandler.enable();
+  // taskLCDhandler.enable();
   taskHTTPHandler.enable();
+  taskUpdateSPI.enable();
+  taskProcessFrame.enable();
+  taskPrintStats.enable();
 
   last_pong_time = millis();
   sendUARTCommand("get_status");
@@ -77,13 +109,97 @@ void setup()
   // Clear screen
   Serial.println("Clearing screen...");
   tft.fillScreen(TFT_RED);
-  //sendUARTCommand("camera_control","camera_start");
-
+  // sendUARTCommand("camera_control","camera_start");
 }
 
 void loop()
 {
   myscheduler.execute();
+}
+
+// TJpg_Decoder callback: draw a decoded block to TFT
+bool tft_jpg_render_callback(int16_t x, int16_t y, uint16_t w, uint16_t h, uint16_t *bitmap)
+{
+  // Clip vertically
+  int drawHeight = h;
+  if (y + h > tft.height())
+    drawHeight = tft.height() - y;
+
+  // Clip horizontally (optional)
+  int drawWidth = w;
+  if (x + w > tft.width())
+    drawWidth = tft.width() - x;
+
+  tft.pushImage(x, y, drawWidth, drawHeight, bitmap);
+
+  return true; // always continue decoding
+}
+
+// Task: Update SPI
+void UpdateSPI()
+{
+  spiMaster.update();
+}
+
+// Task: Process complete frames (This marks frames as used)
+// Task: Process SPI frames and display on LCD
+void ProcessFrame()
+{
+  if (!spiMaster.isFrameReady())
+    return;
+
+  uint8_t *frame = spiMaster.getFrameData();
+  uint32_t frameSize = spiMaster.getFrameSize();
+  uint16_t frameId = spiMaster.getFrameId();
+
+  if (!frame || frameSize == 0)
+    return;
+
+  Serial.printf("[FRAME] Displaying frame %d, size %u bytes\n", frameId, frameSize); // RGB565 byte order for TFT_eSPI
+
+  // Decode and draw JPEG directly
+  if (!TJpgDec.drawJpg(0, 0, frame, frameSize))
+  {
+    // Failed to decode, clear screen and display error
+    tft.fillScreen(TFT_BLACK);
+    tft.setCursor(10, tft.height() / 2);
+    tft.setTextColor(TFT_RED, TFT_BLACK);
+    tft.print("JPEG decode failed");
+    Serial.println("!!! ERROR: JPEG decode failed !!!");
+  }
+
+  // Acknowledge the SPI frame so the next can be received
+  spiMaster.ackFrame();
+}
+
+// Task: Print statistics
+void PrintStats()
+{
+  Serial.println("\n[STATS] SPI Statistics:");
+  Serial.print("  Frames received: ");
+  Serial.println(spiMaster.getFramesReceived());
+  Serial.print("  Frames dropped: ");
+  Serial.println(spiMaster.getFramesDropped());
+  Serial.print("  Current state: ");
+
+  switch (spiMaster.getState())
+  {
+  case SPI_IDLE:
+    Serial.println("IDLE");
+    break;
+  case SPI_RECEIVING_HEADER:
+    Serial.println("RECEIVING_HEADER");
+    break;
+  case SPI_RECEIVING_DATA:
+    Serial.println("RECEIVING_DATA");
+    break;
+  case SPI_COMPLETE:
+    Serial.println("COMPLETE");
+    break;
+  case SPI_ERROR:
+    Serial.println("ERROR");
+    break;
+  }
 }
 
 // Task: Check for incoming UART data
@@ -131,71 +247,27 @@ void checkPingTimeout()
 
 void LCDhandler()
 {
-  static bool firstRun = true;
-  static unsigned long lastPingTime = 0;
-  static unsigned long lastPongTime = 0;
-  static uint32_t lastSeq = 0;
-
-  unsigned long currentTime = millis();
-  uint32_t currentSeq = ping_counter - 1;
-
-  // Track ping/pong times
-  if (currentSeq != lastSeq)
+  if (!spiMaster.isFrameReady())
   {
-    lastPingTime = currentTime;
-    lastSeq = currentSeq;
-  }
-  if (last_pong_time > lastPongTime)
-  {
-    lastPongTime = last_pong_time;
+    Serial.println("No frame ready");
+    return;
   }
 
-  // Clear background only once
-  if (firstRun)
+  uint8_t *frame = spiMaster.getFrameData();
+  uint32_t frameSize = spiMaster.getFrameSize();
+
+  if (!frame || frameSize < 10)
+    return;
+
+  Serial.print("Drawing frame, size=");
+  Serial.println(frameSize);
+
+  if (TJpgDec.drawJpg(0, 0, frame, frameSize) == 0)
   {
-    tft.fillScreen(TFT_BLACK);
-    firstRun = false;
+    Serial.println("JPEG decode failed");
   }
 
-  // Redraw all text every frame - the second parameter erases old text
-  tft.setCursor(60, 70);
-  tft.setTextSize(1);
-  tft.setTextColor(TFT_WHITE, TFT_BLACK); // Text color, background color
-
-  tft.println("UART Monitor    "); // Extra spaces overwrite old text
-  tft.println("=============   ");
-  tft.println();
-
-  // Connection status
-  if (slave_status == -1)
-  {
-    tft.setTextColor(TFT_RED, TFT_BLACK);
-    tft.println("Status: OFFLINE   ");
-  }
-  else
-  {
-    tft.setTextColor(TFT_GREEN, TFT_BLACK);
-    tft.println("Status: ONLINE    ");
-  }
-  tft.setTextColor(TFT_WHITE, TFT_BLACK);
-  tft.println();
-
-  tft.printf("Ping Count: %u    \n", ping_counter);
-  tft.println();
-
-  tft.printf("Last PING:        \n");
-  tft.printf("  %lu ms ago      \n", currentTime - lastPingTime);
-  tft.println();
-
-  tft.printf("Last PONG:        \n");
-  if (lastPongTime > 0)
-  {
-    tft.printf("  %lu ms ago      \n", currentTime - lastPongTime);
-  }
-  else
-  {
-    tft.println("  Never           ");
-  }
+  spiMaster.ackFrame();
 }
 
 // Task: Handle HTTP requests

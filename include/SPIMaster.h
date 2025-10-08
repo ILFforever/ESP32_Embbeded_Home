@@ -1,56 +1,101 @@
-// SPIMaster.h - SPI Master for image transfer pipeline
-#ifndef SPI_MASTER_H
-#define SPI_MASTER_H
+// SPIMaster.h - SPI Master for TaskScheduler (non-blocking)
+#ifndef MASTER_SPI_H
+#define MASTER_SPI_H
 
 #include <Arduino.h>
 #include <SPI.h>
 
-// SPI Hardware pins
-#define SPI_SCK  18
-#define SPI_MISO 19
-#define SPI_MOSI 23
-#define SPI_CS   5
+// SPI pins
+#define SPI_SCK  25
+#define SPI_MISO 26
+#define SPI_MOSI 27
+#define SPI_CS   14
 
-// SPI Commands
-#define SPI_CMD_HANDSHAKE    0x01
-#define SPI_CMD_REQUEST_SIZE 0x02
-#define SPI_CMD_REQUEST_DATA 0x03
-#define SPI_CMD_TRANSFER_END 0x04
+// SPI speed
+#define SPI_SPEED 10000000  // 10 MHz
 
-// SPI speeds
-#define SPI_SPEED_HANDSHAKE 1000000   // 1 MHz for handshake
-#define SPI_SPEED_TRANSFER  10000000  // 10 MHz for data transfer
+// Transfer states
+enum SPITransferState {
+    SPI_IDLE,
+    SPI_RECEIVING_HEADER,
+    SPI_RECEIVING_DATA,
+    SPI_COMPLETE,
+    SPI_ERROR
+};
+
+// Frame header (12 bytes)
+typedef struct __attribute__((packed)) {
+    uint8_t  magic[2];      // 0x55, 0xAA
+    uint16_t frame_id;      // Big-endian
+    uint32_t frame_size;    // Big-endian, JPEG bytes
+    uint32_t timestamp;     // Big-endian, millis()
+} FrameHeader;
 
 class SPIMaster {
 public:
     SPIMaster();
-    
-    // Initialize SPI master
-    bool begin();
-    
-    // Perform handshake with slave
-    bool performHandshake(uint8_t maxAttempts = 5);
-    
-    // Check if handshake is complete
-    bool isReady() { return _handshakeComplete; }
-    
-    // Request image size from slave
-    uint32_t requestImageSize();
-    
-    // Request image data from slave
-    bool requestImageData(uint8_t* buffer, uint32_t size);
 
+    // Initialize SPI
+    bool begin();
+
+    // Start dedicated SPI task on Core 1 (recommended for high FPS)
+    bool startTask();
+
+    // Stop SPI task
+    void stopTask();
+
+    // Non-blocking update (call from TaskScheduler task OR automatic in task mode)
+    void update();
+
+    // Get current state
+    SPITransferState getState() { return _state; }
+    
+    // Check if frame ready
+    bool isFrameReady() { return _state == SPI_COMPLETE; }
+    
+    // Get frame data (returns pointer to internal buffer)
+    uint8_t* getFrameData() { return _frameBuffer; }
+    uint32_t getFrameSize() { return _frameSize; }
+    uint16_t getFrameId() { return _frameId; }
+    
+    // Acknowledge frame received (frees for next)
+    void ackFrame();
+    
+    // Statistics
+    uint32_t getFramesReceived() { return _framesReceived; }
+    uint32_t getFramesDropped() { return _framesDropped; }
+    
 private:
     SPIClass _spi;
-    bool _initialized;
-    bool _handshakeComplete;
+    SPITransferState _state;
     
-    // Internal transfer with CS control
-    void _transfer(uint8_t* txBuf, uint8_t* rxBuf, size_t len, uint32_t speed);
+    // Frame data
+    uint8_t* _frameBuffer;
+    uint32_t _frameSize;
+    uint16_t _frameId;
+    uint32_t _frameTimestamp;
     
-    // CS pin control
+    // Transfer management
+    uint32_t _bytesReceived;
+    uint32_t _chunkSize;
+    
+    // Statistics
+    uint32_t _framesReceived;
+    uint32_t _framesDropped;
+    unsigned long _lastTransferTime;
+
+    // Task management
+    TaskHandle_t _taskHandle;
+    static void _spiTaskWrapper(void* pvParameters);
+    void _spiTask();
+
+    // Helper functions
+    bool _receiveHeader();
+    void _receiveDataChunk();
+    uint16_t _parseBE16(uint8_t* data);
+    uint32_t _parseBE32(uint8_t* data);
     void _selectSlave();
     void _deselectSlave();
 };
 
-#endif // SPI_MASTER_H
+#endif // MASTER_SPI_H

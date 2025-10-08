@@ -4,7 +4,7 @@
 #include <WebServer.h>
 
 // WiFi credentials - CHANGE THESE
-const char* ssid = "ILFforever";
+const char* ssid = "ILFforever2";
 const char* password = "19283746";
 
 WebServer server(80);
