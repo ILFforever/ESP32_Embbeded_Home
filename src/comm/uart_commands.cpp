@@ -3,31 +3,35 @@
 // Send command to Slave
 void sendUARTCommand(const char *cmd, const char *param, int value)
 {
-  StaticJsonDocument<256> doc;
+  JsonDocument doc;
   doc["cmd"] = cmd;
 
-  if (param != nullptr)
+  // Create nested params object if there are parameters
+  if (param != nullptr || value >= 0)
   {
-    doc["name"] = param;
-  }
+    JsonObject params = doc.createNestedObject("params");
 
-  if (value >= 0)
-  {
-    doc["id"] = value;
+    if (param != nullptr)
+    {
+      params["name"] = param;
+    }
+
+    if (value >= 0)
+    {
+      params["id"] = value;
+    }
   }
 
   String output;
   serializeJson(doc, output);
 
   SlaveSerial.println(output);
-  Serial.print("📤 TX→Slave: ");
-  Serial.println(output);
 }
 
 // Send ping message
 void sendUARTPing()
 {
-  StaticJsonDocument<128> doc;
+  JsonDocument doc;
   doc["type"] = "ping";
   doc["seq"] = ping_counter++;
   doc["timestamp"] = millis();
@@ -41,10 +45,25 @@ void sendUARTPing()
 // Handle UART response from Slave
 void handleUARTResponse(String line)
 {
-  Serial.print("📥 RX←Slave: ");
+  // Skip ESP-IDF log messages (format: "I (timestamp) TAG: message")
+  if (line.startsWith("I (") || line.startsWith("W (") ||
+      line.startsWith("E (") || line.startsWith("D ("))
+  {
+    Serial.print("📋 Log: ");
+    Serial.println(line);
+    return;
+  }
+
+  // Skip empty lines
+  if (line.length() == 0)
+  {
+    return;
+  }
+
+  Serial.print("📥 RX from Slave: ");
   Serial.println(line);
 
-  StaticJsonDocument<512> doc;
+  JsonDocument doc;
   DeserializationError error = deserializeJson(doc, line);
   if (error)
   {
@@ -56,22 +75,19 @@ void handleUARTResponse(String line)
   // Handle pong response
   if (doc.containsKey("type") && doc["type"] == "pong")
   {
-    uint32_t seq = doc["seq"];
     last_pong_time = millis();
-
-    Serial.printf("PONG ← seq=%u, uptime=%ds\n",
-                  seq, (int)doc["uptime"]);
     return;
   }
 
   // Handle status response
-  if (doc.containsKey("status"))
+  else if (doc.containsKey("status"))
   {
     const char *status = doc["status"];
     Serial.printf("✅ Status: %s", status);
 
     if (doc.containsKey("msg"))
     {
+      slave_status = (int)doc["msg"];
       Serial.printf(" - %s", (const char *)doc["msg"]);
     }
 

@@ -5,6 +5,7 @@
 #include <SPI.h>
 #include <TaskScheduler.h>
 #include "uart_commands.h"
+#include "http_control.h"
 
 #define RX2 16
 #define TX2 17
@@ -25,11 +26,13 @@ void checkUARTData();
 void sendPingTask();
 void checkPingTimeout();
 void LCDhandler();
+void handleHTTPTask();
 
 Task taskCheckUART(20, TASK_FOREVER, &checkUARTData);         // Check UART buffer every 20ms
 Task taskSendPing(2500, TASK_FOREVER, &sendPingTask);         // Send ping every 3s
 Task taskCheckTimeout(1000, TASK_FOREVER, &checkPingTimeout); // Check timeout every 1s
 Task taskLCDhandler(50, TASK_FOREVER, &LCDhandler);           // handle display updates every 50ms (around 20 fps)
+Task taskHTTPHandler(10, TASK_FOREVER, &handleHTTPTask);      // Handle HTTP requests every 10ms
 
 
 void setup()
@@ -49,6 +52,10 @@ void setup()
   Serial.printf("UART initialized: RX=GPIO%d, TX=GPIO%d, Baud=%d\n", RX2, TX2, UART_BAUD);
   delay(100);
 
+  // Initialize HTTP server
+  initHTTPServer();
+  delay(100);
+
   last_pong_time = millis();
 
   // Add tasks to scheduler
@@ -56,11 +63,13 @@ void setup()
   myscheduler.addTask(taskSendPing);
   myscheduler.addTask(taskCheckTimeout);
   myscheduler.addTask(taskLCDhandler);
+  myscheduler.addTask(taskHTTPHandler);
 
   taskCheckUART.enable();
   taskSendPing.enable();
   taskCheckTimeout.enable();
   taskLCDhandler.enable();
+  taskHTTPHandler.enable();
 
   last_pong_time = millis();
   sendUARTCommand("get_status");
@@ -68,7 +77,7 @@ void setup()
   // Clear screen
   Serial.println("Clearing screen...");
   tft.fillScreen(TFT_RED);
-  sendUARTCommand("camera_control","camera_start");
+  //sendUARTCommand("camera_control","camera_start");
 
 }
 
@@ -187,4 +196,10 @@ void LCDhandler()
   {
     tft.println("  Never           ");
   }
+}
+
+// Task: Handle HTTP requests
+void handleHTTPTask()
+{
+  handleHTTPClient();
 }
