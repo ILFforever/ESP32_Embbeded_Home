@@ -3,7 +3,9 @@
     "allow": [
       "Bash(test:*)",
       "Read(//c/Users/paeki/esp/v5.5.1/esp-idf/components/esp-who/components/**)",
-      "Read(//c/Users/paeki/OneDrive/Desktop/Embedded_Project/Doorbell_lcd/src/comm/**)"
+      "Read(//c/Users/paeki/OneDrive/Desktop/Embedded_Project/Doorbell_lcd/src/comm/**)",
+      "Read(//c/Users/paeki/OneDrive/Desktop/Embedded_Project/Doorbell_lcd/src/**)",
+      "Read(//c/Users/paeki/OneDrive/Desktop/Embedded_Project/Doorbell_lcd/include/**)"
     ],
     "deny": [],
     "ask": []

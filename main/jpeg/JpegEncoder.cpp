@@ -13,12 +13,23 @@ pixformat_t RawJpegEncoder::toPixFormat(PixelFormat fmt) const {
 
 unsigned int RawJpegEncoder::encodeCallback(void *arg, size_t index, const void *data, size_t len) {
     auto *self = reinterpret_cast<RawJpegEncoder *>(arg);
-    if (!data || len == 0) return 0;
+
+    // Return 0 only if truly no data (this signals end of encoding)
+    if (!data) {
+        ESP_LOGD(TAG, "Callback: NULL data at index %zu", index);
+        return 0;
+    }
+
+    if (len == 0) {
+        ESP_LOGD(TAG, "Callback: Zero length at index %zu", index);
+        return 0;
+    }
 
     size_t old_size = self->buffer_.size();
     self->buffer_.resize(old_size + len);
     memcpy(self->buffer_.data() + old_size, data, len);
 
+    ESP_LOGV(TAG, "Callback: Appended %zu bytes at index %zu (total: %zu)", len, index, self->buffer_.size());
     return len;
 }
 

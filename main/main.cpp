@@ -30,7 +30,7 @@ void create_uart_commands();
 void exit_standby_mode();
 void enter_standby_mode();
 void start_camera_task(void *pvParameters);
-//static void stats_task(void *pvParameters);
+// static void stats_task(void *pvParameters);
 static void spi_frame_sender_task(void *pvParameters);
 
 // ============================================================
@@ -316,16 +316,23 @@ static void spi_frame_sender_task(void *pvParameters)
     ESP_LOGI(TAG, "SPI frame sender task started on Core %d", xPortGetCoreID());
 
     auto frame_cap_node = g_frame_cap->get_last_node();
-    RawJpegEncoder encoder(80); // JPEG quality 80
+    RawJpegEncoder encoder(80); // JPEG quality 40 - Lower quality for better FPS
+
+    uint32_t frame_start_time = 0;
+    uint32_t encode_time = 0;
+    uint32_t spi_time = 0;
 
     while (true)
     {
+        frame_start_time = esp_timer_get_time() / 1000; // Convert to ms
+
         // Peek at the latest frame
         who::cam::cam_fb_t *frame = frame_cap_node->cam_fb_peek(-1);
 
         if (frame != nullptr && frame->buf != nullptr && frame->len > 0)
         {
             bool encoded = false;
+            uint32_t encode_start = esp_timer_get_time() / 1000;
 
             // Encode to JPEG if not already JPEG
             if (static_cast<pixformat_t>(frame->format) != PIXFORMAT_JPEG)
@@ -340,7 +347,7 @@ static void spi_frame_sender_task(void *pvParameters)
                 if (!encoded)
                 {
                     ESP_LOGW(TAG, "JPEG encoding failed, skipping frame");
-                    //frame_cap_node->cam_fb_skip(1); // mark frame consumed
+                    // frame_cap_node->cam_fb_skip(1); // mark frame consumed
                     continue;
                 }
             }
@@ -357,36 +364,67 @@ static void spi_frame_sender_task(void *pvParameters)
                 if (!encoded)
                 {
                     ESP_LOGW(TAG, "Copying JPEG frame failed, skipping");
-                    //frame_cap_node->cam_fb_skip(1);
+                    // frame_cap_node->cam_fb_skip(1);
                     continue;
                 }
             }
 
+            // Validate JPEG before sending
+            const uint8_t *jpeg_data = encoder.data();
+            size_t jpeg_size = encoder.size();
+
+            if (jpeg_size < 10)
+            {
+                ESP_LOGW(TAG, "JPEG too small: %zu bytes", jpeg_size);
+                continue;
+            }
+
+            // Check JPEG markers
+            bool has_start = (jpeg_data[0] == 0xFF && jpeg_data[1] == 0xD8);
+            bool has_end = (jpeg_data[jpeg_size - 2] == 0xFF && jpeg_data[jpeg_size - 1] == 0xD9);
+
+            // Validate but don't log every frame (logging is slow)
+            ESP_LOGD(TAG, "JPEG validation: Start=%s End=%s Size=%zu",
+                     has_start ? "OK" : "BAD",
+                     has_end ? "OK" : "BAD",
+                     jpeg_size);
+
+            encode_time = (esp_timer_get_time() / 1000) - encode_start;
+
+            if (!has_start || !has_end)
+            {
+                ESP_LOGW(TAG, "JPEG validation failed, skipping frame");
+                continue;
+            }
+
             // Send JPEG over SPI
+            uint32_t spi_start = esp_timer_get_time() / 1000;
             esp_err_t ret = slave_spi_queue_frame(
                 g_frame_id++,
-                encoder.data(),
-                encoder.size());
+                jpeg_data,
+                jpeg_size);
+            spi_time = (esp_timer_get_time() / 1000) - spi_start;
 
-            if (ret == ESP_OK)
-            {
-                ESP_LOGD(TAG, "Frame %d queued for SPI (JPEG size: %zu bytes)", g_frame_id - 1, encoder.size());
+            uint32_t total_time = (esp_timer_get_time() / 1000) - frame_start_time;
+
+            // Log performance every 30 frames
+            if (g_frame_id % 30 == 0) {
+                ESP_LOGI(TAG, "Performance: Encode=%lums, SPI=%lums, Total=%lums, Target FPS=%.1f",
+                         encode_time, spi_time, total_time, 1000.0f / total_time);
             }
-            else
+
+            if (ret != ESP_OK)
             {
                 ESP_LOGW(TAG, "Failed to queue frame %d", g_frame_id - 1);
             }
-
-            // Mark frame consumed
-            //frame_cap_node->cam_fb_skip(1);
         }
         else
         {
             ESP_LOGD(TAG, "No valid frame available");
         }
 
-        // Target ~20 FPS
-        vTaskDelay(pdMS_TO_TICKS(50));
+        // Remove artificial delay - run as fast as possible
+        vTaskDelay(pdMS_TO_TICKS(15));  // Just yield to watchdog
     }
 }
 
