@@ -22,9 +22,6 @@ static const char *TAG = "Main";
 // ============================================================
 // Function Declarations
 // ============================================================
-void example_enrollment_workflow(void *pvParameters);
-void example_standby_workflow(void *pvParameters);
-void example_power_saving_loop(void *pvParameters);
 void create_uart_commands();
 void exit_standby_mode();
 void enter_standby_mode();
@@ -140,7 +137,7 @@ void create_uart_commands()
             }
 
             // Exit standby to start camera
-            exit_standby_mode();
+            //exit_standby_mode();
 
             // Start camera in separate task
             xTaskCreate(start_camera_task, "camera_task", 4096, NULL, 5, NULL);
@@ -201,6 +198,204 @@ void create_uart_commands()
     // test command
     g_uart->register_command("test", [](const char *cmd, cJSON *params)
                              { g_uart->send_status("ok", "UART test successful!"); });
+
+    // ============================================================
+    // Face Management Commands
+    // ============================================================
+
+    // Enroll face with optional name (auto-renames after enrollment if name provided)
+    g_uart->register_command("enroll_face", [](const char *cmd, cJSON *params)
+                             {
+        if (!g_recognition_app) {
+            g_uart->send_status("error", "Recognition app not initialized");
+            return;
+        }
+
+        // Get optional name parameter
+        std::string face_name;
+        if (params) {
+            cJSON* name_json = cJSON_GetObjectItem(params, "name");
+            if (name_json && cJSON_IsString(name_json)) {
+                face_name = cJSON_GetStringValue(name_json);
+            }
+        }
+
+        // Set pending enrollment name if provided
+        if (!face_name.empty()) {
+            g_recognition_app->set_pending_enrollment_name(face_name);
+        } else {
+            g_recognition_app->clear_pending_enrollment_name();
+        }
+
+        // Trigger enrollment (uses button handler to set mode)
+        if (g_button_handler) {
+            g_button_handler->trigger_enroll();
+
+            if (!face_name.empty()) {
+                char msg[128];
+                snprintf(msg, sizeof(msg), "Enrollment activated. Will auto-name as '%s'", face_name.c_str());
+                g_uart->send_status("ok", msg);
+            } else {
+                g_uart->send_status("ok", "Enrollment mode activated");
+            }
+        } else {
+            g_uart->send_status("error", "Button handler not available");
+        } });
+
+    // Delete face by ID
+    g_uart->register_command("delete_face", [](const char *cmd, cJSON *params)
+                             {
+        if (!g_recognition_app) {
+            g_uart->send_status("error", "Recognition app not initialized");
+            return;
+        }
+
+        if (!params) {
+            g_uart->send_status("error", "Missing parameters");
+            return;
+        }
+
+        auto* face_mgr = g_recognition_app->get_face_manager();
+        if (!face_mgr) {
+            g_uart->send_status("error", "Face manager not available");
+            return;
+        }
+
+        // Check if deleting by ID or name
+        cJSON* id_json = cJSON_GetObjectItem(params, "id");
+        cJSON* name_json = cJSON_GetObjectItem(params, "name");
+
+        esp_err_t ret = ESP_FAIL;
+        char response[128];
+
+        if (id_json && cJSON_IsNumber(id_json)) {
+            uint16_t id = (uint16_t)cJSON_GetNumberValue(id_json);
+            std::string name = face_mgr->get_face_name(id);
+            ret = face_mgr->delete_face(id);
+
+            if (ret == ESP_OK) {
+                snprintf(response, sizeof(response), "Deleted face ID %d ('%s')", id, name.c_str());
+                g_uart->send_status("ok", response);
+            } else {
+                g_uart->send_status("error", "Failed to delete face");
+            }
+        } else if (name_json && cJSON_IsString(name_json)) {
+            const char* name = cJSON_GetStringValue(name_json);
+            ret = face_mgr->delete_face_by_name(name);
+
+            if (ret == ESP_OK) {
+                snprintf(response, sizeof(response), "Deleted face '%s'", name);
+                g_uart->send_status("ok", response);
+            } else {
+                snprintf(response, sizeof(response), "Face '%s' not found", name);
+                g_uart->send_status("error", response);
+            }
+        } else {
+            g_uart->send_status("error", "Must provide 'id' (number) or 'name' (string)");
+        } });
+
+    // Rename face
+    g_uart->register_command("rename_face", [](const char *cmd, cJSON *params)
+                             {
+        if (!g_recognition_app) {
+            g_uart->send_status("error", "Recognition app not initialized");
+            return;
+        }
+
+        if (!params) {
+            g_uart->send_status("error", "Missing parameters");
+            return;
+        }
+
+        auto* face_mgr = g_recognition_app->get_face_manager();
+        if (!face_mgr) {
+            g_uart->send_status("error", "Face manager not available");
+            return;
+        }
+
+        cJSON* id_json = cJSON_GetObjectItem(params, "id");
+        cJSON* new_name_json = cJSON_GetObjectItem(params, "new_name");
+
+        if (!id_json || !cJSON_IsNumber(id_json)) {
+            g_uart->send_status("error", "Missing or invalid 'id' parameter");
+            return;
+        }
+
+        if (!new_name_json || !cJSON_IsString(new_name_json)) {
+            g_uart->send_status("error", "Missing or invalid 'new_name' parameter");
+            return;
+        }
+
+        uint16_t id = (uint16_t)cJSON_GetNumberValue(id_json);
+        const char* new_name = cJSON_GetStringValue(new_name_json);
+
+        esp_err_t ret = face_mgr->rename_face(id, new_name);
+
+        if (ret == ESP_OK) {
+            char response[128];
+            snprintf(response, sizeof(response), "Renamed face ID %d to '%s'", id, new_name);
+            g_uart->send_status("ok", response);
+        } else {
+            g_uart->send_status("error", "Failed to rename face (ID not found)");
+        } });
+
+    // List all faces
+    g_uart->register_command("list_faces", [](const char *cmd, cJSON *params)
+                             {
+        if (!g_recognition_app) {
+            g_uart->send_status("error", "Recognition app not initialized");
+            return;
+        }
+
+        auto* face_mgr = g_recognition_app->get_face_manager();
+        if (!face_mgr) {
+            g_uart->send_status("error", "Face manager not available");
+            return;
+        }
+
+        auto faces = face_mgr->get_all_faces();
+
+        // Build JSON response
+        cJSON* root = cJSON_CreateObject();
+        cJSON_AddStringToObject(root, "status", "ok");
+        cJSON_AddNumberToObject(root, "count", faces.size());
+
+        cJSON* faces_array = cJSON_CreateArray();
+        for (const auto& face : faces) {
+            cJSON* face_obj = cJSON_CreateObject();
+            cJSON_AddNumberToObject(face_obj, "id", std::get<0>(face));
+            cJSON_AddStringToObject(face_obj, "name", std::get<1>(face).c_str());
+            cJSON_AddStringToObject(face_obj, "enrolled", std::get<2>(face).c_str());
+            cJSON_AddItemToArray(faces_array, face_obj);
+        }
+        cJSON_AddItemToObject(root, "faces", faces_array);
+
+        char* json_str = cJSON_Print(root);
+        g_uart->send_json(json_str);
+        free(json_str);
+        cJSON_Delete(root); });
+
+    // Clear all faces
+    g_uart->register_command("clear_faces", [](const char *cmd, cJSON *params)
+                             {
+        if (!g_recognition_app) {
+            g_uart->send_status("error", "Recognition app not initialized");
+            return;
+        }
+
+        auto* face_mgr = g_recognition_app->get_face_manager();
+        if (!face_mgr) {
+            g_uart->send_status("error", "Face manager not available");
+            return;
+        }
+
+        esp_err_t ret = face_mgr->clear_all_faces();
+
+        if (ret == ESP_OK) {
+            g_uart->send_status("ok", "All faces cleared");
+        } else {
+            g_uart->send_status("error", "Failed to clear faces");
+        } });
 
 }
 
@@ -279,7 +474,7 @@ static void spi_frame_sender_task(void *pvParameters)
     ESP_LOGI(TAG, "SPI frame sender task started on Core %d", xPortGetCoreID());
 
     auto frame_cap_node = g_frame_cap->get_last_node();
-    RawJpegEncoder encoder(50); // JPEG quality 40 - Lower quality for better FPS
+    RawJpegEncoder encoder(50); // JPEG quality 0 - Lower quality for better FPS
 
     uint32_t frame_start_time = 0;
     uint32_t encode_time = 0;
@@ -420,122 +615,3 @@ static void spi_frame_sender_task(void *pvParameters)
 //     }
 // }
 
-// ============================================================
-// Example Workflows
-// ============================================================
-
-void example_enrollment_workflow(void *pvParameters)
-{
-    vTaskDelay(pdMS_TO_TICKS(3000));
-
-    ESP_LOGI("Example", "=== Enrollment Workflow ===");
-
-    ESP_LOGI("Example", "Enrolling first person...");
-    enroll_new_face();
-    vTaskDelay(pdMS_TO_TICKS(3000));
-
-    ESP_LOGI("Example", "Enrolling second person...");
-    enroll_new_face();
-    vTaskDelay(pdMS_TO_TICKS(3000));
-
-    ESP_LOGI("Example", "Starting continuous recognition...");
-    while (true)
-    {
-        recognize_face();
-        vTaskDelay(pdMS_TO_TICKS(2000));
-    }
-}
-
-void example_detection_control(void *pvParameters)
-{
-    vTaskDelay(pdMS_TO_TICKS(5000));
-
-    ESP_LOGI("Example", "=== Detection Control Example ===");
-
-    ESP_LOGI("Example", "Pausing detection for 5 seconds...");
-    pause_face_detection();
-    vTaskDelay(pdMS_TO_TICKS(5000));
-
-    ESP_LOGI("Example", "Resuming detection...");
-    resume_face_detection();
-
-    vTaskDelay(pdMS_TO_TICKS(1000));
-    recognize_face();
-
-    vTaskDelete(NULL);
-}
-
-void example_enrollment_session(void *pvParameters)
-{
-    vTaskDelay(pdMS_TO_TICKS(3000));
-
-    ESP_LOGI("Example", "=== Enrollment Session ===");
-    ESP_LOGI("Example", "Enrolling 5 faces, 5 seconds apart...");
-
-    for (int i = 1; i <= 5; i++)
-    {
-        ESP_LOGI("Example", "Enrolling person %d...", i);
-        enroll_new_face();
-        vTaskDelay(pdMS_TO_TICKS(5000));
-    }
-
-    ESP_LOGI("Example", "Enrollment complete!");
-    ESP_LOGI("Example", "Deleting last enrollment...");
-    delete_last_face();
-    ESP_LOGI("Example", "Final count: 4 faces enrolled");
-
-    vTaskDelete(NULL);
-}
-
-void example_standby_workflow(void *pvParameters)
-{
-    vTaskDelay(pdMS_TO_TICKS(5000));
-
-    ESP_LOGI("Example", "=== Standby Workflow ===");
-
-    ESP_LOGI("Example", "Enrolling face while active...");
-    enroll_new_face();
-    vTaskDelay(pdMS_TO_TICKS(3000));
-
-    ESP_LOGI("Example", "Testing recognition...");
-    recognize_face();
-    vTaskDelay(pdMS_TO_TICKS(3000));
-
-    ESP_LOGI("Example", "Entering standby for 10 seconds...");
-    enter_standby_mode();
-    vTaskDelay(pdMS_TO_TICKS(10000));
-
-    ESP_LOGI("Example", "Waking up from standby...");
-    exit_standby_mode();
-    vTaskDelay(pdMS_TO_TICKS(2000));
-
-    ESP_LOGI("Example", "Recognition after wake-up...");
-    recognize_face();
-
-    ESP_LOGI("Example", "Workflow complete!");
-    vTaskDelete(NULL);
-}
-
-void example_power_saving_loop(void *pvParameters)
-{
-    vTaskDelay(pdMS_TO_TICKS(3000));
-
-    ESP_LOGI("Example", "=== Power Saving Loop ===");
-    ESP_LOGI("Example", "Active for 5s, Standby for 30s, repeat...");
-
-    while (true)
-    {
-        ESP_LOGI("Example", "ACTIVE: Performing recognitions...");
-        exit_standby_mode();
-
-        for (int i = 0; i < 3; i++)
-        {
-            recognize_face();
-            vTaskDelay(pdMS_TO_TICKS(1500));
-        }
-
-        ESP_LOGI("Example", "STANDBY: Sleeping for 30 seconds...");
-        enter_standby_mode();
-        vTaskDelay(pdMS_TO_TICKS(30000));
-    }
-}

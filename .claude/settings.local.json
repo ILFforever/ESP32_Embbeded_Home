@@ -6,7 +6,10 @@
       "Read(//c/Users/paeki/OneDrive/Desktop/Embedded_Project/Doorbell_lcd/src/comm/**)",
       "Read(//c/Users/paeki/OneDrive/Desktop/Embedded_Project/Doorbell_lcd/src/**)",
       "Read(//c/Users/paeki/OneDrive/Desktop/Embedded_Project/Doorbell_lcd/include/**)",
-      "Read(//c/Users/paeki/esp/v5.5.1/esp-idf/components/esp_new_jpeg/**)"
+      "Read(//c/Users/paeki/esp/v5.5.1/esp-idf/components/esp_new_jpeg/**)",
+      "Read(//c/Users/Asus/Desktop/Embbed_PJ/Doorbell_lcd/src/**)",
+      "Read(//c/Users/Asus/esp/v5.5.1/esp-idf/components/esp-who/**)",
+      "Read(//c/Users/Asus/esp/v5.5.1/esp-idf/**)"
     ],
     "deny": [],
     "ask": []
