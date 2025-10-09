@@ -11,7 +11,8 @@ set(requires who_detect_app
              nvs_flash
              esp_wifi
              esp_event
-             esp_netif)
+             esp_netif
+             esp_new_jpeg)
 
 idf_component_register(SRC_DIRS ${src_dirs} 
                        INCLUDE_DIRS ${include_dirs} 

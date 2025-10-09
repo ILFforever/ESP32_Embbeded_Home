@@ -190,6 +190,6 @@ direct_dependencies:
 - espressif/human_face_recognition
 - espressif/usb_host_uvc
 - idf
-manifest_hash: 5c76e79ec02f801a0b788443e75dd17823219cd6fc07643fccef72479980403a
+manifest_hash: 36caf765424a009a95757e398ee8521f53fe13f9aa53e6944e28a13293518226
 target: esp32s3
 version: 2.0.0

@@ -18,6 +18,7 @@
   "idf.flashType": "UART",
   "files.associations": {
     "frame_cap_pipeline.hpp": "c",
-    "format": "cpp"
+    "format": "cpp",
+    "vector": "cpp"
   }
 }

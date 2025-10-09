@@ -33,6 +33,7 @@ WhoFrameCap *get_dvp_frame_cap_pipeline()
 
 WhoFrameCap *get_term_dvp_frame_cap_pipeline()
 {
+    // RGB565 from camera, will convert to RGB888 for hardware JPEG encoder
     auto cam = new WhoS3Cam(PIXFORMAT_RGB565, FRAMESIZE_240X240, MODEL_TIME + 2);
     auto frame_cap = new WhoFrameCap();
     frame_cap->add_node<WhoFetchNode>("FrameCapFetch", cam);

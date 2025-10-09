@@ -9,7 +9,6 @@
 #include "uart/uart_comm.hpp"
 #include <cstdio>
 #include "spi/slave_spi.hpp"
-#include "spi/spi_test.hpp"
 #include "jpeg/JpegEncoder.hpp"
 #include "esp_camera.h" // defines PIXFORMAT_JPEG and pixformat_t
 
@@ -203,42 +202,6 @@ void create_uart_commands()
     g_uart->register_command("test", [](const char *cmd, cJSON *params)
                              { g_uart->send_status("ok", "UART test successful!"); });
 
-    // spi_test command - sends 1KB packets every 2 seconds
-    g_uart->register_command("spi_test", [](const char *cmd, cJSON *params)
-                             {
-        g_uart->send_status("ok", "Starting SPI test (1KB packets every 2s)");
-        // Create test task on Core 0
-        xTaskCreatePinnedToCore(
-            [](void *pvParameters) {
-                spi_test_slave_send();
-            },
-            "spi_test",
-            4096,
-            nullptr,
-            4,
-            nullptr,
-            0
-        ); });
-
-    // spi_test_single command - sends one test packet
-    g_uart->register_command("spi_test_single", [](const char *cmd, cJSON *params)
-                             {
-        uint32_t size = 1024;  // Default 1KB
-        if (params) {
-            cJSON* sizeParam = cJSON_GetObjectItem(params, "size");
-            if (sizeParam && cJSON_IsNumber(sizeParam)) {
-                size = sizeParam->valueint;
-            }
-        }
-
-        esp_err_t ret = spi_send_test_packet(g_frame_id++, size);
-        if (ret == ESP_OK) {
-            char msg[50];
-            snprintf(msg, sizeof(msg), "Test packet queued (%lu bytes)", size);
-            g_uart->send_status("ok", msg);
-        } else {
-            g_uart->send_status("error", "Failed to queue test packet");
-        } });
 }
 
 // ============================================================
@@ -316,7 +279,7 @@ static void spi_frame_sender_task(void *pvParameters)
     ESP_LOGI(TAG, "SPI frame sender task started on Core %d", xPortGetCoreID());
 
     auto frame_cap_node = g_frame_cap->get_last_node();
-    RawJpegEncoder encoder(80); // JPEG quality 40 - Lower quality for better FPS
+    RawJpegEncoder encoder(50); // JPEG quality 40 - Lower quality for better FPS
 
     uint32_t frame_start_time = 0;
     uint32_t encode_time = 0;
@@ -337,12 +300,22 @@ static void spi_frame_sender_task(void *pvParameters)
             // Encode to JPEG if not already JPEG
             if (static_cast<pixformat_t>(frame->format) != PIXFORMAT_JPEG)
             {
+                // Determine pixel format from camera frame
+                RawJpegEncoder::PixelFormat fmt = RawJpegEncoder::PixelFormat::RGB565;
+                if (static_cast<pixformat_t>(frame->format) == PIXFORMAT_RGB888) {
+                    fmt = RawJpegEncoder::PixelFormat::RGB888;
+                } else if (static_cast<pixformat_t>(frame->format) == PIXFORMAT_YUV422) {
+                    fmt = RawJpegEncoder::PixelFormat::YUV422;
+                } else if (static_cast<pixformat_t>(frame->format) == PIXFORMAT_GRAYSCALE) {
+                    fmt = RawJpegEncoder::PixelFormat::GRAYSCALE;
+                }
+
                 encoded = encoder.encode(
                     static_cast<const uint8_t *>(frame->buf),
                     frame->len,
                     frame->width,
                     frame->height,
-                    RawJpegEncoder::PixelFormat::RGB565);
+                    fmt);
 
                 if (!encoded)
                 {
@@ -424,7 +397,7 @@ static void spi_frame_sender_task(void *pvParameters)
         }
 
         // Remove artificial delay - run as fast as possible
-        vTaskDelay(pdMS_TO_TICKS(15));  // Just yield to watchdog
+        vTaskDelay(pdMS_TO_TICKS(33)); 
     }
 }
 
