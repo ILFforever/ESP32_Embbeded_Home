@@ -16,6 +16,8 @@
 
 // Create objects
 TFT_eSPI tft = TFT_eSPI();
+TFT_eSprite videoSprite = TFT_eSprite(&tft);  // Sprite for video frames
+TFT_eSprite uiSprite = TFT_eSprite(&tft);     // Sprite for UI overlay
 Scheduler myscheduler;
 HardwareSerial SlaveSerial(2); // Use UART2
 extern TFT_eSPI tft;           // Your initialized display object
@@ -29,6 +31,11 @@ unsigned long last_pong_time = 0;
 #define PONG_TIMEOUT 10000
 int slave_status = 0; // 0 = standby, -1 = disconneccted, 1 = camera_running, 2 = face_recog running
 
+// UI state
+bool uiNeedsUpdate = true;  // Flag to redraw UI elements
+#define VIDEO_Y_OFFSET 20   // Reserve top 20px for status bar
+#define VIDEO_HEIGHT 200    // Video area height
+
 void checkUARTData();
 void sendPingTask();
 void checkPingTimeout();
@@ -37,6 +44,7 @@ void handleHTTPTask();
 void UpdateSPI();
 void ProcessFrame();
 void PrintStats();
+void drawUIOverlay();
 bool tft_jpg_render_callback(int16_t x, int16_t y, uint16_t w, uint16_t h, uint16_t *bitmap);
 
 Task taskCheckUART(20, TASK_FOREVER, &checkUARTData);         // Check UART buffer every 20ms
@@ -60,6 +68,17 @@ void setup()
   tft.init();
   tft.setRotation(0);
   delay(100);
+
+  // Initialize sprites
+  Serial.println("Creating video sprite...");
+  videoSprite.setColorDepth(16);  // 16-bit color for video
+  videoSprite.createSprite(tft.width(), VIDEO_HEIGHT);
+
+  Serial.println("Creating UI sprite...");
+  uiSprite.setColorDepth(16);  // 16-bit for UI overlay
+  uiSprite.createSprite(tft.width(), VIDEO_Y_OFFSET);
+
+  Serial.println("Sprites initialized successfully");
 
   SlaveSerial.begin(UART_BAUD, SERIAL_8N1, RX2, TX2);
   Serial.printf("UART initialized: RX=GPIO%d, TX=GPIO%d, Baud=%d\n", RX2, TX2, UART_BAUD);
@@ -97,7 +116,7 @@ void setup()
   taskCheckUART.enable();
   taskSendPing.enable();
   taskCheckTimeout.enable();
-  // taskLCDhandler.enable();
+  taskLCDhandler.enable();
   taskHTTPHandler.enable();
   taskUpdateSPI.enable();
   taskProcessFrame.enable();
@@ -117,20 +136,23 @@ void loop()
   myscheduler.execute();
 }
 
-// TJpg_Decoder callback: draw a decoded block to TFT
+// TJpg_Decoder callback: draw a decoded block to videoSprite
 bool tft_jpg_render_callback(int16_t x, int16_t y, uint16_t w, uint16_t h, uint16_t *bitmap)
 {
-  // Clip vertically
+  // Clip vertically to video sprite bounds
   int drawHeight = h;
-  if (y + h > tft.height())
-    drawHeight = tft.height() - y;
+  if (y + h > VIDEO_HEIGHT)
+    drawHeight = VIDEO_HEIGHT - y;
 
-  // Clip horizontally (optional)
+  // Clip horizontally
   int drawWidth = w;
-  if (x + w > tft.width())
-    drawWidth = tft.width() - x;
+  if (x + w > videoSprite.width())
+    drawWidth = videoSprite.width() - x;
 
-  tft.pushImage(x, y + 20, drawWidth, drawHeight, bitmap);
+  // Draw to video sprite instead of TFT directly
+  if (drawHeight > 0 && drawWidth > 0) {
+    videoSprite.pushImage(x, y, drawWidth, drawHeight, bitmap);
+  }
 
   return true; // always continue decoding
 }
@@ -141,7 +163,6 @@ void UpdateSPI()
   spiMaster.update();
 }
 
-// Task: Process complete frames (This marks frames as used)
 // Task: Process SPI frames and display on LCD
 void ProcessFrame()
 {
@@ -166,6 +187,7 @@ void ProcessFrame()
     currentFPS = frameCount * 1000.0 / (now - lastFrameTime);
     frameCount = 0;
     lastFrameTime = now;
+    uiNeedsUpdate = true;  // Trigger UI update for FPS counter
   }
 
   // Quick validation (minimal logging)
@@ -175,24 +197,85 @@ void ProcessFrame()
     return;
   }
 
-  // Decode and draw JPEG
+  // Clear video sprite
+  videoSprite.fillSprite(TFT_BLACK);
+
+  // Decode JPEG to video sprite (via callback)
   uint16_t result = TJpgDec.drawJpg(0, 0, frame, frameSize);
 
   if (result != 0) {  // JDR_OK = 0 means success!
     Serial.printf("[ERROR] JPEG decode failed: %d\n", result);
   }
 
-  // Draw FPS counter at bottom
+  // Draw FPS counter on video sprite
   if (currentFPS > 0) {
-    int16_t textY = tft.height() - 40;
-    tft.fillRect(40, textY - 2, 80, 12, TFT_BLACK);
-    tft.setTextColor(TFT_GREEN, TFT_BLACK);
-    tft.setCursor(40, textY);
-    tft.setTextSize(1);
-    tft.printf("FPS: %.1f", currentFPS);
+    int16_t textY = VIDEO_HEIGHT - 20;
+    videoSprite.fillRect(40, textY - 2, 80, 12, TFT_BLACK);
+    videoSprite.setTextColor(TFT_GREEN, TFT_BLACK);
+    videoSprite.setCursor(40, textY);
+    videoSprite.setTextSize(1);
+    videoSprite.printf("FPS: %.1f", currentFPS);
+  }
+
+  // Composite: Push video sprite to screen
+  videoSprite.pushSprite(0, VIDEO_Y_OFFSET);
+
+  // Draw UI overlay if needed
+  if (uiNeedsUpdate) {
+    drawUIOverlay();
+    uiNeedsUpdate = false;
   }
 
   spiMaster.ackFrame();
+}
+
+// Draw UI overlay (status bar, icons, etc.)
+void drawUIOverlay()
+{
+  // Clear UI sprite
+  uiSprite.fillSprite(TFT_BLACK);
+
+  // Draw status text
+  uiSprite.setTextColor(TFT_WHITE, TFT_BLACK);
+  uiSprite.setTextSize(1);
+  uiSprite.setCursor(5, 6);
+
+  // Display connection status
+  switch (slave_status) {
+    case -1:
+      uiSprite.setTextColor(TFT_RED, TFT_BLACK);
+      uiSprite.print("DISCONNECTED");
+      break;
+    case 0:
+      uiSprite.setTextColor(TFT_YELLOW, TFT_BLACK);
+      uiSprite.print("STANDBY");
+      break;
+    case 1:
+      uiSprite.setTextColor(TFT_GREEN, TFT_BLACK);
+      uiSprite.print("CAMERA ON");
+      break;
+    case 2:
+      uiSprite.setTextColor(TFT_CYAN, TFT_BLACK);
+      uiSprite.print("FACE RECOG");
+      break;
+    default:
+      uiSprite.setTextColor(TFT_WHITE, TFT_BLACK);
+      uiSprite.print("UNKNOWN");
+      break;
+  }
+
+  // Draw WiFi/connection indicator (right side)
+  uiSprite.setCursor(tft.width() - 40, 6);
+  if (ping_counter > 0 && (millis() - last_pong_time < 3000)) {
+    uiSprite.setTextColor(TFT_GREEN, TFT_BLACK);
+    uiSprite.print("OK");
+  } else {
+    uiSprite.setTextColor(TFT_RED, TFT_BLACK);
+    uiSprite.print("--");
+  }
+
+  // Push UI sprite to screen (top bar)
+  uiSprite.pushSprite(0, 0);
 }
 
 // Task: Print statistics

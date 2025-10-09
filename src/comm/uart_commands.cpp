@@ -24,7 +24,7 @@ void sendUARTCommand(const char *cmd, const char *param, int value)
 
   String output;
   serializeJson(doc, output);
-
+  Serial.println(output);
   SlaveSerial.println(output);
 }
 
@@ -87,7 +87,11 @@ void handleUARTResponse(String line)
 
     if (doc.containsKey("msg"))
     {
-      slave_status = (int)doc["msg"];
+      int new_status = (int)doc["msg"];
+      if (new_status != slave_status) {
+        slave_status = new_status;
+        uiNeedsUpdate = true;  // Trigger UI refresh on status change
+      }
       Serial.printf(" - %s", (const char *)doc["msg"]);
     }
 

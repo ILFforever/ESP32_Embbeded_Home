@@ -9,6 +9,7 @@ extern HardwareSerial SlaveSerial;
 extern uint32_t ping_counter;
 extern unsigned long last_pong_time;
 extern int slave_status;
+extern bool uiNeedsUpdate;
 
 // Send command to Slave
 void sendUARTCommand(const char *cmd, const char *param = nullptr, int value = -1);
