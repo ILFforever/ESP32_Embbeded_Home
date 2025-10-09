@@ -45,7 +45,7 @@ Task taskCheckTimeout(1000, TASK_FOREVER, &checkPingTimeout); // Check timeout e
 Task taskLCDhandler(50, TASK_FOREVER, &LCDhandler);           // handle display updates every 50ms (around 20 fps)
 Task taskHTTPHandler(10, TASK_FOREVER, &handleHTTPTask);      // Handle HTTP requests every 10ms
 Task taskUpdateSPI(10, TASK_FOREVER, &UpdateSPI);             // Update SPI every 10ms
-Task taskProcessFrame(5, TASK_FOREVER, &ProcessFrame);        // Check for frames every 50ms
+Task taskProcessFrame(5, TASK_FOREVER, &ProcessFrame);        // Check for frames every 5ms
 Task taskPrintStats(5000, TASK_FOREVER, &PrintStats);         // Print stats every 5s
 
 void setup()
@@ -130,7 +130,7 @@ bool tft_jpg_render_callback(int16_t x, int16_t y, uint16_t w, uint16_t h, uint1
   if (x + w > tft.width())
     drawWidth = tft.width() - x;
 
-  tft.pushImage(x, y, drawWidth, drawHeight, bitmap);
+  tft.pushImage(x, y + 20, drawWidth, drawHeight, bitmap);
 
   return true; // always continue decoding
 }

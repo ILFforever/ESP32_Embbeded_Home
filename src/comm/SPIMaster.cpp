@@ -9,86 +9,97 @@ SPIMaster::SPIMaster()
       _frameId(0),
       _frameTimestamp(0),
       _bytesReceived(0),
-      _chunkSize(4096),  // Match slave DMA buffer size
+      _chunkSize(4096), // Match slave DMA buffer size
       _framesReceived(0),
       _framesDropped(0),
       _lastTransferTime(0),
-      _taskHandle(nullptr) {
+      _taskHandle(nullptr)
+{
 }
 
-bool SPIMaster::begin() {
+bool SPIMaster::begin()
+{
     Serial.println("[SPI] Initializing Master...");
-    
+
     // Configure CS pin
     pinMode(SPI_CS, OUTPUT);
     digitalWrite(SPI_CS, HIGH);
-    
+
     // Initialize SPI bus
     _spi.begin(SPI_SCK, SPI_MISO, SPI_MOSI, SPI_CS);
-    
+
     Serial.println("[SPI] Master initialized");
     return true;
 }
 
-void SPIMaster::update() {
-    switch (_state) {
-        case SPI_IDLE:
-            // Try to receive header
-            if (_receiveHeader()) {
-                _state = SPI_RECEIVING_DATA;
-                _bytesReceived = 0;
+void SPIMaster::update()
+{
+    switch (_state)
+    {
+    case SPI_IDLE:
+        // Try to receive header
+        if (_receiveHeader())
+        {
+            _state = SPI_RECEIVING_DATA;
+            _bytesReceived = 0;
 
-                // Immediately start receiving data in tight loop
-                while (_state == SPI_RECEIVING_DATA) {
-                    _receiveDataChunk();
+            // Immediately start receiving data in tight loop
+            while (_state == SPI_RECEIVING_DATA)
+            {
+                _receiveDataChunk();
 
-                    if (_bytesReceived >= _frameSize) {
-                        _state = SPI_COMPLETE;
-                        _framesReceived++;
-                        _lastTransferTime = millis();
+                if (_bytesReceived >= _frameSize)
+                {
+                    _state = SPI_COMPLETE;
+                    _framesReceived++;
+                    _lastTransferTime = millis();
 
-                        Serial.print("[SPI] Frame ");
-                        Serial.print(_frameId);
-                        Serial.print(" complete (");
-                        Serial.print(_frameSize);
-                        Serial.println(" bytes)");
-                        break;
-                    }
-
-                    // Small yield to watchdog
-                    yield();
+                    delay(2);
+                    // Serial.print("[SPI] Frame ");
+                    // Serial.print(_frameId);
+                    // Serial.print(" complete (");
+                    // Serial.print(_frameSize);
+                    // Serial.println(" bytes)");
+                    break;
                 }
+
+                // Small yield to watchdog
+                yield();
             }
-            break;
+        }
+        break;
 
-        case SPI_RECEIVING_DATA:
-            // Should not get here anymore (handled in IDLE case)
-            // But keep for safety
-            _receiveDataChunk();
+    case SPI_RECEIVING_DATA:
+        // Should not get here anymore (handled in IDLE case)
+        // But keep for safety
+        _receiveDataChunk();
 
-            if (_bytesReceived >= _frameSize) {
-                _state = SPI_COMPLETE;
-                _framesReceived++;
-                _lastTransferTime = millis();
-            }
-            break;
+        if (_bytesReceived >= _frameSize)
+        {
+            _state = SPI_COMPLETE;
+            _framesReceived++;
+            _lastTransferTime = millis();
+        }
+        break;
 
-        case SPI_COMPLETE:
-            // Waiting for ackFrame()
-            break;
+    case SPI_COMPLETE:
+        // Waiting for ackFrame()
+        break;
 
-        case SPI_ERROR:
-            // Reset to idle
-            _state = SPI_IDLE;
-            if (_frameBuffer != nullptr) {
-                delete[] _frameBuffer;
-                _frameBuffer = nullptr;
-            }
-            break;
+    case SPI_ERROR:
+        // Reset to idle
+        _state = SPI_IDLE;
+        if (_frameBuffer != nullptr)
+        {
+            delete[] _frameBuffer;
+            _frameBuffer = nullptr;
+        }
+        break;
     }
 }
 
-bool SPIMaster::_receiveHeader() {
+bool SPIMaster::_receiveHeader()
+{
     FrameHeader header;
 
     _spi.beginTransaction(SPISettings(SPI_SPEED, MSBFIRST, SPI_MODE0));
@@ -96,8 +107,9 @@ bool SPIMaster::_receiveHeader() {
     delayMicroseconds(10);
 
     // Read header byte-by-byte
-    for (size_t i = 0; i < sizeof(FrameHeader); i++) {
-        ((uint8_t*)&header)[i] = _spi.transfer(0x00);
+    for (size_t i = 0; i < sizeof(FrameHeader); i++)
+    {
+        ((uint8_t *)&header)[i] = _spi.transfer(0x00);
     }
 
     delayMicroseconds(10);
@@ -105,48 +117,54 @@ bool SPIMaster::_receiveHeader() {
     _spi.endTransaction();
 
     // Validate magic bytes
-    if (header.magic[0] != 0x55 || header.magic[1] != 0xAA) {
+    if (header.magic[0] != 0x55 || header.magic[1] != 0xAA)
+    {
         // No valid header, not an error, just no data yet
         return false;
     }
-    
+
     // Parse header
-    _frameId = _parseBE16((uint8_t*)&header.frame_id);
-    _frameSize = _parseBE32((uint8_t*)&header.frame_size);
-    _frameTimestamp = _parseBE32((uint8_t*)&header.timestamp);
-    
+    _frameId = _parseBE16((uint8_t *)&header.frame_id);
+    _frameSize = _parseBE32((uint8_t *)&header.frame_size);
+    _frameTimestamp = _parseBE32((uint8_t *)&header.timestamp);
+
     // Validate frame size (allow up to 200KB for RGB frames)
-    if (_frameSize == 0 || _frameSize > 200000) {
+    if (_frameSize == 0 || _frameSize > 200000)
+    {
         Serial.print("[SPI] ERROR: Invalid frame size: ");
         Serial.println(_frameSize);
         _state = SPI_ERROR;
         return false;
     }
-    
+
     // Allocate buffer
-    if (_frameBuffer != nullptr) {
+    if (_frameBuffer != nullptr)
+    {
         Serial.println("[SPI] WARNING: Dropping previous frame");
         delete[] _frameBuffer;
         _framesDropped++;
     }
-    
+
     _frameBuffer = new uint8_t[_frameSize];
-    if (_frameBuffer == nullptr) {
+    if (_frameBuffer == nullptr)
+    {
         Serial.println("[SPI] ERROR: Failed to allocate buffer");
         _state = SPI_ERROR;
         return false;
     }
-    
-    Serial.print("[SPI] Header received: Frame ");
-    Serial.print(_frameId);
-    Serial.print(", Size ");
-    Serial.println(_frameSize);
-    
+    delay(2);
+    // Serial.print("[SPI] Header received: Frame ");
+    // Serial.print(_frameId);
+    // Serial.print(", Size ");
+    // Serial.println(_frameSize);
+
     return true;
 }
 
-void SPIMaster::_receiveDataChunk() {
-    if (_frameBuffer == nullptr) {
+void SPIMaster::_receiveDataChunk()
+{
+    if (_frameBuffer == nullptr)
+    {
         _state = SPI_ERROR;
         return;
     }
@@ -160,9 +178,9 @@ void SPIMaster::_receiveDataChunk() {
 
     // Use writeBytes to send dummy data and read response
     // This is much faster than byte-by-byte transfer()
-    uint8_t* rxBuf = &_frameBuffer[_bytesReceived];
-    memset(rxBuf, 0, transferSize);  // Initialize with zeros
-    _spi.transferBytes(rxBuf, rxBuf, transferSize);  // In-place transfer
+    uint8_t *rxBuf = &_frameBuffer[_bytesReceived];
+    memset(rxBuf, 0, transferSize);                 // Initialize with zeros
+    _spi.transferBytes(rxBuf, rxBuf, transferSize); // In-place transfer
 
     delayMicroseconds(10);
     _deselectSlave();
@@ -174,59 +192,70 @@ void SPIMaster::_receiveDataChunk() {
     delayMicroseconds(100);
 
     // Progress indicator every 5KB
-    if (_bytesReceived % 5120 == 0) {
+    if (_bytesReceived % 5120 == 0)
+    {
         Serial.print(".");
     }
 }
 
-void SPIMaster::ackFrame() {
-    if (_state == SPI_COMPLETE) {
+void SPIMaster::ackFrame()
+{
+    if (_state == SPI_COMPLETE)
+    {
         // Free buffer
-        if (_frameBuffer != nullptr) {
+        if (_frameBuffer != nullptr)
+        {
             delete[] _frameBuffer;
             _frameBuffer = nullptr;
         }
-        
+
         _frameSize = 0;
         _bytesReceived = 0;
         _state = SPI_IDLE;
     }
 }
 
-uint16_t SPIMaster::_parseBE16(uint8_t* data) {
+uint16_t SPIMaster::_parseBE16(uint8_t *data)
+{
     return (data[0] << 8) | data[1];
 }
 
-uint32_t SPIMaster::_parseBE32(uint8_t* data) {
+uint32_t SPIMaster::_parseBE32(uint8_t *data)
+{
     return (data[0] << 24) | (data[1] << 16) | (data[2] << 8) | data[3];
 }
 
-void SPIMaster::_selectSlave() {
+void SPIMaster::_selectSlave()
+{
     digitalWrite(SPI_CS, LOW);
 }
 
-void SPIMaster::_deselectSlave() {
+void SPIMaster::_deselectSlave()
+{
     digitalWrite(SPI_CS, HIGH);
 }
 
 // Start dedicated SPI task on Core 1
-bool SPIMaster::startTask() {
-    if (_taskHandle != nullptr) {
+bool SPIMaster::startTask()
+{
+    if (_taskHandle != nullptr)
+    {
         Serial.println("[SPI] Task already running");
         return false;
     }
 
     BaseType_t result = xTaskCreatePinnedToCore(
-        _spiTaskWrapper,    // Task function
-        "spi_master",       // Task name
-        8192,               // Stack size (larger for SPI operations)
-        this,               // Task parameter (this pointer)
-        5,                  // Priority (high priority for real-time SPI)
-        &_taskHandle,       // Task handle
-        1                   // Core 1
+        _spiTaskWrapper, // Task function
+        "spi_master",    // Task name
+        8192,            // Stack size (larger for SPI operations)
+        this,            // Task parameter (this pointer)
+        5,               // Priority (high priority for real-time SPI)
+        &_taskHandle,    // Task handle
+        1                // Core 1
     );
 
-    if (result != pdPASS) {
+    if (result != pdPASS)
+    {
         Serial.println("[SPI] Failed to create task");
         return false;
     }
@@ -236,8 +265,10 @@ bool SPIMaster::startTask() {
 }
 
 // Stop SPI task
-void SPIMaster::stopTask() {
-    if (_taskHandle != nullptr) {
+void SPIMaster::stopTask()
+{
+    if (_taskHandle != nullptr)
+    {
         vTaskDelete(_taskHandle);
         _taskHandle = nullptr;
         Serial.println("[SPI] Task stopped");
@@ -245,26 +276,29 @@ void SPIMaster::stopTask() {
 }
 
 // Static wrapper for FreeRTOS task
-void SPIMaster::_spiTaskWrapper(void* pvParameters) {
-    SPIMaster* instance = static_cast<SPIMaster*>(pvParameters);
+void SPIMaster::_spiTaskWrapper(void *pvParameters)
+{
+    SPIMaster *instance = static_cast<SPIMaster *>(pvParameters);
     instance->_spiTask();
 }
 
 // SPI task loop running on Core 1
-void SPIMaster::_spiTask() {
+void SPIMaster::_spiTask()
+{
     Serial.println("[SPI] Task loop started on Core 1");
 
-    while (true) {
+    while (true)
+    {
         // Continuously call update() which now reads full frames in tight loop
         update();
 
         // Small delay only when idle to prevent CPU hogging
-        if (_state == SPI_IDLE || _state == SPI_COMPLETE) {
-            vTaskDelay(pdMS_TO_TICKS(1));  // 1ms delay when idle
+        if (_state == SPI_IDLE || _state == SPI_COMPLETE)
+        {
+            vTaskDelay(pdMS_TO_TICKS(1)); // 1ms delay when idle
         }
 
         // Yield to watchdog
         yield();
     }
 }
-

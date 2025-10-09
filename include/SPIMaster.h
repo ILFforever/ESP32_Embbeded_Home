@@ -11,8 +11,7 @@
 #define SPI_MOSI 27
 #define SPI_CS   14
 
-// SPI speed - 20MHz is optimal for stability and performance
-#define SPI_SPEED 20000000  // 20 MHz
+#define SPI_SPEED 20000000  // 40 MHz
 
 // Transfer states
 enum SPITransferState {
