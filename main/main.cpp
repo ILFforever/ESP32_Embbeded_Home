@@ -136,8 +136,6 @@ void create_uart_commands()
                 return;
             }
 
-            // Exit standby to start camera
-            //exit_standby_mode();
 
             // Start camera in separate task
             xTaskCreate(start_camera_task, "camera_task", 4096, NULL, 5, NULL);
@@ -204,198 +202,45 @@ void create_uart_commands()
     // ============================================================
 
     // Enroll face with optional name (auto-renames after enrollment if name provided)
+    // Enroll face (native ESP-WHO - no name support)
     g_uart->register_command("enroll_face", [](const char *cmd, cJSON *params)
                              {
-        if (!g_recognition_app) {
-            g_uart->send_status("error", "Recognition app not initialized");
-            return;
-        }
-
-        // Get optional name parameter
-        std::string face_name;
-        if (params) {
-            cJSON* name_json = cJSON_GetObjectItem(params, "name");
-            if (name_json && cJSON_IsString(name_json)) {
-                face_name = cJSON_GetStringValue(name_json);
-            }
-        }
-
-        // Set pending enrollment name if provided
-        if (!face_name.empty()) {
-            g_recognition_app->set_pending_enrollment_name(face_name);
-        } else {
-            g_recognition_app->clear_pending_enrollment_name();
-        }
-
-        // Trigger enrollment (uses button handler to set mode)
         if (g_button_handler) {
             g_button_handler->trigger_enroll();
-
-            if (!face_name.empty()) {
-                char msg[128];
-                snprintf(msg, sizeof(msg), "Enrollment activated. Will auto-name as '%s'", face_name.c_str());
-                g_uart->send_status("ok", msg);
-            } else {
-                g_uart->send_status("ok", "Enrollment mode activated");
-            }
+            g_uart->send_status("ok", "Enrollment mode activated. Present face within 10 seconds.");
         } else {
             g_uart->send_status("error", "Button handler not available");
         } });
 
-    // Delete face by ID
-    g_uart->register_command("delete_face", [](const char *cmd, cJSON *params)
+    // Delete last enrolled face (native ESP-WHO only supports delete_last)
+    g_uart->register_command("delete_last", [](const char *cmd, cJSON *params)
                              {
-        if (!g_recognition_app) {
-            g_uart->send_status("error", "Recognition app not initialized");
-            return;
-        }
-
-        if (!params) {
-            g_uart->send_status("error", "Missing parameters");
-            return;
-        }
-
-        auto* face_mgr = g_recognition_app->get_face_manager();
-        if (!face_mgr) {
-            g_uart->send_status("error", "Face manager not available");
-            return;
-        }
-
-        // Check if deleting by ID or name
-        cJSON* id_json = cJSON_GetObjectItem(params, "id");
-        cJSON* name_json = cJSON_GetObjectItem(params, "name");
-
-        esp_err_t ret = ESP_FAIL;
-        char response[128];
-
-        if (id_json && cJSON_IsNumber(id_json)) {
-            uint16_t id = (uint16_t)cJSON_GetNumberValue(id_json);
-            std::string name = face_mgr->get_face_name(id);
-            ret = face_mgr->delete_face(id);
-
-            if (ret == ESP_OK) {
-                snprintf(response, sizeof(response), "Deleted face ID %d ('%s')", id, name.c_str());
-                g_uart->send_status("ok", response);
-            } else {
-                g_uart->send_status("error", "Failed to delete face");
-            }
-        } else if (name_json && cJSON_IsString(name_json)) {
-            const char* name = cJSON_GetStringValue(name_json);
-            ret = face_mgr->delete_face_by_name(name);
-
-            if (ret == ESP_OK) {
-                snprintf(response, sizeof(response), "Deleted face '%s'", name);
-                g_uart->send_status("ok", response);
-            } else {
-                snprintf(response, sizeof(response), "Face '%s' not found", name);
-                g_uart->send_status("error", response);
-            }
+        if (g_button_handler) {
+            g_button_handler->trigger_delete();
+            g_uart->send_status("ok", "Deleted last enrolled face");
         } else {
-            g_uart->send_status("error", "Must provide 'id' (number) or 'name' (string)");
+            g_uart->send_status("error", "Button handler not available");
         } });
 
-    // Rename face
-    g_uart->register_command("rename_face", [](const char *cmd, cJSON *params)
+    // Force reset database (delete database file)
+    g_uart->register_command("reset_database", [](const char *cmd, cJSON *params)
+                             {
+        // Delete database file directly
+        remove("/storage/face.db");
+        remove("/spiffs/face.db");
+
+        g_uart->send_status("ok", "Database deleted. Restart camera to recreate."); });
+
+    // Resume detection callback (workaround for detection stopping after enroll/recognize)
+    g_uart->register_command("resume_detection", [](const char *cmd, cJSON *params)
                              {
         if (!g_recognition_app) {
             g_uart->send_status("error", "Recognition app not initialized");
             return;
         }
 
-        if (!params) {
-            g_uart->send_status("error", "Missing parameters");
-            return;
-        }
-
-        auto* face_mgr = g_recognition_app->get_face_manager();
-        if (!face_mgr) {
-            g_uart->send_status("error", "Face manager not available");
-            return;
-        }
-
-        cJSON* id_json = cJSON_GetObjectItem(params, "id");
-        cJSON* new_name_json = cJSON_GetObjectItem(params, "new_name");
-
-        if (!id_json || !cJSON_IsNumber(id_json)) {
-            g_uart->send_status("error", "Missing or invalid 'id' parameter");
-            return;
-        }
-
-        if (!new_name_json || !cJSON_IsString(new_name_json)) {
-            g_uart->send_status("error", "Missing or invalid 'new_name' parameter");
-            return;
-        }
-
-        uint16_t id = (uint16_t)cJSON_GetNumberValue(id_json);
-        const char* new_name = cJSON_GetStringValue(new_name_json);
-
-        esp_err_t ret = face_mgr->rename_face(id, new_name);
-
-        if (ret == ESP_OK) {
-            char response[128];
-            snprintf(response, sizeof(response), "Renamed face ID %d to '%s'", id, new_name);
-            g_uart->send_status("ok", response);
-        } else {
-            g_uart->send_status("error", "Failed to rename face (ID not found)");
-        } });
-
-    // List all faces
-    g_uart->register_command("list_faces", [](const char *cmd, cJSON *params)
-                             {
-        if (!g_recognition_app) {
-            g_uart->send_status("error", "Recognition app not initialized");
-            return;
-        }
-
-        auto* face_mgr = g_recognition_app->get_face_manager();
-        if (!face_mgr) {
-            g_uart->send_status("error", "Face manager not available");
-            return;
-        }
-
-        auto faces = face_mgr->get_all_faces();
-
-        // Build JSON response
-        cJSON* root = cJSON_CreateObject();
-        cJSON_AddStringToObject(root, "status", "ok");
-        cJSON_AddNumberToObject(root, "count", faces.size());
-
-        cJSON* faces_array = cJSON_CreateArray();
-        for (const auto& face : faces) {
-            cJSON* face_obj = cJSON_CreateObject();
-            cJSON_AddNumberToObject(face_obj, "id", std::get<0>(face));
-            cJSON_AddStringToObject(face_obj, "name", std::get<1>(face).c_str());
-            cJSON_AddStringToObject(face_obj, "enrolled", std::get<2>(face).c_str());
-            cJSON_AddItemToArray(faces_array, face_obj);
-        }
-        cJSON_AddItemToObject(root, "faces", faces_array);
-
-        char* json_str = cJSON_Print(root);
-        g_uart->send_json(json_str);
-        free(json_str);
-        cJSON_Delete(root); });
-
-    // Clear all faces
-    g_uart->register_command("clear_faces", [](const char *cmd, cJSON *params)
-                             {
-        if (!g_recognition_app) {
-            g_uart->send_status("error", "Recognition app not initialized");
-            return;
-        }
-
-        auto* face_mgr = g_recognition_app->get_face_manager();
-        if (!face_mgr) {
-            g_uart->send_status("error", "Face manager not available");
-            return;
-        }
-
-        esp_err_t ret = face_mgr->clear_all_faces();
-
-        if (ret == ESP_OK) {
-            g_uart->send_status("ok", "All faces cleared");
-        } else {
-            g_uart->send_status("error", "Failed to clear faces");
-        } });
+        g_recognition_app->restore_detection_callback();
+        g_uart->send_status("ok", "Detection callback restored"); });
 
 }
 

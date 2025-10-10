@@ -13,22 +13,21 @@ XiaoRecognitionAppTerm::XiaoRecognitionAppTerm(frame_cap::WhoFrameCap *frame_cap
 {
     init_led();
 
-    // Create FaceManager with SPIFFS paths (XIAO ESP32-S3 Sense uses SPIFFS only)
+    // Use native ESP-WHO HumanFaceRecognizer
     char db_path[64];
-    char names_path[64];
-#if CONFIG_DB_SPIFFS
+#if CONFIG_DB_FATFS_FLASH
+    snprintf(db_path, sizeof(db_path), "/storage/face.db");
+#elif CONFIG_DB_SPIFFS
     snprintf(db_path, sizeof(db_path), "%s/face.db", CONFIG_BSP_SPIFFS_MOUNT_POINT);
-    snprintf(names_path, sizeof(names_path), "%s/face_names.json", CONFIG_BSP_SPIFFS_MOUNT_POINT);
 #else
-    // Default to /spiffs if config not set
     snprintf(db_path, sizeof(db_path), "/spiffs/face.db");
-    snprintf(names_path, sizeof(names_path), "/spiffs/face_names.json");
 #endif
 
-    m_face_manager = new recognition::FaceManager(db_path, names_path);
+    // Create native ESP-WHO recognizer
+    auto recognizer = new HumanFaceRecognizer(db_path);
 
     // Set recognizer and model
-    m_recognition->set_recognizer(m_face_manager->get_recognizer());
+    m_recognition->set_recognizer(recognizer);
     m_recognition->set_detect_model(new HumanFaceDetect());
 
     // Set recognition result callback
@@ -42,15 +41,17 @@ XiaoRecognitionAppTerm::XiaoRecognitionAppTerm(frame_cap::WhoFrameCap *frame_cap
         std::bind(&XiaoRecognitionAppTerm::detect_result_cb, this, std::placeholders::_1)
     );
 
-    // Create button handler
-    m_recognition_button = button::get_recognition_button(
-        button::recognition_button_type_t::PHYSICAL, recognition_task);
+    // DON'T create ESP-WHO physical button handler - XIAO doesn't have these buttons
+    // and floating GPIO pins cause spurious ENROLL/DELETE events
+    // Use UART commands or XiaoRecognitionButton instead
+    m_recognition_button = nullptr;
 }
 
 XiaoRecognitionAppTerm::~XiaoRecognitionAppTerm()
 {
-    delete m_recognition_button;
-    delete m_face_manager;
+    if (m_recognition_button) {
+        delete m_recognition_button;
+    }
 }
 
 bool XiaoRecognitionAppTerm::run()
@@ -62,14 +63,6 @@ bool XiaoRecognitionAppTerm::run()
     ret &= m_recognition->get_detect_task()->run(3584, 2, 1);
     ret &= m_recognition->get_recognition_task()->run(3584, 2, 1);
     return ret;
-}
-
-uint16_t XiaoRecognitionAppTerm::enroll_face_with_name(const dl::image::img_t& img,
-                                                       const std::list<dl::detect::result_t>& detect_res,
-                                                       const std::string& name)
-{
-    // Use FaceManager's enroll_face which handles naming
-    return m_face_manager->enroll_face(img, detect_res, name);
 }
 
 void XiaoRecognitionAppTerm::init_led()
@@ -110,31 +103,15 @@ void XiaoRecognitionAppTerm::detect_result_cb(const detect::WhoDetect::result_t 
 void XiaoRecognitionAppTerm::recognition_result_cb(const std::string &result)
 {
     ESP_LOGI(TAG, "Recognition: %s", result.c_str());
+}
 
-    // Check if this is an enrollment result and we have a pending name
-    if (!m_pending_enrollment_name.empty() && result.find("enrolled") != std::string::npos) {
-        // Extract the ID from the result string (format: "id: X enrolled.")
-        size_t id_pos = result.find("id: ");
-        if (id_pos != std::string::npos) {
-            size_t num_start = id_pos + 4;
-            size_t num_end = result.find(" ", num_start);
-            if (num_end != std::string::npos) {
-                std::string id_str = result.substr(num_start, num_end - num_start);
-                uint16_t face_id = (uint16_t)std::stoi(id_str);
-
-                // Auto-rename the face
-                esp_err_t ret = m_face_manager->rename_face(face_id, m_pending_enrollment_name);
-                if (ret == ESP_OK) {
-                    ESP_LOGI(TAG, "Auto-renamed face ID %d to '%s'", face_id, m_pending_enrollment_name.c_str());
-                } else {
-                    ESP_LOGW(TAG, "Failed to auto-rename face ID %d", face_id);
-                }
-
-                // Clear the pending name
-                m_pending_enrollment_name.clear();
-            }
-        }
-    }
+void XiaoRecognitionAppTerm::restore_detection_callback()
+{
+    auto detect_task = m_recognition->get_detect_task();
+    detect_task->set_detect_result_cb(
+        std::bind(&XiaoRecognitionAppTerm::detect_result_cb, this, std::placeholders::_1)
+    );
+    ESP_LOGI(TAG, "Detection callback restored");
 }
 
 } // namespace app

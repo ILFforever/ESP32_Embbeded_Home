@@ -2,7 +2,12 @@
 # CMakeLists in this exact order for cmake to work correctly
 cmake_minimum_required(VERSION 3.5)
 
-set(ESP_WHO_PATH C:/Users/Asus/esp/v5.5.1/esp-idf/components/esp-who)
+# Use ESP_WHO_PATH environment variable if set, otherwise derive from IDF_PATH
+if(DEFINED ENV{ESP_WHO_PATH})
+    set(ESP_WHO_PATH $ENV{ESP_WHO_PATH})
+else()
+    set(ESP_WHO_PATH $ENV{IDF_PATH}/components/esp-who)
+endif()
 
 set(EXTRA_COMPONENT_DIRS ${ESP_WHO_PATH}/components/who_task
                          ${ESP_WHO_PATH}/components/who_peripherals/who_usb
