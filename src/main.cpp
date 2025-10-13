@@ -33,7 +33,7 @@ int slave_status = 0; // 0 = standby, -1 = disconneccted, 1 = camera_running, 2 
 
 // UI state
 bool uiNeedsUpdate = true;  // Flag to redraw UI elements
-#define VIDEO_Y_OFFSET 20   // Reserve top 20px for status bar
+#define VIDEO_Y_OFFSET 40   // Reserve top 20px for status bar
 #define VIDEO_HEIGHT 200    // Video area height
 
 void checkUARTData();
@@ -355,7 +355,7 @@ void LCDhandler()
 {
   if (!spiMaster.isFrameReady())
   {
-    Serial.println("No frame ready");
+    //Serial.println("No frame ready");
     return;
   }
 

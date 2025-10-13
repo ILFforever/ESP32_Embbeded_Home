@@ -60,15 +60,18 @@ void handleUARTResponse(String line)
     return;
   }
 
-  // Serial.print("📥 RX from Slave: ");
-  // Serial.println(line);
+  Serial.print("📥 RX from Slave: ");
+  Serial.println(line);
 
-  JsonDocument doc;
+  // Use larger buffer for complex responses like list_faces
+  StaticJsonDocument<2048> doc;
   DeserializationError error = deserializeJson(doc, line);
   if (error)
   {
     Serial.print("❌ JSON parse error: ");
     Serial.println(error.c_str());
+    Serial.print("Line length: ");
+    Serial.println(line.length());
     return;
   }
 
@@ -79,8 +82,25 @@ void handleUARTResponse(String line)
     return;
   }
 
+  // Handle list_faces response
+  if (doc.containsKey("faces") && doc.containsKey("count"))
+  {
+    int count = doc["count"];
+    Serial.printf("✅ Found %d faces:\n", count);
+
+    JsonArray faces = doc["faces"];
+    for (JsonObject face : faces)
+    {
+      int id = face["id"];
+      const char* name = face["name"];
+      const char* enrolled = face["enrolled"];
+      Serial.printf("  - ID %d: %s (enrolled: %s)\n", id, name, enrolled);
+    }
+    return;
+  }
+
   // Handle status response
-  else if (doc.containsKey("status"))
+  if (doc.containsKey("status"))
   {
     const char *status = doc["status"];
     Serial.printf("✅ Status: %s", status);
