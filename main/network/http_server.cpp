@@ -18,33 +18,42 @@ static const char *TAG = "HTTP_SERVER";
 // Global references
 static who::standby::XiaoStandbyControl *g_standby_ctrl = nullptr;
 static who::recognition::WhoRecognition *g_recognition = nullptr;
+static who::recognition::FaceDbReader *g_face_db_reader = nullptr;
 
 // Status page
 static esp_err_t status_handler(httpd_req_t *req)
 {
-    char resp[768];
+    int face_count = g_face_db_reader ? g_face_db_reader->get_face_count() : 0;
+
+    char resp[1024];
     snprintf(resp, sizeof(resp),
         "<!DOCTYPE html><html><head><title>Doorbell Camera</title>"
         "<meta http-equiv='refresh' content='5'>"
-        "<style>body{font-family:Arial;margin:20px;} .status{padding:10px;margin:10px;border:1px solid #ccc;}</style>"
+        "<style>body{font-family:Arial;margin:20px;} .status{padding:10px;margin:10px;border:1px solid #ccc;} button{padding:10px;margin:5px;}</style>"
         "</head><body>"
         "<h1>Doorbell Camera Status</h1>"
         "<div class='status'><b>Power State:</b> %s</div>"
         "<div class='status'><b>Active Tasks:</b> %u</div>"
         "<div class='status'><b>Free Heap:</b> %lu bytes</div>"
         "<div class='status'><b>PSRAM Free:</b> %zu bytes</div>"
+        "<div class='status'><b>Enrolled Faces:</b> %d</div>"
         "<h2>Controls</h2>"
         "<a href='/standby'><button>Enter Standby</button></a> "
         "<a href='/wake'><button>Wake Up</button></a> "
         "<a href='/enroll'><button>Enroll Face</button></a> "
         "<a href='/recognize'><button>Recognize</button></a>"
+        "<h2>Face Database</h2>"
+        "<a href='/face_count'><button>View Face Count</button></a> "
+        "<a href='/face_list'><button>View Face List</button></a> "
+        "<a href='/db_status'><button>Database Status</button></a>"
         "</body></html>",
         g_standby_ctrl ? g_standby_ctrl->get_power_state() : "UNKNOWN",
         uxTaskGetNumberOfTasks(),
         esp_get_free_heap_size(),
-        heap_caps_get_free_size(MALLOC_CAP_SPIRAM)
+        heap_caps_get_free_size(MALLOC_CAP_SPIRAM),
+        face_count
     );
-    
+
     httpd_resp_set_type(req, "text/html");
     return httpd_resp_send(req, resp, HTTPD_RESP_USE_STRLEN);
 }
@@ -88,12 +97,99 @@ static esp_err_t enroll_handler(httpd_req_t *req)
 static esp_err_t recognize_handler(httpd_req_t *req)
 {
     if (g_recognition) {
-        xEventGroupSetBits(g_recognition->get_recognition_task()->get_event_group(), 
+        xEventGroupSetBits(g_recognition->get_recognition_task()->get_event_group(),
                           who::recognition::WhoRecognitionCore::RECOGNIZE);
         httpd_resp_sendstr(req, "<html><body>Recognizing... Look at camera. <a href='/'>Back</a></body></html>");
     } else {
         httpd_resp_sendstr(req, "<html><body>Recognition not available. <a href='/'>Back</a></body></html>");
     }
+    return ESP_OK;
+}
+
+// Get face count from database
+static esp_err_t face_count_handler(httpd_req_t *req)
+{
+    if (!g_face_db_reader) {
+        httpd_resp_sendstr(req, "<html><body>Face DB reader not available. <a href='/'>Back</a></body></html>");
+        return ESP_OK;
+    }
+
+    int face_count = g_face_db_reader->get_face_count();
+    char resp[256];
+    snprintf(resp, sizeof(resp),
+        "<html><body>"
+        "<h2>Face Database Count</h2>"
+        "<p>Total enrolled faces: <b>%d</b></p>"
+        "<a href='/'>Back to Home</a>"
+        "</body></html>",
+        face_count);
+
+    httpd_resp_sendstr(req, resp);
+    return ESP_OK;
+}
+
+// Display all faces in database
+static esp_err_t face_list_handler(httpd_req_t *req)
+{
+    if (!g_face_db_reader) {
+        httpd_resp_sendstr(req, "<html><body>Face DB reader not available. <a href='/'>Back</a></body></html>");
+        return ESP_OK;
+    }
+
+    int face_count = g_face_db_reader->get_face_count();
+
+    char resp[1024];
+    int offset = snprintf(resp, sizeof(resp),
+        "<html><head><title>Face Database</title>"
+        "<style>body{font-family:Arial;margin:20px;} .face-item{padding:10px;margin:5px;border:1px solid #ccc;}</style>"
+        "</head><body>"
+        "<h1>Face Database</h1>"
+        "<p>Total enrolled faces: <b>%d</b></p>",
+        face_count);
+
+    if (face_count > 0) {
+        offset += snprintf(resp + offset, sizeof(resp) - offset, "<h2>Enrolled Face IDs:</h2>");
+        for (int i = 1; i <= face_count && offset < sizeof(resp) - 100; i++) {
+            offset += snprintf(resp + offset, sizeof(resp) - offset,
+                "<div class='face-item'>Face ID: %d</div>", i);
+        }
+    } else {
+        offset += snprintf(resp + offset, sizeof(resp) - offset, "<p>No faces enrolled yet.</p>");
+    }
+
+    snprintf(resp + offset, sizeof(resp) - offset,
+        "<br><a href='/'>Back to Home</a>"
+        "</body></html>");
+
+    httpd_resp_sendstr(req, resp);
+    return ESP_OK;
+}
+
+// Check database status
+static esp_err_t db_status_handler(httpd_req_t *req)
+{
+    if (!g_face_db_reader) {
+        httpd_resp_sendstr(req, "<html><body>Face DB reader not available. <a href='/'>Back</a></body></html>");
+        return ESP_OK;
+    }
+
+    bool is_valid = g_face_db_reader->is_database_valid();
+    int face_count = g_face_db_reader->get_face_count();
+
+    char resp[512];
+    snprintf(resp, sizeof(resp),
+        "<html><head><title>Database Status</title>"
+        "<style>body{font-family:Arial;margin:20px;} .status{padding:10px;margin:10px;border:1px solid #ccc;}</style>"
+        "</head><body>"
+        "<h1>Face Database Status</h1>"
+        "<div class='status'><b>Database Valid:</b> %s</div>"
+        "<div class='status'><b>Face Count:</b> %d</div>"
+        "<br><a href='/'>Back to Home</a>"
+        "</body></html>",
+        is_valid ? "Yes" : "No",
+        face_count);
+
+    httpd_resp_sendstr(req, resp);
     return ESP_OK;
 }
 
@@ -144,10 +240,34 @@ static httpd_handle_t start_webserver(void)
             .user_ctx = NULL
         };
         httpd_register_uri_handler(server, &recognize_uri);
-        
+
+        httpd_uri_t face_count_uri = {
+            .uri = "/face_count",
+            .method = HTTP_GET,
+            .handler = face_count_handler,
+            .user_ctx = NULL
+        };
+        httpd_register_uri_handler(server, &face_count_uri);
+
+        httpd_uri_t face_list_uri = {
+            .uri = "/face_list",
+            .method = HTTP_GET,
+            .handler = face_list_handler,
+            .user_ctx = NULL
+        };
+        httpd_register_uri_handler(server, &face_list_uri);
+
+        httpd_uri_t db_status_uri = {
+            .uri = "/db_status",
+            .method = HTTP_GET,
+            .handler = db_status_handler,
+            .user_ctx = NULL
+        };
+        httpd_register_uri_handler(server, &db_status_uri);
+
         return server;
     }
-    
+
     return NULL;
 }
 
@@ -193,8 +313,10 @@ void init_wifi_and_server()
 
 // Call this from your main app to set references
 void set_http_server_refs(who::standby::XiaoStandbyControl *standby,
-                          who::recognition::WhoRecognition *recognition)
+                          who::recognition::WhoRecognition *recognition,
+                          who::recognition::FaceDbReader *face_db_reader)
 {
     g_standby_ctrl = standby;
     g_recognition = recognition;
+    g_face_db_reader = face_db_reader;
 }

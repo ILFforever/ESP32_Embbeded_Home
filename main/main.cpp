@@ -7,7 +7,9 @@
 #include "app/xiao_recognition_app.hpp"
 #include "network/http_server.h"
 #include "uart/uart_comm.hpp"
+#include "recognition/face_db_reader.hpp"
 #include <cstdio>
+#include <sys/stat.h>
 #include "spi/slave_spi.hpp"
 #include "jpeg/JpegEncoder.hpp"
 #include "esp_camera.h" // defines PIXFORMAT_JPEG and pixformat_t
@@ -16,6 +18,7 @@ using namespace who::frame_cap;
 using namespace who::app;
 using namespace who::button;
 using namespace who::standby;
+using namespace who::recognition;
 
 static const char *TAG = "Main";
 
@@ -37,6 +40,7 @@ static XiaoStandbyControl *g_standby_control = nullptr;
 who::uart::UartComm *g_uart = nullptr;
 static who::app::XiaoRecognitionAppTerm *g_recognition_app = nullptr;
 static who::frame_cap::WhoFrameCap *g_frame_cap = nullptr;
+static FaceDbReader *g_face_db_reader = nullptr;
 static bool g_camera_running = false;
 static TaskHandle_t g_spi_sender_task_handle = nullptr;
 static uint16_t g_frame_id = 0;
@@ -51,10 +55,13 @@ extern "C" void app_main(void)
     // Mount storage for face database
 #if CONFIG_DB_FATFS_FLASH
     ESP_ERROR_CHECK(fatfs_flash_mount());
+    g_face_db_reader = new FaceDbReader("/spiflash/face.db");
 #elif CONFIG_DB_SPIFFS
     ESP_ERROR_CHECK(bsp_spiffs_mount());
+    g_face_db_reader = new FaceDbReader("/spiffs/face.db");
 #elif CONFIG_DB_FATFS_SDCARD
     ESP_ERROR_CHECK(bsp_sdcard_mount());
+    g_face_db_reader = new FaceDbReader("/sdcard/face.db");
 #endif
 
     // Get camera pipeline for ESP32-S3
@@ -225,11 +232,37 @@ void create_uart_commands()
     // Force reset database (delete database file)
     g_uart->register_command("reset_database", [](const char *cmd, cJSON *params)
                              {
-        // Delete database file directly
-        remove("/storage/face.db");
-        remove("/spiffs/face.db");
+        ESP_LOGI(TAG, "=== Database Reset Started ===");
 
-        g_uart->send_status("ok", "Database deleted. Restart camera to recreate."); });
+        // Delete database file directly
+        int ret1 = remove("/spiflash/face.db");
+        int ret2 = remove("/spiffs/face.db");
+        ESP_LOGI(TAG, "Delete /spiflash/face.db: %s", ret1 == 0 ? "success" : "file not found");
+        ESP_LOGI(TAG, "Delete /spiffs/face.db: %s", ret2 == 0 ? "success" : "file not found");
+
+        // Check if storage directory exists and is writable
+        struct stat st;
+        if (stat("/spiflash", &st) == 0) {
+            ESP_LOGI(TAG, "/spiflash directory exists and is mounted");
+        } else {
+            ESP_LOGW(TAG, "/spiflash directory NOT FOUND - this will cause problems!");
+        }
+
+        // **CRITICAL**: Reinitialize the recognition system's recognizer
+        // This creates a fresh HumanFaceRecognizer instance with clean state
+        if (g_recognition_app) {
+            ESP_LOGI(TAG, "Reinitializing recognition app recognizer...");
+            g_recognition_app->reinitialize_recognizer();
+        }
+
+        // Also reinitialize the FaceDbReader for reading
+        if (g_face_db_reader) {
+            ESP_LOGI(TAG, "Resetting FaceDbReader...");
+            g_face_db_reader->reinitialize();
+        }
+
+        ESP_LOGI(TAG, "=== Database Reset Complete ===");
+        g_uart->send_status("ok", "Database reset complete. System ready for fresh enrollments."); });
 
     // Resume detection callback (workaround for detection stopping after enroll/recognize)
     g_uart->register_command("resume_detection", [](const char *cmd, cJSON *params)
@@ -241,6 +274,48 @@ void create_uart_commands()
 
         g_recognition_app->restore_detection_callback();
         g_uart->send_status("ok", "Detection callback restored"); });
+
+    // ============================================================
+    // Face Database Reader Commands
+    // ============================================================
+
+    // Get face count from database
+    g_uart->register_command("get_face_count", [](const char *cmd, cJSON *params)
+                             {
+        if (!g_face_db_reader) {
+            g_uart->send_status("error", "Face database reader not initialized");
+            return;
+        }
+
+        int face_count = g_face_db_reader->get_face_count();
+        char msg[64];
+        snprintf(msg, sizeof(msg), "Face count: %d", face_count);
+        g_uart->send_status("ok", msg); });
+
+    // Print all faces in database (detailed info to serial console)
+    g_uart->register_command("print_faces", [](const char *cmd, cJSON *params)
+                             {
+        if (!g_face_db_reader) {
+            g_uart->send_status("error", "Face database reader not initialized");
+            return;
+        }
+
+        g_face_db_reader->print_all_faces();
+        g_uart->send_status("ok", "Face list printed to console (see serial monitor)"); });
+
+    // Check if database is valid and accessible
+    g_uart->register_command("check_db", [](const char *cmd, cJSON *params)
+                             {
+        if (!g_face_db_reader) {
+            g_uart->send_status("error", "Face database reader not initialized");
+            return;
+        }
+
+        bool is_valid = g_face_db_reader->is_database_valid();
+        const char *status = is_valid ? "valid" : "invalid";
+        char msg[64];
+        snprintf(msg, sizeof(msg), "Database status: %s", status);
+        g_uart->send_status("ok", msg); });
 
 }
 
@@ -440,23 +515,3 @@ static void spi_frame_sender_task(void *pvParameters)
         vTaskDelay(pdMS_TO_TICKS(33)); 
     }
 }
-
-// static void stats_task(void *pvParameters)
-// {
-//     ESP_LOGI(TAG, "Statistics task started on Core %d", xPortGetCoreID());
-
-//     while (true)
-//     {
-//         vTaskDelay(pdMS_TO_TICKS(5000));
-
-//         ESP_LOGI(TAG, "");
-//         ESP_LOGI(TAG, "=== Statistics ===");
-//         ESP_LOGI(TAG, "SPI Frames sent:    %lu", slave_spi_get_frames_sent());
-//         ESP_LOGI(TAG, "SPI Frames failed:  %lu", slave_spi_get_frames_failed());
-//         ESP_LOGI(TAG, "SPI Frames dropped: %lu", slave_spi_get_frames_dropped());
-//         ESP_LOGI(TAG, "Free heap:          %lu bytes", esp_get_free_heap_size());
-//         ESP_LOGI(TAG, "Min free heap:      %lu bytes", esp_get_minimum_free_heap_size());
-//         ESP_LOGI(TAG, "");
-//     }
-// }
-

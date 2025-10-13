@@ -17,6 +17,9 @@ public:
     // Restore detection callback (public wrapper for fixing detection after enroll/recognize)
     void restore_detection_callback();
 
+    // Reinitialize the recognizer (use after database deletion)
+    void reinitialize_recognizer();
+
 protected:
     void recognition_result_cb(const std::string &result);
     void detect_result_cb(const detect::WhoDetect::result_t &result);

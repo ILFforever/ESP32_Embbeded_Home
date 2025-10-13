@@ -10,7 +10,8 @@
       "Read(//c/Users/Asus/Desktop/Embbed_PJ/Doorbell_lcd/src/**)",
       "Read(//c/Users/Asus/esp/v5.5.1/esp-idf/components/esp-who/**)",
       "Read(//c/Users/Asus/esp/v5.5.1/esp-idf/**)",
-      "Read(//c/Users/paeki/esp/v5.5.1/esp-idf/components/esp-who/**)"
+      "Read(//c/Users/paeki/esp/v5.5.1/esp-idf/components/esp-who/**)",
+      "Bash(idf.py build:*)"
     ],
     "deny": [],
     "ask": []

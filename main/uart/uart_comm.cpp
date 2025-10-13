@@ -65,7 +65,7 @@ bool UartComm::start()
     }
 
     // Start ping monitor task
-    if (xTaskCreate(ping_monitor_task_wrapper, "ping_monitor", 2048, this, 5, &m_ping_monitor_task_handle) != pdPASS) {
+    if (xTaskCreate(ping_monitor_task_wrapper, "ping_monitor", 4096, this, 5, &m_ping_monitor_task_handle) != pdPASS) {
         ESP_LOGE(TAG, "Failed to create ping monitor task");
         vTaskDelete(m_rx_task_handle);
         m_rx_task_handle = nullptr;

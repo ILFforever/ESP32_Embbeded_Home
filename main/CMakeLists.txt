@@ -1,11 +1,12 @@
-set(src_dirs ./ app control network uart spi jpeg)
+set(src_dirs ./ app control network uart spi jpeg recognition)
 
-set(include_dirs ./ app control network uart spi jpeg)
+set(include_dirs ./ app control network uart spi jpeg recognition)
 
 set(requires who_detect_app
              who_detect
              who_recognition_app
              who_spiflash_fatfs
+             human_face_recognition
              json
              esp_http_server
              nvs_flash

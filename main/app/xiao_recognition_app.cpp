@@ -16,7 +16,7 @@ XiaoRecognitionAppTerm::XiaoRecognitionAppTerm(frame_cap::WhoFrameCap *frame_cap
     // Use native ESP-WHO HumanFaceRecognizer
     char db_path[64];
 #if CONFIG_DB_FATFS_FLASH
-    snprintf(db_path, sizeof(db_path), "/storage/face.db");
+    snprintf(db_path, sizeof(db_path), "/spiflash/face.db");
 #elif CONFIG_DB_SPIFFS
     snprintf(db_path, sizeof(db_path), "%s/face.db", CONFIG_BSP_SPIFFS_MOUNT_POINT);
 #else
@@ -112,6 +112,30 @@ void XiaoRecognitionAppTerm::restore_detection_callback()
         std::bind(&XiaoRecognitionAppTerm::detect_result_cb, this, std::placeholders::_1)
     );
     ESP_LOGI(TAG, "Detection callback restored");
+}
+
+void XiaoRecognitionAppTerm::reinitialize_recognizer()
+{
+    ESP_LOGI(TAG, "Reinitializing recognizer after database reset");
+
+    // Determine database path based on configuration
+    char db_path[64];
+#if CONFIG_DB_FATFS_FLASH
+    snprintf(db_path, sizeof(db_path), "/spiflash/face.db");
+#elif CONFIG_DB_SPIFFS
+    snprintf(db_path, sizeof(db_path), "%s/face.db", CONFIG_BSP_SPIFFS_MOUNT_POINT);
+#else
+    snprintf(db_path, sizeof(db_path), "/spiffs/face.db");
+#endif
+
+    // Create fresh recognizer instance
+    // This will create a new database file on first enrollment
+    auto recognizer = new HumanFaceRecognizer(db_path);
+
+    // Set the new recognizer (this replaces the old one)
+    m_recognition->set_recognizer(recognizer);
+
+    ESP_LOGI(TAG, "Recognizer reinitialized successfully");
 }
 
 } // namespace app
