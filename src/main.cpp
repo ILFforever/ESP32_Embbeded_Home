@@ -378,7 +378,7 @@ void drawUIOverlay()
     // Draw date
     videoSprite.setTextFont(4); // Use a smaller font for the date
     videoSprite.setTextDatum(TL_DATUM);
-    videoSprite.drawString(getCurrentDateAsString(), 10, 85);
+    videoSprite.drawString(getCurrentDateAsString(), 20, 85);
 
     //TODO Have it pull from api later
     videoSprite.drawString("Rainy 25C", 10, 125);

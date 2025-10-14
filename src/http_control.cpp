@@ -2,11 +2,16 @@
 #include "uart_commands.h"
 #include <WiFi.h>
 #include <WebServer.h>
+#include <ESPmDNS.h>
 
 #include <time.h> // For time functions
+
 // WiFi credentials - CHANGE THESE
-const char* ssid = "ILFforever2";
-const char* password = "19283746";
+const char* WIFI_SSID = "ILFforever2";
+const char* WIFI_PASSWORD = "19283746";
+
+// mDNS hostname - device will be accessible at http://doorbell.local
+const char* MDNS_HOSTNAME = "doorbell";
 
 WebServer server(80);
 
@@ -223,10 +228,10 @@ void handleNotFound() {
 void initHTTPServer() {
   // Connect to WiFi
   Serial.println("\n=== WiFi Setup ===");
-  Serial.printf("Connecting to %s...\n", ssid);
+  Serial.printf("Connecting to %s...\n", WIFI_SSID);
 
   WiFi.mode(WIFI_STA);
-  WiFi.begin(ssid, password);
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
 
   int timeout = 20; // 20 second timeout
   while (WiFi.status() != WL_CONNECTED && timeout > 0) {
@@ -239,6 +244,13 @@ void initHTTPServer() {
     Serial.println("\n✅ WiFi Connected!");
     Serial.print("IP Address: ");
     Serial.println(WiFi.localIP());
+
+    // Start mDNS service
+    if (MDNS.begin(MDNS_HOSTNAME)) {
+      Serial.printf("✅ mDNS responder started: http://%s.local\n", MDNS_HOSTNAME);
+    } else {
+      Serial.println("❌ Error starting mDNS");
+    }
 
     // Configure NTP for Thailand (UTC+7)
     Serial.println("Configuring time for Thailand (UTC+7)...");
