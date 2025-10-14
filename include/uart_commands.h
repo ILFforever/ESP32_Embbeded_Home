@@ -13,6 +13,8 @@ extern bool uiNeedsUpdate;
 extern String status_msg;
 extern bool status_msg_is_temporary;
 extern String status_msg_fallback;
+extern bool recognition_success;
+
 // Face detection bounding box
 extern bool hasFaceDetection;
 extern int face_bbox_x;

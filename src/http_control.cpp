@@ -55,6 +55,7 @@ void handleRoot() {
   html += "<div class='endpoint'>";
   html += "<span class='method'>Face Management (Native ESP-WHO)</span>";
   html += "<br><button onclick='sendCmd(\"enroll_face\")'>Enroll Next Face</button>";
+  html += "<button onclick='sendCmd(\"recognize_face\")' style='background:#28a745;'>Recognize Face</button>";
   html += "<button onclick='sendCmd(\"delete_last\")'>Delete Last Face</button>";
   html += "<button onclick='sendCmd(\"reset_database\")' style='background:#dc3545;'>Reset DB</button>";
   html += "<button onclick='sendCmd(\"resume_detection\")'>Resume Detection</button>";

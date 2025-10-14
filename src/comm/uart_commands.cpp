@@ -1,28 +1,42 @@
 #include "uart_commands.h"
 
 // Update status message on LCD
-void updateStatusMsg(const char* msg, bool temporary, const char* fallback)
+void updateStatusMsg(const char *msg, bool temporary, const char *fallback)
 {
   status_msg = String(msg);
   status_msg_is_temporary = temporary;
 
   // Set fallback message if provided, otherwise determine based on slave_status
-  if (fallback != nullptr) {
+  if (fallback != nullptr)
+  {
     status_msg_fallback = String(fallback);
-  } else if (temporary) {
+  }
+  else if (temporary)
+  {
     // Auto-determine fallback based on current state
-    if (slave_status == -1) {
+    if (slave_status == -1)
+    {
       status_msg_fallback = "Not connected";
-    } else if (slave_status == 0) {
+    }
+    else if (slave_status == 0)
+    {
       status_msg_fallback = "On Stand By";
-    } else if (slave_status == 1) {
+    }
+    else if (slave_status == 1)
+    {
       status_msg_fallback = "Doorbell Active";
-    } else if (slave_status == 2) {
+    }
+    else if (slave_status == 2)
+    {
       status_msg_fallback = "Looking for faces";
-    } else {
+    }
+    else
+    {
       status_msg_fallback = "On Stand By"; // Default fallback
     }
-  } else {
+  }
+  else
+  {
     status_msg_fallback = ""; // Clear fallback for non-temporary messages
   }
 
@@ -53,7 +67,7 @@ void sendUARTCommand(const char *cmd, const char *param, int value)
 
   String output;
   serializeJson(doc, output);
-  Serial.println(output);
+  // Serial.println(output);
   SlaveSerial.println(output);
 }
 
@@ -129,15 +143,50 @@ void handleUARTResponse(String line)
       {
         lastFaceDetectionTime = millis();
         // Update status with detection info (temporary, then return to "Detecting faces")
-        if (face_count == 1) {
+        if (face_count == 1)
+        {
           updateStatusMsg("Face Detected", true, "Detecting faces");
-        } else if (face_count > 1) {
+        }
+        else if (face_count > 1)
+        {
           char msg[32];
           snprintf(msg, sizeof(msg), "%d faces Detected", face_count);
           updateStatusMsg(msg, true, "Detecting faces");
         }
-      } else {
+      }
+      else
+      {
         updateStatusMsg("Detecting faces");
+      }
+    }
+    return;
+  }
+
+  // Handle recognition event (face_recognized with ID, name, confidence)
+  if (doc.containsKey("event") && doc["event"] == "face_recognized")
+  {
+    if (doc.containsKey("data"))
+    {
+      JsonObject data = doc["data"];
+      int id = data["id"] | -1;
+      const char *name = data["name"] | "Unknown";
+      float confidence = data["confidence"] | 0.0;
+
+      Serial.printf("Face Recognized: ID=%d, Name=%s, Confidence=%.2f\n",
+                    id, name, confidence);
+
+      // Update LCD status with recognition result
+      if (id >= 0)
+      {
+        char msg[64];
+        snprintf(msg, sizeof(msg), "Welcome %s!", name);
+        updateStatusMsg(msg, true, "Doorbell Active");
+        recognition_success = true;
+      }
+      else
+      {
+        updateStatusMsg("Unknown Person : Try again", true, "Doorbell Active");
+        recognition_success = false;
       }
     }
     return;
@@ -164,12 +213,12 @@ void handleUARTResponse(String line)
   if (doc.containsKey("status"))
   {
     const char *status = doc["status"];
-    Serial.printf("✅ Status: %s", status);
+    // Serial.printf("✅ Status: %s", status);
 
     if (doc.containsKey("msg"))
     {
       const char *msg = doc["msg"];
-      Serial.printf(" - %s", msg);
+      // Serial.printf(" - %s", msg);
 
       // Check if message indicates camera started
       if (strcmp(msg, "Camera and SPI sender started") == 0)
@@ -192,7 +241,7 @@ void handleUARTResponse(String line)
       }
       else if (strcmp(msg, "Face recognition started") == 0)
       {
-        updateStatusMsg("Looking for faces",false,"");
+        updateStatusMsg("Looking for faces", false, "");
         if (slave_status != 2)
         {
           slave_status = 2;
@@ -214,26 +263,16 @@ void handleUARTResponse(String line)
         int new_status = atoi(msg);
         if (new_status != 0)
         {
-          // Map numeric status to friendly message
-          if (new_status != slave_status)
+          slave_status = new_status;
+          if ((new_status == 1) && (status_msg == "Standing By")) //fix for screen not updating if camera is started before lcd
           {
-            slave_status = new_status;
-            uiNeedsUpdate = true; // Trigger UI refresh on status change
+            updateStatusMsg("Doorbell Active");
           }
-
-          // // Update with friendly message instead of showing number
-          // if (new_status == 1) {
-          //   updateStatusMsg("Doorbell Active");
           // } else if (new_status == 2) {
           //   updateStatusMsg("Looking for faces");
           // } else if (new_status == 0) {
           //   updateStatusMsg("Doorbell Off", true); // Temporary message
           // }
-        }
-        else
-        {
-          // If not a number, show the message as-is
-          //updateStatusMsg(msg);
         }
       }
     }
@@ -247,6 +286,6 @@ void handleUARTResponse(String line)
     // Serial.println();
   }
   // Print all other messages
-  Serial.print("📥 RX from Slave: ");
-  Serial.println(line);
+  // Serial.print("📥 RX from Slave: ");
+  // Serial.println(line);
 }

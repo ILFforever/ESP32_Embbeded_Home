@@ -22,7 +22,8 @@ TFT_eSprite botuiSprite = TFT_eSprite(&tft); // Sprite for UI overlay
 TFT_eSprite miduiSprite = TFT_eSprite(&tft); // Sprite for UI overlay
 String status_msg = "";
 bool status_msg_is_temporary = false; // Flag to indicate temporary status message
-String status_msg_fallback = "";      // Message to display after temporary message is shown once
+bool recognition_success = false;
+String status_msg_fallback = ""; // Message to display after temporary message is shown once
 
 Scheduler myscheduler;
 HardwareSerial SlaveSerial(2); // Use UART2
@@ -65,15 +66,15 @@ bool tft_jpg_render_callback(int16_t x, int16_t y, uint16_t w, uint16_t h, uint1
 String getCurrentTimeAsString();
 String getCurrentDateAsString();
 
-Task taskCheckUART(20, TASK_FOREVER, &checkUARTData);          // Check UART buffer every 20ms
-Task taskSendPing(1000, TASK_FOREVER, &sendPingTask);          // Send ping every 3s
-Task taskCheckTimeout(1000, TASK_FOREVER, &checkPingTimeout);  // Check timeout every 1s
-Task taskHTTPHandler(10, TASK_FOREVER, &handleHTTPTask);       // Handle HTTP requests every 10ms
-Task taskUpdateSPI(10, TASK_FOREVER, &UpdateSPI);              // Update SPI every 10ms
-Task taskProcessFrame(5, TASK_FOREVER, &ProcessFrame);         // Check for frames every 5ms
-Task taskdrawUIOverlay(10, TASK_FOREVER, &drawUIOverlay);      // Update UI overlay every 10ms
-Task tasklcdhandoff(100, TASK_FOREVER, &lcdhandoff);           // Check if we need to hand off LCD to ProcessFrame
-Task taskGetCameraStatus(500, TASK_FOREVER, &getCameraStatus); // Get camera status every 0.5s
+Task taskCheckUART(20, TASK_FOREVER, &checkUARTData);           // Check UART buffer every 20ms
+Task taskSendPing(1000, TASK_FOREVER, &sendPingTask);           // Send ping every 1s
+Task taskCheckTimeout(1000, TASK_FOREVER, &checkPingTimeout);   // Check timeout every 1s
+Task taskHTTPHandler(10, TASK_FOREVER, &handleHTTPTask);        // Handle HTTP requests every 10ms
+Task taskUpdateSPI(10, TASK_FOREVER, &UpdateSPI);               // Update SPI every 10ms
+Task taskProcessFrame(5, TASK_FOREVER, &ProcessFrame);          // Check for frames every 5ms
+Task taskdrawUIOverlay(25, TASK_FOREVER, &drawUIOverlay);       // Update UI overlay every 10ms
+Task tasklcdhandoff(200, TASK_FOREVER, &lcdhandoff);            // Check if we need to hand off LCD to ProcessFrame
+Task taskGetCameraStatus(1000, TASK_FOREVER, &getCameraStatus); // Get camera status every 0.5s
 
 void setup()
 {
@@ -158,6 +159,7 @@ void setup()
 
   // Initial status message
   updateStatusMsg("Starting up...");
+  getCameraStatus();
   drawUIOverlay();
 
   delay(1000);
@@ -251,6 +253,17 @@ void ProcessFrame()
     Serial.printf("[ERROR] JPEG decode failed: %d\n", result);
   }
 
+  // Keep it here for now
+  // if (currentFPS > 0)
+  // {
+  //   int16_t textY = VIDEO_HEIGHT - 20;
+  //   videoSprite.fillRect(40, textY - 2, 80, 12, TFT_BLACK);
+  //   videoSprite.setTextColor(TFT_GREEN, TFT_BLACK);
+  //   videoSprite.setCursor(40, textY);
+  //   videoSprite.setTextSize(1);
+  //   videoSprite.printf("FPS: %.1f", currentFPS);
+  // }
+
   // Draw face detection bounding box if available
   if (hasFaceDetection)
   {
@@ -334,14 +347,6 @@ void drawUIOverlay()
     topuiSprite.fillSmoothCircle(25, 22, 8, blinking_color);
   }
   break;
-  case 2:
-    topuiSprite.setTextColor(TFT_CYAN, TFT_BLACK);
-    topuiSprite.print("FACE RECOG");
-    break;
-  default:
-    topuiSprite.setTextColor(TFT_WHITE, TFT_BLACK);
-    topuiSprite.print("UNKNOWN");
-    break;
   }
 
   if (slave_status >= 1) // If camera running show time on top
@@ -585,9 +590,24 @@ void drawUIOverlay()
 
   // No need to set uiNeedsUpdate since drawUIOverlay is called frequently
 
-  // Draw grey borders for camera area
-  topuiSprite.fillRect(0, topuiSprite.height() - 4, tft.width(), 4, TFT_LIGHTGREY);
-  botuiSprite.fillRect(0, 0, tft.width(), 4, TFT_LIGHTGREY);
+  // Draw borders for camera area
+  static int recognition_success_timer = 0;
+  if (recognition_success)
+  {
+    statusColor = TFT_GREEN;
+    recognition_success_timer++;
+  }
+  else
+    statusColor = TFT_LIGHTGREY;
+
+  if (recognition_success_timer > 100) // Show green border
+  {
+    recognition_success = false;
+    recognition_success_timer = 0;
+  }
+
+  topuiSprite.fillRect(0, topuiSprite.height() - 4, tft.width(), 4, statusColor);
+  botuiSprite.fillRect(0, 0, tft.width(), 4, statusColor);
 
   // Push UI sprite to screen (top bar)
   topuiSprite.pushSprite(0, 20);
