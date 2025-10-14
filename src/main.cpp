@@ -20,6 +20,9 @@ TFT_eSprite videoSprite = TFT_eSprite(&tft); // Sprite for video frames
 TFT_eSprite topuiSprite = TFT_eSprite(&tft); // Sprite for UI overlay
 TFT_eSprite botuiSprite = TFT_eSprite(&tft); // Sprite for UI overlay
 TFT_eSprite miduiSprite = TFT_eSprite(&tft); // Sprite for UI overlay
+String status_msg = "";
+bool status_msg_is_temporary = false; // Flag to indicate temporary status message
+String status_msg_fallback = "";      // Message to display after temporary message is shown once
 
 Scheduler myscheduler;
 HardwareSerial SlaveSerial(2); // Use UART2
@@ -46,7 +49,7 @@ int face_bbox_y = 0;
 int face_bbox_w = 0;
 int face_bbox_h = 0;
 unsigned long lastFaceDetectionTime = 0;
-#define FACE_DETECTION_TIMEOUT 1500  // Clear bbox after 1.5 seconds
+#define FACE_DETECTION_TIMEOUT 1500 // Clear bbox after 1.5 seconds
 
 void checkUARTData();
 void sendPingTask();
@@ -54,23 +57,24 @@ void checkPingTimeout();
 void handleHTTPTask();
 void UpdateSPI();
 void ProcessFrame();
-void PrintStats();
 void drawUIOverlay();
 void lcdhandoff();
+void getCameraStatus();
 void drawWifiSymbol(int x, int y, int strength);
 bool tft_jpg_render_callback(int16_t x, int16_t y, uint16_t w, uint16_t h, uint16_t *bitmap);
 String getCurrentTimeAsString();
 String getCurrentDateAsString();
 
-Task taskCheckUART(20, TASK_FOREVER, &checkUARTData);         // Check UART buffer every 20ms
-Task taskSendPing(1000, TASK_FOREVER, &sendPingTask);         // Send ping every 3s
-Task taskCheckTimeout(1000, TASK_FOREVER, &checkPingTimeout); // Check timeout every 1s
-Task taskHTTPHandler(10, TASK_FOREVER, &handleHTTPTask);      // Handle HTTP requests every 10ms
-Task taskUpdateSPI(10, TASK_FOREVER, &UpdateSPI);             // Update SPI every 10ms
-Task taskProcessFrame(5, TASK_FOREVER, &ProcessFrame);        // Check for frames every 5ms
-Task taskPrintStats(5000, TASK_FOREVER, &PrintStats);         // Print stats every 5s
-Task taskdrawUIOverlay(10, TASK_FOREVER, &drawUIOverlay);     // Update UI overlay every 10ms
-Task tasklcdhandoff(100, TASK_FOREVER, &lcdhandoff);          // Check if we need to hand off LCD to ProcessFrame
+Task taskCheckUART(20, TASK_FOREVER, &checkUARTData);          // Check UART buffer every 20ms
+Task taskSendPing(1000, TASK_FOREVER, &sendPingTask);          // Send ping every 3s
+Task taskCheckTimeout(1000, TASK_FOREVER, &checkPingTimeout);  // Check timeout every 1s
+Task taskHTTPHandler(10, TASK_FOREVER, &handleHTTPTask);       // Handle HTTP requests every 10ms
+Task taskUpdateSPI(10, TASK_FOREVER, &UpdateSPI);              // Update SPI every 10ms
+Task taskProcessFrame(5, TASK_FOREVER, &ProcessFrame);         // Check for frames every 5ms
+Task taskdrawUIOverlay(10, TASK_FOREVER, &drawUIOverlay);      // Update UI overlay every 10ms
+Task tasklcdhandoff(100, TASK_FOREVER, &lcdhandoff);           // Check if we need to hand off LCD to ProcessFrame
+Task taskGetCameraStatus(500, TASK_FOREVER, &getCameraStatus); // Get camera status every 0.5s
+
 void setup()
 {
   Serial.begin(115200);
@@ -132,26 +136,33 @@ void setup()
   myscheduler.addTask(taskHTTPHandler);
   myscheduler.addTask(taskUpdateSPI);
   myscheduler.addTask(taskProcessFrame);
-  myscheduler.addTask(taskPrintStats);
   myscheduler.addTask(taskdrawUIOverlay);
   myscheduler.addTask(tasklcdhandoff);
+  myscheduler.addTask(taskGetCameraStatus);
   taskCheckUART.enable();
   taskSendPing.enable();
   taskCheckTimeout.enable();
   taskHTTPHandler.enable();
   taskUpdateSPI.enable();
   taskProcessFrame.enable();
-  //taskPrintStats.enable();
   taskdrawUIOverlay.enable();
   tasklcdhandoff.enable();
+  taskGetCameraStatus.enable();
 
   last_pong_time = millis();
   sendUARTCommand("get_status");
 
-  // Clear screen
+  // Clear screen and show startup message
   Serial.println("Clearing screen...");
-  tft.fillScreen(TFT_RED);
-  // sendUARTCommand("camera_control","camera_start");
+  tft.fillScreen(TFT_BLACK);
+
+  // Initial status message
+  updateStatusMsg("Starting up...");
+  drawUIOverlay();
+
+  delay(1000);
+  updateStatusMsg("Getting ready...", true, "Standing By");
+  uiNeedsUpdate = true;
 }
 
 void loop()
@@ -219,6 +230,12 @@ void ProcessFrame()
   if (frameSize < 100 || frame[0] != 0xFF || frame[1] != 0xD8)
   {
     Serial.println("[ERROR] Invalid JPEG");
+    static unsigned long lastErrorMsg = 0;
+    if (millis() - lastErrorMsg > 3000)
+    {
+      updateStatusMsg("video Error");
+      lastErrorMsg = millis();
+    }
     spiMaster.ackFrame();
     return;
   }
@@ -246,7 +263,7 @@ void ProcessFrame()
     {
       // Scale bounding box from camera resolution to display (tft.width() x VIDEO_HEIGHT)
       // Camera appears to be wider, adjust X scale
-      float scaleX = (float)videoSprite.width() / 280.0;  // Adjusted for wider camera FOV
+      float scaleX = (float)videoSprite.width() / 280.0; // Adjusted for wider camera FOV
       float scaleY = (float)VIDEO_HEIGHT / 240.0;
 
       int scaled_x = (int)(face_bbox_x * scaleX);
@@ -263,13 +280,8 @@ void ProcessFrame()
   // Composite: Push video sprite to screen
   videoSprite.pushSprite(0, VIDEO_Y_OFFSET + 25);
 
-  // Draw UI overlay if needed
-  if (uiNeedsUpdate)
-  {
-    // Serial.println("Redrawing UI overlay from ProcessFrame");
-    drawUIOverlay();
-    uiNeedsUpdate = false;
-  }
+  // Always draw UI overlay to keep animations smooth
+  drawUIOverlay();
 
   spiMaster.ackFrame();
 }
@@ -305,23 +317,23 @@ void drawUIOverlay()
   switch (slave_status)
   {
   case -1:
-    topuiSprite.fillSmoothCircle(25, 22, 10, TFT_ORANGE);
+    topuiSprite.fillSmoothCircle(25, 22, 10, TFT_CYAN);
     break;
   case 0:
     topuiSprite.fillSmoothCircle(25, 22, 10, TFT_DARKGREY);
     break;
   case 1:
-    { // Create a new scope for local variables
-      // Blinking effect for recording indicator.
-      // A sine wave with a period of about 2 seconds (2*PI / 0.003 ~= 2094 ms)
-      float sine_wave = (sin(millis() * 0.003f) + 1.0f) / 2.0f; // Varies between 0.0 and 1.0
+  { // Create a new scope for local variables
+    // Blinking effect for recording indicator.
+    // A sine wave with a period of about 2 seconds (2*PI / 0.003 ~= 2094 ms)
+    float sine_wave = (sin(millis() * 0.003f) + 1.0f) / 2.0f; // Varies between 0.0 and 1.0
 
-      // We'll make it fade from a dim blue to a bright blue.
-      uint8_t blue_value = 50 + (uint8_t)(sine_wave * 205); // Varies from 50 to 255
-      uint16_t blinking_color = tft.color565(0, 0, blue_value);
-      topuiSprite.fillSmoothCircle(25, 22, 8, blinking_color);
-    }
-    break;
+    // We'll make it fade from a dim blue to a bright blue.
+    uint8_t blue_value = 50 + (uint8_t)(sine_wave * 205); // Varies from 50 to 255
+    uint16_t blinking_color = tft.color565(0, 0, blue_value);
+    topuiSprite.fillSmoothCircle(25, 22, 8, blinking_color);
+  }
+  break;
   case 2:
     topuiSprite.setTextColor(TFT_CYAN, TFT_BLACK);
     topuiSprite.print("FACE RECOG");
@@ -380,7 +392,7 @@ void drawUIOverlay()
     videoSprite.setTextDatum(TL_DATUM);
     videoSprite.drawString(getCurrentDateAsString(), 20, 85);
 
-    //TODO Have it pull from api later
+    // TODO Have it pull from api later
     videoSprite.drawString("Rainy 25C", 10, 125);
 
     // Push to screen
@@ -396,6 +408,182 @@ void drawUIOverlay()
   {
     drawWifiSymbol(tft.width() - 25, 28, 0); // No connection
   }
+
+  // Display status message with smooth vertical scroll animation
+  botuiSprite.setTextDatum(TC_DATUM); // Top Center alignment
+
+  // Animation state machine
+  enum AnimState
+  {
+    SHOWING_LABEL,
+    ANIM_TO_MSG,
+    SHOWING_MSG,
+    ANIM_TO_LABEL
+  };
+  static AnimState animState = SHOWING_LABEL;
+  static unsigned long stateStartTime = millis(); // Initialize with current time
+  static float animProgress = 0.0f;
+  static bool firstRun = true;
+  static bool tempMsgShownOnce = false;
+
+  // Initialize timing on first run
+  if (firstRun)
+  {
+    stateStartTime = millis();
+    firstRun = false;
+  }
+
+  // Check if temporary message has been shown once, then replace with fallback message
+  if (status_msg_is_temporary && tempMsgShownOnce && animState == ANIM_TO_LABEL)
+  {
+    // After showing temporary message once, switch to fallback
+    if (status_msg_fallback.length() > 0)
+    {
+      status_msg = status_msg_fallback;
+    }
+    else
+    {
+      status_msg = "On Stand By"; // Default if no fallback specified
+    }
+    status_msg_is_temporary = false;
+    status_msg_fallback = "";
+    tempMsgShownOnce = false;
+  }
+
+  // Track when temporary message cycle completes
+  if (status_msg_is_temporary && animState == SHOWING_MSG)
+  {
+    tempMsgShownOnce = true;
+  }
+
+  // Reset flag when message changes to non-temporary
+  if (!status_msg_is_temporary)
+  {
+    tempMsgShownOnce = false;
+  }
+
+  const unsigned long DISPLAY_TIME = 3000; // Show each state for 2 seconds
+  const unsigned long ANIM_TIME = 600;     // Animation takes 300ms (faster, smoother)
+
+  unsigned long currentTime = millis();
+  unsigned long elapsed = currentTime - stateStartTime;
+
+  // State machine transitions
+  switch (animState)
+  {
+  case SHOWING_LABEL:
+    if (elapsed > DISPLAY_TIME)
+    {
+      animState = ANIM_TO_MSG;
+      stateStartTime = currentTime;
+      animProgress = 0.0f;
+    }
+    break;
+
+  case ANIM_TO_MSG:
+    animProgress = (float)elapsed / ANIM_TIME;
+    if (animProgress >= 1.0f)
+    {
+      animProgress = 1.0f;
+      animState = SHOWING_MSG;
+      stateStartTime = currentTime;
+    }
+    break;
+
+  case SHOWING_MSG:
+    if (elapsed > DISPLAY_TIME)
+    {
+      animState = ANIM_TO_LABEL;
+      stateStartTime = currentTime;
+      animProgress = 0.0f;
+    }
+    break;
+
+  case ANIM_TO_LABEL:
+    animProgress = (float)elapsed / ANIM_TIME;
+    if (animProgress >= 1.0f)
+    {
+      animProgress = 1.0f;
+      animState = SHOWING_LABEL;
+      stateStartTime = currentTime;
+    }
+    break;
+  }
+
+  // Easing function for smooth animation (ease-in-out)
+  auto easeInOutQuad = [](float t) -> float
+  {
+    return t < 0.5f ? 2.0f * t * t : 1.0f - 2.0f * (1.0f - t) * (1.0f - t);
+  };
+
+  float easedProgress = easeInOutQuad(animProgress);
+
+  // Color coded based on slave_status
+  uint16_t statusColor = TFT_GREEN;
+  if (slave_status == -1) // disconnected
+  {
+    statusColor = TFT_BLUE;
+  }
+  else if (slave_status == 0)
+  {
+    statusColor = TFT_YELLOW;
+  }
+  else if (slave_status == 2)
+  {
+    statusColor = TFT_CYAN;
+  }
+
+  botuiSprite.setTextFont(2); // Smaller font like before
+
+  // Calculate Y positions for animation
+  const int centerY = 18;
+  const int textHeight = 16; // Approximate height for font 2
+  const int offscreenTop = -textHeight;
+  const int offscreenBottom = botuiSprite.height();
+
+  // Draw based on animation state
+  if (animState == SHOWING_LABEL)
+  {
+    // Show only "STATUS" label
+    botuiSprite.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
+    botuiSprite.drawString("STATUS", tft.width() / 2, centerY);
+  }
+  else if (animState == ANIM_TO_MSG)
+  {
+    // "STATUS" scrolls up and out, status_msg scrolls up into view
+    int labelY = centerY - (int)((centerY - offscreenTop) * easedProgress);
+    int msgY = offscreenBottom - (int)((offscreenBottom - centerY) * easedProgress);
+
+    // Draw STATUS moving up
+    botuiSprite.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
+    botuiSprite.drawString("STATUS", tft.width() / 2, labelY);
+
+    // Draw message moving up from bottom
+    botuiSprite.setTextColor(statusColor, TFT_BLACK);
+    botuiSprite.drawString(status_msg, tft.width() / 2, msgY);
+  }
+  else if (animState == SHOWING_MSG)
+  {
+    // Show only status message
+    botuiSprite.setTextColor(statusColor, TFT_BLACK);
+    botuiSprite.drawString(status_msg, tft.width() / 2, centerY);
+  }
+  else if (animState == ANIM_TO_LABEL)
+  {
+    // status_msg scrolls up and out, "STATUS" scrolls up into view
+    int msgY = centerY - (int)((centerY - offscreenTop) * easedProgress);
+    int labelY = offscreenBottom - (int)((offscreenBottom - centerY) * easedProgress);
+
+    // Draw message moving up
+    botuiSprite.setTextColor(statusColor, TFT_BLACK);
+    botuiSprite.drawString(status_msg, tft.width() / 2, msgY);
+
+    // Draw STATUS moving up from bottom
+    botuiSprite.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
+    botuiSprite.drawString("STATUS", tft.width() / 2, labelY);
+  }
+
+  // No need to set uiNeedsUpdate since drawUIOverlay is called frequently
 
   // Draw grey borders for camera area
   topuiSprite.fillRect(0, topuiSprite.height() - 4, tft.width(), 4, TFT_LIGHTGREY);
@@ -458,35 +646,6 @@ String getCurrentDateAsString()
     return String("--/--/--");
   }
 }
-// Task: Print statistics
-void PrintStats()
-{
-  Serial.println("\n[STATS] SPI Statistics:");
-  Serial.print("  Frames received: ");
-  Serial.println(spiMaster.getFramesReceived());
-  Serial.print("  Frames dropped: ");
-  Serial.println(spiMaster.getFramesDropped());
-  Serial.print("  Current state: ");
-
-  switch (spiMaster.getState())
-  {
-  case SPI_IDLE:
-    Serial.println("IDLE");
-    break;
-  case SPI_RECEIVING_HEADER:
-    Serial.println("RECEIVING_HEADER");
-    break;
-  case SPI_RECEIVING_DATA:
-    Serial.println("RECEIVING_DATA");
-    break;
-  case SPI_COMPLETE:
-    Serial.println("COMPLETE");
-    break;
-  case SPI_ERROR:
-    Serial.println("ERROR");
-    break;
-  }
-}
 
 // Task: Check for incoming UART data
 void checkUARTData()
@@ -504,17 +663,7 @@ void checkUARTData()
 // Task: Send periodic ping
 void sendPingTask()
 {
-  static int tag = 0;
-  if (tag < 3)
-  {
-    tag++;
-    sendUARTPing();
-  }
-  else
-  {
-    sendUARTCommand("get_status");
-    tag = 0;
-  }
+  sendUARTPing();
 }
 
 // Task: Check for ping timeout
@@ -524,14 +673,61 @@ void checkPingTimeout()
   {
     Serial.println("!!! WARNING: No pong response for 5 seconds !!!");
     Serial.println("Connection to slave may be lost.\n");
-    slave_status = -1; // mark as disconnected
-    // TODO : Attempt reconnection or something
-    last_pong_time = millis() - PONG_TIMEOUT + 3000;
+    if (slave_status != -1)
+    {
+      if (taskGetCameraStatus.isEnabled())
+        taskGetCameraStatus.disable();
+      slave_status = -1; // mark as disconnected
+      updateStatusMsg("Connection issue");
+    }
+    // Keep checking - stay in disconnected state
   }
-  else if (slave_status == -1)
+  else if (slave_status == -1 && ping_counter > 0)
+  {
+    // Only recover from disconnected state if we're receiving pongs again
+    Serial.println("Connection restored!");
+    if (!taskGetCameraStatus.isEnabled())
+      taskGetCameraStatus.enable();
     slave_status = 0; // back to standby
+    updateStatusMsg("On Stand By");
+  }
 }
 
+void getCameraStatus()
+{
+  sendUARTCommand("get_status");
+
+  // Update status message based on current state if no recent update
+  static unsigned long lastStatusUpdate = 0;
+  static int lastKnownStatus = -999;
+
+  // Only update if status changed and no message in last 5 seconds
+  if (slave_status != lastKnownStatus && (millis() - lastStatusUpdate > 5000))
+  {
+    lastKnownStatus = slave_status;
+    lastStatusUpdate = millis();
+
+    if (status_msg == "" || status_msg.length() == 0)
+    {
+      if (slave_status == -1)
+      {
+        updateStatusMsg("Not connected");
+      }
+      else if (slave_status == 0)
+      {
+        updateStatusMsg("On Stand By");
+      }
+      else if (slave_status == 1)
+      {
+        updateStatusMsg("Doorbell Active");
+      }
+      else if (slave_status == 2)
+      {
+        updateStatusMsg("Looking for faces");
+      }
+    }
+  }
+}
 
 // Task: Handle HTTP requests
 void handleHTTPTask()

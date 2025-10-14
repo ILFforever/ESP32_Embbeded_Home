@@ -1,5 +1,34 @@
 #include "uart_commands.h"
 
+// Update status message on LCD
+void updateStatusMsg(const char* msg, bool temporary, const char* fallback)
+{
+  status_msg = String(msg);
+  status_msg_is_temporary = temporary;
+
+  // Set fallback message if provided, otherwise determine based on slave_status
+  if (fallback != nullptr) {
+    status_msg_fallback = String(fallback);
+  } else if (temporary) {
+    // Auto-determine fallback based on current state
+    if (slave_status == -1) {
+      status_msg_fallback = "Not connected";
+    } else if (slave_status == 0) {
+      status_msg_fallback = "On Stand By";
+    } else if (slave_status == 1) {
+      status_msg_fallback = "Doorbell Active";
+    } else if (slave_status == 2) {
+      status_msg_fallback = "Looking for faces";
+    } else {
+      status_msg_fallback = "On Stand By"; // Default fallback
+    }
+  } else {
+    status_msg_fallback = ""; // Clear fallback for non-temporary messages
+  }
+
+  uiNeedsUpdate = true;
+}
+
 // Send command to Slave
 void sendUARTCommand(const char *cmd, const char *param, int value)
 {
@@ -99,14 +128,20 @@ void handleUARTResponse(String line)
       if (hasFaceDetection)
       {
         lastFaceDetectionTime = millis();
+        // Update status with detection info (temporary, then return to "Detecting faces")
+        if (face_count == 1) {
+          updateStatusMsg("Face Detected", true, "Detecting faces");
+        } else if (face_count > 1) {
+          char msg[32];
+          snprintf(msg, sizeof(msg), "%d faces Detected", face_count);
+          updateStatusMsg(msg, true, "Detecting faces");
+        }
+      } else {
+        updateStatusMsg("Detecting faces");
       }
     }
     return;
   }
-
-  // Print all other messages
-  Serial.print("📥 RX from Slave: ");
-  Serial.println(line);
 
   // Handle list_faces response
   if (doc.containsKey("faces") && doc.containsKey("count"))
@@ -139,30 +174,66 @@ void handleUARTResponse(String line)
       // Check if message indicates camera started
       if (strcmp(msg, "Camera and SPI sender started") == 0)
       {
+        updateStatusMsg("Doorbell Active");
         if (slave_status != 1)
         {
           slave_status = 1;
-          uiNeedsUpdate = true; // Trigger UI refresh on status change
           Serial.print(" [Camera started - status set to 1]");
         }
       }
       else if (strcmp(msg, "Camera and SPI sender stopped") == 0)
       {
+        updateStatusMsg("Doorbell Off", true, "Standing by"); // Temporary message
         if (slave_status != 0)
         {
           slave_status = 0;
-          uiNeedsUpdate = true; // Trigger UI refresh on status change
           Serial.print(" [Camera stopped - status set to 0]");
         }
       }
-      // Try parsing msg as integer for backward compatibility
+      else if (strcmp(msg, "Face recognition started") == 0)
+      {
+        updateStatusMsg("Looking for faces",false,"");
+        if (slave_status != 2)
+        {
+          slave_status = 2;
+          Serial.print(" [Face Recog started - status set to 2]");
+        }
+      }
+      else if (strcmp(msg, "Face recognition stopped") == 0)
+      {
+        updateStatusMsg("Face recognition stopped", true, "Doorbell Active");
+        if (slave_status != 1)
+        {
+          slave_status = 1;
+          Serial.print(" [Face Recog stopped - status set to 1]");
+        }
+      }
       else
       {
+        // Try parsing msg as integer for backward compatibility
         int new_status = atoi(msg);
-        if (new_status != 0 && new_status != slave_status)
+        if (new_status != 0)
         {
-          slave_status = new_status;
-          uiNeedsUpdate = true; // Trigger UI refresh on status change
+          // Map numeric status to friendly message
+          if (new_status != slave_status)
+          {
+            slave_status = new_status;
+            uiNeedsUpdate = true; // Trigger UI refresh on status change
+          }
+
+          // // Update with friendly message instead of showing number
+          // if (new_status == 1) {
+          //   updateStatusMsg("Doorbell Active");
+          // } else if (new_status == 2) {
+          //   updateStatusMsg("Looking for faces");
+          // } else if (new_status == 0) {
+          //   updateStatusMsg("Doorbell Off", true); // Temporary message
+          // }
+        }
+        else
+        {
+          // If not a number, show the message as-is
+          //updateStatusMsg(msg);
         }
       }
     }
@@ -170,9 +241,12 @@ void handleUARTResponse(String line)
     if (doc.containsKey("free_heap"))
     {
       int heap = doc["free_heap"];
-      Serial.printf(" (Free heap: %d KB)", heap / 1024);
+      // Serial.printf(" (Free heap: %d KB)", heap / 1024);
     }
 
-    Serial.println();
+    // Serial.println();
   }
+  // Print all other messages
+  Serial.print("📥 RX from Slave: ");
+  Serial.println(line);
 }
