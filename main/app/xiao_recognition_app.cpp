@@ -81,15 +81,15 @@ void XiaoRecognitionAppTerm::detect_result_cb(const detect::WhoDetect::result_t 
     // Print detection details
     int i = 0;
     for (const auto &r : result.det_res) {
-        ESP_LOGI(TAG, "Face %d: bbox[%.2f, %d, %d, %d, %d]",
-                 i, r.score, r.box[0], r.box[1], r.box[2], r.box[3]);
+        // ESP_LOGI(TAG, "Face %d: bbox[%.2f, %d, %d, %d, %d]",
+        //          i, r.score, r.box[0], r.box[1], r.box[2], r.box[3]);
 
-        if (!r.keypoint.empty()) {
-            ESP_LOGI(TAG, "  Keypoints: left_eye[%d,%d] right_eye[%d,%d] nose[%d,%d]",
-                     r.keypoint[0], r.keypoint[1],
-                     r.keypoint[2], r.keypoint[3],
-                     r.keypoint[4], r.keypoint[5]);
-        }
+        // if (!r.keypoint.empty()) {
+        //     ESP_LOGI(TAG, "  Keypoints: left_eye[%d,%d] right_eye[%d,%d] nose[%d,%d]",
+        //              r.keypoint[0], r.keypoint[1],
+        //              r.keypoint[2], r.keypoint[3],
+        //              r.keypoint[4], r.keypoint[5]);
+        // }
 
         // Send detection metadata to LCD via UART
         if (m_uart && i == 0) {  // Only send first face to avoid spam

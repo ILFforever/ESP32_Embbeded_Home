@@ -244,6 +244,38 @@ void create_uart_commands()
             g_uart->send_status("error", "Button handler not available");
         } });
 
+    // Delete face by ID (only deletes name mapping, ESP-WHO doesn't support delete by ID)
+    g_uart->register_command("delete_name", [](const char *cmd, cJSON *params)
+                             {
+        if (!g_face_db_reader) {
+            g_uart->send_status("error", "Face database reader not initialized");
+            return;
+        }
+
+        if (!params) {
+            g_uart->send_status("error", "Missing parameters");
+            return;
+        }
+
+        cJSON* id_obj = cJSON_GetObjectItem(params, "id");
+        if (!cJSON_IsNumber(id_obj)) {
+            g_uart->send_status("error", "Missing or invalid 'id' parameter");
+            return;
+        }
+
+        int id = id_obj->valueint;
+        esp_err_t ret = g_face_db_reader->delete_name_by_id(id);
+
+        if (ret == ESP_OK) {
+            char msg[64];
+            snprintf(msg, sizeof(msg), "Deleted name for face ID %d", id);
+            g_uart->send_status("ok", msg);
+        } else if (ret == ESP_ERR_NOT_FOUND) {
+            g_uart->send_status("error", "No name found for this ID");
+        } else {
+            g_uart->send_status("error", "Failed to delete name");
+        } });
+
     // Force reset database (delete database file)
     g_uart->register_command("reset_database", [](const char *cmd, cJSON *params)
                              {

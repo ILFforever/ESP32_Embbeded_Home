@@ -348,16 +348,26 @@ esp_err_t FaceDbReader::delete_last_name()
     // So we need to delete the name mapping for face_count + 1
     int id_to_delete = face_count + 1;
 
+    return delete_name_by_id(id_to_delete);
+}
+
+esp_err_t FaceDbReader::delete_name_by_id(int id)
+{
+    if (id < 1) {
+        ESP_LOGE(TAG, "Invalid face ID: %d", id);
+        return ESP_ERR_INVALID_ARG;
+    }
+
     // Check if this ID exists in name table
-    auto it = m_name_table.find(id_to_delete);
+    auto it = m_name_table.find(id);
     if (it != m_name_table.end()) {
-        ESP_LOGI(TAG, "Deleting name for ID %d: %s", id_to_delete, it->second.c_str());
+        ESP_LOGI(TAG, "Deleting name for ID %d: %s", id, it->second.c_str());
         m_name_table.erase(it);
         save_name_table();
         return ESP_OK;
     } else {
-        ESP_LOGI(TAG, "No name mapping found for ID %d (this is OK if face was unnamed)", id_to_delete);
-        return ESP_OK;
+        ESP_LOGI(TAG, "No name mapping found for ID %d (this is OK if face was unnamed)", id);
+        return ESP_ERR_NOT_FOUND;
     }
 }
 
