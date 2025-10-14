@@ -11,6 +11,14 @@ extern unsigned long last_pong_time;
 extern int slave_status;
 extern bool uiNeedsUpdate;
 
+// Face detection bounding box
+extern bool hasFaceDetection;
+extern int face_bbox_x;
+extern int face_bbox_y;
+extern int face_bbox_w;
+extern int face_bbox_h;
+extern unsigned long lastFaceDetectionTime;
+
 // Send command to Slave
 void sendUARTCommand(const char *cmd, const char *param = nullptr, int value = -1);
 

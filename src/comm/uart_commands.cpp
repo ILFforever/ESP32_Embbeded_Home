@@ -60,14 +60,13 @@ void handleUARTResponse(String line)
     return;
   }
 
-  Serial.print("📥 RX from Slave: ");
-  Serial.println(line);
-
   // Use larger buffer for complex responses like list_faces
   StaticJsonDocument<2048> doc;
   DeserializationError error = deserializeJson(doc, line);
   if (error)
   {
+    Serial.print("📥 RX from Slave: ");
+    Serial.println(line);
     Serial.print("❌ JSON parse error: ");
     Serial.println(error.c_str());
     Serial.print("Line length: ");
@@ -75,12 +74,39 @@ void handleUARTResponse(String line)
     return;
   }
 
-  // Handle pong response
+  // Handle pong response (silently, no print)
   if (doc.containsKey("type") && doc["type"] == "pong")
   {
     last_pong_time = millis();
     return;
   }
+
+  // Handle detection event (face_detected with metadata)
+  if (doc.containsKey("event") && doc["event"] == "face_detected")
+  {
+    if (doc.containsKey("data"))
+    {
+      JsonObject data = doc["data"];
+      int face_count = data["face_count"] | 0;
+      float score = data["score"] | 0.0;
+      face_bbox_x = data["bbox_x"] | 0;
+      face_bbox_y = data["bbox_y"] | 0;
+      face_bbox_w = data["bbox_w"] | 0;
+      face_bbox_h = data["bbox_h"] | 0;
+
+      // Store bounding box for drawing (only if face detected)
+      hasFaceDetection = (face_count > 0);
+      if (hasFaceDetection)
+      {
+        lastFaceDetectionTime = millis();
+      }
+    }
+    return;
+  }
+
+  // Print all other messages
+  Serial.print("📥 RX from Slave: ");
+  Serial.println(line);
 
   // Handle list_faces response
   if (doc.containsKey("faces") && doc.containsKey("count"))
@@ -92,8 +118,8 @@ void handleUARTResponse(String line)
     for (JsonObject face : faces)
     {
       int id = face["id"];
-      const char* name = face["name"];
-      const char* enrolled = face["enrolled"];
+      const char *name = face["name"];
+      const char *enrolled = face["enrolled"];
       Serial.printf("  - ID %d: %s (enrolled: %s)\n", id, name, enrolled);
     }
     return;
@@ -107,12 +133,38 @@ void handleUARTResponse(String line)
 
     if (doc.containsKey("msg"))
     {
-      int new_status = (int)doc["msg"];
-      if (new_status != slave_status) {
-        slave_status = new_status;
-        uiNeedsUpdate = true;  // Trigger UI refresh on status change
+      const char *msg = doc["msg"];
+      Serial.printf(" - %s", msg);
+
+      // Check if message indicates camera started
+      if (strcmp(msg, "Camera and SPI sender started") == 0)
+      {
+        if (slave_status != 1)
+        {
+          slave_status = 1;
+          uiNeedsUpdate = true; // Trigger UI refresh on status change
+          Serial.print(" [Camera started - status set to 1]");
+        }
       }
-      Serial.printf(" - %s", (const char *)doc["msg"]);
+      else if (strcmp(msg, "Camera and SPI sender stopped") == 0)
+      {
+        if (slave_status != 0)
+        {
+          slave_status = 0;
+          uiNeedsUpdate = true; // Trigger UI refresh on status change
+          Serial.print(" [Camera stopped - status set to 0]");
+        }
+      }
+      // Try parsing msg as integer for backward compatibility
+      else
+      {
+        int new_status = atoi(msg);
+        if (new_status != 0 && new_status != slave_status)
+        {
+          slave_status = new_status;
+          uiNeedsUpdate = true; // Trigger UI refresh on status change
+        }
+      }
     }
 
     if (doc.containsKey("free_heap"))

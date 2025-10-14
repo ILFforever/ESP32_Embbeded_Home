@@ -3,6 +3,7 @@
 #include <WiFi.h>
 #include <WebServer.h>
 
+#include <time.h> // For time functions
 // WiFi credentials - CHANGE THESE
 const char* ssid = "ILFforever2";
 const char* password = "19283746";
@@ -62,6 +63,14 @@ void handleRoot() {
   html += "</div>";
 
   html += "<div class='endpoint'>";
+  html += "<span class='method'>Name Management</span>";
+  html += "<br><label>Face ID: <input type='number' id='faceId' min='1' style='width:60px;padding:5px;'></label>";
+  html += "<label> Name: <input type='text' id='faceName' placeholder='e.g. John' style='width:150px;padding:5px;'></label>";
+  html += "<br><button onclick='setName()'>Set Name</button>";
+  html += "<button onclick='getName()'>Get Name</button>";
+  html += "</div>";
+
+  html += "<div class='endpoint'>";
   html += "<span class='method'>Custom Command</span>";
   html += "<br><label>Command: <input type='text' id='cmd' placeholder='e.g. enroll_face' style='width:200px;padding:5px;'></label>";
   html += "<br><label>Params (JSON): <input type='text' id='params' placeholder='e.g. {\"name\":\"John\"}' style='width:300px;padding:5px;margin-top:5px;'></label>";
@@ -82,6 +91,21 @@ void handleRoot() {
   html += "if(!cmd){alert('Command required');return;}";
   html += "let body={cmd:cmd};";
   html += "if(params){try{body.params=JSON.parse(params);}catch(e){alert('Invalid JSON in params');return;}}";
+  html += "fetch('/command',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})";
+  html += ".then(r=>r.text()).then(alert).catch(e=>alert('Error: '+e));";
+  html += "}";
+  html += "function setName(){";
+  html += "let id=parseInt(document.getElementById('faceId').value);";
+  html += "let name=document.getElementById('faceName').value;";
+  html += "if(!id||id<1){alert('Valid Face ID required');return;}";
+  html += "let body={cmd:'set_name',params:{id:id,name:name}};";
+  html += "fetch('/command',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})";
+  html += ".then(r=>r.text()).then(alert).catch(e=>alert('Error: '+e));";
+  html += "}";
+  html += "function getName(){";
+  html += "let id=parseInt(document.getElementById('faceId').value);";
+  html += "if(!id||id<1){alert('Valid Face ID required');return;}";
+  html += "let body={cmd:'get_name',params:{id:id}};";
   html += "fetch('/command',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})";
   html += ".then(r=>r.text()).then(alert).catch(e=>alert('Error: '+e));";
   html += "}";
@@ -215,6 +239,10 @@ void initHTTPServer() {
     Serial.println("\n✅ WiFi Connected!");
     Serial.print("IP Address: ");
     Serial.println(WiFi.localIP());
+
+    // Configure NTP for Thailand (UTC+7)
+    Serial.println("Configuring time for Thailand (UTC+7)...");
+    configTime(7 * 3600, 0, "pool.ntp.org");
   } else {
     Serial.println("\n❌ WiFi Connection Failed!");
     Serial.println("HTTP server will not start");
