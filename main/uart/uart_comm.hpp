@@ -71,6 +71,13 @@ public:
     void send_json(const char* json_str);
 
     /**
+     * Send event with data
+     * @param event Event type (e.g., "face_detected")
+     * @param data JSON data string
+     */
+    void send_event(const char* event, const char* data);
+
+    /**
      * Send pong response to ping
      * @param seq Sequence number from ping
      */

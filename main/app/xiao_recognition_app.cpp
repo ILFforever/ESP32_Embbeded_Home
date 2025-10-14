@@ -9,7 +9,7 @@ namespace who {
 namespace app {
 
 XiaoRecognitionAppTerm::XiaoRecognitionAppTerm(frame_cap::WhoFrameCap *frame_cap)
-    : WhoRecognitionAppBase(frame_cap)
+    : WhoRecognitionAppBase(frame_cap), m_uart(nullptr)
 {
     init_led();
 
@@ -81,18 +81,48 @@ void XiaoRecognitionAppTerm::detect_result_cb(const detect::WhoDetect::result_t 
     // Print detection details
     int i = 0;
     for (const auto &r : result.det_res) {
-        ESP_LOGI(TAG, "Face %d: bbox[%.2f, %d, %d, %d, %d]", 
+        ESP_LOGI(TAG, "Face %d: bbox[%.2f, %d, %d, %d, %d]",
                  i, r.score, r.box[0], r.box[1], r.box[2], r.box[3]);
-        
+
         if (!r.keypoint.empty()) {
             ESP_LOGI(TAG, "  Keypoints: left_eye[%d,%d] right_eye[%d,%d] nose[%d,%d]",
                      r.keypoint[0], r.keypoint[1],
                      r.keypoint[2], r.keypoint[3],
                      r.keypoint[4], r.keypoint[5]);
         }
+
+        // Send detection metadata to LCD via UART
+        if (m_uart && i == 0) {  // Only send first face to avoid spam
+            cJSON* det_data = cJSON_CreateObject();
+            cJSON_AddNumberToObject(det_data, "face_count", (int)result.det_res.size());
+            cJSON_AddNumberToObject(det_data, "score", r.score);
+            cJSON_AddNumberToObject(det_data, "bbox_x", r.box[0]);
+            cJSON_AddNumberToObject(det_data, "bbox_y", r.box[1]);
+            cJSON_AddNumberToObject(det_data, "bbox_w", r.box[2]);
+            cJSON_AddNumberToObject(det_data, "bbox_h", r.box[3]);
+
+            if (!r.keypoint.empty()) {
+                cJSON* keypoints = cJSON_CreateObject();
+                cJSON_AddNumberToObject(keypoints, "left_eye_x", r.keypoint[0]);
+                cJSON_AddNumberToObject(keypoints, "left_eye_y", r.keypoint[1]);
+                cJSON_AddNumberToObject(keypoints, "right_eye_x", r.keypoint[2]);
+                cJSON_AddNumberToObject(keypoints, "right_eye_y", r.keypoint[3]);
+                cJSON_AddNumberToObject(keypoints, "nose_x", r.keypoint[4]);
+                cJSON_AddNumberToObject(keypoints, "nose_y", r.keypoint[5]);
+                cJSON_AddItemToObject(det_data, "keypoints", keypoints);
+            }
+
+            char* json_str = cJSON_PrintUnformatted(det_data);
+            if (json_str) {
+                m_uart->send_event("face_detected", json_str);
+                free(json_str);
+            }
+            cJSON_Delete(det_data);
+        }
+
         i++;
     }
-    
+
     if (!result.det_res.empty()) {
         gpio_set_level(LED_PIN, 0);  // LED ON
     } else {

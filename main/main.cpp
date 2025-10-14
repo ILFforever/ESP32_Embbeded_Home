@@ -88,7 +88,16 @@ extern "C" void app_main(void)
     { // Start UART tasks
         ESP_LOGE("Main", "Failed to start UART");
     }
+
+    // Connect UART to recognition app for sending detection events
+    g_recognition_app->set_uart_comm(g_uart);
+
     create_uart_commands();
+
+    // Send immediate status to master on startup
+    vTaskDelay(pdMS_TO_TICKS(500)); // Small delay to ensure UART is ready
+    g_uart->send_status("ready", "Camera system initialized. Ready for commands.");
+
     ESP_LOGI("Main", "System ready. Camera is OFF. Send UART command to start.");
 
     // Initialize SPI slave (creates task on Core 1)
@@ -159,6 +168,7 @@ void create_uart_commands()
             );
 
             g_camera_running = true;
+            
             g_uart->send_status("ok", "Camera and SPI sender started");
 
         } else if (strcmp(action_str, "camera_stop") == 0) {
@@ -222,9 +232,14 @@ void create_uart_commands()
     // Delete last enrolled face (native ESP-WHO only supports delete_last)
     g_uart->register_command("delete_last", [](const char *cmd, cJSON *params)
                              {
-        if (g_button_handler) {
+        if (g_button_handler && g_face_db_reader) {
+            // Delete the face from ESP-WHO database
             g_button_handler->trigger_delete();
-            g_uart->send_status("ok", "Deleted last enrolled face");
+
+            // Also delete the name mapping for the deleted face
+            g_face_db_reader->delete_last_name();
+
+            g_uart->send_status("ok", "Deleted last enrolled face and its name");
         } else {
             g_uart->send_status("error", "Button handler not available");
         } });
@@ -248,6 +263,12 @@ void create_uart_commands()
             ESP_LOGW(TAG, "/spiflash directory NOT FOUND - this will cause problems!");
         }
 
+        // **CRITICAL**: Clear all name mappings first
+        if (g_face_db_reader) {
+            ESP_LOGI(TAG, "Clearing all name mappings...");
+            g_face_db_reader->clear_all_names();
+        }
+
         // **CRITICAL**: Reinitialize the recognition system's recognizer
         // This creates a fresh HumanFaceRecognizer instance with clean state
         if (g_recognition_app) {
@@ -262,7 +283,7 @@ void create_uart_commands()
         }
 
         ESP_LOGI(TAG, "=== Database Reset Complete ===");
-        g_uart->send_status("ok", "Database reset complete. System ready for fresh enrollments."); });
+        g_uart->send_status("ok", "Database and names reset complete. System ready for fresh enrollments."); });
 
     // Resume detection callback (workaround for detection stopping after enroll/recognize)
     g_uart->register_command("resume_detection", [](const char *cmd, cJSON *params)
@@ -317,6 +338,84 @@ void create_uart_commands()
         snprintf(msg, sizeof(msg), "Database status: %s", status);
         g_uart->send_status("ok", msg); });
 
+    // ============================================================
+    // Name Management Commands
+    // ============================================================
+
+    // Set name for a face ID
+    g_uart->register_command("set_name", [](const char *cmd, cJSON *params)
+                             {
+        if (!g_face_db_reader) {
+            g_uart->send_status("error", "Face database reader not initialized");
+            return;
+        }
+
+        if (!params) {
+            g_uart->send_status("error", "Missing parameters");
+            return;
+        }
+
+        cJSON* id_obj = cJSON_GetObjectItem(params, "id");
+        cJSON* name_obj = cJSON_GetObjectItem(params, "name");
+
+        if (!cJSON_IsNumber(id_obj)) {
+            g_uart->send_status("error", "Missing or invalid 'id' parameter");
+            return;
+        }
+
+        int id = id_obj->valueint;
+        const char* name = cJSON_IsString(name_obj) ? name_obj->valuestring : nullptr;
+
+        esp_err_t ret = g_face_db_reader->set_name(id, name);
+        if (ret == ESP_OK) {
+            char msg[128];
+            snprintf(msg, sizeof(msg), "Set name for ID %d: %s", id, name ? name : "(removed)");
+            g_uart->send_status("ok", msg);
+        } else {
+            g_uart->send_status("error", "Failed to set name");
+        } });
+
+    // Get name for a face ID
+    g_uart->register_command("get_name", [](const char *cmd, cJSON *params)
+                             {
+        if (!g_face_db_reader) {
+            g_uart->send_status("error", "Face database reader not initialized");
+            return;
+        }
+
+        if (!params) {
+            g_uart->send_status("error", "Missing parameters");
+            return;
+        }
+
+        cJSON* id_obj = cJSON_GetObjectItem(params, "id");
+        if (!cJSON_IsNumber(id_obj)) {
+            g_uart->send_status("error", "Missing or invalid 'id' parameter");
+            return;
+        }
+
+        int id = id_obj->valueint;
+        std::string name = g_face_db_reader->get_name(id);
+
+        char msg[128];
+        snprintf(msg, sizeof(msg), "ID %d: %s", id, name.c_str());
+        g_uart->send_status("ok", msg); });
+
+    // Enroll face with optional name
+    g_uart->register_command("enroll_with_name", [](const char *cmd, cJSON *params)
+                             {
+        if (!g_button_handler) {
+            g_uart->send_status("error", "Button handler not available");
+            return;
+        }
+
+        // Trigger enrollment
+        g_button_handler->trigger_enroll();
+
+        // If name provided, we'll set it after enrollment completes
+        // For now, user must call set_name separately after enrollment
+        g_uart->send_status("ok", "Enrollment triggered. Use set_name command after enrollment completes."); });
+
 }
 
 // ============================================================
@@ -344,6 +443,12 @@ void delete_last_face()
     if (g_button_handler)
     {
         g_button_handler->trigger_delete();
+    }
+
+    // Also delete the name mapping
+    if (g_face_db_reader)
+    {
+        g_face_db_reader->delete_last_name();
     }
 }
 

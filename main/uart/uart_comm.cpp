@@ -149,6 +149,19 @@ void UartComm::send_status_with_heap(const char* status, const char* message)
     free(json_str);
 }
 
+void UartComm::send_event(const char* event, const char* data)
+{
+    cJSON *root = cJSON_CreateObject();
+    cJSON_AddStringToObject(root, "event", event);
+    cJSON_AddRawToObject(root, "data", data);  // Add raw JSON data
+
+    char *json_str = cJSON_PrintUnformatted(root);
+    send_json(json_str);
+
+    cJSON_Delete(root);
+    free(json_str);
+}
+
 void UartComm::send_pong(uint32_t seq)
 {
     cJSON *root = cJSON_CreateObject();
