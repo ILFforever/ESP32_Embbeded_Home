@@ -92,6 +92,9 @@ extern "C" void app_main(void)
     // Connect UART to recognition app for sending detection events
     g_recognition_app->set_uart_comm(g_uart);
 
+    // Connect face DB reader for getting names during recognition
+    g_recognition_app->set_face_db_reader(g_face_db_reader);
+
     create_uart_commands();
 
     // Send immediate status to master on startup
@@ -225,6 +228,16 @@ void create_uart_commands()
         if (g_button_handler) {
             g_button_handler->trigger_enroll();
             g_uart->send_status("ok", "Enrollment mode activated. Present face within 10 seconds.");
+        } else {
+            g_uart->send_status("error", "Button handler not available");
+        } });
+
+    // Recognize face (one-shot recognition)
+    g_uart->register_command("recognize_face", [](const char *cmd, cJSON *params)
+                             {
+        if (g_button_handler) {
+            g_button_handler->trigger_recognize();
+            g_uart->send_status("ok", "Recognition triggered. Present face now.");
         } else {
             g_uart->send_status("error", "Button handler not available");
         } });

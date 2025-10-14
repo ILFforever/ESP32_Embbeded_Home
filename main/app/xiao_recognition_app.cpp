@@ -9,7 +9,7 @@ namespace who {
 namespace app {
 
 XiaoRecognitionAppTerm::XiaoRecognitionAppTerm(frame_cap::WhoFrameCap *frame_cap)
-    : WhoRecognitionAppBase(frame_cap), m_uart(nullptr)
+    : WhoRecognitionAppBase(frame_cap), m_uart(nullptr), m_face_db_reader(nullptr)
 {
     init_led();
 
@@ -133,6 +133,52 @@ void XiaoRecognitionAppTerm::detect_result_cb(const detect::WhoDetect::result_t 
 void XiaoRecognitionAppTerm::recognition_result_cb(const std::string &result)
 {
     ESP_LOGI(TAG, "Recognition: %s", result.c_str());
+
+    // Send recognition result via UART
+    if (m_uart) {
+        // Parse ESP-WHO result string format: "id:X,similarity:Y.YY"
+        // Example: "id:1,similarity:0.85" or "id:unknown,similarity:0.00"
+
+        int id = -1;
+        float confidence = 0.0f;
+        std::string name = "Unknown";
+
+        // Try to parse ID
+        size_t id_pos = result.find("id:");
+        if (id_pos != std::string::npos) {
+            size_t comma_pos = result.find(",", id_pos);
+            std::string id_str = result.substr(id_pos + 3, comma_pos - id_pos - 3);
+
+            if (id_str != "unknown") {
+                id = std::stoi(id_str);
+
+                // Get name from database
+                if (m_face_db_reader && id > 0) {
+                    name = m_face_db_reader->get_name(id);
+                }
+            }
+        }
+
+        // Try to parse confidence/similarity
+        size_t sim_pos = result.find("similarity:");
+        if (sim_pos != std::string::npos) {
+            std::string sim_str = result.substr(sim_pos + 11);
+            confidence = std::stof(sim_str);
+        }
+
+        // Create JSON event
+        cJSON* rec_data = cJSON_CreateObject();
+        cJSON_AddNumberToObject(rec_data, "id", id);
+        cJSON_AddStringToObject(rec_data, "name", name.c_str());
+        cJSON_AddNumberToObject(rec_data, "confidence", confidence);
+
+        char* json_str = cJSON_PrintUnformatted(rec_data);
+        if (json_str) {
+            m_uart->send_event("face_recognized", json_str);
+            free(json_str);
+        }
+        cJSON_Delete(rec_data);
+    }
 }
 
 void XiaoRecognitionAppTerm::restore_detection_callback()
