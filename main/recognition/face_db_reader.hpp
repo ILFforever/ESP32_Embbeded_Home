@@ -54,13 +54,6 @@ public:
     esp_err_t delete_last_name();
 
     /**
-     * Delete name mapping for a specific face ID
-     * @param id Face ID to delete (1-based)
-     * @return ESP_OK on success, ESP_ERR_NOT_FOUND if ID not found
-     */
-    esp_err_t delete_name_by_id(int id);
-
-    /**
      * Clear all name mappings and delete the names file
      * Call this when resetting the entire database
      * @return ESP_OK on success
