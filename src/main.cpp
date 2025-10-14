@@ -82,7 +82,7 @@ void setup()
   Serial.println("\n\n=================================");
   Serial.println("ESP32_Embbeded_Home - Doorbell_lcd");
   Serial.println("=================================\n");
-  delay(500);
+  delay(100);
 
   Serial.println("Starting TFT_eSPI ST7789 screen");
   tft.init();
@@ -162,7 +162,7 @@ void setup()
   getCameraStatus();
   drawUIOverlay();
 
-  delay(1000);
+  delay(100);
   updateStatusMsg("Getting ready...", true, "Standing By");
   uiNeedsUpdate = true;
 }

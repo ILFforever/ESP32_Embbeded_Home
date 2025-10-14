@@ -282,10 +282,5 @@ void handleUARTResponse(String line)
       int heap = doc["free_heap"];
       // Serial.printf(" (Free heap: %d KB)", heap / 1024);
     }
-
-    // Serial.println();
   }
-  // Print all other messages
-  // Serial.print("📥 RX from Slave: ");
-  // Serial.println(line);
 }
