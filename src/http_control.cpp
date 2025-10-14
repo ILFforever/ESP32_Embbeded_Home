@@ -109,14 +109,6 @@ void handleRoot() {
   html += "fetch('/command',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})";
   html += ".then(r=>r.text()).then(alert).catch(e=>alert('Error: '+e));";
   html += "}";
-  html += "function deleteName(){";
-  html += "let id=parseInt(document.getElementById('faceId').value);";
-  html += "if(!id||id<1){alert('Valid Face ID required');return;}";
-  html += "if(!confirm('Delete name for Face ID '+id+'?'))return;";
-  html += "let body={cmd:'delete_name',params:{id:id}};";
-  html += "fetch('/command',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})";
-  html += ".then(r=>r.text()).then(alert).catch(e=>alert('Error: '+e));";
-  html += "}";
   html += "</script>";
   html += "<script>setInterval(()=>{fetch('/info').then(r=>r.json()).then(d=>{";
   html += "document.getElementById('status').innerHTML='IP: '+d.ip+'<br>Uptime: '+d.uptime+'ms<br>Slave Status: '+d.slave_status;";
