@@ -187,6 +187,7 @@ void handleUARTResponse(String line)
       {
         updateStatusMsg("Unknown Person : Try again", true, "Doorbell Active");
         recognition_success = false;
+        sendUARTCommand("resume_detection"); //what to run after successfull activation
       }
     }
     return;
@@ -264,7 +265,7 @@ void handleUARTResponse(String line)
         if (new_status != 0)
         {
           slave_status = new_status;
-          if ((new_status == 1) && (status_msg == "Standing By")) //fix for screen not updating if camera is started before lcd
+          if ((new_status == 1) && (status_msg == "Standing By")) // fix for screen not updating if camera is started before lcd
           {
             updateStatusMsg("Doorbell Active");
           }

@@ -43,6 +43,12 @@ bool uiNeedsUpdate = true; // Flag to redraw UI elements
 #define VIDEO_Y_OFFSET 40  // Reserve top 20px for status bar
 #define VIDEO_HEIGHT 200   // Video area height
 
+// Cached values for optimization
+static String cachedTimeStr = "";
+static String cachedDateStr = "";
+static unsigned long lastTimeUpdate = 0;
+static int lastDrawnStatus = -999;
+
 // Face detection bounding box
 bool hasFaceDetection = false;
 int face_bbox_x = 0;
@@ -235,7 +241,7 @@ void ProcessFrame()
     static unsigned long lastErrorMsg = 0;
     if (millis() - lastErrorMsg > 3000)
     {
-      updateStatusMsg("video Error");
+      updateStatusMsg("video Error",true, status_msg.c_str());
       lastErrorMsg = millis();
     }
     spiMaster.ackFrame();
@@ -293,7 +299,7 @@ void ProcessFrame()
   // Composite: Push video sprite to screen
   videoSprite.pushSprite(0, VIDEO_Y_OFFSET + 25);
 
-  // Always draw UI overlay to keep animations smooth
+  // Draw UI overlay (optimized - only when needed or during animation)
   drawUIOverlay();
 
   spiMaster.ackFrame();
@@ -316,17 +322,20 @@ void lcdhandoff() // check if we need to hand off LCD to ProcessFrame
 // Draw UI overlay (status bar, icons, etc.)
 void drawUIOverlay()
 {
-  // Clear UI sprite
-  topuiSprite.fillSprite(TFT_BLACK); // Clear top bar
-  botuiSprite.fillSprite(TFT_BLACK); // Clear bottom bar
+  // Update cached time strings every second
+  unsigned long now = millis();
+  if (now - lastTimeUpdate >= 1000)
+  {
+    cachedTimeStr = getCurrentTimeAsString();
+    cachedDateStr = getCurrentDateAsString();
+    lastTimeUpdate = now;
+  }
 
-  // TOP BAR: Status text and icons
-  // Draw status text
-  topuiSprite.setTextColor(TFT_WHITE);
-  topuiSprite.setTextSize(1);
-  topuiSprite.setCursor(15, 12);
+  // Clear UI sprites
+  topuiSprite.fillSprite(TFT_BLACK);
+  botuiSprite.fillSprite(TFT_BLACK);
 
-  // Display connection status
+  // Display connection status indicator
   switch (slave_status)
   {
   case -1:
@@ -336,83 +345,81 @@ void drawUIOverlay()
     topuiSprite.fillSmoothCircle(25, 22, 10, TFT_DARKGREY);
     break;
   case 1:
-  { // Create a new scope for local variables
-    // Blinking effect for recording indicator.
-    // A sine wave with a period of about 2 seconds (2*PI / 0.003 ~= 2094 ms)
-    float sine_wave = (sin(millis() * 0.003f) + 1.0f) / 2.0f; // Varies between 0.0 and 1.0
-
-    // We'll make it fade from a dim blue to a bright blue.
-    uint8_t blue_value = 50 + (uint8_t)(sine_wave * 205); // Varies from 50 to 255
-    uint16_t blinking_color = tft.color565(0, 0, blue_value);
-    topuiSprite.fillSmoothCircle(25, 22, 8, blinking_color);
+  {
+    // Optimized blinking effect - calculate once
+    float sine_wave = (sin(now * 0.003f) + 1.0f) * 0.5f;
+    uint8_t blue_value = 50 + (uint8_t)(sine_wave * 205);
+    topuiSprite.fillSmoothCircle(25, 22, 8, tft.color565(0, 0, blue_value));
   }
   break;
   }
 
-  if (slave_status >= 1) // If camera running show time on top
+  if (slave_status >= 1)
   {
-    // Draw Time in the top bar
+    // Camera running - show time in top bar
     topuiSprite.setTextDatum(TC_DATUM);
-    topuiSprite.setTextFont(4); // Use Font 4 for the top bar clock
-    topuiSprite.setTextColor(TFT_WHITE);
-    topuiSprite.drawString(getCurrentTimeAsString(), topuiSprite.width() / 2, 15);
+    topuiSprite.setTextFont(4);
+    topuiSprite.setTextColor(TFT_WHITE, TFT_BLACK);
+    topuiSprite.drawString(cachedTimeStr, topuiSprite.width() / 2, 15);
   }
   else
   {
-    // Camera is OFF - reuse videoSprite for displaying time
-    videoSprite.fillSprite(TFT_BLACK); // Clear the sprite
-
-    struct tm timeinfo;
-    if (getLocalTime(&timeinfo))
+    // Camera OFF - show clock screen (only redraw when status changes or time updates)
+    static int lastClockUpdate = -1;
+    if (lastClockUpdate != (int)(now / 1000) || lastDrawnStatus != slave_status)
     {
-      // Display a greeting based on the time of day
-      videoSprite.setTextColor(TFT_WHITE, TFT_BLACK);
-      videoSprite.setTextFont(4);         // Use Font 4 for the greeting
-      videoSprite.setTextDatum(TL_DATUM); // Top-Left alignment
-      if (timeinfo.tm_hour >= 5 && timeinfo.tm_hour < 12)
-        videoSprite.drawString("Good morning!", 10, 20);
-      else if (timeinfo.tm_hour >= 12 && timeinfo.tm_hour < 16)
-        videoSprite.drawString("Good afternoon!", 10, 20);
-      else if (timeinfo.tm_hour >= 16 && timeinfo.tm_hour < 18)
-        videoSprite.drawString("Good evening!", 10, 20);
+      lastClockUpdate = (int)(now / 1000);
+      lastDrawnStatus = slave_status;
+
+      videoSprite.fillSprite(TFT_BLACK);
+
+      struct tm timeinfo;
+      if (getLocalTime(&timeinfo))
+      {
+        // Greeting
+        videoSprite.setTextFont(4);
+        videoSprite.setTextDatum(TL_DATUM);
+        videoSprite.setTextColor(TFT_WHITE, TFT_BLACK);
+
+        const char* greeting;
+        if (timeinfo.tm_hour >= 5 && timeinfo.tm_hour < 12)
+          greeting = "Good morning!";
+        else if (timeinfo.tm_hour >= 12 && timeinfo.tm_hour < 16)
+          greeting = "Good afternoon!";
+        else if (timeinfo.tm_hour >= 16 && timeinfo.tm_hour < 18)
+          greeting = "Good evening!";
+        else
+          greeting = "Good night";
+
+        videoSprite.drawString(greeting, 10, 20);
+      }
       else
-        videoSprite.drawString("Good night", 10, 20);
+      {
+        videoSprite.setTextColor(TFT_WHITE, TFT_BLACK);
+        videoSprite.setTextSize(2);
+        videoSprite.setTextDatum(TL_DATUM);
+        videoSprite.drawString("Camera OFF", videoSprite.width() / 2, 10);
+      }
+
+      // Large time
+      videoSprite.setTextFont(6);
+      videoSprite.setTextDatum(TL_DATUM);
+      videoSprite.drawString(cachedTimeStr, 10, 45);
+
+      // Date
+      videoSprite.setTextFont(4);
+      videoSprite.drawString(cachedDateStr, 20, 85);
+
+      // Weather placeholder
+      videoSprite.drawString("Rainy 25C", 10, 125);
+
+      videoSprite.pushSprite(0, VIDEO_Y_OFFSET + 25);
     }
-    else
-    {
-      // If time is not available, just show "Camera OFF"
-      videoSprite.setTextColor(TFT_WHITE, TFT_BLACK);
-      videoSprite.setTextSize(2);
-      videoSprite.setTextDatum(TL_DATUM); // Top Center
-      videoSprite.drawString("Camera OFF", videoSprite.width() / 2, 10);
-    }
-
-    // Draw large time
-    videoSprite.setTextFont(6);         // Use Font 7 (7-segment) for the large clock
-    videoSprite.setTextDatum(TL_DATUM); // Top-Left alignment
-    videoSprite.drawString(getCurrentTimeAsString(), 10, 45);
-
-    // Draw date
-    videoSprite.setTextFont(4); // Use a smaller font for the date
-    videoSprite.setTextDatum(TL_DATUM);
-    videoSprite.drawString(getCurrentDateAsString(), 20, 85);
-
-    // TODO Have it pull from api later
-    videoSprite.drawString("Rainy 25C", 10, 125);
-
-    // Push to screen
-    videoSprite.pushSprite(0, VIDEO_Y_OFFSET + 25);
   }
 
-  // Draw WiFi/connection indicator (right side)
-  if (ping_counter > 0 && (millis() - last_pong_time < 6000))
-  {
-    drawWifiSymbol(tft.width() - 25, 28, 3); // Full strength
-  }
-  else
-  {
-    drawWifiSymbol(tft.width() - 25, 28, 0); // No connection
-  }
+  // WiFi indicator
+  int wifiStrength = (ping_counter > 0 && (now - last_pong_time < 6000)) ? 3 : 0;
+  drawWifiSymbol(tft.width() - 25, 28, wifiStrength);
 
   // Display status message with smooth vertical scroll animation
   botuiSprite.setTextDatum(TC_DATUM); // Top Center alignment
@@ -604,6 +611,7 @@ void drawUIOverlay()
   {
     recognition_success = false;
     recognition_success_timer = 0;
+    sendUARTCommand("resume_detection"); // Resume detection after showing success
   }
 
   topuiSprite.fillRect(0, topuiSprite.height() - 4, tft.width(), 4, statusColor);
