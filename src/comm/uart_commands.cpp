@@ -1,49 +1,8 @@
 #include "uart_commands.h"
+#include "lcd_helper.h"
+#include "slave_state_manager.h"
 
-// Update status message on LCD
-void updateStatusMsg(const char *msg, bool temporary, const char *fallback)
-{
-  status_msg = String(msg);
-  status_msg_is_temporary = temporary;
-
-  // Set fallback message if provided, otherwise determine based on slave_status
-  if (fallback != nullptr)
-  {
-    status_msg_fallback = String(fallback);
-  }
-  else if (temporary)
-  {
-    // Auto-determine fallback based on current state
-    if (slave_status == -1)
-    {
-      status_msg_fallback = "Not connected";
-    }
-    else if (slave_status == 0)
-    {
-      status_msg_fallback = "On Stand By";
-    }
-    else if (slave_status == 1)
-    {
-      status_msg_fallback = "Doorbell Active";
-    }
-    else if (slave_status == 2)
-    {
-      status_msg_fallback = "Looking for faces";
-    }
-    else
-    {
-      status_msg_fallback = "On Stand By"; // Default fallback
-    }
-  }
-  else
-  {
-    status_msg_fallback = ""; // Clear fallback for non-temporary messages
-  }
-
-  uiNeedsUpdate = true;
-}
-
-// Send command to Slave
+// Send command to Slave (with automatic mode tracking)
 void sendUARTCommand(const char *cmd, const char *param, int value)
 {
   JsonDocument doc;
@@ -67,8 +26,20 @@ void sendUARTCommand(const char *cmd, const char *param, int value)
 
   String output;
   serializeJson(doc, output);
-  // Serial.println(output);
   SlaveSerial.println(output);
+
+  // Track desired mode based on commands sent
+  if (strcmp(cmd, "camera_control") == 0 && param != nullptr) {
+    if (strcmp(param, "camera_start") == 0) {
+      setDesiredMode(1);  // Camera running
+    } else if (strcmp(param, "camera_stop") == 0) {
+      setDesiredMode(0);  // Standby
+    }
+  } else if (strcmp(cmd, "start_recognition") == 0) {
+    setDesiredMode(2);  // Recognition running
+  } else if (strcmp(cmd, "stop_recognition") == 0) {
+    setDesiredMode(1);  // Back to camera only
+  }
 }
 
 // Send ping message
@@ -228,6 +199,7 @@ void handleUARTResponse(String line)
         if (slave_status != 1)
         {
           slave_status = 1;
+          updateActualMode(1);
           Serial.print(" [Camera started - status set to 1]");
         }
       }
@@ -237,6 +209,7 @@ void handleUARTResponse(String line)
         if (slave_status != 0)
         {
           slave_status = 0;
+          updateActualMode(0);
           Serial.print(" [Camera stopped - status set to 0]");
         }
       }
@@ -246,6 +219,7 @@ void handleUARTResponse(String line)
         if (slave_status != 2)
         {
           slave_status = 2;
+          updateActualMode(2);
           Serial.print(" [Face Recog started - status set to 2]");
         }
       }
@@ -255,6 +229,7 @@ void handleUARTResponse(String line)
         if (slave_status != 1)
         {
           slave_status = 1;
+          updateActualMode(1);
           Serial.print(" [Face Recog stopped - status set to 1]");
         }
       }
@@ -265,6 +240,7 @@ void handleUARTResponse(String line)
         if (new_status != 0)
         {
           slave_status = new_status;
+          updateActualMode(new_status);
           if ((new_status == 1) && (status_msg == "Standing By")) // fix for screen not updating if camera is started before lcd
           {
             updateStatusMsg("Doorbell Active");

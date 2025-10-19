@@ -5,13 +5,18 @@
 #include <SPI.h>
 #include <TaskScheduler.h>
 #include "uart_commands.h"
+#include "lcd_helper.h"
+#include "nfc_controller.h"
 #include "http_control.h"
 #include "SPIMaster.h"
+#include "slave_state_manager.h"
 #include <TJpg_Decoder.h>
 #include <cstring>
 
 #define RX2 16
 #define TX2 17
+#define Doorbell_bt 13 // not final
+#define Call_bt 12     // not final
 #define UART_BAUD 115200
 
 // Create objects
@@ -23,6 +28,7 @@ TFT_eSprite miduiSprite = TFT_eSprite(&tft); // Sprite for UI overlay
 String status_msg = "";
 bool status_msg_is_temporary = false; // Flag to indicate temporary status message
 bool recognition_success = false;
+bool card_success = false;
 String status_msg_fallback = ""; // Message to display after temporary message is shown once
 
 Scheduler myscheduler;
@@ -58,29 +64,48 @@ int face_bbox_h = 0;
 unsigned long lastFaceDetectionTime = 0;
 #define FACE_DETECTION_TIMEOUT 1500 // Clear bbox after 1.5 seconds
 
+// Button state tracking
+#define BUTTON_DEBOUNCE_MS 50         // Debounce time in milliseconds
+#define BUTTON_HOLD_THRESHOLD_MS 1000 // Time to consider button "held" (1 second)
+
+struct ButtonState
+{
+  bool currentState;              // Current debounced state
+  bool lastRawState;              // Last raw reading
+  bool lastDebouncedState;        // Last stable state
+  unsigned long lastDebounceTime; // Last time the pin changed
+  unsigned long pressStartTime;   // When button was first pressed
+  bool pressHandled;              // Flag to prevent repeated triggers
+  bool holdHandled;               // Flag to prevent repeated hold triggers
+};
+
+ButtonState doorbellButton = {false, false, false, 0, 0, false, false};
+ButtonState callButton = {false, false, false, 0, 0, false, false};
+
 void checkUARTData();
 void sendPingTask();
 void checkPingTimeout();
 void handleHTTPTask();
-void UpdateSPI();
 void ProcessFrame();
 void drawUIOverlay();
 void lcdhandoff();
-void getCameraStatus();
+void checkButtons();
+void checkSlaveSyncTask();
 void drawWifiSymbol(int x, int y, int strength);
+void onCardDetected(NFCCardData card);
 bool tft_jpg_render_callback(int16_t x, int16_t y, uint16_t w, uint16_t h, uint16_t *bitmap);
 String getCurrentTimeAsString();
 String getCurrentDateAsString();
 
-Task taskCheckUART(20, TASK_FOREVER, &checkUARTData);           // Check UART buffer every 20ms
-Task taskSendPing(1000, TASK_FOREVER, &sendPingTask);           // Send ping every 1s
-Task taskCheckTimeout(1000, TASK_FOREVER, &checkPingTimeout);   // Check timeout every 1s
-Task taskHTTPHandler(10, TASK_FOREVER, &handleHTTPTask);        // Handle HTTP requests every 10ms
-Task taskUpdateSPI(10, TASK_FOREVER, &UpdateSPI);               // Update SPI every 10ms
-Task taskProcessFrame(5, TASK_FOREVER, &ProcessFrame);          // Check for frames every 5ms
-Task taskdrawUIOverlay(25, TASK_FOREVER, &drawUIOverlay);       // Update UI overlay every 10ms
-Task tasklcdhandoff(200, TASK_FOREVER, &lcdhandoff);            // Check if we need to hand off LCD to ProcessFrame
-Task taskGetCameraStatus(1000, TASK_FOREVER, &getCameraStatus); // Get camera status every 0.5s
+Task taskCheckUART(20, TASK_FOREVER, &checkUARTData);             // Check UART buffer every 20ms
+Task taskSendPing(1000, TASK_FOREVER, &sendPingTask);             // Send ping every 1s
+Task taskCheckTimeout(1000, TASK_FOREVER, &checkPingTimeout);     // Check timeout every 1s
+Task taskHTTPHandler(10, TASK_FOREVER, &handleHTTPTask);          // Handle HTTP requests every 10ms
+Task taskProcessFrame(5, TASK_FOREVER, &ProcessFrame);            // Check for frames every 5ms
+Task taskdrawUIOverlay(25, TASK_FOREVER, &drawUIOverlay);         // Update UI overlay every 10ms
+Task tasklcdhandoff(200, TASK_FOREVER, &lcdhandoff);              // Check if we need to hand off LCD to ProcessFrame
+Task taskCheckButtons(10, TASK_FOREVER, &checkButtons);           // Check button state every 10ms
+Task taskCheckSlaveSync(1000, TASK_FOREVER, &checkSlaveSyncTask); // Check slave mode sync and recovery every 1s
 
 void setup()
 {
@@ -113,6 +138,11 @@ void setup()
 
   Serial.println("Sprites initialized successfully");
 
+  // Initialize button pins
+  pinMode(Doorbell_bt, INPUT_PULLUP); // Active LOW (pressed = LOW)
+  pinMode(Call_bt, INPUT_PULLUP);     // Active LOW (pressed = LOW)
+  Serial.printf("Buttons initialized: Doorbell=GPIO%d, Call=GPIO%d\n", Doorbell_bt, Call_bt);
+
   SlaveSerial.begin(UART_BAUD, SERIAL_8N1, RX2, TX2);
   Serial.printf("UART initialized: RX=GPIO%d, TX=GPIO%d, Baud=%d\n", RX2, TX2, UART_BAUD);
   delay(100);
@@ -125,9 +155,23 @@ void setup()
   }
   Serial.println("SPI initialization started");
 
+  // Start SPI task on Core 1 for dedicated frame reception
+  if (!spiMaster.startTask())
+  {
+    Serial.println("[ERROR] Failed to start SPI task on Core 1");
+    while (1)
+      delay(100);
+  }
+  // Start NFC on Core 0
+  if (initNFC())
+  {
+    setNFCCardCallback(onCardDetected);
+    Serial.println("[MAIN] NFC initialized");
+  }
+
   // Initialize HTTP server
   initHTTPServer();
-  delay(100);
+  delay(50);
 
   // Configure TJpg_Decoder
   TJpgDec.setCallback(tft_jpg_render_callback); // Set the callback
@@ -141,20 +185,20 @@ void setup()
   myscheduler.addTask(taskSendPing);
   myscheduler.addTask(taskCheckTimeout);
   myscheduler.addTask(taskHTTPHandler);
-  myscheduler.addTask(taskUpdateSPI);
   myscheduler.addTask(taskProcessFrame);
   myscheduler.addTask(taskdrawUIOverlay);
   myscheduler.addTask(tasklcdhandoff);
-  myscheduler.addTask(taskGetCameraStatus);
+  myscheduler.addTask(taskCheckButtons);
+  myscheduler.addTask(taskCheckSlaveSync);
   taskCheckUART.enable();
   taskSendPing.enable();
   taskCheckTimeout.enable();
   taskHTTPHandler.enable();
-  taskUpdateSPI.enable();
   taskProcessFrame.enable();
   taskdrawUIOverlay.enable();
   tasklcdhandoff.enable();
-  taskGetCameraStatus.enable();
+  taskCheckButtons.enable();
+  taskCheckSlaveSync.enable();
 
   last_pong_time = millis();
   sendUARTCommand("get_status");
@@ -165,10 +209,10 @@ void setup()
 
   // Initial status message
   updateStatusMsg("Starting up...");
-  getCameraStatus();
+  sendUARTCommand("get_status");
   drawUIOverlay();
 
-  delay(100);
+  delay(50);
   updateStatusMsg("Getting ready...", true, "Standing By");
   uiNeedsUpdate = true;
 }
@@ -200,12 +244,6 @@ bool tft_jpg_render_callback(int16_t x, int16_t y, uint16_t w, uint16_t h, uint1
   return true; // always continue decoding
 }
 
-// Task: Update SPI
-void UpdateSPI()
-{
-  spiMaster.update();
-}
-
 // Task: Process SPI frames and display on LCD
 void ProcessFrame()
 {
@@ -231,7 +269,7 @@ void ProcessFrame()
     currentFPS = frameCount * 1000.0 / (now - lastFrameTime);
     frameCount = 0;
     lastFrameTime = now;
-    uiNeedsUpdate = true; // Trigger UI update for FPS counter
+    uiNeedsUpdate = true; // Tri/gger UI update for FPS counter
   }
 
   // Quick validation (minimal logging)
@@ -241,7 +279,7 @@ void ProcessFrame()
     static unsigned long lastErrorMsg = 0;
     if (millis() - lastErrorMsg > 3000)
     {
-      updateStatusMsg("video Error",true, status_msg.c_str());
+      updateStatusMsg("video Error", true, status_msg.c_str());
       lastErrorMsg = millis();
     }
     spiMaster.ackFrame();
@@ -381,7 +419,7 @@ void drawUIOverlay()
         videoSprite.setTextDatum(TL_DATUM);
         videoSprite.setTextColor(TFT_WHITE, TFT_BLACK);
 
-        const char* greeting;
+        const char *greeting;
         if (timeinfo.tm_hour >= 5 && timeinfo.tm_hour < 12)
           greeting = "Good morning!";
         else if (timeinfo.tm_hour >= 12 && timeinfo.tm_hour < 16)
@@ -599,10 +637,23 @@ void drawUIOverlay()
 
   // Draw borders for camera area
   static int recognition_success_timer = 0;
-  if (recognition_success)
+  static int card_success_timer = 0;
+
+  if (recognition_success && card_success)
+  {
+    statusColor = TFT_GREEN; // TODO show a different color
+    recognition_success_timer++;
+    card_success_timer++;
+  }
+  else if (recognition_success)
   {
     statusColor = TFT_GREEN;
     recognition_success_timer++;
+  }
+  else if (card_success)
+  {
+    statusColor = TFT_GREEN;
+    card_success_timer++;
   }
   else
     statusColor = TFT_LIGHTGREY;
@@ -611,7 +662,14 @@ void drawUIOverlay()
   {
     recognition_success = false;
     recognition_success_timer = 0;
-    sendUARTCommand("resume_detection"); // Resume detection after showing success
+    // sendUARTCommand("resume_detection");              // Resume detection after showing success
+    sendUARTCommand("camera_control", "camera_stop"); // stop camera after successfull scan
+  }
+  if (card_success_timer > 100) // Show green border
+  {
+    card_success = false;
+    card_success_timer = 0;
+    // UH nothing needed here right? we already have a call back
   }
 
   topuiSprite.fillRect(0, topuiSprite.height() - 4, tft.width(), 4, statusColor);
@@ -699,12 +757,10 @@ void checkPingTimeout()
 {
   if (ping_counter > 0 && (millis() - last_pong_time > PONG_TIMEOUT))
   {
-    Serial.println("!!! WARNING: No pong response for 5 seconds !!!");
+    Serial.println("!!! WARNING: No pong response for 10 seconds !!!");
     Serial.println("Connection to slave may be lost.\n");
     if (slave_status != -1)
     {
-      if (taskGetCameraStatus.isEnabled())
-        taskGetCameraStatus.disable();
       slave_status = -1; // mark as disconnected
       updateStatusMsg("Connection issue");
     }
@@ -714,16 +770,134 @@ void checkPingTimeout()
   {
     // Only recover from disconnected state if we're receiving pongs again
     Serial.println("Connection restored!");
-    if (!taskGetCameraStatus.isEnabled())
-      taskGetCameraStatus.enable();
     slave_status = 0; // back to standby
     updateStatusMsg("On Stand By");
   }
 }
 
-void getCameraStatus()
+void onCardDetected(NFCCardData card)
 {
+  Serial.print("Card ID: ");
+  Serial.println(card.cardId);
+
+  // Send to hub -> hub validate id -> hub send back -> open
+  // For now
+  card_success = true;
+
+  // Send to slave or trigger action
+  // sendUARTCommand("unlock_door", nullptr, card.cardId);
+  String msg = "Card " + String(card.cardId) + " Scanned";
+  updateStatusMsg(msg.c_str(), true, "Standing By");
+}
+
+// Task: Handle HTTP requests
+void handleHTTPTask()
+{
+  handleHTTPClient();
+}
+
+// Helper function to update button state with debouncing
+void updateButtonState(ButtonState &btn, int pin, const char *buttonName)
+{
+  // Read current pin state (inverted because of INPUT_PULLUP - pressed = LOW)
+  bool rawState = !digitalRead(pin); // Convert to active HIGH logic
+  unsigned long currentTime = millis();
+
+  // Detect state change
+  if (rawState != btn.lastRawState)
+  {
+    btn.lastDebounceTime = currentTime;
+  }
+  btn.lastRawState = rawState;
+
+  // Check if debounce period has passed
+  if ((currentTime - btn.lastDebounceTime) > BUTTON_DEBOUNCE_MS)
+  {
+    // State is stable, update current state
+    bool previousState = btn.currentState;
+    btn.currentState = rawState;
+
+    // Detect button press (transition from released to pressed)
+    if (btn.currentState && !previousState)
+    {
+      btn.pressStartTime = currentTime;
+      btn.pressHandled = false;
+      btn.holdHandled = false;
+
+      Serial.printf("[BTN] %s pressed\n", buttonName);
+
+      // Handle button press action
+      if (strcmp(buttonName, "Doorbell") == 0)
+      {
+        // Doorbell button pressed send to hub
+        updateStatusMsg("Doorbell Pressed", true, "On Stand By");
+        // TODO add connnection to hub
+      }
+      else if (strcmp(buttonName, "Call") == 0)
+      {
+        // Call button pressed - start camera without recognition
+        updateStatusMsg("Call Button Pressed", true, "On Stand By");
+        sendUARTCommand("camera_control", "camera_start");
+        sendUARTCommand("stop_detection");
+      }
+    }
+
+    // Detect button hold (held down for BUTTON_HOLD_THRESHOLD_MS)
+    if (btn.currentState && !btn.holdHandled)
+    {
+      if ((currentTime - btn.pressStartTime) >= BUTTON_HOLD_THRESHOLD_MS)
+      {
+        btn.holdHandled = true;
+
+        Serial.printf("[BTN] %s held\n", buttonName);
+
+        // Handle button hold action
+        if (strcmp(buttonName, "Doorbell") == 0)
+        {
+          // Start face recognition
+          sendUARTCommand("camera_control", "camera_start");
+          delay(100); // Small delay to ensure camera is ready
+          sendUARTCommand("start_recognition");
+        }
+        else if (strcmp(buttonName, "Call") == 0)
+        {
+          // Call button held - stop camera
+          updateStatusMsg("End call", true, "On Stand By");
+          sendUARTCommand("camera_control", "camera_stop");
+        }
+      }
+    }
+
+    // Detect button release
+    if (!btn.currentState && previousState)
+    {
+      unsigned long pressDuration = currentTime - btn.pressStartTime;
+      Serial.printf("[BTN] %s released (held for %lu ms)\n", buttonName, pressDuration);
+
+      // Handle release actions if needed
+      // (Most actions are handled on press or hold)
+    }
+  }
+}
+
+// Task: Check button states with debouncing and hold detection
+void checkButtons()
+{
+  updateButtonState(doorbellButton, Doorbell_bt, "Doorbell");
+  updateButtonState(callButton, Call_bt, "Call");
+}
+
+// Task: Check if slave mode is synchronized and recover if needed
+void checkSlaveSyncTask()
+{
+  // Send get_status command to slave
   sendUARTCommand("get_status");
+
+  // Check synchronization and recover if needed
+  checkSlaveSync();
+
+  // Update slave_status from actual_slave_mode (for backward compatibility)
+  slave_status = actual_slave_mode;
 
   // Update status message based on current state if no recent update
   static unsigned long lastStatusUpdate = 0;
@@ -747,7 +921,7 @@ void getCameraStatus()
       }
       else if (slave_status == 1)
       {
-        updateStatusMsg("Doorbell Active");
+        updateStatusMsg("Camera On");
       }
       else if (slave_status == 2)
       {
@@ -755,10 +929,4 @@ void getCameraStatus()
       }
     }
   }
-}
-
-// Task: Handle HTTP requests
-void handleHTTPTask()
-{
-  handleHTTPClient();
 }
