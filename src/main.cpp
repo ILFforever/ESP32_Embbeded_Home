@@ -16,10 +16,10 @@
 
 #define RX2 16
 #define TX2 17
-#define Doorbell_bt 34  // Analog pin - HIGH when pressed, LOW when not
-#define Call_bt 35      // Analog pin - HIGH when pressed, LOW when not
+#define Doorbell_bt 34  // Analog pin
+#define Call_bt 35      // Analog pin
 #define UART_BAUD 115200
-#define BUTTON_THRESHOLD 2000  // ADC threshold for button press (0-4095 scale)
+#define BUTTON_THRESHOLD 4000  // ADC threshold for button press (0-4095 scale)
 
 // Create objects
 TFT_eSPI tft = TFT_eSPI();
@@ -477,12 +477,28 @@ void drawUIOverlay()
   static float animProgress = 0.0f;
   static bool firstRun = true;
   static bool tempMsgShownOnce = false;
+  static String lastStatusMsg = ""; // Track previous message to detect changes
 
   // Initialize timing on first run
   if (firstRun)
   {
     stateStartTime = millis();
     firstRun = false;
+  }
+
+  // Detect status message change - trigger immediate animation if showing label
+  if (status_msg != lastStatusMsg && status_msg.length() > 0)
+  {
+    lastStatusMsg = status_msg;
+
+    // If currently showing "STATUS" label, immediately start animation to show new message
+    if (animState == SHOWING_LABEL)
+    {
+      animState = ANIM_TO_MSG;
+      stateStartTime = millis();
+      animProgress = 0.0f;
+      Serial.printf("[UI] Status message changed to '%s' - triggering immediate animation\n", status_msg.c_str());
+    }
   }
 
   // Check if temporary message has been shown once, then replace with fallback message
@@ -764,6 +780,7 @@ void checkPingTimeout()
     if (slave_status != -1)
     {
       slave_status = -1; // mark as disconnected
+      updateActualMode(-1);
       updateStatusMsg("Connection issue");
     }
     // Keep checking - stay in disconnected state
@@ -785,9 +802,6 @@ void onCardDetected(NFCCardData card)
   // Send to hub -> hub validate id -> hub send back -> open
   // For now
   card_success = true;
-
-  // Send to slave or trigger action
-  // sendUARTCommand("unlock_door", nullptr, card.cardId);
   String msg = "Card " + String(card.cardId) + " Scanned";
   updateStatusMsg(msg.c_str(), true, "Standing By");
 }
@@ -870,7 +884,7 @@ void updateButtonState(ButtonState &btn, int pin, const char *buttonName)
           // Start face recognition
           sendUARTCommand("camera_control", "camera_start");
           delay(100); // Small delay to ensure camera is ready
-          sendUARTCommand("start_recognition");
+          sendUARTCommand("recognize_face");
         }
         else if (strcmp(buttonName, "Call") == 0)
         {
