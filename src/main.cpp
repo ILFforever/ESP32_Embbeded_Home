@@ -12,12 +12,14 @@
 #include "slave_state_manager.h"
 #include <TJpg_Decoder.h>
 #include <cstring>
+#include <esp_system.h>
 
 #define RX2 16
 #define TX2 17
-#define Doorbell_bt 13 // not final
-#define Call_bt 12     // not final
+#define Doorbell_bt 34  // Analog pin - HIGH when pressed, LOW when not
+#define Call_bt 35      // Analog pin - HIGH when pressed, LOW when not
 #define UART_BAUD 115200
+#define BUTTON_THRESHOLD 2000  // ADC threshold for button press (0-4095 scale)
 
 // Create objects
 TFT_eSPI tft = TFT_eSPI();
@@ -30,6 +32,7 @@ bool status_msg_is_temporary = false; // Flag to indicate temporary status messa
 bool recognition_success = false;
 bool card_success = false;
 String status_msg_fallback = ""; // Message to display after temporary message is shown once
+unsigned long status_msg_last_update = 0; // Timestamp of last status message update
 
 Scheduler myscheduler;
 HardwareSerial SlaveSerial(2); // Use UART2
@@ -102,7 +105,7 @@ Task taskSendPing(1000, TASK_FOREVER, &sendPingTask);             // Send ping e
 Task taskCheckTimeout(1000, TASK_FOREVER, &checkPingTimeout);     // Check timeout every 1s
 Task taskHTTPHandler(10, TASK_FOREVER, &handleHTTPTask);          // Handle HTTP requests every 10ms
 Task taskProcessFrame(5, TASK_FOREVER, &ProcessFrame);            // Check for frames every 5ms
-Task taskdrawUIOverlay(25, TASK_FOREVER, &drawUIOverlay);         // Update UI overlay every 10ms
+Task taskdrawUIOverlay(10, TASK_FOREVER, &drawUIOverlay);         // Update UI overlay every 10ms
 Task tasklcdhandoff(200, TASK_FOREVER, &lcdhandoff);              // Check if we need to hand off LCD to ProcessFrame
 Task taskCheckButtons(10, TASK_FOREVER, &checkButtons);           // Check button state every 10ms
 Task taskCheckSlaveSync(1000, TASK_FOREVER, &checkSlaveSyncTask); // Check slave mode sync and recovery every 1s
@@ -138,10 +141,9 @@ void setup()
 
   Serial.println("Sprites initialized successfully");
 
-  // Initialize button pins
-  pinMode(Doorbell_bt, INPUT_PULLUP); // Active LOW (pressed = LOW)
-  pinMode(Call_bt, INPUT_PULLUP);     // Active LOW (pressed = LOW)
-  Serial.printf("Buttons initialized: Doorbell=GPIO%d, Call=GPIO%d\n", Doorbell_bt, Call_bt);
+  // GPIO 34 and 35 are ADC1 channels - will use analogRead()
+  Serial.printf("Buttons initialized: Doorbell=GPIO%d, Call=GPIO%d (analog mode, threshold=%d)\n",
+                Doorbell_bt, Call_bt, BUTTON_THRESHOLD);
 
   SlaveSerial.begin(UART_BAUD, SERIAL_8N1, RX2, TX2);
   Serial.printf("UART initialized: RX=GPIO%d, TX=GPIO%d, Baud=%d\n", RX2, TX2, UART_BAUD);
@@ -799,9 +801,20 @@ void handleHTTPTask()
 // Helper function to update button state with debouncing
 void updateButtonState(ButtonState &btn, int pin, const char *buttonName)
 {
-  // Read current pin state (inverted because of INPUT_PULLUP - pressed = LOW)
-  bool rawState = !digitalRead(pin); // Convert to active HIGH logic
+  // Read analog value from pin (12 bit 0-4095 on ESP32)
+  int analogValue = analogRead(pin);
+
+  // Button is pressed if analog value is above threshold (HIGH = pressed)
+  bool rawState = (analogValue > BUTTON_THRESHOLD);
   unsigned long currentTime = millis();
+
+  // Debug: Uncomment to see analog values for calibration
+  // static unsigned long lastDebugPrint = 0;
+  // if (currentTime - lastDebugPrint > 500) {
+  //   Serial.printf("[BTN] %s analog value: %d (threshold=%d, state=%s)\n",
+  //                 buttonName, analogValue, BUTTON_THRESHOLD, rawState ? "PRESSED" : "RELEASED");
+  //   lastDebugPrint = currentTime;
+  // }
 
   // Detect state change
   if (rawState != btn.lastRawState)
@@ -874,8 +887,6 @@ void updateButtonState(ButtonState &btn, int pin, const char *buttonName)
       unsigned long pressDuration = currentTime - btn.pressStartTime;
       Serial.printf("[BTN] %s released (held for %lu ms)\n", buttonName, pressDuration);
 
-      // Handle release actions if needed
-      // (Most actions are handled on press or hold)
     }
   }
 }
@@ -899,34 +910,5 @@ void checkSlaveSyncTask()
   // Update slave_status from actual_slave_mode (for backward compatibility)
   slave_status = actual_slave_mode;
 
-  // Update status message based on current state if no recent update
-  static unsigned long lastStatusUpdate = 0;
-  static int lastKnownStatus = -999;
-
-  // Only update if status changed and no message in last 5 seconds
-  if (slave_status != lastKnownStatus && (millis() - lastStatusUpdate > 5000))
-  {
-    lastKnownStatus = slave_status;
-    lastStatusUpdate = millis();
-
-    if (status_msg == "" || status_msg.length() == 0)
-    {
-      if (slave_status == -1)
-      {
-        updateStatusMsg("Not connected");
-      }
-      else if (slave_status == 0)
-      {
-        updateStatusMsg("On Stand By");
-      }
-      else if (slave_status == 1)
-      {
-        updateStatusMsg("Camera On");
-      }
-      else if (slave_status == 2)
-      {
-        updateStatusMsg("Looking for faces");
-      }
-    }
-  }
+  checkStatusMessageExpiration();
 }

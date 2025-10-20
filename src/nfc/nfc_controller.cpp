@@ -1,115 +1,129 @@
+// NFC Controller - Based on Adafruit readMifare.pde example
+// Simple blocking approach - proven stable on ESP32
+// Uses readPassiveTargetID() in RTOS task for non-blocking main loop
+
 #include "nfc_controller.h"
 #include <Wire.h>
 #include <Adafruit_PN532.h>
 
-// PN532 instance for I2C with IRQ
+// PN532 instance with IRQ and RESET pins
 static Adafruit_PN532 nfc(NFC_PN532_IRQ, NFC_PN532_RESET);
 
 // Task variables
-static volatile bool cardDetected = false;
 static TaskHandle_t nfcTaskHandle = nullptr;
 static NFCCardCallback cardCallback = nullptr;
 static NFCCardData lastCardData = {0};
 static bool nfcRunning = false;
 
-// ISR - must be in IRAM for ESP32
-void IRAM_ATTR nfcIrqHandler() {
-  cardDetected = true;
-}
+// Debounce tracking
+static unsigned long timeLastCardRead = 0;
+
+// Statistics
+static uint32_t successfulReads = 0;
+static uint32_t failedReads = 0;
 
 // Internal NFC reading task
 static void nfcTask(void *parameter) {
-  Serial.println("[NFC] Task started");
-  
-  // Initialize NFC
+  Serial.println("\n[NFC] Task started on Core 0");
+
+  // Small delay to let system stabilize
+  vTaskDelay(pdMS_TO_TICKS(500));
+
+  // Initialize I2C with custom pins
+  Wire.begin(NFC_I2C_SDA, NFC_I2C_SCL);
+  Serial.printf("[NFC] I2C initialized: SDA=GPIO%d, SCL=GPIO%d\n", NFC_I2C_SDA, NFC_I2C_SCL);
+
+  // Initialize PN532
   nfc.begin();
-  
+
+  // Check for PN532 board
   uint32_t versiondata = nfc.getFirmwareVersion();
   if (!versiondata) {
-    Serial.println("[NFC] ERROR: Didn't find PN532 board!");
+    Serial.println("[NFC] ERROR: Didn't find PN532 board");
+    Serial.println("[NFC] Check wiring and I2C mode (DIP switches)");
     vTaskDelete(NULL);
     return;
   }
-  
+
+  // Found chip - print info (Adafruit format)
   Serial.print("[NFC] Found chip PN5");
   Serial.println((versiondata >> 24) & 0xFF, HEX);
   Serial.print("[NFC] Firmware ver. ");
   Serial.print((versiondata >> 16) & 0xFF, DEC);
-  Serial.print(".");
+  Serial.print('.');
   Serial.println((versiondata >> 8) & 0xFF, DEC);
-  
-  // Setup IRQ pin and interrupt
-  pinMode(NFC_PN532_IRQ, INPUT_PULLUP);
-  attachInterrupt(digitalPinToInterrupt(NFC_PN532_IRQ), nfcIrqHandler, FALLING);
 
   nfcRunning = true;
-  
-  // Start listening for cards
-  Serial.println("[NFC] Waiting for cards...");
-  nfc.startPassiveTargetIDDetection(PN532_MIFARE_ISO14443A);
-  
+  Serial.println("[NFC] Waiting for ISO14443A card...\n");
+
+  // Main loop - blocking read with debounce
   while (1) {
-    if (cardDetected) {
-      cardDetected = false;
-      
-      Serial.println("\n[NFC] Card detected via IRQ!");
-      
-      uint8_t uid[7] = {0};
-      uint8_t uidLength;
-      
-      if (nfc.readDetectedPassiveTargetID(uid, &uidLength)) {
-        Serial.println("[NFC] ✓ Read successful");
-        Serial.print("[NFC] UID Length: ");
-        Serial.print(uidLength);
-        Serial.println(" bytes");
-        Serial.print("[NFC] UID: ");
+    uint8_t success;
+    uint8_t uid[7] = {0, 0, 0, 0, 0, 0, 0};
+    uint8_t uidLength;
 
-        // Store card data
-        lastCardData.uidLength = uidLength;
-        memcpy(lastCardData.uid, uid, uidLength);
-        lastCardData.isValid = true;
+    // Wait for an ISO14443A type card (Mifare, etc.)
+    // This blocks until a card is found or timeout
+    success = nfc.readPassiveTargetID(PN532_MIFARE_ISO14443A, uid, &uidLength);
 
-        for (uint8_t i = 0; i < uidLength; i++) {
-          if (uid[i] < 0x10) Serial.print("0");
-          Serial.print(uid[i], HEX);
-          if (i < uidLength - 1) Serial.print(" ");
-        }
-        Serial.println();
-
-        // Convert to decimal ID for 4-byte cards
-        if (uidLength == 4) {
-          lastCardData.cardId = ((uint32_t)uid[0] << 24) |
-                                ((uint32_t)uid[1] << 16) |
-                                ((uint32_t)uid[2] << 8) |
-                                uid[3];
-          Serial.print("[NFC] Card ID (decimal): ");
-          Serial.println(lastCardData.cardId);
-        } else {
-          lastCardData.cardId = 0;
-        }
-
-        Serial.println("[NFC] ---");
-
-        // Call callback if registered
-        if (cardCallback != nullptr) {
-          cardCallback(lastCardData);
-        }
-
-      } else {
-        Serial.println("[NFC] ✗ Read failed");
-        lastCardData.isValid = false;
+    if (success) {
+      // Check debounce - prevent duplicate reads
+      unsigned long now = millis();
+      if (now - timeLastCardRead < NFC_DEBOUNCE_DELAY) {
+        Serial.println("[NFC] Debounce - ignoring duplicate read");
+        vTaskDelay(pdMS_TO_TICKS(100));
+        continue;
       }
 
-      // Debounce - wait before listening again
-      vTaskDelay(pdMS_TO_TICKS(NFC_DEBOUNCE_DELAY));
-      
-      // Start listening for next card
-      Serial.println("[NFC] Ready for next card...");
-      nfc.startPassiveTargetIDDetection(PN532_MIFARE_ISO14443A);
+      successfulReads++;
+      timeLastCardRead = now;
+
+      // Display card info
+      Serial.println("\n[NFC] ========== CARD DETECTED ==========");
+      Serial.print("[NFC] UID Length: ");
+      Serial.print(uidLength, DEC);
+      Serial.println(" bytes");
+      Serial.print("[NFC] UID Value: ");
+      nfc.PrintHex(uid, uidLength);
+
+      // Store card data
+      lastCardData.uidLength = uidLength;
+      memcpy(lastCardData.uid, uid, uidLength);
+      lastCardData.isValid = true;
+
+      // Convert to decimal for 4-byte cards (Mifare Classic)
+      if (uidLength == 4) {
+        uint32_t cardid = uid[0];
+        cardid <<= 8;
+        cardid |= uid[1];
+        cardid <<= 8;
+        cardid |= uid[2];
+        cardid <<= 8;
+        cardid |= uid[3];
+
+        lastCardData.cardId = cardid;
+        Serial.print("[NFC] Mifare Classic card #");
+        Serial.println(cardid);
+      } else {
+        lastCardData.cardId = 0;
+        Serial.println("[NFC] 7-byte UID (Mifare Ultralight or other)");
+      }
+
+      Serial.printf("[NFC] Stats: %lu successful, %lu failed\n", successfulReads, failedReads);
+      Serial.println("[NFC] ====================================\n");
+
+      // Call user callback
+      if (cardCallback != nullptr) {
+        cardCallback(lastCardData);
+      }
+
+      // Brief delay before next read
+      vTaskDelay(pdMS_TO_TICKS(100));
+    } else {
+      // No card found - this is normal, just wait a bit
+      failedReads++;
+      vTaskDelay(pdMS_TO_TICKS(100));
     }
-    
-    // Short delay to prevent task hogging CPU
-    vTaskDelay(pdMS_TO_TICKS(10));
   }
 }
 
@@ -122,20 +136,20 @@ bool initNFC() {
   }
 
   Serial.println("\n=== NFC Initialization ===");
-  Serial.println("PN532 NFC Reader with IRQ");
+  Serial.println("PN532 NFC Reader - I2C Mode");
+  Serial.printf("SDA=GPIO%d, SCL=GPIO%d, IRQ=GPIO%d, RST=GPIO%d\n",
+                NFC_I2C_SDA, NFC_I2C_SCL, NFC_PN532_IRQ, NFC_PN532_RESET);
+  Serial.println("IMPORTANT: Add 2kΩ pull-up resistors (SDA→3.3V, SCL→3.3V) per Adafruit spec");
 
-  // Initialize I2C with custom pins
-  Wire.begin(NFC_I2C_SDA, NFC_I2C_SCL);
-
-  // Create NFC task on Core 0 (default core for peripherals)
+  // Create NFC task on Core 0 (keeps main loop free)
   BaseType_t result = xTaskCreatePinnedToCore(
-    nfcTask,           // Task function
-    "NFC_Reader",      // Task name
-    4096,              // Stack size (bytes)
-    NULL,              // Parameters
-    3,                 // Priority (lower than SPI, higher than TaskScheduler)
-    &nfcTaskHandle,    // Task handle
-    0                  // Core 0
+    nfcTask,
+    "NFC_Reader",
+    4096,           // Stack size
+    NULL,
+    3,              // Priority
+    &nfcTaskHandle,
+    0               // Core 0
   );
 
   if (result != pdPASS) {
@@ -143,12 +157,13 @@ bool initNFC() {
     return false;
   }
 
-  Serial.println("[NFC] Task created on Core 0");
+  Serial.println("[NFC] Task created successfully");
   return true;
 }
 
 void setNFCCardCallback(NFCCardCallback callback) {
   cardCallback = callback;
+  Serial.println("[NFC] Callback registered");
 }
 
 NFCCardData getLastCardData() {

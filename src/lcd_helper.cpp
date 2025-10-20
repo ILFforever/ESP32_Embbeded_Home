@@ -1,10 +1,36 @@
 #include "lcd_helper.h"
 
+// Get status message for current slave state
+String getStatusMessageForSlaveState(int state)
+{
+  if (state == -1)
+  {
+    return "Connection Error";
+  }
+  else if (state == 0)
+  {
+    return "On Stand By";
+  }
+  else if (state == 1)
+  {
+    return "Doorbell Active";
+  }
+  else if (state == 2)
+  {
+    return "Looking for faces";
+  }
+  else
+  {
+    return "Unknown"; // Default
+  }
+}
+
 // Update status message on LCD
 void updateStatusMsg(const char *msg, bool temporary, const char *fallback)
 {
   status_msg = String(msg);
   status_msg_is_temporary = temporary;
+  status_msg_last_update = millis();
 
   // Set fallback message if provided, otherwise determine based on slave_status
   if (fallback != nullptr)
@@ -14,26 +40,7 @@ void updateStatusMsg(const char *msg, bool temporary, const char *fallback)
   else if (temporary)
   {
     // Auto-determine fallback based on current state
-    if (slave_status == -1)
-    {
-      status_msg_fallback = "Not connected";
-    }
-    else if (slave_status == 0)
-    {
-      status_msg_fallback = "On Stand By";
-    }
-    else if (slave_status == 1)
-    {
-      status_msg_fallback = "Doorbell Active";
-    }
-    else if (slave_status == 2)
-    {
-      status_msg_fallback = "Looking for faces";
-    }
-    else
-    {
-      status_msg_fallback = "On Stand By"; // Default fallback
-    }
+    status_msg_fallback = getStatusMessageForSlaveState(slave_status);
   }
   else
   {
@@ -41,4 +48,31 @@ void updateStatusMsg(const char *msg, bool temporary, const char *fallback)
   }
 
   uiNeedsUpdate = true;
+}
+
+// Check if status message has expired (2 seconds) and update from slave state
+void checkStatusMessageExpiration()
+{
+  unsigned long now = millis();
+
+  // If message hasn't changed in 3 seconds, update from slave state
+  if (now - status_msg_last_update >= 3000)
+  {
+    String stateMsg = getStatusMessageForSlaveState(slave_status);
+
+    // Only update if different from current message
+    if (status_msg != stateMsg)
+    {
+      status_msg = stateMsg;
+      status_msg_is_temporary = false;
+      status_msg_fallback = "";
+      status_msg_last_update = now;
+      uiNeedsUpdate = true;
+    }
+    else
+    {
+      // Message is already correct, just update timestamp to avoid checking too often
+      status_msg_last_update = now;
+    }
+  }
 }

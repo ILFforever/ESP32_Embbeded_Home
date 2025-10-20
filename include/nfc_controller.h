@@ -32,13 +32,15 @@
 #include <Arduino.h>
 
 // NFC Pin Configuration
-#define NFC_I2C_SDA 21          // TODO: Change pins if needed
-#define NFC_I2C_SCL 22          // TODO: Change pins if needed
-#define NFC_PN532_IRQ 4         // TODO: Change pins if needed
-#define NFC_PN532_RESET -1      // No reset pin
+#define NFC_I2C_SDA 13          // I2C Data
+#define NFC_I2C_SCL 15          // I2C Clock
+#define NFC_PN532_IRQ 5         // Interrupt pin
+#define NFC_PN532_RESET -1       // NC
 
 // NFC Configuration
 #define NFC_DEBOUNCE_DELAY 500  // ms between card reads
+#define NFC_IRQ_DEBOUNCE 100    // ms to debounce IRQ signal (prevent noise)
+#define NFC_WATCHDOG_TIMEOUT 10000  // ms - reset if no activity for 10s
 
 // Card data structure
 struct NFCCardData {

@@ -50,7 +50,7 @@ void checkSlaveSync() {
         case 0:  // Should be standby
             Serial.println("[STATE] Recovery: Stopping camera");
             sendUARTCommand("camera_control", "camera_stop");
-            sendUARTCommand("stop_recognition");
+            //sendUARTCommand("stop_recognition");
             break;
 
         case 1:  // Should have camera running
@@ -59,7 +59,7 @@ void checkSlaveSync() {
                 sendUARTCommand("camera_control", "camera_start");
             } else if (actual_slave_mode == 2) {
                 Serial.println("[STATE] Recovery: Stopping recognition");
-                sendUARTCommand("stop_recognition");
+                //sendUARTCommand("stop_recognition");
             }
             break;
 
