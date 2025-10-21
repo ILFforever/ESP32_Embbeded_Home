@@ -26,8 +26,8 @@ static const char *TAG = "Main";
 // Function Declarations
 // ============================================================
 void create_uart_commands();
-void exit_standby_mode();
-void enter_standby_mode();
+bool exit_standby_mode();
+bool enter_standby_mode();
 void start_camera_task(void *pvParameters);
 // static void stats_task(void *pvParameters);
 static void spi_frame_sender_task(void *pvParameters);
@@ -150,14 +150,17 @@ void create_uart_commands()
         const char* action_str = name->valuestring;
 
         if (strcmp(action_str, "camera_start") == 0) {
-            if (g_camera_running) {
+            // Check standby state instead of g_camera_running
+            if (!g_standby_control->is_standby()) {
                 g_uart->send_status("error", "Camera already running");
                 return;
             }
 
-
-            // Start camera in separate task
-            xTaskCreate(start_camera_task, "camera_task", 4096, NULL, 5, NULL);
+            // Exit standby mode first (this handles camera restart)
+            if (!exit_standby_mode()) {
+                g_uart->send_status("error", "Failed to exit standby mode");
+                return;
+            }
 
             // Start SPI frame sender task on Core 0
             xTaskCreatePinnedToCore(
@@ -171,12 +174,13 @@ void create_uart_commands()
             );
 
             g_camera_running = true;
-            
+
             g_uart->send_status("ok", "Camera and SPI sender started");
 
         } else if (strcmp(action_str, "camera_stop") == 0) {
-            if (!g_camera_running) {
-                g_uart->send_status("error", "Camera not running");
+            // Check standby state instead of g_camera_running
+            if (g_standby_control->is_standby()) {
+                g_uart->send_status("error", "Camera already stopped");
                 return;
             }
 
@@ -186,8 +190,12 @@ void create_uart_commands()
                 g_spi_sender_task_handle = nullptr;
             }
 
-            // Stop camera
-            enter_standby_mode();
+            // Enter standby mode (this handles camera shutdown)
+            if (!enter_standby_mode()) {
+                g_uart->send_status("error", "Failed to enter standby mode");
+                return;
+            }
+
             g_camera_running = false;
             g_uart->send_status("ok", "Camera and SPI sender stopped");
 
@@ -481,20 +489,24 @@ void resume_face_detection()
     }
 }
 
-void enter_standby_mode()
+bool enter_standby_mode()
 {
     if (g_button_handler)
     {
-        g_button_handler->enter_standby();
+        return g_button_handler->enter_standby();
     }
+    ESP_LOGE(TAG, "Button handler not initialized");
+    return false;
 }
 
-void exit_standby_mode()
+bool exit_standby_mode()
 {
     if (g_button_handler)
     {
-        g_button_handler->exit_standby();
+        return g_button_handler->exit_standby();
     }
+    ESP_LOGE(TAG, "Button handler not initialized");
+    return false;
 }
 
 bool is_in_standby()

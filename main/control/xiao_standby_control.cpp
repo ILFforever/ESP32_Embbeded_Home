@@ -12,9 +12,9 @@ namespace who
 
         XiaoStandbyControl::XiaoStandbyControl(recognition::WhoRecognition *recognition,
                                                frame_cap::WhoFrameCap *frame_cap)
-            : m_recognition(recognition), m_frame_cap(frame_cap), m_is_standby(false)
+            : m_recognition(recognition), m_frame_cap(frame_cap), m_is_standby(true)
         {
-            ESP_LOGI(TAG, "Standby control initialized");
+            ESP_LOGI(TAG, "Standby control initialized (camera off by default)");
         }
 
         XiaoStandbyControl::~XiaoStandbyControl()
@@ -120,7 +120,7 @@ namespace who
             // Step 3: Restart recognition system (clean API)
             ESP_LOGI(TAG, "Restarting recognition system...");
             if (!m_recognition->restart())
-            { 
+            {
                 ESP_LOGE(TAG, "  ✗ Failed to restart recognition system");
                 return false;
             }
