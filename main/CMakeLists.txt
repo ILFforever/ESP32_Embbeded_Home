@@ -1,6 +1,6 @@
-set(src_dirs ./ app control network uart spi jpeg recognition)
+set(src_dirs ./ app control network uart spi jpeg recognition audio)
 
-set(include_dirs ./ app control network uart spi jpeg recognition)
+set(include_dirs ./ app control network uart spi jpeg recognition audio)
 
 set(requires who_detect_app
              who_detect

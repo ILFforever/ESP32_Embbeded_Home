@@ -4,6 +4,7 @@
 #include "xiao_standby_control.hpp"
 #include "who_recognition.hpp"
 #include "recognition/face_db_reader.hpp"
+#include "i2s_microphone.hpp"
 
 #ifdef __cplusplus
 extern "C" {
@@ -17,4 +18,5 @@ void init_wifi_and_server(void);
 
 void set_http_server_refs(who::standby::XiaoStandbyControl *standby,
                           who::recognition::WhoRecognition *recognition,
-                          who::recognition::FaceDbReader *face_db_reader);
+                          who::recognition::FaceDbReader *face_db_reader,
+                          who::audio::I2SMicrophone *microphone);

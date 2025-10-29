@@ -85,6 +85,15 @@ Custom implementations in `main/`:
    - ESP32-S3: DVP interface via `get_term_dvp_frame_cap_pipeline()`
    - ESP32-P4: MIPI CSI/UVC variants available
 
+4. **I2S Microphone Driver** (`audio/i2s_microphone.cpp/hpp`)
+   - PDM microphone capture for onboard MSM261S4030H0/MP34DT06JTR
+   - GPIO pins: GPIO 42 (CLK), GPIO 41 (DATA)
+   - 16 kHz sample rate, 16-bit mono PCM
+   - Continuous audio level monitoring (RMS/Peak)
+   - Runs on Core 0 (separate from camera/recognition on Core 1)
+   - UART control commands: `mic_start`, `mic_stop`, `mic_status`
+   - Update frequency: ~15.6 Hz audio processing, 1 Hz serial logging
+
 ### Main Application Flow
 
 `main.cpp` (`app_main()`):
@@ -165,3 +174,91 @@ These can be called from external tasks/components.
 **Monitoring:**
 - Call `g_standby_control->print_power_stats()` for detailed power statistics (logs to serial)
 - Use external multimeter on 3.3V power pin for accurate current measurement
+
+## Network Configuration
+
+### WiFi Static IP
+
+Camera uses static IP for reliable audio streaming over WiFi:
+
+**Network Settings** (configured in `network/http_server.cpp`):
+- Static IP: `192.168.1.100`
+- Gateway: `192.168.1.1`
+- Subnet: `255.255.255.0`
+- DNS: `192.168.1.1`
+- SSID: `ILFforever2`
+- Password: `19283746`
+
+**HTTP Endpoints:**
+- Status page: `http://192.168.1.100/`
+- Audio stream: `http://192.168.1.100/audio/stream`
+- Face control: `/enroll`, `/recognize`, `/standby`, `/wake`
+- Database: `/face_count`, `/face_list`, `/db_status`
+
+**Enabling WiFi/HTTP Server:**
+Add to `app_main()` after component initialization:
+```cpp
+init_wifi_and_server();
+set_http_server_refs(g_standby_control, g_recognition_app->get_recognition(),
+                     g_face_db_reader, g_microphone);
+```
+
+See [NETWORK_CONFIG.md](../../NETWORK_CONFIG.md) for detailed network setup.
+
+## Audio Subsystem
+
+### I2S PDM Microphone
+
+**Hardware:**
+- Onboard microphone: MSM261S4030H0 or MP34DT06JTR (PDM digital microphone)
+- No external hardware required on XIAO ESP32-S3 Sense
+
+**Pin Configuration:**
+- PDM Clock (CLK): GPIO 42
+- PDM Data (DIN): GPIO 41
+- No pin conflicts with camera (DVP) or SPI slave interface
+
+**Audio Configuration:**
+- Sample rate: 16 kHz
+- Bit depth: 16-bit PCM
+- Channels: Mono
+- I2S peripheral: I2S_NUM_0 (PDM RX mode)
+- DMA buffers: 4 descriptors × 1024 frames
+
+**Performance:**
+- Buffer size: 1024 samples (64ms @ 16kHz)
+- Audio processing rate: ~15.6 Hz (every 64ms)
+- Level updates: RMS and Peak calculated on every buffer
+- Serial logging: 1 Hz (every 16 buffers) to avoid flooding console
+- Task priority: 5 (medium, below camera tasks)
+- Core assignment: Core 0 (camera runs on Core 1)
+
+**UART Control Commands:**
+| Command | Description |
+|---------|-------------|
+| `mic_start` | Initialize I2S and start audio capture task |
+| `mic_stop` | Stop audio capture and disable I2S |
+| `mic_status` | Query microphone state and current audio levels |
+
+**Usage Example:**
+```json
+{"cmd": "mic_start"}
+{"cmd": "mic_status"}
+{"cmd": "mic_stop"}
+```
+
+**Serial Output Format:**
+```
+I (12345) I2SMic: Audio: RMS=1234 (3.8%) Peak=2345 (7.2%) [===]
+```
+
+**Integration Notes:**
+- Microphone operates independently from camera system
+- Can run concurrently with face detection/recognition
+- Lazy initialization: only creates I2S resources when `mic_start` is called
+- Clean shutdown: properly deallocates resources on `mic_stop`
+
+**UART Handler Limit:**
+- Maximum UART command handlers: 24 (increased from 16)
+- Current command count: ~19 (including mic commands)
+- Available slots: 5 for future expansion

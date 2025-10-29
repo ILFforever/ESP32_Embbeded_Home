@@ -8,6 +8,7 @@
 #include "network/http_server.h"
 #include "uart/uart_comm.hpp"
 #include "recognition/face_db_reader.hpp"
+#include "audio/i2s_microphone.hpp"
 #include <cstdio>
 #include <sys/stat.h>
 #include "spi/slave_spi.hpp"
@@ -19,6 +20,7 @@ using namespace who::app;
 using namespace who::button;
 using namespace who::standby;
 using namespace who::recognition;
+using namespace who::audio;
 
 static const char *TAG = "Main";
 
@@ -41,6 +43,7 @@ who::uart::UartComm *g_uart = nullptr;
 static who::app::XiaoRecognitionAppTerm *g_recognition_app = nullptr;
 static who::frame_cap::WhoFrameCap *g_frame_cap = nullptr;
 static FaceDbReader *g_face_db_reader = nullptr;
+static I2SMicrophone *g_microphone = nullptr;
 static bool g_camera_running = false;
 static TaskHandle_t g_spi_sender_task_handle = nullptr;
 static uint16_t g_frame_id = 0;
@@ -97,6 +100,15 @@ extern "C" void app_main(void)
 
     create_uart_commands();
 
+    // Initialize WiFi and HTTP server
+    init_wifi_and_server();
+
+    // Set HTTP server references (pass microphone pointer)
+    set_http_server_refs(g_standby_control,
+                         g_recognition_app->get_recognition(),
+                         g_face_db_reader,
+                         g_microphone);
+                         
     // Send immediate status to master on startup
     vTaskDelay(pdMS_TO_TICKS(500)); // Small delay to ensure UART is ready
     g_uart->send_status("ready", "Camera system initialized. Ready for commands.");
@@ -162,11 +174,11 @@ void create_uart_commands()
                 return;
             }
 
-            // Start SPI frame sender task on Core 0
+            // Start SPI frame sender task on Core 0 with larger stack for audio buffers
             xTaskCreatePinnedToCore(
                 spi_frame_sender_task,
                 "spi_sender",
-                4096,
+                8192,  // Increased from 4096 to 8192 for audio buffers
                 NULL,
                 4,  // Priority 4 (below camera/recognition tasks)
                 &g_spi_sender_task_handle,
@@ -437,6 +449,75 @@ void create_uart_commands()
         // For now, user must call set_name separately after enrollment
         g_uart->send_status("ok", "Enrollment triggered. Use set_name command after enrollment completes."); });
 
+    // ============================================================
+    // Microphone Control Commands
+    // ============================================================
+
+    // Start microphone
+    g_uart->register_command("mic_start", [](const char *cmd, cJSON *params)
+                             {
+        if (!g_microphone) {
+            // Create microphone instance
+            g_microphone = new I2SMicrophone();
+            esp_err_t ret = g_microphone->init();
+            if (ret != ESP_OK) {
+                delete g_microphone;
+                g_microphone = nullptr;
+                g_uart->send_status("error", "Failed to initialize microphone");
+                return;
+            }
+
+            // Update HTTP server reference after creating microphone
+            set_http_server_refs(g_standby_control,
+                               g_recognition_app->get_recognition(),
+                               g_face_db_reader,
+                               g_microphone);
+        }
+
+        if (g_microphone->is_running()) {
+            g_uart->send_status("error", "Microphone already running");
+            return;
+        }
+
+        if (g_microphone->start()) {
+            g_uart->send_status("ok", "Microphone started. Check serial output for audio levels.");
+        } else {
+            g_uart->send_status("error", "Failed to start microphone");
+        } });
+
+    // Stop microphone
+    g_uart->register_command("mic_stop", [](const char *cmd, cJSON *params)
+                             {
+        if (!g_microphone) {
+            g_uart->send_status("error", "Microphone not initialized");
+            return;
+        }
+
+        if (!g_microphone->is_running()) {
+            g_uart->send_status("error", "Microphone not running");
+            return;
+        }
+
+        g_microphone->stop();
+        g_uart->send_status("ok", "Microphone stopped"); });
+
+    // Get microphone status
+    g_uart->register_command("mic_status", [](const char *cmd, cJSON *params)
+                             {
+        if (!g_microphone) {
+            g_uart->send_status("ok", "Microphone: Not initialized");
+            return;
+        }
+
+        if (g_microphone->is_running()) {
+            char msg[128];
+            snprintf(msg, sizeof(msg), "Running - RMS:%lu Peak:%lu",
+                     g_microphone->get_rms_level(),
+                     g_microphone->get_peak_level());
+            g_uart->send_status("ok", msg);
+        } else {
+            g_uart->send_status("ok", "Microphone: Initialized but not running");
+        } });
 }
 
 // ============================================================
@@ -547,11 +628,16 @@ static void spi_frame_sender_task(void *pvParameters)
             {
                 // Determine pixel format from camera frame
                 RawJpegEncoder::PixelFormat fmt = RawJpegEncoder::PixelFormat::RGB565;
-                if (static_cast<pixformat_t>(frame->format) == PIXFORMAT_RGB888) {
+                if (static_cast<pixformat_t>(frame->format) == PIXFORMAT_RGB888)
+                {
                     fmt = RawJpegEncoder::PixelFormat::RGB888;
-                } else if (static_cast<pixformat_t>(frame->format) == PIXFORMAT_YUV422) {
+                }
+                else if (static_cast<pixformat_t>(frame->format) == PIXFORMAT_YUV422)
+                {
                     fmt = RawJpegEncoder::PixelFormat::YUV422;
-                } else if (static_cast<pixformat_t>(frame->format) == PIXFORMAT_GRAYSCALE) {
+                }
+                else if (static_cast<pixformat_t>(frame->format) == PIXFORMAT_GRAYSCALE)
+                {
                     fmt = RawJpegEncoder::PixelFormat::GRAYSCALE;
                 }
 
@@ -626,7 +712,8 @@ static void spi_frame_sender_task(void *pvParameters)
             uint32_t total_time = (esp_timer_get_time() / 1000) - frame_start_time;
 
             // Log performance every 30 frames
-            if (g_frame_id % 30 == 0) {
+            if (g_frame_id % 30 == 0)
+            {
                 ESP_LOGI(TAG, "Performance: Encode=%lums, SPI=%lums, Total=%lums, Target FPS=%.1f",
                          encode_time, spi_time, total_time, 1000.0f / total_time);
             }
@@ -642,6 +729,6 @@ static void spi_frame_sender_task(void *pvParameters)
         }
 
         // Remove artificial delay - run as fast as possible
-        vTaskDelay(pdMS_TO_TICKS(33)); 
+        vTaskDelay(pdMS_TO_TICKS(33));
     }
 }

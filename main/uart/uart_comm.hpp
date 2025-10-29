@@ -106,7 +106,7 @@ private:
     TaskHandle_t m_ping_monitor_task_handle;
 
     // Command handlers
-    static const int MAX_HANDLERS = 16;
+    static const int MAX_HANDLERS = 24;  // Increased from 16 to support mic commands
     struct {
         const char* command;
         CommandHandler handler;

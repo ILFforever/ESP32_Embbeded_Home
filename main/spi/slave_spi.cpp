@@ -13,7 +13,7 @@ static uint32_t frames_failed = 0;
 static uint32_t frames_dropped = 0;
 
 // FreeRTOS queue and task
-#define FRAME_QUEUE_SIZE 5  // Increased to buffer more frames
+#define FRAME_QUEUE_SIZE 5
 static QueueHandle_t frame_queue = nullptr;
 static TaskHandle_t spi_task_handle = nullptr;
 
@@ -82,7 +82,6 @@ static esp_err_t spi_send_data(const uint8_t* data, size_t len)
 // Helper: Send frame via SPI
 static esp_err_t send_frame_internal(uint16_t frame_id, const uint8_t* jpeg_data, uint32_t jpeg_size)
 {
-    //ESP_LOGI(TAG, "Sending frame %d (%lu bytes)...", frame_id, jpeg_size);
     uint32_t start_time = xTaskGetTickCount();
 
     // Build header
@@ -104,7 +103,7 @@ static esp_err_t send_frame_internal(uint16_t frame_id, const uint8_t* jpeg_data
     }
 
     uint32_t duration = (xTaskGetTickCount() - start_time) * portTICK_PERIOD_MS;
-   // ESP_LOGI(TAG, "Frame %d sent in %lu ms", frame_id, duration);
+    ESP_LOGD(TAG, "Frame %d sent in %lu ms", frame_id, duration);
 
     return ESP_OK;
 }
@@ -120,20 +119,18 @@ static void spi_task(void* arg)
         // Wait for frame in queue
         if (xQueueReceive(frame_queue, &frame_item, portMAX_DELAY) == pdTRUE) {
 
-            //ESP_LOGD(TAG, "Processing frame %d (%lu bytes)", frame_item.frame_id, frame_item.jpeg_size);
-
             // Send frame via SPI
-            esp_err_t ret = send_frame_internal(frame_item.frame_id, frame_item.jpeg_data, frame_item.jpeg_size);
+            esp_err_t ret = send_frame_internal(frame_item.frame_id,
+                                                frame_item.jpeg_data, frame_item.jpeg_size);
 
             if (ret == ESP_OK) {
                 frames_sent++;
-                //ESP_LOGI(TAG, "Frame %d sent successfully", frame_item.frame_id);
             } else {
                 frames_failed++;
                 ESP_LOGE(TAG, "Frame %d failed to send", frame_item.frame_id);
             }
 
-            // Free allocated JPEG buffer
+            // Free allocated buffer
             free(frame_item.jpeg_data);
         }
     }
@@ -215,7 +212,7 @@ esp_err_t slave_spi_queue_frame(uint16_t frame_id, const uint8_t* jpeg_data, uin
     // Allocate buffer and copy JPEG data
     uint8_t* jpeg_copy = static_cast<uint8_t*>(malloc(jpeg_size));
     if (jpeg_copy == nullptr) {
-        ESP_LOGE(TAG, "Failed to allocate JPEG buffer");
+        ESP_LOGE(TAG, "Failed to allocate buffer (%lu bytes)", jpeg_size);
         frames_dropped++;
         return ESP_ERR_NO_MEM;
     }
@@ -237,7 +234,7 @@ esp_err_t slave_spi_queue_frame(uint16_t frame_id, const uint8_t* jpeg_data, uin
         return ESP_ERR_NO_MEM;
     }
 
-    ESP_LOGD(TAG, "Frame %d queued for sending", frame_id);
+    ESP_LOGD(TAG, "Frame %d queued", frame_id);
     return ESP_OK;
 }
 
