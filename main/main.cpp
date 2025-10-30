@@ -100,15 +100,13 @@ extern "C" void app_main(void)
 
     create_uart_commands();
 
-    // Initialize WiFi and HTTP server
-    init_wifi_and_server();
-
-    // Set HTTP server references (pass microphone pointer)
+    // WiFi and HTTP server will be initialized when mic_start is called
+    // Set HTTP server references now (will be used when server starts)
     set_http_server_refs(g_standby_control,
                          g_recognition_app->get_recognition(),
                          g_face_db_reader,
                          g_microphone);
-                         
+
     // Send immediate status to master on startup
     vTaskDelay(pdMS_TO_TICKS(500)); // Small delay to ensure UART is ready
     g_uart->send_status("ready", "Camera system initialized. Ready for commands.");
@@ -453,7 +451,7 @@ void create_uart_commands()
     // Microphone Control Commands
     // ============================================================
 
-    // Start microphone
+    // Start microphone (also starts WiFi and HTTP server)
     g_uart->register_command("mic_start", [](const char *cmd, cJSON *params)
                              {
         if (!g_microphone) {
@@ -479,13 +477,22 @@ void create_uart_commands()
             return;
         }
 
+        // Start WiFi and HTTP server first
+        init_wifi_and_server();
+
+        // Wait a bit for WiFi to connect
+        vTaskDelay(pdMS_TO_TICKS(2000));
+
+        // Start microphone
         if (g_microphone->start()) {
-            g_uart->send_status("ok", "Microphone started. Check serial output for audio levels.");
+            g_uart->send_status("ok", "Microphone and WiFi started. Stream at http://192.168.1.100/audio/stream");
         } else {
+            // If mic fails to start, stop WiFi
+            stop_webserver_and_wifi();
             g_uart->send_status("error", "Failed to start microphone");
         } });
 
-    // Stop microphone
+    // Stop microphone (also stops WiFi and HTTP server)
     g_uart->register_command("mic_stop", [](const char *cmd, cJSON *params)
                              {
         if (!g_microphone) {
@@ -498,8 +505,13 @@ void create_uart_commands()
             return;
         }
 
+        // Stop microphone first
         g_microphone->stop();
-        g_uart->send_status("ok", "Microphone stopped"); });
+
+        // Then stop WiFi and HTTP server
+        stop_webserver_and_wifi();
+
+        g_uart->send_status("ok", "Microphone, WiFi, and HTTP server stopped"); });
 
     // Get microphone status
     g_uart->register_command("mic_status", [](const char *cmd, cJSON *params)

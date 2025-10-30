@@ -11,6 +11,7 @@ extern "C" {
 #endif
 
 void init_wifi_and_server(void);
+void stop_webserver_and_wifi(void);
 
 #ifdef __cplusplus
 }

@@ -34,10 +34,10 @@ esp_err_t I2SMicrophone::init()
     ESP_LOGI(TAG, "  CLK GPIO: %d", m_clk_gpio);
     ESP_LOGI(TAG, "  DATA GPIO: %d", m_data_gpio);
 
-    // Create I2S RX channel
+    // Create I2S RX channel with smaller buffers for lower latency
     i2s_chan_config_t chan_cfg = I2S_CHANNEL_DEFAULT_CONFIG(I2S_NUM_0, I2S_ROLE_MASTER);
-    chan_cfg.dma_desc_num = 4;
-    chan_cfg.dma_frame_num = 1024;
+    chan_cfg.dma_desc_num = 3;   // Reduced from 4 (3 × 512 = 96ms total @ 16kHz)
+    chan_cfg.dma_frame_num = 512; // Reduced from 1024 (32ms per descriptor)
 
     esp_err_t ret = i2s_new_channel(&chan_cfg, NULL, &m_rx_chan);
     if (ret != ESP_OK) {

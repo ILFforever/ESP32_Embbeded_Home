@@ -15,7 +15,7 @@
 #define GPIO_SCLK 7   // D8
 #define GPIO_CS   2   // D1
 
-// Frame header structure (12 bytes)
+// Frame header structure (12 bytes, matches master)
 struct __attribute__((packed)) frame_header_t {
     uint8_t  magic[2];      // 0x55, 0xAA
     uint16_t frame_id;      // Big-endian
