@@ -632,7 +632,7 @@ void drawUIOverlay()
   }
   else if (animState == SHOWING_MSG)
   {
-    // Show only status message
+    // Show only status message64
     botuiSprite.setTextColor(statusColor, TFT_BLACK);
     botuiSprite.drawString(status_msg, tft.width() / 2, centerY);
   }
@@ -785,12 +785,13 @@ void checkPingTimeout()
     }
     // Keep checking - stay in disconnected state
   }
-  else if (slave_status == -1 && ping_counter > 0)
+  else if (slave_status == -1 && ping_counter > 0 && (millis() - last_pong_time < PONG_TIMEOUT))
   {
     // Only recover from disconnected state if we're receiving pongs again
     Serial.println("Connection restored!");
     slave_status = 0; // back to standby
-    updateStatusMsg("On Stand By");
+    updateActualMode(0);
+    updateStatusMsg("Connection restored", true, "On Stand By");
   }
 }
 

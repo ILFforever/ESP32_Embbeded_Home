@@ -11,7 +11,7 @@
 #define SPI_MOSI 27
 #define SPI_CS   14
 
-#define SPI_SPEED 20000000  // 40 MHz
+#define SPI_SPEED 20000000  // 20 MHz
 
 // Transfer states
 enum SPITransferState {
@@ -56,7 +56,7 @@ public:
     uint8_t* getFrameData() { return _frameBuffer; }
     uint32_t getFrameSize() { return _frameSize; }
     uint16_t getFrameId() { return _frameId; }
-    
+
     // Acknowledge frame received (frees for next)
     void ackFrame();
     

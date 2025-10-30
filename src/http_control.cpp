@@ -1,5 +1,6 @@
 #include "http_control.h"
 #include "uart_commands.h"
+#include "audio_client.h"
 #include <WiFi.h>
 #include <WebServer.h>
 #include <ESPmDNS.h>
@@ -10,10 +11,14 @@
 const char* WIFI_SSID = "ILFforever2";
 const char* WIFI_PASSWORD = "19283746";
 
+// Camera IP for audio streaming
+const char* CAMERA_IP = "192.168.1.100";  // TODO: Update with actual camera IP
+
 // mDNS hostname - device will be accessible at http://doorbell.local
 const char* MDNS_HOSTNAME = "doorbell";
 
 WebServer server(80);
+AudioClient* audioClient = nullptr;
 
 // Root endpoint - API documentation
 void handleRoot() {
@@ -74,6 +79,14 @@ void handleRoot() {
   html += "<label> Name: <input type='text' id='faceName' placeholder='e.g. John' style='width:150px;padding:5px;'></label>";
   html += "<br><button onclick='setName()'>Set Name</button>";
   html += "<button onclick='getName()'>Get Name</button>";
+  html += "</div>";
+
+  html += "<div class='endpoint'>";
+  html += "<span class='method'>Audio Streaming (WiFi)</span>";
+  html += "<br><button onclick='fetch(\"/audio/start\").then(r=>r.text()).then(alert)' style='background:#28a745;padding:12px 24px;font-size:16px;'>Start Audio</button> ";
+  html += "<button onclick='fetch(\"/audio/stop\").then(r=>r.text()).then(alert)' style='background:#dc3545;padding:12px 24px;font-size:16px;'>Stop Audio</button> ";
+  html += "<button onclick='fetch(\"/audio/status\").then(r=>r.text()).then(alert)' style='padding:12px 24px;font-size:16px;'>Status</button>";
+  html += "<p><i>Automatically controls camera microphone and LCD audio stream</i></p>";
   html += "</div>";
 
   html += "<div class='endpoint'>";
@@ -220,6 +233,77 @@ void handleCustomCommand() {
   }
 }
 
+// Microphone start
+void handleMicStart() {
+  sendUARTCommand("mic_start");
+  server.send(200, "text/plain", "Microphone start command sent");
+}
+
+// Microphone stop
+void handleMicStop() {
+  sendUARTCommand("mic_stop");
+  server.send(200, "text/plain", "Microphone stop command sent");
+}
+
+// Microphone status
+void handleMicStatus() {
+  sendUARTCommand("mic_status");
+  server.send(200, "text/plain", "Microphone status request sent");
+}
+
+// Audio stream start - automatically starts microphone first
+void handleAudioStreamStart() {
+  Serial.println("[HTTP] Audio start request received");
+
+  // Clean up any existing audio client to prevent socket leaks
+  if (audioClient) {
+    Serial.println("[HTTP] Cleaning up existing AudioClient...");
+    if (audioClient->isStreaming()) {
+      audioClient->stop();
+    }
+    delete audioClient;
+    audioClient = nullptr;
+  }
+
+  Serial.println("[HTTP] Sending mic_start to camera...");
+  sendUARTCommand("mic_start");
+
+  server.send(200, "text/plain", "Microphone started (audio streaming disabled)");
+}
+
+// Audio stream stop - automatically stops microphone too
+void handleAudioStreamStop() {
+  // Clean up any existing audio client to prevent socket leaks
+  if (audioClient) {
+    Serial.println("[HTTP] Cleaning up AudioClient...");
+    if (audioClient->isStreaming()) {
+      audioClient->stop();
+    }
+    delete audioClient;
+    audioClient = nullptr;
+  }
+
+  // Stop the microphone on camera via UART
+  sendUARTCommand("mic_stop");
+
+  server.send(200, "text/plain", "Microphone stopped (audio streaming disabled)");
+}
+
+// Audio stream status - shows both microphone and stream status
+void handleAudioStreamStatus() {
+  String response = "Audio System Status:\n\n";
+
+  // Get microphone status from camera
+  response += "Microphone (Camera): ";
+  sendUARTCommand("mic_status");
+  response += "Checking via UART...\n\n";
+
+  // Audio streaming is currently disabled
+  response += "Audio Stream (LCD): Disabled (audio streaming functionality not active)";
+
+  server.send(200, "text/plain", response);
+}
+
 // 404 handler
 void handleNotFound() {
   server.send(404, "text/plain", "Not Found");
@@ -272,6 +356,12 @@ void initHTTPServer() {
   server.on("/face/count", HTTP_GET, handleGetFaceCount);
   server.on("/face/list", HTTP_GET, handlePrintFaces);
   server.on("/face/check", HTTP_GET, handleCheckDB);
+  server.on("/mic/start", HTTP_GET, handleMicStart);
+  server.on("/mic/stop", HTTP_GET, handleMicStop);
+  server.on("/mic/status", HTTP_GET, handleMicStatus);
+  server.on("/audio/start", HTTP_GET, handleAudioStreamStart);
+  server.on("/audio/stop", HTTP_GET, handleAudioStreamStop);
+  server.on("/audio/status", HTTP_GET, handleAudioStreamStatus);
   server.on("/command", HTTP_POST, handleCustomCommand);
   server.onNotFound(handleNotFound);
 
@@ -287,6 +377,12 @@ void initHTTPServer() {
   Serial.println("  GET  /face/count      - Get face count from camera");
   Serial.println("  GET  /face/list       - Print face list (slave serial)");
   Serial.println("  GET  /face/check      - Check database status");
+  Serial.println("  GET  /mic/start       - Start microphone");
+  Serial.println("  GET  /mic/stop        - Stop microphone");
+  Serial.println("  GET  /mic/status      - Get microphone status");
+  Serial.println("  GET  /audio/start     - Start audio streaming from camera");
+  Serial.println("  GET  /audio/stop      - Stop audio streaming");
+  Serial.println("  GET  /audio/status    - Get audio stream status");
   Serial.println("  POST /command         - Send custom command");
 }
 
