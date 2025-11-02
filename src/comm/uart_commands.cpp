@@ -26,7 +26,7 @@ void sendUARTCommand(const char *cmd, const char *param, int value)
 
   String output;
   serializeJson(doc, output);
-  SlaveSerial.println(output);
+  MasterSerial.println(output);
 
   // Track desired mode based on commands sent
   if (strcmp(cmd, "camera_control") == 0 && param != nullptr) {
@@ -42,6 +42,18 @@ void sendUARTCommand(const char *cmd, const char *param, int value)
   }
 }
 
+// Send command to AMP board 
+void sendUART2Command(const char *cmd, const char *urls)
+{
+  JsonDocument doc;
+  doc["cmd"] = cmd;
+  doc["url"] = urls;
+
+  String output;
+  serializeJson(doc, output);
+  AmpSerial.println(output);
+}
+
 // Send ping message
 void sendUARTPing()
 {
@@ -53,7 +65,7 @@ void sendUARTPing()
   String output;
   serializeJson(doc, output);
 
-  SlaveSerial.println(output);
+  MasterSerial.println(output);
 }
 
 // Handle UART response from Slave

@@ -16,10 +16,13 @@
 
 #define RX2 16
 #define TX2 17
-#define Doorbell_bt 34  // Analog pin
-#define Call_bt 35      // Analog pin
+#define RX3 32
+#define TX3 33
+
+#define Doorbell_bt 34 // Analog pin
+#define Call_bt 35     // Analog pin
 #define UART_BAUD 115200
-#define BUTTON_THRESHOLD 4000  // ADC threshold for button press (0-4095 scale)
+#define BUTTON_THRESHOLD 4000 // ADC threshold for button press (0-4095 scale)
 
 // Create objects
 TFT_eSPI tft = TFT_eSPI();
@@ -31,14 +34,16 @@ String status_msg = "";
 bool status_msg_is_temporary = false; // Flag to indicate temporary status message
 bool recognition_success = false;
 bool card_success = false;
-String status_msg_fallback = ""; // Message to display after temporary message is shown once
+String status_msg_fallback = "";          // Message to display after temporary message is shown once
 unsigned long status_msg_last_update = 0; // Timestamp of last status message update
 
 Scheduler myscheduler;
-HardwareSerial SlaveSerial(2); // Use UART2
-extern TFT_eSPI tft;           // Your initialized display object
-extern uint8_t *g_spiFrame;    // Pointer to SPI-received JPEG frame
-extern size_t g_spiFrameSize;  // Size of JPEG frame
+HardwareSerial MasterSerial(1); // Use UART1
+HardwareSerial AmpSerial(2);    // Use UART2
+
+extern TFT_eSPI tft;          // Your initialized display object
+extern uint8_t *g_spiFrame;   // Pointer to SPI-received JPEG frame
+extern size_t g_spiFrameSize; // Size of JPEG frame
 SPIMaster spiMaster;
 
 // Ping-Pong
@@ -145,7 +150,9 @@ void setup()
   Serial.printf("Buttons initialized: Doorbell=GPIO%d, Call=GPIO%d (analog mode, threshold=%d)\n",
                 Doorbell_bt, Call_bt, BUTTON_THRESHOLD);
 
-  SlaveSerial.begin(UART_BAUD, SERIAL_8N1, RX2, TX2);
+  MasterSerial.begin(UART_BAUD, SERIAL_8N1, RX2, TX2);
+  AmpSerial.begin(UART_BAUD, SERIAL_8N1, RX3, TX3);
+
   Serial.printf("UART initialized: RX=GPIO%d, TX=GPIO%d, Baud=%d\n", RX2, TX2, UART_BAUD);
   delay(100);
 
@@ -754,9 +761,9 @@ String getCurrentDateAsString()
 // Task: Check for incoming UART data
 void checkUARTData()
 {
-  while (SlaveSerial.available())
+  while (MasterSerial.available())
   {
-    String line = SlaveSerial.readStringUntil('\n');
+    String line = MasterSerial.readStringUntil('\n');
     if (line.length() > 0)
     {
       handleUARTResponse(line);
@@ -901,7 +908,6 @@ void updateButtonState(ButtonState &btn, int pin, const char *buttonName)
     {
       unsigned long pressDuration = currentTime - btn.pressStartTime;
       Serial.printf("[BTN] %s released (held for %lu ms)\n", buttonName, pressDuration);
-
     }
   }
 }

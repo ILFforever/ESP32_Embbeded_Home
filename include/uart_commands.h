@@ -5,7 +5,8 @@
 #include <ArduinoJson.h>
 #include <HardwareSerial.h>
 
-extern HardwareSerial SlaveSerial;
+extern HardwareSerial MasterSerial;
+extern HardwareSerial AmpSerial;
 extern uint32_t ping_counter;
 extern unsigned long last_pong_time;
 extern int slave_status;
@@ -21,6 +22,9 @@ extern unsigned long lastFaceDetectionTime;
 
 // Send command to Slave (with automatic mode tracking)
 void sendUARTCommand(const char *cmd, const char *param = nullptr, int value = -1);
+
+// Send command to Amp board via UART2
+void sendUART2Command(const char *cmd, const char *url);
 
 // Send ping message
 void sendUARTPing();

@@ -90,6 +90,14 @@ void handleRoot() {
   html += "</div>";
 
   html += "<div class='endpoint'>";
+  html += "<span class='method'>Audio Amp Control (UART2)</span>";
+  html += "<br><label>URL: <input type='text' id='ampUrl' placeholder='https://...' style='width:400px;padding:5px;'></label>";
+  html += "<br><button onclick='playAmpUrl()' style='background:#28a745;padding:12px 24px;font-size:16px;margin-top:10px;'>▶ Play on Amp</button> ";
+  html += "<button onclick='fetch(\"/amp/stop\").then(r=>r.text()).then(alert)' style='background:#dc3545;padding:12px 24px;font-size:16px;'>⏹ Stop Amp</button>";
+  html += "<p><i>Send audio URL to dedicated Amp ESP32 via UART</i></p>";
+  html += "</div>";
+
+  html += "<div class='endpoint'>";
   html += "<span class='method'>Custom Command</span>";
   html += "<br><label>Command: <input type='text' id='cmd' placeholder='e.g. enroll_face' style='width:200px;padding:5px;'></label>";
   html += "<br><label>Params (JSON): <input type='text' id='params' placeholder='e.g. {\"name\":\"John\"}' style='width:300px;padding:5px;margin-top:5px;'></label>";
@@ -102,6 +110,12 @@ void handleRoot() {
   html += "let body={cmd:cmd};";
   html += "if(params)body.params=params;";
   html += "fetch('/command',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})";
+  html += ".then(r=>r.text()).then(alert).catch(e=>alert('Error: '+e));";
+  html += "}";
+  html += "function playAmpUrl(){";
+  html += "let url=document.getElementById('ampUrl').value;";
+  html += "if(!url){alert('URL required');return;}";
+  html += "fetch('/amp/play?url='+encodeURIComponent(url))";
   html += ".then(r=>r.text()).then(alert).catch(e=>alert('Error: '+e));";
   html += "}";
   html += "function sendCustomCmd(){";
@@ -225,7 +239,7 @@ void handleCustomCommand() {
     String output;
     serializeJson(uart_doc, output);
     Serial.println(output);  // Debug
-    SlaveSerial.println(output);
+    MasterSerial.println(output);
 
     server.send(200, "text/plain", "Command sent: " + String(cmd));
   } else {
@@ -304,6 +318,24 @@ void handleAudioStreamStatus() {
   server.send(200, "text/plain", response);
 }
 
+// ==================== Audio Amp (UART2) Handlers ====================
+
+void handleAmpPlay() {
+  if (!server.hasArg("url")) {
+    server.send(400, "text/plain", "Missing 'url' parameter");
+    return;
+  }
+
+  String url = server.arg("url");
+  sendUART2Command("play", url.c_str());
+  server.send(200, "text/plain", "Sent play command to Amp: " + url);
+}
+
+void handleAmpStop() {
+  sendUART2Command("stop", "");
+  server.send(200, "text/plain", "Sent stop command to Amp");
+}
+
 // 404 handler
 void handleNotFound() {
   server.send(404, "text/plain", "Not Found");
@@ -362,6 +394,8 @@ void initHTTPServer() {
   server.on("/audio/start", HTTP_GET, handleAudioStreamStart);
   server.on("/audio/stop", HTTP_GET, handleAudioStreamStop);
   server.on("/audio/status", HTTP_GET, handleAudioStreamStatus);
+  server.on("/amp/play", HTTP_GET, handleAmpPlay);        // New: Control amp via UART2
+  server.on("/amp/stop", HTTP_GET, handleAmpStop);        // New: Stop amp playback
   server.on("/command", HTTP_POST, handleCustomCommand);
   server.onNotFound(handleNotFound);
 
@@ -383,6 +417,8 @@ void initHTTPServer() {
   Serial.println("  GET  /audio/start     - Start audio streaming from camera");
   Serial.println("  GET  /audio/stop      - Stop audio streaming");
   Serial.println("  GET  /audio/status    - Get audio stream status");
+  Serial.println("  GET  /amp/play?url=<url> - Play audio URL on Amp (UART2)");
+  Serial.println("  GET  /amp/stop        - Stop Amp playback (UART2)");
   Serial.println("  POST /command         - Send custom command");
 }
 
