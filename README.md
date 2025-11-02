@@ -1,39 +1,28 @@
-# ESP32_Embedded_Home
-This is an IoT project simulating a full-fledged smart home ecosystem using ESP32 boards, developed in accordance with Chulalongkorn's 2110356 Embedded System class.
+# Doorbell Amp
 
-## Branches Explanation
-- **3D-Models** - Holds project's 3D models for 3D printing (SketchUp and Cura files)
-- **Main_lcd** - Holds code for main LCD hub (PlatformIO)
-- **Main_mesh** - Secondary LCD which connects Main_lcd to sensor mesh (PlatformIO)
-- **Room_Sensors** - Code for room sensors (PlatformIO)
-- **Doorbell_lcd** - LCD for doorbell, communicates with Doorbell_Camera via SPI (PlatformIO)
-- **Doorbell_Camera** - Code for Xiao ESP32-S3 Sense camera running AI face recognition, communicates with Doorbell_lcd using SPI (ESP-IDF)
-## ⚠️ Important Workflow Note
-**Each branch contains operational code for a different hardware module.**
+Audio amplifier module for the ESP32 smart home doorbell system.
 
-- Each branch is **independent** and should **NOT** be merged together
-- Do **NOT** merge branches together 😡😡😡
-- ใครทำเเตกเเก้เองนะ 🫠
+## Hardware
+- **Board**: Adafruit Feather ESP32-S3
+- **Framework**: Arduino (PlatformIO)
 
-## Branch Usage
-- Clone the branch you are assigned to!!!
-- Keep the codes off main and in their respective branches :)
+## Features
+- I2S audio output for doorbell chime
+- NeoPixel LED indicator
+- Task scheduling for audio playback
 
-## Branch Commands
+## Dependencies
+- TaskScheduler
+- ESP32-audioI2S
+- ArduinoJson
+- Adafruit NeoPixel
 
-### View all branches
+## Build & Upload
 ```bash
-git branch -a
+pio run --target upload
 ```
-### Clone a specific branch
+
+## Monitor
 ```bash
-git clone -b <branch-name> <repository-url>
-```
-### Switch to your assigned branch
-```bash
-git switch <branch-name>
-```
-### Check Current Branch
-```bash
-git branch
+pio device monitor
 ```
