@@ -5,6 +5,7 @@
 #include <TaskScheduler.h>
 #include <Adafruit_NeoPixel.h>
 #include "Audio.h"
+#include "firebase_config.h"
 
 // WiFi credentials
 const char *ssid = "ILFforever2";
@@ -43,6 +44,8 @@ void audioLoopTask();
 void checkUARTData();
 void handleUARTResponse(String line);
 void updateLED();
+String getFirebaseDownloadURL(String filePath);
+String getFirebasePublicURL(String filePath);
 
 // Define tasks
 Task tAudioLoop(1, TASK_FOREVER, &audioLoopTask);     // Run audio loop as fast as possible
@@ -102,8 +105,8 @@ void setup()
   Serial.printf("IP: %s\n", WiFi.localIP().toString().c_str());
   Serial.printf("WiFi Signal: %d dBm\n", WiFi.RSSI());
   Serial.printf("WiFi Channel: %d\n", WiFi.channel());
-  Serial.println("Total PSRAM: " + String( ESP.getPsramSize() ) );
-  Serial.println("Free PSRAM:  " + String( ESP.getFreePsram() ) );
+
+  Serial.println("✅ Firebase Storage ready (using public URLs)");
 
   // Change LED to green when WiFi connected
   strip.setPixelColor(0, strip.Color(0, 255, 0)); // Green
@@ -189,17 +192,33 @@ void handleUARTResponse(String line)
     return;
   }
 
-  Serial.print("📥 RX received: ");
-  Serial.println(line);
-
   StaticJsonDocument<2048> doc;
   DeserializationError error = deserializeJson(doc, line);
   if (error)
   {
+    Serial.print("📥 RX received: ");
+    Serial.println(line);
     Serial.print("❌ JSON parse error: ");
     Serial.println(error.c_str());
     return;
   }
+
+  // Handle ping request - respond with pong (silently)
+  if (doc.containsKey("type") && doc["type"] == "ping")
+  {
+    StaticJsonDocument<256> response;
+    response["type"] = "pong";
+    response["seq"] = doc["seq"];
+    response["timestamp"] = millis();
+
+    String output;
+    serializeJson(response, output);
+    MasterSerial.println(output);
+    return;
+  }
+
+  Serial.print("📥 RX received: ");
+  Serial.println(line);
 
   if (doc.containsKey("cmd"))
   {
@@ -214,8 +233,33 @@ void handleUARTResponse(String line)
         Serial.printf("   New URL: '%s'\n", url.c_str());
         Serial.printf("   isPlaying: %s\n", isPlaying ? "true" : "false");
 
+        // Check if this is a Firebase path (doesn't start with http)
+        String finalURL = url;
+        if (!url.startsWith("http"))
+        {
+          Serial.println("   🔥 Detected Firebase path, getting download URL...");
+
+          // Check if there's a "public:" prefix for large files
+          // Usage: {"cmd": "play", "url": "public:large_audio.mp3"}
+          if (url.startsWith("public:"))
+          {
+            String filePath = url.substring(7); // Remove "public:" prefix
+            finalURL = getFirebasePublicURL(filePath);
+          }
+          else
+          {
+            finalURL = getFirebaseDownloadURL(url);
+          }
+
+          if (finalURL.length() == 0)
+          {
+            Serial.println("❌ Failed to get Firebase download URL");
+            return;
+          }
+        }
+
         // If different URL or not currently playing, connect
-        if (url != currentStation_url || !isPlaying)
+        if (finalURL != currentStation_url || !isPlaying)
         {
           // Stop current playback if any
           if (isPlaying)
@@ -225,9 +269,9 @@ void handleUARTResponse(String line)
             delay(100); // Give time for cleanup
           }
 
-          currentStation_url = url;
-          Serial.printf("▶️ Connecting to: %s\n", url.c_str());
-          audio.connecttohost(url.c_str());
+          currentStation_url = finalURL;
+          Serial.printf("▶️ Connecting to: %s\n", finalURL.c_str());
+          audio.connecttohost(finalURL.c_str());
           isPlaying = true; // Enable rainbow pulse effect
         }
         else
@@ -262,6 +306,20 @@ void loop()
 void audioLoopTask()
 {
   audio.loop();
+
+  // Check if audio has stopped playing (for streams that don't trigger eof callback)
+  static bool wasPlaying = false;
+  bool nowPlaying = audio.isRunning();
+
+  if (wasPlaying && !nowPlaying && isPlaying)
+  {
+    // Audio was playing but stopped
+    Serial.println("🔚 Audio stopped - returning to standby");
+    isPlaying = false;
+    currentStation_url = "";
+  }
+
+  wasPlaying = nowPlaying;
 }
 
 // Optional audio library callbacks for debugging
@@ -281,6 +339,11 @@ void audio_eof_mp3(const char *info)
 {
   Serial.print("eof_mp3     ");
   Serial.println(info);
+
+  // Return to standby when audio finishes
+  Serial.println("🔚 Playback finished - returning to standby");
+  isPlaying = false;
+  currentStation_url = "";
 }
 
 void audio_showstation(const char *info)
@@ -317,4 +380,38 @@ void audio_lasthost(const char *info)
 {
   Serial.print("lasthost    ");
   Serial.println(info);
+}
+
+// Get Firebase Storage public URL for a file
+// filePath example: "doorbell.mp3" or "sounds/doorbell.mp3"
+// Using public URL method (requires public read access in Firebase Storage rules)
+String getFirebaseDownloadURL(String filePath)
+{
+  Serial.printf("🔥 Getting Firebase public URL for: %s\n", filePath.c_str());
+  return getFirebasePublicURL(filePath);
+}
+
+// Construct Firebase Storage public URL
+// Requires Firebase Storage rules to allow public read access
+// Format: https://firebasestorage.googleapis.com/v0/b/BUCKET/o/FILE?alt=media
+String getFirebasePublicURL(String filePath)
+{
+  // URL encode the file path
+  String encodedPath = filePath;
+  encodedPath.replace("/", "%2F");
+  encodedPath.replace(" ", "%20");
+
+  // Extract bucket name without gs:// prefix
+  String bucket = String(FIREBASE_STORAGE_BUCKET);
+  bucket.replace("gs://", "");
+
+  // Build URL using concatenation to avoid operator ambiguity
+  String publicURL = "https://firebasestorage.googleapis.com/v0/b/";
+  publicURL += bucket;
+  publicURL += "/o/";
+  publicURL += encodedPath;
+  publicURL += "?alt=media";
+
+  Serial.printf("🔥 Public URL (no token, requires public read rules): %s\n", publicURL.c_str());
+  return publicURL;
 }
