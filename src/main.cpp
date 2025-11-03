@@ -6,6 +6,7 @@
 #include <Adafruit_NeoPixel.h>
 #include "Audio.h"
 #include "firebase_config.h"
+#include "doorbell_audio.h" // Embedded MP3 file
 
 // WiFi credentials
 const char *ssid = "ILFforever2";
@@ -29,6 +30,11 @@ Audio audio;
 
 String currentStation_url = "";
 bool isPlaying = false;
+
+// PSRAM audio buffer
+uint8_t *psramAudioBuffer = nullptr;
+size_t psramAudioSize = 0;
+const size_t MAX_PSRAM_AUDIO_SIZE = 500 * 1024; // 500KB max for audio file
 
 // LED animation variables
 uint16_t rainbowHue = 0;
@@ -232,6 +238,13 @@ void handleUARTResponse(String line)
         Serial.printf("   Current URL: '%s'\n", currentStation_url.c_str());
         Serial.printf("   New URL: '%s'\n", url.c_str());
         Serial.printf("   isPlaying: %s\n", isPlaying ? "true" : "false");
+
+        // Check for PSRAM playback command
+        if (url == "psram" || url == "doorbell" || url == "local")
+        {
+          Serial.println("   🎵 Playing from PSRAM...");
+          return;
+        }
 
         // Check if this is a Firebase path (doesn't start with http)
         String finalURL = url;
