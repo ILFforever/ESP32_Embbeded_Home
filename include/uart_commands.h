@@ -7,10 +7,17 @@
 
 extern HardwareSerial MasterSerial;
 extern HardwareSerial AmpSerial;
+
+// Camera/Slave ping-pong
 extern uint32_t ping_counter;
 extern unsigned long last_pong_time;
 extern int slave_status;
 extern bool recognition_success;
+
+// Amp ping-pong
+extern uint32_t amp_ping_counter;
+extern unsigned long last_amp_pong_time;
+extern int amp_status;
 
 // Face detection bounding box
 extern bool hasFaceDetection;
@@ -26,10 +33,16 @@ void sendUARTCommand(const char *cmd, const char *param = nullptr, int value = -
 // Send command to Amp board via UART2
 void sendUART2Command(const char *cmd, const char *url);
 
-// Send ping message
+// Send ping message to Slave (Camera)
 void sendUARTPing();
+
+// Send ping message to Amp
+void sendUART2Ping();
 
 // Handle UART response from Slave
 void handleUARTResponse(String line);
+
+// Handle UART response from Amp
+void handleUART2Response(String line);
 
 #endif

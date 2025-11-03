@@ -54,7 +54,7 @@ void sendUART2Command(const char *cmd, const char *urls)
   AmpSerial.println(output);
 }
 
-// Send ping message
+// Send ping message to Slave (Camera)
 void sendUARTPing()
 {
   JsonDocument doc;
@@ -66,6 +66,22 @@ void sendUARTPing()
   serializeJson(doc, output);
 
   MasterSerial.println(output);
+}
+
+// Send ping message to Amp
+void sendUART2Ping()
+{
+  extern uint32_t amp_ping_counter;
+
+  JsonDocument doc;
+  doc["type"] = "ping";
+  doc["seq"] = amp_ping_counter++;
+  doc["timestamp"] = millis();
+
+  String output;
+  serializeJson(doc, output);
+
+  AmpSerial.println(output);
 }
 
 // Handle UART response from Slave
@@ -272,4 +288,40 @@ void handleUARTResponse(String line)
       // Serial.printf(" (Free heap: %d KB)", heap / 1024);
     }
   }
+}
+
+// Handle UART response from Amp
+void handleUART2Response(String line)
+{
+  extern unsigned long last_amp_pong_time;
+  extern int amp_status;
+
+  // Skip empty lines
+  if (line.length() == 0)
+  {
+    return;
+  }
+
+  // Parse JSON response
+  StaticJsonDocument<2048> doc;
+  DeserializationError error = deserializeJson(doc, line);
+  if (error)
+  {
+    Serial.print("📥 RX from Amp: ");
+    Serial.println(line);
+    Serial.print("❌ JSON parse error: ");
+    Serial.println(error.c_str());
+    return;
+  }
+
+  // Handle pong response (silently, no print)
+  if (doc.containsKey("type") && doc["type"] == "pong")
+  {
+    last_amp_pong_time = millis();
+    return;
+  }
+
+  // Handle other amp responses (for future expansion)
+  Serial.print("📥 RX from Amp: ");
+  Serial.println(line);
 }

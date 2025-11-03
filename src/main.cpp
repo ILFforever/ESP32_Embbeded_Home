@@ -46,11 +46,24 @@ extern uint8_t *g_spiFrame;   // Pointer to SPI-received JPEG frame
 extern size_t g_spiFrameSize; // Size of JPEG frame
 SPIMaster spiMaster;
 
-// Ping-Pong
+// Ping-Pong (Camera/Slave)
 uint32_t ping_counter = 0;
 unsigned long last_pong_time = 0;
 #define PONG_TIMEOUT 10000
 int slave_status = 0; // 0 = standby, -1 = disconneccted, 1 = camera_running, 2 = face_recog running
+
+// Ping-Pong (Amp Module)
+uint32_t amp_ping_counter = 0;
+unsigned long last_amp_pong_time = 0;
+#define AMP_PONG_TIMEOUT 10000
+int amp_status = 0; // 0 = standby, -1 = disconnected, 1 = playing
+
+// Disconnect Warning Timer (30 seconds)
+#define DISCONNECT_WARNING_INTERVAL 30000 // 30 seconds
+unsigned long slave_disconnect_start = 0;
+unsigned long amp_disconnect_start = 0;
+bool slave_disconnect_warning_sent = false;
+bool amp_disconnect_warning_sent = false;
 
 // UI state
 bool uiNeedsUpdate = true; // Flag to redraw UI elements
@@ -91,8 +104,12 @@ ButtonState doorbellButton = {false, false, false, 0, 0, false, false};
 ButtonState callButton = {false, false, false, 0, 0, false, false};
 
 void checkUARTData();
+void checkUART2Data();
 void sendPingTask();
+void sendAmpPingTask();
 void checkPingTimeout();
+void checkAmpPingTimeout();
+void checkDisconnectWarning();
 void handleHTTPTask();
 void ProcessFrame();
 void drawUIOverlay();
@@ -105,15 +122,19 @@ bool tft_jpg_render_callback(int16_t x, int16_t y, uint16_t w, uint16_t h, uint1
 String getCurrentTimeAsString();
 String getCurrentDateAsString();
 
-Task taskCheckUART(20, TASK_FOREVER, &checkUARTData);             // Check UART buffer every 20ms
-Task taskSendPing(1000, TASK_FOREVER, &sendPingTask);             // Send ping every 1s
-Task taskCheckTimeout(1000, TASK_FOREVER, &checkPingTimeout);     // Check timeout every 1s
-Task taskHTTPHandler(10, TASK_FOREVER, &handleHTTPTask);          // Handle HTTP requests every 10ms
-Task taskProcessFrame(5, TASK_FOREVER, &ProcessFrame);            // Check for frames every 5ms
-Task taskdrawUIOverlay(10, TASK_FOREVER, &drawUIOverlay);         // Update UI overlay every 10ms
-Task tasklcdhandoff(200, TASK_FOREVER, &lcdhandoff);              // Check if we need to hand off LCD to ProcessFrame
-Task taskCheckButtons(10, TASK_FOREVER, &checkButtons);           // Check button state every 10ms
-Task taskCheckSlaveSync(1000, TASK_FOREVER, &checkSlaveSyncTask); // Check slave mode sync and recovery every 1s
+Task taskCheckUART(20, TASK_FOREVER, &checkUARTData);                         // Check UART buffer every 20ms
+Task taskCheckUART2(20, TASK_FOREVER, &checkUART2Data);                       // Check UART2 (Amp) buffer every 20ms
+Task taskSendPing(1000, TASK_FOREVER, &sendPingTask);                         // Send ping every 1s
+Task taskSendAmpPing(1000, TASK_FOREVER, &sendAmpPingTask);                   // Send ping to Amp every 1s
+Task taskCheckTimeout(1000, TASK_FOREVER, &checkPingTimeout);                 // Check timeout every 1s
+Task taskCheckAmpTimeout(1000, TASK_FOREVER, &checkAmpPingTimeout);           // Check Amp timeout every 1s
+Task taskCheckDisconnectWarning(1000, TASK_FOREVER, &checkDisconnectWarning); // Check for 30s disconnects
+Task taskHTTPHandler(10, TASK_FOREVER, &handleHTTPTask);                      // Handle HTTP requests every 10ms
+Task taskProcessFrame(5, TASK_FOREVER, &ProcessFrame);                        // Check for frames every 5ms
+Task taskdrawUIOverlay(10, TASK_FOREVER, &drawUIOverlay);                     // Update UI overlay every 10ms
+Task tasklcdhandoff(200, TASK_FOREVER, &lcdhandoff);                          // Check if we need to hand off LCD to ProcessFrame
+Task taskCheckButtons(10, TASK_FOREVER, &checkButtons);                       // Check button state every 10ms
+Task taskCheckSlaveSync(1000, TASK_FOREVER, &checkSlaveSyncTask);             // Check slave mode sync and recovery every 1s
 
 void setup()
 {
@@ -188,11 +209,16 @@ void setup()
   TJpgDec.setSwapBytes(true);
 
   last_pong_time = millis();
+  last_amp_pong_time = millis();
 
   // Add tasks to scheduler
   myscheduler.addTask(taskCheckUART);
+  myscheduler.addTask(taskCheckUART2);
   myscheduler.addTask(taskSendPing);
+  myscheduler.addTask(taskSendAmpPing);
   myscheduler.addTask(taskCheckTimeout);
+  myscheduler.addTask(taskCheckAmpTimeout);
+  myscheduler.addTask(taskCheckDisconnectWarning);
   myscheduler.addTask(taskHTTPHandler);
   myscheduler.addTask(taskProcessFrame);
   myscheduler.addTask(taskdrawUIOverlay);
@@ -200,8 +226,12 @@ void setup()
   myscheduler.addTask(taskCheckButtons);
   myscheduler.addTask(taskCheckSlaveSync);
   taskCheckUART.enable();
+  taskCheckUART2.enable();
   taskSendPing.enable();
+  taskSendAmpPing.enable();
   taskCheckTimeout.enable();
+  taskCheckAmpTimeout.enable();
+  taskCheckDisconnectWarning.enable();
   taskHTTPHandler.enable();
   taskProcessFrame.enable();
   taskdrawUIOverlay.enable();
@@ -210,6 +240,7 @@ void setup()
   taskCheckSlaveSync.enable();
 
   last_pong_time = millis();
+  last_amp_pong_time = millis();
   sendUARTCommand("get_status");
 
   // Clear screen and show startup message
@@ -802,6 +833,98 @@ void checkPingTimeout()
   }
 }
 
+// Task: Check for incoming UART2 (Amp) data
+void checkUART2Data()
+{
+  while (AmpSerial.available())
+  {
+    String line = AmpSerial.readStringUntil('\n');
+    if (line.length() > 0)
+    {
+      handleUART2Response(line);
+    }
+  }
+}
+
+// Task: Send periodic ping to Amp
+void sendAmpPingTask()
+{
+  sendUART2Ping();
+}
+
+// Task: Check for Amp ping timeout
+void checkAmpPingTimeout()
+{
+  if (amp_ping_counter > 0 && (millis() - last_amp_pong_time > AMP_PONG_TIMEOUT))
+  {
+    if (amp_status != -1)
+    {
+      Serial.println("!!! WARNING: No pong response from Amp for 10 seconds !!!");
+      Serial.println("Connection to Amp may be lost.\n");
+      amp_status = -1; // mark as disconnected
+    }
+    // Keep checking - stay in disconnected state
+  }
+  else if (amp_status == -1 && amp_ping_counter > 0 && (millis() - last_amp_pong_time < AMP_PONG_TIMEOUT))
+  {
+    // Recover from disconnected state if we're receiving pongs again
+    Serial.println("Amp connection restored!");
+    amp_status = 0; // back to standby
+  }
+}
+
+// Task: Check for 30-second disconnections and log warnings
+void checkDisconnectWarning()
+{
+  unsigned long currentTime = millis();
+
+  if (slave_status == -1)
+  {
+    // If this is a new disconnection, record start time
+    if (slave_disconnect_start == 0)
+    {
+      slave_disconnect_start = currentTime;
+      slave_disconnect_warning_sent = false;
+    }
+    // 30 seconds passed since disconnection
+    else if (!slave_disconnect_warning_sent && (currentTime - slave_disconnect_start >= DISCONNECT_WARNING_INTERVAL))
+    {
+      Serial.println("========================================");
+      Serial.println("!!! CAMERA MODULE DISCONNECTED FOR 30+ SECONDS !!!");
+      Serial.println("TODO: Send warning to server when implemented");
+      Serial.println("========================================");
+      slave_disconnect_warning_sent = true;
+    }
+  }
+  else
+  {
+    slave_disconnect_start = 0;
+    slave_disconnect_warning_sent = false;
+  }
+
+  if (amp_status == -1)
+  {
+    if (amp_disconnect_start == 0)
+    {
+      amp_disconnect_start = currentTime;
+      amp_disconnect_warning_sent = false;
+    }
+    else if (!amp_disconnect_warning_sent && (currentTime - amp_disconnect_start >= DISCONNECT_WARNING_INTERVAL))
+    {
+      Serial.println("========================================");
+      Serial.println("!!! AMP MODULE DISCONNECTED FOR 30+ SECONDS !!!");
+      Serial.println("TODO: Send warning to server when implemented");
+      Serial.println("========================================");
+      amp_disconnect_warning_sent = true;
+    }
+  }
+  else
+  {
+    amp_disconnect_start = 0;
+    amp_disconnect_warning_sent = false;
+  }
+}
+
 void onCardDetected(NFCCardData card)
 {
   Serial.print("Card ID: ");
@@ -829,14 +952,6 @@ void updateButtonState(ButtonState &btn, int pin, const char *buttonName)
   // Button is pressed if analog value is above threshold (HIGH = pressed)
   bool rawState = (analogValue > BUTTON_THRESHOLD);
   unsigned long currentTime = millis();
-
-  // Debug: Uncomment to see analog values for calibration
-  // static unsigned long lastDebugPrint = 0;
-  // if (currentTime - lastDebugPrint > 500) {
-  //   Serial.printf("[BTN] %s analog value: %d (threshold=%d, state=%s)\n",
-  //                 buttonName, analogValue, BUTTON_THRESHOLD, rawState ? "PRESSED" : "RELEASED");
-  //   lastDebugPrint = currentTime;
-  // }
 
   // Detect state change
   if (rawState != btn.lastRawState)
@@ -866,6 +981,7 @@ void updateButtonState(ButtonState &btn, int pin, const char *buttonName)
       {
         // Doorbell button pressed send to hub
         updateStatusMsg("Doorbell Pressed", true, "On Stand By");
+        sendUART2Command("play", "doorbell");
         // TODO add connnection to hub
       }
       else if (strcmp(buttonName, "Call") == 0)
