@@ -29,20 +29,28 @@ void sendUARTCommand(const char *cmd, const char *param, int value)
   MasterSerial.println(output);
 
   // Track desired mode based on commands sent
-  if (strcmp(cmd, "camera_control") == 0 && param != nullptr) {
-    if (strcmp(param, "camera_start") == 0) {
-      setDesiredMode(1);  // Camera running
-    } else if (strcmp(param, "camera_stop") == 0) {
-      setDesiredMode(0);  // Standby
+  if (strcmp(cmd, "camera_control") == 0 && param != nullptr)
+  {
+    if (strcmp(param, "camera_start") == 0)
+    {
+      setDesiredMode(1); // Camera running
     }
-  } else if (strcmp(cmd, "start_recognition") == 0) {
-    setDesiredMode(2);  // Recognition running
-  } else if (strcmp(cmd, "stop_recognition") == 0) {
-    setDesiredMode(1);  // Back to camera only
+    else if (strcmp(param, "camera_stop") == 0)
+    {
+      setDesiredMode(0); // Standby
+    }
+  }
+  else if (strcmp(cmd, "start_recognition") == 0)
+  {
+    setDesiredMode(2); // Recognition running
+  }
+  else if (strcmp(cmd, "stop_recognition") == 0)
+  {
+    setDesiredMode(1); // Back to camera only
   }
 }
 
-// Send command to AMP board 
+// Send command to AMP board
 void sendUART2Command(const char *cmd, const char *urls)
 {
   JsonDocument doc;
@@ -177,6 +185,7 @@ void handleUARTResponse(String line)
       // Update LCD status with recognition result
       if (id >= 0)
       {
+        sendUART2Command("play", "success");
         char msg[64];
         snprintf(msg, sizeof(msg), "Welcome %s!", name);
         updateStatusMsg(msg, true, "Doorbell Active");
@@ -184,9 +193,10 @@ void handleUARTResponse(String line)
       }
       else
       {
+        sendUART2Command("play", "error");
         updateStatusMsg("Unknown Person : Try again", true, "Doorbell Active");
         recognition_success = false;
-        sendUARTCommand("resume_detection"); //what to run after successfull activation
+        //sendUARTCommand("resume_detection"); // what to run after successfull activation
       }
     }
     return;

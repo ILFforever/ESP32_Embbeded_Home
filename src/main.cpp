@@ -10,6 +10,7 @@
 #include "http_control.h"
 #include "SPIMaster.h"
 #include "slave_state_manager.h"
+#include "weather.h"
 #include <TJpg_Decoder.h>
 #include <cstring>
 #include <esp_system.h>
@@ -116,6 +117,7 @@ void drawUIOverlay();
 void lcdhandoff();
 void checkButtons();
 void checkSlaveSyncTask();
+void updateWeather();
 void drawWifiSymbol(int x, int y, int strength);
 void onCardDetected(NFCCardData card);
 bool tft_jpg_render_callback(int16_t x, int16_t y, uint16_t w, uint16_t h, uint16_t *bitmap);
@@ -135,27 +137,37 @@ Task taskdrawUIOverlay(10, TASK_FOREVER, &drawUIOverlay);                     //
 Task tasklcdhandoff(200, TASK_FOREVER, &lcdhandoff);                          // Check if we need to hand off LCD to ProcessFrame
 Task taskCheckButtons(10, TASK_FOREVER, &checkButtons);                       // Check button state every 10ms
 Task taskCheckSlaveSync(1000, TASK_FOREVER, &checkSlaveSyncTask);             // Check slave mode sync and recovery every 1s
+Task taskUpdateWeather(1800000, TASK_FOREVER, &updateWeather);                // Update weather every 30 minutes (1800000ms)
 
 void setup()
 {
   Serial.begin(115200);
-  Serial.println("\n\n=================================");
-  Serial.println("ESP32_Embbeded_Home - Doorbell_lcd");
-  Serial.println("=================================\n");
+  delay(100); // Give Serial time to initialize
+
+  // Only use Serial if USB is connected
+  if (Serial)
+  {
+    Serial.println("\n\n=================================");
+    Serial.println("ESP32_Embbeded_Home - Doorbell_lcd");
+    Serial.println("=================================\n");
+  }
   delay(100);
 
-  Serial.println("Starting TFT_eSPI ST7789 screen");
+  if (Serial)
+    Serial.println("Starting TFT_eSPI ST7789 screen");
   tft.init();
   tft.setRotation(0);
   delay(100);
   tft.setSwapBytes(true); // Match TFT byte order
 
   // Initialize sprites
-  Serial.println("Creating video sprite...");
+  if (Serial)
+    Serial.println("Creating video sprite...");
   videoSprite.setColorDepth(16); // 16-bit color for video
   videoSprite.createSprite(tft.width(), VIDEO_HEIGHT);
 
-  Serial.println("Creating UI sprite...");
+  if (Serial)
+    Serial.println("Creating UI sprite...");
   topuiSprite.setColorDepth(16); // 16-bit for UI overlay
   topuiSprite.createSprite(tft.width(), VIDEO_Y_OFFSET + 5);
 
@@ -165,30 +177,38 @@ void setup()
   botuiSprite.setColorDepth(16);
   botuiSprite.createSprite(tft.width(), VIDEO_Y_OFFSET + 5);
 
-  Serial.println("Sprites initialized successfully");
+  if (Serial)
+    Serial.println("Sprites initialized successfully");
 
   // GPIO 34 and 35 are ADC1 channels - will use analogRead()
-  Serial.printf("Buttons initialized: Doorbell=GPIO%d, Call=GPIO%d (analog mode, threshold=%d)\n",
-                Doorbell_bt, Call_bt, BUTTON_THRESHOLD);
+  if (Serial)
+  {
+    Serial.printf("Buttons initialized: Doorbell=GPIO%d, Call=GPIO%d (analog mode, threshold=%d)\n",
+                  Doorbell_bt, Call_bt, BUTTON_THRESHOLD);
+  }
 
   MasterSerial.begin(UART_BAUD, SERIAL_8N1, RX2, TX2);
   AmpSerial.begin(UART_BAUD, SERIAL_8N1, RX3, TX3);
 
-  Serial.printf("UART initialized: RX=GPIO%d, TX=GPIO%d, Baud=%d\n", RX2, TX2, UART_BAUD);
+  if (Serial)
+    Serial.printf("UART initialized: RX=GPIO%d, TX=GPIO%d, Baud=%d\n", RX2, TX2, UART_BAUD);
   delay(100);
 
   if (!spiMaster.begin())
   {
-    Serial.println("[ERROR] SPI initialization failed");
+    if (Serial)
+      Serial.println("[ERROR] SPI initialization failed");
     while (1)
       delay(100);
   }
-  Serial.println("SPI initialization started");
+  if (Serial)
+    Serial.println("SPI initialization started");
 
   // Start SPI task on Core 1 for dedicated frame reception
   if (!spiMaster.startTask())
   {
-    Serial.println("[ERROR] Failed to start SPI task on Core 1");
+    if (Serial)
+      Serial.println("[ERROR] Failed to start SPI task on Core 1");
     while (1)
       delay(100);
   }
@@ -196,12 +216,21 @@ void setup()
   if (initNFC())
   {
     setNFCCardCallback(onCardDetected);
-    Serial.println("[MAIN] NFC initialized");
+    if (Serial)
+      Serial.println("[MAIN] NFC initialized");
   }
 
   // Initialize HTTP server
   initHTTPServer();
   delay(50);
+
+  // Initialize weather module
+  initWeather();
+  if (Serial)
+    Serial.println("[MAIN] Weather module initialized");
+
+  // Fetch weather immediately on startup (instead of waiting 10 minutes)
+  fetchWeatherTask();
 
   // Configure TJpg_Decoder
   TJpgDec.setCallback(tft_jpg_render_callback); // Set the callback
@@ -225,6 +254,7 @@ void setup()
   myscheduler.addTask(tasklcdhandoff);
   myscheduler.addTask(taskCheckButtons);
   myscheduler.addTask(taskCheckSlaveSync);
+  myscheduler.addTask(taskUpdateWeather);
   taskCheckUART.enable();
   taskCheckUART2.enable();
   taskSendPing.enable();
@@ -238,13 +268,15 @@ void setup()
   tasklcdhandoff.enable();
   taskCheckButtons.enable();
   taskCheckSlaveSync.enable();
+  taskUpdateWeather.enable();
 
   last_pong_time = millis();
   last_amp_pong_time = millis();
   sendUARTCommand("get_status");
 
   // Clear screen and show startup message
-  Serial.println("Clearing screen...");
+  if (Serial)
+    Serial.println("Clearing screen...");
   tft.fillScreen(TFT_BLACK);
 
   // Initial status message
@@ -488,8 +520,17 @@ void drawUIOverlay()
       videoSprite.setTextFont(4);
       videoSprite.drawString(cachedDateStr, 20, 85);
 
-      // Weather placeholder
-      videoSprite.drawString("Rainy 25C", 10, 125);
+      // Weather display
+      WeatherData weather = getWeatherData();
+      if (weather.isValid)
+      {
+        String weatherStr = weather.description + " " + String((int)weather.temperature) + "C";
+        videoSprite.drawString(weatherStr, 10, 125);
+      }
+      else
+      {
+        videoSprite.drawString(weather.description, 10, 125); // Show error/loading message
+      }
 
       videoSprite.pushSprite(0, VIDEO_Y_OFFSET + 25);
     }
@@ -1007,6 +1048,8 @@ void updateButtonState(ButtonState &btn, int pin, const char *buttonName)
         {
           // Start face recognition
           sendUARTCommand("camera_control", "camera_start");
+          delay(100);
+          sendUARTCommand("resume_detection");
           delay(100); // Small delay to ensure camera is ready
           sendUARTCommand("recognize_face");
         }
@@ -1048,4 +1091,10 @@ void checkSlaveSyncTask()
   slave_status = actual_slave_mode;
 
   checkStatusMessageExpiration();
+}
+
+// Task: Update weather data
+void updateWeather()
+{
+  fetchWeatherTask();
 }

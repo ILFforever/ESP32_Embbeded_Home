@@ -1,0 +1,490 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ESP32 Doorbell Control Panel</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      padding: 20px;
+    }
+
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      background: white;
+      border-radius: 16px;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+      overflow: hidden;
+    }
+
+    .header {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 30px;
+      text-align: center;
+    }
+
+    .header h1 {
+      margin-bottom: 10px;
+      font-size: 2em;
+    }
+
+    .config {
+      background: #f8f9fa;
+      padding: 20px 30px;
+      border-bottom: 1px solid #dee2e6;
+    }
+
+    .config label {
+      display: block;
+      margin-bottom: 5px;
+      font-weight: 600;
+      color: #495057;
+    }
+
+    .config input {
+      width: 300px;
+      padding: 8px 12px;
+      border: 2px solid #dee2e6;
+      border-radius: 6px;
+      font-size: 14px;
+    }
+
+    .config input:focus {
+      outline: none;
+      border-color: #667eea;
+    }
+
+    .content {
+      padding: 30px;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+      gap: 20px;
+    }
+
+    .section {
+      background: #f8f9fa;
+      padding: 20px;
+      border-radius: 12px;
+      border: 2px solid #e9ecef;
+    }
+
+    .section h2 {
+      color: #495057;
+      margin-bottom: 15px;
+      font-size: 1.3em;
+      padding-bottom: 10px;
+      border-bottom: 2px solid #667eea;
+    }
+
+    .btn {
+      background: #667eea;
+      color: white;
+      border: none;
+      padding: 12px 20px;
+      border-radius: 8px;
+      cursor: pointer;
+      margin: 5px;
+      font-size: 14px;
+      font-weight: 600;
+      transition: all 0.3s ease;
+      box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+    }
+
+    .btn:hover {
+      background: #5568d3;
+      transform: translateY(-2px);
+      box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+    }
+
+    .btn:active {
+      transform: translateY(0);
+    }
+
+    .btn.success { background: #28a745; }
+    .btn.success:hover { background: #218838; }
+
+    .btn.danger { background: #dc3545; }
+    .btn.danger:hover { background: #c82333; }
+
+    .btn.warning { background: #ffc107; color: #212529; }
+    .btn.warning:hover { background: #e0a800; }
+
+    .btn.info { background: #17a2b8; }
+    .btn.info:hover { background: #138496; }
+
+    .input-group {
+      margin-bottom: 15px;
+    }
+
+    .input-group label {
+      display: block;
+      margin-bottom: 5px;
+      font-weight: 600;
+      color: #495057;
+    }
+
+    .input-group input,
+    .input-group select {
+      width: 100%;
+      padding: 10px;
+      border: 2px solid #dee2e6;
+      border-radius: 6px;
+      font-size: 14px;
+    }
+
+    .input-group input:focus {
+      outline: none;
+      border-color: #667eea;
+    }
+
+    .status-bar {
+      background: #28a745;
+      color: white;
+      padding: 15px 30px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-weight: 600;
+    }
+
+    .status-bar.disconnected {
+      background: #dc3545;
+    }
+
+    .status-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .toast {
+      position: fixed;
+      bottom: 30px;
+      right: 30px;
+      background: #333;
+      color: white;
+      padding: 15px 25px;
+      border-radius: 8px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+      opacity: 0;
+      transform: translateY(20px);
+      transition: all 0.3s ease;
+      z-index: 1000;
+      max-width: 400px;
+    }
+
+    .toast.show {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    .toast.success { background: #28a745; }
+    .toast.error { background: #dc3545; }
+    .toast.info { background: #17a2b8; }
+
+    @media (max-width: 768px) {
+      .content {
+        grid-template-columns: 1fr;
+      }
+
+      .status-bar {
+        flex-direction: column;
+        gap: 10px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>🔔 ESP32 Doorbell Control Panel</h1>
+      <p>Remote control interface for your smart doorbell system</p>
+    </div>
+
+    <div class="config">
+      <label for="apiUrl">ESP32 API URL:</label>
+      <input type="text" id="apiUrl" value="http://doorbell.local" placeholder="http://192.168.1.xxx or http://doorbell.local">
+    </div>
+
+    <div class="status-bar" id="statusBar">
+      <div class="status-item">
+        <span>●</span>
+        <span id="connectionStatus">Connecting...</span>
+      </div>
+      <div class="status-item">
+        <span>Slave Status: <span id="slaveStatus">-</span></span>
+        <span>Amp Status: <span id="ampStatus">-</span></span>
+        <span>Uptime: <span id="uptime">-</span></span>
+      </div>
+    </div>
+
+    <div class="content">
+      <!-- Camera Control -->
+      <div class="section">
+        <h2>📷 Camera Control</h2>
+        <button class="btn success" onclick="sendCommand('/camera/start')">▶ Start Camera</button>
+        <button class="btn danger" onclick="sendCommand('/camera/stop')">⏹ Stop Camera</button>
+        <button class="btn info" onclick="sendCommand('/ping')">📡 Send Ping</button>
+        <button class="btn" onclick="getStatus()">📊 Get Status</button>
+      </div>
+
+      <!-- Face Recognition -->
+      <div class="section">
+        <h2>👤 Face Recognition</h2>
+        <button class="btn success" onclick="sendCustomCommand('enroll_face')">➕ Enroll Face</button>
+        <button class="btn info" onclick="sendCustomCommand('recognize_face')">🔍 Recognize Face</button>
+        <button class="btn warning" onclick="sendCustomCommand('delete_last')">🗑️ Delete Last</button>
+        <button class="btn danger" onclick="sendCustomCommand('reset_database')">⚠️ Reset DB</button>
+        <button class="btn" onclick="sendCustomCommand('resume_detection')">▶️ Resume Detection</button>
+      </div>
+
+      <!-- Face Database -->
+      <div class="section">
+        <h2>📋 Face Database</h2>
+        <button class="btn" onclick="sendCommand('/face/count')">📊 Get Face Count</button>
+        <button class="btn" onclick="sendCommand('/face/list')">📝 List Faces (Serial)</button>
+        <button class="btn" onclick="sendCommand('/face/check')">✅ Check DB Status</button>
+
+        <div class="input-group" style="margin-top: 20px;">
+          <label>Face ID:</label>
+          <input type="number" id="faceId" min="1" placeholder="1">
+        </div>
+        <div class="input-group">
+          <label>Name:</label>
+          <input type="text" id="faceName" placeholder="John Doe">
+        </div>
+        <button class="btn success" onclick="setFaceName()">💾 Set Name</button>
+        <button class="btn info" onclick="getFaceName()">📖 Get Name</button>
+      </div>
+
+      <!-- Audio Amp Control -->
+      <div class="section">
+        <h2>🔊 Audio Amp Control</h2>
+        <div class="input-group">
+          <label>Stream URL:</label>
+          <input type="text" id="ampUrl" placeholder="http://stream.example.com/radio">
+        </div>
+        <div class="input-group">
+          <label>Quick Select:</label>
+          <select id="radioPreset" onchange="document.getElementById('ampUrl').value = this.value">
+            <option value="">-- Choose Station --</option>
+            <option value="http://stream.radioparadise.com/aac-320">Radio Paradise (AAC 320k)</option>
+            <option value="http://stream.radioparadise.com/mp3-192">Radio Paradise (MP3 192k)</option>
+            <option value="doorbell">🔔 Doorbell (SPIFFS)</option>
+            <option value="success">✅ Success (SPIFFS)</option>
+          </select>
+        </div>
+        <button class="btn success" onclick="playAmp()">▶ Play</button>
+        <button class="btn danger" onclick="sendCommand('/amp/stop')">⏹ Stop</button>
+        <button class="btn warning" onclick="restartAmp()">🔄 Restart Amp</button>
+      </div>
+
+      <!-- System Control -->
+      <div class="section">
+        <h2>⚙️ System Control</h2>
+        <button class="btn info" onclick="sendCommand('/mic/start')">🎤 Start Microphone</button>
+        <button class="btn" onclick="sendCommand('/mic/stop')">🔇 Stop Microphone</button>
+        <button class="btn" onclick="sendCommand('/mic/status')">📊 Mic Status</button>
+        <hr style="margin: 15px 0; border: 1px solid #dee2e6;">
+        <button class="btn danger" onclick="restartLCD()">🔄 Restart LCD ESP32</button>
+      </div>
+
+      <!-- Custom Command -->
+      <div class="section">
+        <h2>⌨️ Custom Command</h2>
+        <div class="input-group">
+          <label>Command:</label>
+          <input type="text" id="customCmd" placeholder="e.g. start_camera">
+        </div>
+        <div class="input-group">
+          <label>Parameters (JSON):</label>
+          <input type="text" id="customParams" placeholder='{"key": "value"}'>
+        </div>
+        <button class="btn success" onclick="sendCustom()">📤 Send Command</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script>
+    // Get API URL from input or localStorage
+    function getApiUrl() {
+      const input = document.getElementById('apiUrl').value.trim();
+      localStorage.setItem('apiUrl', input);
+      return input || 'http://doorbell.local';
+    }
+
+    // Load saved API URL
+    window.addEventListener('load', () => {
+      const saved = localStorage.getItem('apiUrl');
+      if (saved) {
+        document.getElementById('apiUrl').value = saved;
+      }
+      updateStatus();
+      setInterval(updateStatus, 2000);
+    });
+
+    // Show toast notification
+    function showToast(message, type = 'info') {
+      const toast = document.getElementById('toast');
+      toast.textContent = message;
+      toast.className = `toast ${type} show`;
+      setTimeout(() => {
+        toast.classList.remove('show');
+      }, 3000);
+    }
+
+    // Send GET request to endpoint
+    async function sendCommand(endpoint) {
+      const url = getApiUrl() + endpoint;
+      try {
+        const response = await fetch(url);
+        const data = await response.json();
+        showToast(data.message || JSON.stringify(data), response.ok ? 'success' : 'error');
+        updateStatus();
+      } catch (error) {
+        showToast('Error: ' + error.message, 'error');
+      }
+    }
+
+    // Send custom UART command
+    async function sendCustomCommand(cmd, params = null) {
+      const url = getApiUrl() + '/command';
+      const body = { cmd };
+      if (params) body.params = params;
+
+      try {
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body)
+        });
+        const data = await response.json();
+        showToast(data.message || 'Command sent', response.ok ? 'success' : 'error');
+        updateStatus();
+      } catch (error) {
+        showToast('Error: ' + error.message, 'error');
+      }
+    }
+
+    // Get status
+    async function getStatus() {
+      await sendCommand('/status');
+    }
+
+    // Update status bar
+    async function updateStatus() {
+      const url = getApiUrl() + '/info';
+      const statusBar = document.getElementById('statusBar');
+      const connectionStatus = document.getElementById('connectionStatus');
+      const slaveStatus = document.getElementById('slaveStatus');
+      const ampStatus = document.getElementById('ampStatus');
+      const uptime = document.getElementById('uptime');
+
+      try {
+        const response = await fetch(url);
+        const data = await response.json();
+
+        statusBar.classList.remove('disconnected');
+        connectionStatus.textContent = `Connected to ${data.ip}`;
+        slaveStatus.textContent = data.slave_status;
+        ampStatus.textContent = data.amp_status;
+        uptime.textContent = Math.floor(data.uptime / 1000) + 's';
+      } catch (error) {
+        statusBar.classList.add('disconnected');
+        connectionStatus.textContent = 'Disconnected';
+        slaveStatus.textContent = '-';
+        ampStatus.textContent = '-';
+        uptime.textContent = '-';
+      }
+    }
+
+    // Set face name
+    async function setFaceName() {
+      const id = parseInt(document.getElementById('faceId').value);
+      const name = document.getElementById('faceName').value;
+
+      if (!id || id < 1) {
+        showToast('Please enter a valid Face ID', 'error');
+        return;
+      }
+
+      await sendCustomCommand('set_name', { id, name });
+    }
+
+    // Get face name
+    async function getFaceName() {
+      const id = parseInt(document.getElementById('faceId').value);
+
+      if (!id || id < 1) {
+        showToast('Please enter a valid Face ID', 'error');
+        return;
+      }
+
+      await sendCustomCommand('get_name', { id });
+    }
+
+    // Play audio on amp
+    async function playAmp() {
+      const url = document.getElementById('ampUrl').value.trim();
+
+      if (!url) {
+        showToast('Please enter a URL', 'error');
+        return;
+      }
+
+      await sendCommand('/amp/play?url=' + encodeURIComponent(url));
+    }
+
+    // Restart amp
+    async function restartAmp() {
+      if (confirm('Restart Amp ESP32?')) {
+        await sendCommand('/amp/restart');
+      }
+    }
+
+    // Restart LCD
+    async function restartLCD() {
+      if (confirm('Restart LCD ESP32? This page will reload after 3 seconds.')) {
+        await sendCommand('/system/restart');
+        setTimeout(() => location.reload(), 3000);
+      }
+    }
+
+    // Send custom command
+    async function sendCustom() {
+      const cmd = document.getElementById('customCmd').value.trim();
+      const paramsStr = document.getElementById('customParams').value.trim();
+
+      if (!cmd) {
+        showToast('Please enter a command', 'error');
+        return;
+      }
+
+      let params = null;
+      if (paramsStr) {
+        try {
+          params = JSON.parse(paramsStr);
+        } catch (e) {
+          showToast('Invalid JSON in parameters', 'error');
+          return;
+        }
+      }
+
+      await sendCustomCommand(cmd, params);
+    }
+  </script>
+</body>
+</html>

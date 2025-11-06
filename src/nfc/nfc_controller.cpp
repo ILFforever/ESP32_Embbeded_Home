@@ -36,6 +36,10 @@ static void nfcTask(void *parameter) {
   // Initialize PN532
   nfc.begin();
 
+  // Configure SAM (Secure Access Module) for low power mode
+  // Mode 0x01: Normal mode, timeout = 0xFF (no timeout), IRQ enabled
+  nfc.SAMConfig();
+
   // Check for PN532 board
   uint32_t versiondata = nfc.getFirmwareVersion();
   if (!versiondata) {
@@ -63,8 +67,8 @@ static void nfcTask(void *parameter) {
     uint8_t uidLength;
 
     // Wait for an ISO14443A type card (Mifare, etc.)
-    // This blocks until a card is found or timeout
-    success = nfc.readPassiveTargetID(PN532_MIFARE_ISO14443A, uid, &uidLength);
+    // Use short timeout to avoid constant RF field (reduces heat)
+    success = nfc.readPassiveTargetID(PN532_MIFARE_ISO14443A, uid, &uidLength, 100);  // 100ms timeout
 
     if (success) {
       // Check debounce - prevent duplicate reads
@@ -118,11 +122,12 @@ static void nfcTask(void *parameter) {
       }
 
       // Brief delay before next read
-      vTaskDelay(pdMS_TO_TICKS(100));
+      vTaskDelay(pdMS_TO_TICKS(500));  // Wait before next scan
     } else {
-      // No card found - this is normal, just wait a bit
+      // No card found - use delay to reduce heat while maintaining responsiveness
+      // The RF field automatically turns off after timeout, so we just need to wait longer
       failedReads++;
-      vTaskDelay(pdMS_TO_TICKS(100));
+      vTaskDelay(pdMS_TO_TICKS(300));  // 300ms delay = 100ms on / 400ms total = ~25% duty cycle
     }
   }
 }

@@ -20,194 +20,130 @@ const char* MDNS_HOSTNAME = "doorbell";
 WebServer server(80);
 AudioClient* audioClient = nullptr;
 
-// Root endpoint - API documentation
+// CORS headers for all responses
+void enableCORS() {
+  server.sendHeader("Access-Control-Allow-Origin", "*");
+  server.sendHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  server.sendHeader("Access-Control-Allow-Headers", "Content-Type");
+}
+
+// OPTIONS handler for CORS preflight
+void handleOptions() {
+  enableCORS();
+  server.send(204);
+}
+
+// Root endpoint - API info (JSON)
 void handleRoot() {
-  String html = "<!DOCTYPE html><html><head>";
-  html += "<title>ESP32 UART Controller</title>";
-  html += "<style>body{font-family:Arial;padding:20px;background:#f0f0f0;}";
-  html += ".container{max-width:800px;margin:0 auto;background:white;padding:20px;border-radius:8px;}";
-  html += "h1{color:#333;}";
-  html += ".endpoint{background:#e8f4f8;padding:15px;margin:10px 0;border-radius:5px;}";
-  html += ".method{color:#0066cc;font-weight:bold;}";
-  html += "button{background:#0066cc;color:white;border:none;padding:10px 20px;border-radius:5px;cursor:pointer;margin:5px;}";
-  html += "button:hover{background:#0052a3;}";
-  html += ".status{padding:10px;margin:10px 0;border-radius:5px;background:#d4edda;color:#155724;}";
-  html += "</style></head><body>";
-  html += "<div class='container'>";
-  html += "<h1>ESP32 UART Controller</h1>";
-  html += "<h2>Available Endpoints:</h2>";
+  enableCORS();
 
-  html += "<div class='endpoint'>";
-  html += "<span class='method'>GET</span> /camera/start - Start camera";
-  html += "<br><button onclick='fetch(\"/camera/start\").then(r=>r.text()).then(alert)'>Start Camera</button>";
-  html += "</div>";
+  JsonDocument doc;
+  doc["name"] = "ESP32 Doorbell LCD API";
+  doc["version"] = "1.0";
+  doc["endpoints"]["GET /status"] = "Get system status";
+  doc["endpoints"]["GET /info"] = "Get device info";
+  doc["endpoints"]["GET /camera/start"] = "Start camera";
+  doc["endpoints"]["GET /camera/stop"] = "Stop camera";
+  doc["endpoints"]["GET /ping"] = "Send ping to slave";
+  doc["endpoints"]["GET /face/count"] = "Get face count";
+  doc["endpoints"]["GET /face/list"] = "List faces (to serial)";
+  doc["endpoints"]["GET /face/check"] = "Check face DB";
+  doc["endpoints"]["GET /mic/start"] = "Start microphone";
+  doc["endpoints"]["GET /mic/stop"] = "Stop microphone";
+  doc["endpoints"]["GET /mic/status"] = "Microphone status";
+  doc["endpoints"]["GET /audio/start"] = "Start audio stream";
+  doc["endpoints"]["GET /audio/stop"] = "Stop audio stream";
+  doc["endpoints"]["GET /audio/status"] = "Audio stream status";
+  doc["endpoints"]["GET /amp/play?url=<url>"] = "Play URL on amp";
+  doc["endpoints"]["GET /amp/stop"] = "Stop amp playback";
+  doc["endpoints"]["GET /amp/restart"] = "Restart amp ESP32";
+  doc["endpoints"]["GET /system/restart"] = "Restart LCD ESP32";
+  doc["endpoints"]["POST /command"] = "Send custom UART command";
+  doc["note"] = "Web UI available at: https://github.com/yourusername/doorbell-ui or open doorbell-control.html";
 
-  html += "<div class='endpoint'>";
-  html += "<span class='method'>GET</span> /camera/stop - Stop camera";
-  html += "<br><button onclick='fetch(\"/camera/stop\").then(r=>r.text()).then(alert)'>Stop Camera</button>";
-  html += "</div>";
-
-  html += "<div class='endpoint'>";
-  html += "<span class='method'>GET</span> /status - Get slave status";
-  html += "<br><button onclick='fetch(\"/status\").then(r=>r.text()).then(alert)'>Get Status</button>";
-  html += "</div>";
-
-  html += "<div class='endpoint'>";
-  html += "<span class='method'>GET</span> /ping - Send ping to slave";
-  html += "<br><button onclick='fetch(\"/ping\").then(r=>r.text()).then(alert)'>Send Ping</button>";
-  html += "</div>";
-
-  html += "<div class='endpoint'>";
-  html += "<span class='method'>Face Management (Native ESP-WHO)</span>";
-  html += "<br><button onclick='sendCmd(\"enroll_face\")'>Enroll Next Face</button>";
-  html += "<button onclick='sendCmd(\"recognize_face\")' style='background:#28a745;'>Recognize Face</button>";
-  html += "<button onclick='sendCmd(\"delete_last\")'>Delete Last Face</button>";
-  html += "<button onclick='sendCmd(\"reset_database\")' style='background:#dc3545;'>Reset DB</button>";
-  html += "<button onclick='sendCmd(\"resume_detection\")'>Resume Detection</button>";
-  html += "</div>";
-
-  html += "<div class='endpoint'>";
-  html += "<span class='method'>Face Database Management</span>";
-  html += "<br><button onclick='fetch(\"/face/count\").then(r=>r.text()).then(alert)'>Get Face Count</button>";
-  html += "<button onclick='fetch(\"/face/list\").then(r=>r.text()).then(alert)'>Print Faces (Serial)</button>";
-  html += "<button onclick='fetch(\"/face/check\").then(r=>r.text()).then(alert)'>Check DB Status</button>";
-  html += "</div>";
-
-  html += "<div class='endpoint'>";
-  html += "<span class='method'>Name Management</span>";
-  html += "<br><label>Face ID: <input type='number' id='faceId' min='1' style='width:60px;padding:5px;'></label>";
-  html += "<label> Name: <input type='text' id='faceName' placeholder='e.g. John' style='width:150px;padding:5px;'></label>";
-  html += "<br><button onclick='setName()'>Set Name</button>";
-  html += "<button onclick='getName()'>Get Name</button>";
-  html += "</div>";
-
-  html += "<div class='endpoint'>";
-  html += "<span class='method'>Audio Streaming (WiFi)</span>";
-  html += "<br><button onclick='fetch(\"/audio/start\").then(r=>r.text()).then(alert)' style='background:#28a745;padding:12px 24px;font-size:16px;'>Start Audio</button> ";
-  html += "<button onclick='fetch(\"/audio/stop\").then(r=>r.text()).then(alert)' style='background:#dc3545;padding:12px 24px;font-size:16px;'>Stop Audio</button> ";
-  html += "<button onclick='fetch(\"/audio/status\").then(r=>r.text()).then(alert)' style='padding:12px 24px;font-size:16px;'>Status</button>";
-  html += "<p><i>Automatically controls camera microphone and LCD audio stream</i></p>";
-  html += "</div>";
-
-  html += "<div class='endpoint'>";
-  html += "<span class='method'>Audio Amp Control (UART2)</span>";
-  html += "<br><label>URL: <input type='text' id='ampUrl' placeholder='https://...' style='width:400px;padding:5px;'></label>";
-  html += "<br><button onclick='playAmpUrl()' style='background:#28a745;padding:12px 24px;font-size:16px;margin-top:10px;'>▶ Play on Amp</button> ";
-  html += "<button onclick='fetch(\"/amp/stop\").then(r=>r.text()).then(alert)' style='background:#dc3545;padding:12px 24px;font-size:16px;'>⏹ Stop Amp</button>";
-  html += "<p><i>Send audio URL to dedicated Amp ESP32 via UART</i></p>";
-  html += "</div>";
-
-  html += "<div class='endpoint'>";
-  html += "<span class='method'>Custom Command</span>";
-  html += "<br><label>Command: <input type='text' id='cmd' placeholder='e.g. enroll_face' style='width:200px;padding:5px;'></label>";
-  html += "<br><label>Params (JSON): <input type='text' id='params' placeholder='e.g. {\"name\":\"John\"}' style='width:300px;padding:5px;margin-top:5px;'></label>";
-  html += "<br><button onclick='sendCustomCmd()'>Send Command</button>";
-  html += "</div>";
-
-  html += "<div class='status' id='status'>Ready</div>";
-  html += "<script>";
-  html += "function sendCmd(cmd,params){";
-  html += "let body={cmd:cmd};";
-  html += "if(params)body.params=params;";
-  html += "fetch('/command',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})";
-  html += ".then(r=>r.text()).then(alert).catch(e=>alert('Error: '+e));";
-  html += "}";
-  html += "function playAmpUrl(){";
-  html += "let url=document.getElementById('ampUrl').value;";
-  html += "if(!url){alert('URL required');return;}";
-  html += "fetch('/amp/play?url='+encodeURIComponent(url))";
-  html += ".then(r=>r.text()).then(alert).catch(e=>alert('Error: '+e));";
-  html += "}";
-  html += "function sendCustomCmd(){";
-  html += "let cmd=document.getElementById('cmd').value;";
-  html += "let params=document.getElementById('params').value;";
-  html += "if(!cmd){alert('Command required');return;}";
-  html += "let body={cmd:cmd};";
-  html += "if(params){try{body.params=JSON.parse(params);}catch(e){alert('Invalid JSON in params');return;}}";
-  html += "fetch('/command',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})";
-  html += ".then(r=>r.text()).then(alert).catch(e=>alert('Error: '+e));";
-  html += "}";
-  html += "function setName(){";
-  html += "let id=parseInt(document.getElementById('faceId').value);";
-  html += "let name=document.getElementById('faceName').value;";
-  html += "if(!id||id<1){alert('Valid Face ID required');return;}";
-  html += "let body={cmd:'set_name',params:{id:id,name:name}};";
-  html += "fetch('/command',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})";
-  html += ".then(r=>r.text()).then(alert).catch(e=>alert('Error: '+e));";
-  html += "}";
-  html += "function getName(){";
-  html += "let id=parseInt(document.getElementById('faceId').value);";
-  html += "if(!id||id<1){alert('Valid Face ID required');return;}";
-  html += "let body={cmd:'get_name',params:{id:id}};";
-  html += "fetch('/command',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})";
-  html += ".then(r=>r.text()).then(alert).catch(e=>alert('Error: '+e));";
-  html += "}";
-  html += "</script>";
-  html += "<script>setInterval(()=>{fetch('/info').then(r=>r.json()).then(d=>{";
-  html += "document.getElementById('status').innerHTML='IP: '+d.ip+'<br>Uptime: '+d.uptime+'ms<br>Slave Status: '+d.slave_status;";
-  html += "})},2000);</script>";
-  html += "</div></body></html>";
-
-  server.send(200, "text/html", html);
+  String output;
+  serializeJson(doc, output);
+  server.send(200, "application/json", output);
 }
 
 // Camera start
 void handleCameraStart() {
+  enableCORS();
   sendUARTCommand("camera_control", "camera_start");
-  server.send(200, "text/plain", "Camera start command sent");
+  server.send(200, "application/json", "{\"status\":\"ok\",\"message\":\"Camera start command sent\"}");
 }
 
 // Camera stop
 void handleCameraStop() {
+  enableCORS();
   sendUARTCommand("camera_control", "camera_stop");
-  server.send(200, "text/plain", "Camera stop command sent");
+  server.send(200, "application/json", "{\"status\":\"ok\",\"message\":\"Camera stop command sent\"}");
 }
 
 // Get status
 void handleStatus() {
+  enableCORS();
   sendUARTCommand("get_status");
-  server.send(200, "text/plain", "Status request sent");
+
+  JsonDocument doc;
+  doc["status"] = "ok";
+  doc["slave_status"] = slave_status;
+  doc["message"] = "Status request sent";
+
+  String output;
+  serializeJson(doc, output);
+  server.send(200, "application/json", output);
 }
 
 // Send ping
 void handlePing() {
+  enableCORS();
   sendUARTPing();
-  server.send(200, "text/plain", "Ping sent");
+  server.send(200, "application/json", "{\"status\":\"ok\",\"message\":\"Ping sent\"}");
 }
 
 // Get face count from database
 void handleGetFaceCount() {
+  enableCORS();
   sendUARTCommand("get_face_count");
-  server.send(200, "text/plain", "Get face count command sent");
+  server.send(200, "application/json", "{\"status\":\"ok\",\"message\":\"Get face count command sent\"}");
 }
 
 // Print all faces (output to slave serial console)
 void handlePrintFaces() {
+  enableCORS();
   sendUARTCommand("print_faces");
-  server.send(200, "text/plain", "Print faces command sent (check slave serial)");
+  server.send(200, "application/json", "{\"status\":\"ok\",\"message\":\"Print faces command sent (check slave serial)\"}");
 }
 
 // Check database status
 void handleCheckDB() {
+  enableCORS();
   sendUARTCommand("check_db");
-  server.send(200, "text/plain", "Check database command sent");
+  server.send(200, "application/json", "{\"status\":\"ok\",\"message\":\"Check database command sent\"}");
 }
 
 // Get system info
 void handleInfo() {
-  String json = "{";
-  json += "\"ip\":\"" + WiFi.localIP().toString() + "\",";
-  json += "\"uptime\":" + String(millis()) + ",";
-  json += "\"slave_status\":" + String(slave_status) + ",";
-  json += "\"free_heap\":" + String(ESP.getFreeHeap()) + ",";
-  json += "\"ping_count\":" + String(ping_counter);
-  json += "}";
+  enableCORS();
 
-  server.send(200, "application/json", json);
+  JsonDocument doc;
+  doc["ip"] = WiFi.localIP().toString();
+  doc["uptime"] = millis();
+  doc["slave_status"] = slave_status;
+  doc["amp_status"] = amp_status;
+  doc["free_heap"] = ESP.getFreeHeap();
+  doc["ping_count"] = ping_counter;
+
+  String output;
+  serializeJson(doc, output);
+  server.send(200, "application/json", output);
 }
 
 // Custom command endpoint
 void handleCustomCommand() {
+  enableCORS();
+
   if (server.hasArg("plain")) {
     String body = server.arg("plain");
 
@@ -215,12 +151,12 @@ void handleCustomCommand() {
     DeserializationError error = deserializeJson(doc, body);
 
     if (error) {
-      server.send(400, "text/plain", "Invalid JSON");
+      server.send(400, "application/json", "{\"status\":\"error\",\"message\":\"Invalid JSON\"}");
       return;
     }
 
     if (!doc.containsKey("cmd")) {
-      server.send(400, "text/plain", "Missing 'cmd' field");
+      server.send(400, "application/json", "{\"status\":\"error\",\"message\":\"Missing 'cmd' field\"}");
       return;
     }
 
@@ -241,32 +177,39 @@ void handleCustomCommand() {
     Serial.println(output);  // Debug
     MasterSerial.println(output);
 
-    server.send(200, "text/plain", "Command sent: " + String(cmd));
+    String response = "{\"status\":\"ok\",\"message\":\"Command sent: ";
+    response += cmd;
+    response += "\"}";
+    server.send(200, "application/json", response);
   } else {
-    server.send(400, "text/plain", "No body provided");
+    server.send(400, "application/json", "{\"status\":\"error\",\"message\":\"No body provided\"}");
   }
 }
 
 // Microphone start
 void handleMicStart() {
+  enableCORS();
   sendUARTCommand("mic_start");
-  server.send(200, "text/plain", "Microphone start command sent");
+  server.send(200, "application/json", "{\"status\":\"ok\",\"message\":\"Microphone start command sent\"}");
 }
 
 // Microphone stop
 void handleMicStop() {
+  enableCORS();
   sendUARTCommand("mic_stop");
-  server.send(200, "text/plain", "Microphone stop command sent");
+  server.send(200, "application/json", "{\"status\":\"ok\",\"message\":\"Microphone stop command sent\"}");
 }
 
 // Microphone status
 void handleMicStatus() {
+  enableCORS();
   sendUARTCommand("mic_status");
-  server.send(200, "text/plain", "Microphone status request sent");
+  server.send(200, "application/json", "{\"status\":\"ok\",\"message\":\"Microphone status request sent\"}");
 }
 
 // Audio stream start - automatically starts microphone first
 void handleAudioStreamStart() {
+  enableCORS();
   Serial.println("[HTTP] Audio start request received");
 
   // Clean up any existing audio client to prevent socket leaks
@@ -282,11 +225,13 @@ void handleAudioStreamStart() {
   Serial.println("[HTTP] Sending mic_start to camera...");
   sendUARTCommand("mic_start");
 
-  server.send(200, "text/plain", "Microphone started (audio streaming disabled)");
+  server.send(200, "application/json", "{\"status\":\"ok\",\"message\":\"Microphone started (audio streaming disabled)\"}");
 }
 
 // Audio stream stop - automatically stops microphone too
 void handleAudioStreamStop() {
+  enableCORS();
+
   // Clean up any existing audio client to prevent socket leaks
   if (audioClient) {
     Serial.println("[HTTP] Cleaning up AudioClient...");
@@ -300,45 +245,72 @@ void handleAudioStreamStop() {
   // Stop the microphone on camera via UART
   sendUARTCommand("mic_stop");
 
-  server.send(200, "text/plain", "Microphone stopped (audio streaming disabled)");
+  server.send(200, "application/json", "{\"status\":\"ok\",\"message\":\"Microphone stopped (audio streaming disabled)\"}");
 }
 
 // Audio stream status - shows both microphone and stream status
 void handleAudioStreamStatus() {
-  String response = "Audio System Status:\n\n";
+  enableCORS();
 
-  // Get microphone status from camera
-  response += "Microphone (Camera): ";
+  JsonDocument doc;
+  doc["status"] = "ok";
+  doc["mic_status"] = "checking";
+  doc["stream_status"] = "disabled";
+  doc["message"] = "Audio streaming functionality not active";
+
   sendUARTCommand("mic_status");
-  response += "Checking via UART...\n\n";
 
-  // Audio streaming is currently disabled
-  response += "Audio Stream (LCD): Disabled (audio streaming functionality not active)";
-
-  server.send(200, "text/plain", response);
+  String output;
+  serializeJson(doc, output);
+  server.send(200, "application/json", output);
 }
 
 // ==================== Audio Amp (UART2) Handlers ====================
 
 void handleAmpPlay() {
+  enableCORS();
+
   if (!server.hasArg("url")) {
-    server.send(400, "text/plain", "Missing 'url' parameter");
+    server.send(400, "application/json", "{\"status\":\"error\",\"message\":\"Missing 'url' parameter\"}");
     return;
   }
 
   String url = server.arg("url");
   sendUART2Command("play", url.c_str());
-  server.send(200, "text/plain", "Sent play command to Amp: " + url);
+
+  JsonDocument doc;
+  doc["status"] = "ok";
+  doc["message"] = "Sent play command to Amp";
+  doc["url"] = url;
+
+  String output;
+  serializeJson(doc, output);
+  server.send(200, "application/json", output);
 }
 
 void handleAmpStop() {
+  enableCORS();
   sendUART2Command("stop", "");
-  server.send(200, "text/plain", "Sent stop command to Amp");
+  server.send(200, "application/json", "{\"status\":\"ok\",\"message\":\"Sent stop command to Amp\"}");
+}
+
+void handleAmpRestart() {
+  enableCORS();
+  sendUART2Command("restart", "");
+  server.send(200, "application/json", "{\"status\":\"ok\",\"message\":\"Sent restart command to Amp - Board will reboot\"}");
+}
+
+void handleLCDRestart() {
+  enableCORS();
+  server.send(200, "application/json", "{\"status\":\"ok\",\"message\":\"LCD ESP32 restarting in 1 second...\"}");
+  delay(1000);
+  ESP.restart();
 }
 
 // 404 handler
 void handleNotFound() {
-  server.send(404, "text/plain", "Not Found");
+  enableCORS();
+  server.send(404, "application/json", "{\"status\":\"error\",\"message\":\"Not Found\"}");
 }
 
 // Initialize HTTP server
@@ -379,6 +351,15 @@ void initHTTPServer() {
   }
 
   // Setup HTTP endpoints
+  // CORS preflight handler - must be registered before specific endpoints
+  server.onNotFound([]() {
+    if (server.method() == HTTP_OPTIONS) {
+      handleOptions();
+    } else {
+      handleNotFound();
+    }
+  });
+
   server.on("/", HTTP_GET, handleRoot);
   server.on("/camera/start", HTTP_GET, handleCameraStart);
   server.on("/camera/stop", HTTP_GET, handleCameraStop);
@@ -394,10 +375,11 @@ void initHTTPServer() {
   server.on("/audio/start", HTTP_GET, handleAudioStreamStart);
   server.on("/audio/stop", HTTP_GET, handleAudioStreamStop);
   server.on("/audio/status", HTTP_GET, handleAudioStreamStatus);
-  server.on("/amp/play", HTTP_GET, handleAmpPlay);        // New: Control amp via UART2
-  server.on("/amp/stop", HTTP_GET, handleAmpStop);        // New: Stop amp playback
+  server.on("/amp/play", HTTP_GET, handleAmpPlay);
+  server.on("/amp/stop", HTTP_GET, handleAmpStop);
+  server.on("/amp/restart", HTTP_GET, handleAmpRestart);
+  server.on("/system/restart", HTTP_GET, handleLCDRestart);
   server.on("/command", HTTP_POST, handleCustomCommand);
-  server.onNotFound(handleNotFound);
 
   server.begin();
   Serial.println("✅ HTTP server started on port 80");
