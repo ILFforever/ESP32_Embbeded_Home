@@ -25,8 +25,8 @@ public:
 
     /**
      * Initialize UART communication
-     * @param tx_pin TX GPIO pin (default: 43/D6 on XIAO)
-     * @param rx_pin RX GPIO pin (default: 44/D7 on XIAO)
+     * @param tx_pin TX GPIO pin (default: GPIO6 on XIAO)
+     * @param rx_pin RX GPIO pin (default: GPIO5 on XIAO)
      * @param baud_rate Baud rate (default: 115200)
      */
     UartComm(int tx_pin = 6, int rx_pin = 5, int baud_rate = 115200);
