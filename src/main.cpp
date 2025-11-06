@@ -3,14 +3,17 @@
 #include <WiFi.h>
 #include <esp_wifi.h>
 #include <TaskScheduler.h>
-#include <Adafruit_NeoPixel.h>
-#include "Audio.h"
-#include "firebase_config.h"
-#include "doorbell_audio.h" // Embedded MP3 file
+#include <SPIFFS.h>
+#include <Preferences.h>
+#include "Audio.h"                   // ESP32-audioI2S for streaming
+#include "AudioFileSourceSPIFFS.h"   // ESP8266Audio for SPIFFS playback
+#include "AudioFileSourceBuffer.h"
+#include "AudioGeneratorMP3.h"
+#include "AudioOutputI2S.h"
 
-// WiFi credentials
-const char *ssid = "ILFforever2";
-const char *password = "19283746";
+// WiFi credentials (defaults, can be changed via UART)
+String ssid = "ILFforever2";
+String password = "19283746";
 
 // MAX98357A I2S pins
 #define I2S_DOUT 9 // DIN on MAX98357A
@@ -21,25 +24,21 @@ const char *password = "19283746";
 #define RX2 17
 #define TX2 18
 
-#define LED_COUNT 1
-#define LED_PIN 39
-Adafruit_NeoPixel strip = Adafruit_NeoPixel(LED_COUNT, LED_PIN, NEO_GRB + NEO_KHZ800);
+// LED pin
+#define LED_PIN 6
 
-// Audio object
-Audio audio;
+// Audio objects
+Audio audio; // ESP32-audioI2S for streaming
+
+// ESP8266Audio objects for SPIFFS playback
+AudioGeneratorMP3 *mp3 = nullptr;
+AudioFileSourceSPIFFS *fileSource = nullptr;
+AudioFileSourceBuffer *fileBuffer = nullptr;
+AudioOutputI2S *out = nullptr;
 
 String currentStation_url = "";
 bool isPlaying = false;
-
-// PSRAM audio buffer
-uint8_t *psramAudioBuffer = nullptr;
-size_t psramAudioSize = 0;
-const size_t MAX_PSRAM_AUDIO_SIZE = 500 * 1024; // 500KB max for audio file
-
-// LED animation variables
-uint16_t rainbowHue = 0;
-uint8_t pulseBrightness = 0;
-int8_t pulseDirection = 1;
+bool isPlayingFromFS = false; // Track if we're playing from filesystem
 
 // Task scheduler and tasks
 Scheduler taskScheduler;
@@ -49,14 +48,74 @@ HardwareSerial MasterSerial(2); // Use UART2
 void audioLoopTask();
 void checkUARTData();
 void handleUARTResponse(String line);
-void updateLED();
-String getFirebaseDownloadURL(String filePath);
-String getFirebasePublicURL(String filePath);
+bool playFromFS(const char *filename);
+void stopAllPlayback();
+void ensureWiFiConnected();
 
 // Define tasks
 Task tAudioLoop(1, TASK_FOREVER, &audioLoopTask);     // Run audio loop as fast as possible
 Task taskCheckUART(20, TASK_FOREVER, &checkUARTData); // Check UART buffer every 20ms
-Task taskUpdateLED(50, TASK_FOREVER, &updateLED);      // Update LED every 50ms
+
+// Lazy WiFi initialization - only connect when needed
+void ensureWiFiConnected()
+{
+  if (WiFi.status() == WL_CONNECTED)
+  {
+    return; // Already connected
+  }
+
+  Serial.println("📶 Initializing WiFi for streaming...");
+  Serial.printf("   Connecting to: %s\n", ssid.c_str());
+
+  // Set WiFi to maximum power
+  WiFi.setTxPower(WIFI_POWER_19_5dBm);
+  WiFi.setSleep(false);
+
+  WiFi.begin(ssid.c_str(), password.c_str());
+
+  // Wait for connection with smooth pulsing LED
+  int attempts = 0;
+  int brightness = 0;
+  int fadeDirection = 5;
+
+  while (WiFi.status() != WL_CONNECTED && attempts < 40)
+  {
+    // Smooth brightness pulse
+    analogWrite(LED_PIN, brightness);
+    brightness += fadeDirection;
+
+    if (brightness >= 255 || brightness <= 0)
+    {
+      fadeDirection = -fadeDirection;
+    }
+
+    delay(125);
+
+    if (attempts % 4 == 0)
+    {
+      Serial.print(".");
+    }
+    attempts++;
+  }
+
+  if (WiFi.status() == WL_CONNECTED)
+  {
+    Serial.println("\n✅ WiFi connected");
+    digitalWrite(LED_PIN, LOW); // Turn off LED after connecting
+
+    // Optimize for streaming
+    esp_wifi_set_ps(WIFI_PS_NONE);
+    WiFi.setAutoReconnect(true);
+
+    Serial.printf("   IP: %s\n", WiFi.localIP().toString().c_str());
+    Serial.printf("   Signal: %d dBm\n", WiFi.RSSI());
+  }
+  else
+  {
+    Serial.println("\n❌ WiFi connection failed");
+    digitalWrite(LED_PIN, LOW); // Turn off LED on failure
+  }
+}
 
 // Handle volume up
 void handleVolumeUp()
@@ -75,51 +134,75 @@ void handleVolumeDown()
 void setup()
 {
   Serial.begin(115200);
-
+  delay(2000); // Wait for serial monitor to open
   Serial.println("\n\nESP32 Audio Amp - UART Controlled");
   Serial.println("===================================");
 
-  //setup the led on the board
-  strip.begin();
-  strip.setBrightness(255);
-  strip.setPixelColor(0, strip.Color(255, 0, 0)); // Red on boot
-  strip.show();
-
-
-  // Connect to WiFi for audio streaming
-  Serial.printf("Connecting to WiFi: %s\n", ssid);
-
-  // Set WiFi to maximum power for better performance with ceramic antenna
-  WiFi.setTxPower(WIFI_POWER_19_5dBm); // Max power for ESP32-S3
-
-  WiFi.begin(ssid, password);
-
-  // Disable WiFi sleep mode to prevent stream dropouts
-  WiFi.setSleep(false);
-
-  while (WiFi.status() != WL_CONNECTED)
+  // Load WiFi credentials from preferences (if saved)
+  Preferences prefs;
+  prefs.begin("wifi", true); // Read-only
+  if (prefs.isKey("ssid"))
   {
-    delay(500);
-    Serial.print(".");
+    ssid = prefs.getString("ssid", ssid);
+    password = prefs.getString("password", password);
+    Serial.printf("📶 Loaded WiFi credentials from storage\n");
+    Serial.printf("   SSID: %s\n", ssid.c_str());
   }
-  Serial.println("\n✅ WiFi connected");
+  else
+  {
+    Serial.println("📶 Using default WiFi credentials");
+  }
+  prefs.end();
 
-  // Optimize WiFi for streaming performance
-  esp_wifi_set_ps(WIFI_PS_NONE); // Disable power saving completely
-  WiFi.setAutoReconnect(true);    // Auto-reconnect if connection drops
+  // Setup LED pin
+  pinMode(LED_PIN, OUTPUT);
+  digitalWrite(LED_PIN, LOW); // Start with LED off
 
-  Serial.printf("IP: %s\n", WiFi.localIP().toString().c_str());
-  Serial.printf("WiFi Signal: %d dBm\n", WiFi.RSSI());
-  Serial.printf("WiFi Channel: %d\n", WiFi.channel());
+  // WiFi will be initialized on-demand when streaming is needed
+  Serial.println("WiFi: Lazy init (will connect when streaming)");
 
-  Serial.println("✅ Firebase Storage ready (using public URLs)");
+  // Initialize SPIFFS
+  Serial.println("Initializing SPIFFS...");
 
-  // Change LED to green when WiFi connected
-  strip.setPixelColor(0, strip.Color(0, 255, 0)); // Green
-  strip.show();
+  // Simple SPIFFS.begin(true) - format on fail
+  if (!SPIFFS.begin(true))
+  {
+    Serial.println("❌ SPIFFS Mount Failed");
+  }
+  else
+  {
+    Serial.println("✅ SPIFFS Mounted");
+
+    // Show filesystem info
+    size_t total = SPIFFS.totalBytes();
+    size_t used = SPIFFS.usedBytes();
+    Serial.printf("   Total: %.2f KB | Used: %.2f KB | Free: %.2f KB\n",
+                  total / 1024.0, used / 1024.0, (total - used) / 1024.0);
+
+    // List all files
+    File root = SPIFFS.open("/");
+    if (root)
+    {
+      Serial.println("   Files:");
+      File file = root.openNextFile();
+      while (file)
+      {
+        Serial.printf("     %s (%d bytes)\n", file.name(), file.size());
+        file = root.openNextFile();
+      }
+    }
+  }
+
+  // Initialize ESP8266Audio objects for filesystem playback
+  out = new AudioOutputI2S();
+  out->SetPinout(I2S_BCLK, I2S_LRC, I2S_DOUT);
+  out->SetGain(1.0); // 0.0 to 4.0
+  mp3 = new AudioGeneratorMP3();
+
+  Serial.println("✅ ESP8266Audio initialized for SPIFFS playback");
 
   MasterSerial.begin(UART_BAUD, SERIAL_8N1, RX2, TX2);
-  // Setup I2S audio output
+  // Setup I2S audio output for streaming (ESP32-audioI2S)
   audio.setPinout(I2S_BCLK, I2S_LRC, I2S_DOUT);
   audio.setVolume(21); // 0-21, 21 = max volume
 
@@ -130,54 +213,13 @@ void setup()
   taskScheduler.init();
   taskScheduler.addTask(tAudioLoop);
   taskScheduler.addTask(taskCheckUART);
-  taskScheduler.addTask(taskUpdateLED);
 
   tAudioLoop.enable();
   taskCheckUART.enable();
-  taskUpdateLED.enable();
 
   Serial.println("✅ Ready - waiting for UART commands from LCD");
 }
 
-void updateLED()
-{
-  if (isPlaying)
-  {
-    // Rainbow pulse effect when playing
-    // Update hue for rainbow effect (0-65535)
-    rainbowHue += 256;
-    if (rainbowHue >= 65536)
-    {
-      rainbowHue = 0;
-    }
-
-    // Update brightness for pulse effect (30-255)
-    pulseBrightness += pulseDirection * 5;
-    if (pulseBrightness >= 255)
-    {
-      pulseBrightness = 255;
-      pulseDirection = -1;
-    }
-    else if (pulseBrightness <= 30)
-    {
-      pulseBrightness = 30;
-      pulseDirection = 1;
-    }
-
-    // Convert HSV to RGB and set the pixel
-    uint32_t color = strip.gamma32(strip.ColorHSV(rainbowHue));
-    strip.setBrightness(pulseBrightness);
-    strip.setPixelColor(0, color);
-    strip.show();
-  }
-  else
-  {
-    // Solid green when on standby
-    strip.setBrightness(255);
-    strip.setPixelColor(0, strip.Color(0, 255, 0));
-    strip.show();
-  }
-}
 
 void checkUARTData()
 {
@@ -239,53 +281,49 @@ void handleUARTResponse(String line)
         Serial.printf("   New URL: '%s'\n", url.c_str());
         Serial.printf("   isPlaying: %s\n", isPlaying ? "true" : "false");
 
-        // Check for PSRAM playback command
-        if (url == "psram" || url == "doorbell" || url == "local")
+        // If URL doesn't start with http, treat it as a filesystem path
+        if (!url.startsWith("http"))
         {
-          Serial.println("   🎵 Playing from PSRAM...");
+          Serial.println("   🎵 Playing from SPIFFS...");
+          // Add .mp3 extension if not present
+          String filename = url;
+          if (!filename.endsWith(".mp3"))
+          {
+            filename += ".mp3";
+          }
+          // Add leading slash if not present
+          if (!filename.startsWith("/"))
+          {
+            filename = "/" + filename;
+          }
+          playFromFS(filename.c_str());
           return;
         }
 
-        // Check if this is a Firebase path (doesn't start with http)
+        // URL starts with http - use it directly for streaming
         String finalURL = url;
-        if (!url.startsWith("http"))
-        {
-          Serial.println("   🔥 Detected Firebase path, getting download URL...");
-
-          // Check if there's a "public:" prefix for large files
-          // Usage: {"cmd": "play", "url": "public:large_audio.mp3"}
-          if (url.startsWith("public:"))
-          {
-            String filePath = url.substring(7); // Remove "public:" prefix
-            finalURL = getFirebasePublicURL(filePath);
-          }
-          else
-          {
-            finalURL = getFirebaseDownloadURL(url);
-          }
-
-          if (finalURL.length() == 0)
-          {
-            Serial.println("❌ Failed to get Firebase download URL");
-            return;
-          }
-        }
 
         // If different URL or not currently playing, connect
         if (finalURL != currentStation_url || !isPlaying)
         {
-          // Stop current playback if any
-          if (isPlaying)
+          // Ensure WiFi is connected before streaming
+          ensureWiFiConnected();
+
+          if (WiFi.status() != WL_CONNECTED)
           {
-            Serial.println("   Stopping current playback...");
-            audio.stopSong();
-            delay(100); // Give time for cleanup
+            Serial.println("❌ Cannot stream - WiFi not connected");
+            return;
           }
+
+          // Stop all playback (both libraries)
+          stopAllPlayback();
 
           currentStation_url = finalURL;
           Serial.printf("▶️ Connecting to: %s\n", finalURL.c_str());
           audio.connecttohost(finalURL.c_str());
-          isPlaying = true; // Enable rainbow pulse effect
+          isPlaying = true;
+          isPlayingFromFS = false;
+          digitalWrite(LED_PIN, HIGH); // Turn on LED when playing
         }
         else
         {
@@ -299,10 +337,96 @@ void handleUARTResponse(String line)
     }
     else if (strcmp(doc["cmd"], "stop") == 0)
     {
-      audio.stopSong();
+      stopAllPlayback();
       Serial.println("⏹ Stopped playback");
-      isPlaying = false; // Return to green standby
-      currentStation_url = ""; // Clear current station to allow replay
+    }
+    else if (strcmp(doc["cmd"], "volume") == 0)
+    {
+      if (doc.containsKey("level"))
+      {
+        int vol = doc["level"];
+        vol = constrain(vol, 0, 21);
+        audio.setVolume(vol);
+        Serial.printf("🔊 Volume set to: %d\n", vol);
+      }
+      else
+      {
+        Serial.printf("🔊 Current volume: %d\n", audio.getVolume());
+      }
+    }
+    else if (strcmp(doc["cmd"], "wifi") == 0)
+    {
+      if (doc.containsKey("ssid") && doc.containsKey("password"))
+      {
+        // Disconnect current WiFi
+        WiFi.disconnect();
+
+        // Update credentials
+        const char* newSsid = doc["ssid"];
+        const char* newPass = doc["password"];
+
+        Serial.printf("📶 Updating WiFi credentials...\n");
+        Serial.printf("   SSID: %s\n", newSsid);
+
+        // Store in preferences (persistent across reboots)
+        Preferences prefs;
+        prefs.begin("wifi", false);
+        prefs.putString("ssid", newSsid);
+        prefs.putString("password", newPass);
+        prefs.end();
+
+        Serial.println("✅ WiFi credentials saved - will use on next stream");
+      }
+      else
+      {
+        Serial.printf("📶 Current SSID: %s\n", ssid);
+        Serial.printf("   Status: %s\n", WiFi.status() == WL_CONNECTED ? "Connected" : "Disconnected");
+      }
+    }
+    else if (strcmp(doc["cmd"], "status") == 0)
+    {
+      StaticJsonDocument<512> response;
+      response["type"] = "status";
+      response["playing"] = isPlaying;
+      response["source"] = isPlayingFromFS ? "spiffs" : "stream";
+      response["url"] = currentStation_url;
+      response["volume"] = audio.getVolume();
+      response["wifi_connected"] = WiFi.status() == WL_CONNECTED;
+      response["wifi_ssid"] = ssid;
+      response["wifi_rssi"] = WiFi.RSSI();
+      response["uptime"] = millis() / 1000;
+      response["free_heap"] = ESP.getFreeHeap();
+      response["spiffs_total"] = SPIFFS.totalBytes();
+      response["spiffs_used"] = SPIFFS.usedBytes();
+
+      String output;
+      serializeJson(response, output);
+      MasterSerial.println(output);
+      Serial.println("📊 Status sent");
+    }
+    else if (strcmp(doc["cmd"], "list") == 0)
+    {
+      Serial.println("📁 Files in SPIFFS:");
+      File root = SPIFFS.open("/");
+      if (root)
+      {
+        File file = root.openNextFile();
+        while (file)
+        {
+          Serial.printf("   %s (%d bytes)\n", file.name(), file.size());
+          file = root.openNextFile();
+        }
+      }
+    }
+    else if (strcmp(doc["cmd"], "restart") == 0)
+    {
+      Serial.println("🔄 Restarting ESP32...");
+      delay(500);
+      ESP.restart();
+    }
+    else
+    {
+      Serial.printf("❌ Unknown command: %s\n", doc["cmd"].as<const char*>());
     }
   }
 
@@ -318,21 +442,51 @@ void loop()
 // Task callback: Audio processing
 void audioLoopTask()
 {
-  audio.loop();
-
-  // Check if audio has stopped playing (for streams that don't trigger eof callback)
-  static bool wasPlaying = false;
-  bool nowPlaying = audio.isRunning();
-
-  if (wasPlaying && !nowPlaying && isPlaying)
+  // Handle ESP32-audioI2S streaming
+  if (!isPlayingFromFS)
   {
-    // Audio was playing but stopped
-    Serial.println("🔚 Audio stopped - returning to standby");
-    isPlaying = false;
-    currentStation_url = "";
+    audio.loop();
+
+    // Check if audio has stopped playing (for streams that don't trigger eof callback)
+    static bool wasPlaying = false;
+    bool nowPlaying = audio.isRunning();
+
+    if (wasPlaying && !nowPlaying && isPlaying)
+    {
+      // Audio was playing but stopped
+      Serial.println("🔚 Audio stopped - returning to standby");
+      isPlaying = false;
+      currentStation_url = "";
+      digitalWrite(LED_PIN, LOW); // Turn off LED when stopped
+    }
+
+    wasPlaying = nowPlaying;
   }
 
-  wasPlaying = nowPlaying;
+  // Handle ESP8266Audio filesystem playback
+  if (isPlayingFromFS && mp3 != nullptr && mp3->isRunning())
+  {
+    if (!mp3->loop())
+    {
+      // Audio finished or error occurred
+      mp3->stop();
+      if (fileBuffer != nullptr)
+      {
+        delete fileBuffer;
+        fileBuffer = nullptr;
+      }
+      if (fileSource != nullptr)
+      {
+        delete fileSource;
+        fileSource = nullptr;
+      }
+      Serial.println("🔚 Filesystem playback finished - returning to standby");
+      isPlaying = false;
+      isPlayingFromFS = false;
+      currentStation_url = "";
+      digitalWrite(LED_PIN, LOW); // Turn off LED when stopped
+    }
+  }
 }
 
 // Optional audio library callbacks for debugging
@@ -357,6 +511,7 @@ void audio_eof_mp3(const char *info)
   Serial.println("🔚 Playback finished - returning to standby");
   isPlaying = false;
   currentStation_url = "";
+  digitalWrite(LED_PIN, LOW); // Turn off LED when stopped
 }
 
 void audio_showstation(const char *info)
@@ -395,36 +550,102 @@ void audio_lasthost(const char *info)
   Serial.println(info);
 }
 
-// Get Firebase Storage public URL for a file
-// filePath example: "doorbell.mp3" or "sounds/doorbell.mp3"
-// Using public URL method (requires public read access in Firebase Storage rules)
-String getFirebaseDownloadURL(String filePath)
+// Play audio from SPIFFS using ESP8266Audio library
+bool playFromFS(const char *filename)
 {
-  Serial.printf("🔥 Getting Firebase public URL for: %s\n", filePath.c_str());
-  return getFirebasePublicURL(filePath);
+  if (mp3 == nullptr || out == nullptr)
+  {
+    Serial.println("❌ ESP8266Audio not initialized");
+    return false;
+  }
+
+  // Check if file exists
+  if (!SPIFFS.exists(filename))
+  {
+    Serial.printf("❌ File not found: %s\n", filename);
+    return false;
+  }
+
+  Serial.printf("▶️ Playing from SPIFFS: %s\n", filename);
+
+  // Stop all playback first
+  stopAllPlayback();
+
+  // Create file source from SPIFFS
+  fileSource = new AudioFileSourceSPIFFS(filename);
+  if (fileSource == nullptr)
+  {
+    Serial.println("❌ Failed to create AudioFileSourceSPIFFS");
+    return false;
+  }
+
+  // Add buffer for smooth playback
+  fileBuffer = new AudioFileSourceBuffer(fileSource, 2048);
+  if (fileBuffer == nullptr)
+  {
+    Serial.println("❌ Failed to create buffer");
+    delete fileSource;
+    fileSource = nullptr;
+    return false;
+  }
+
+  // Start playback
+  bool success = mp3->begin(fileBuffer, out);
+
+  if (success)
+  {
+    isPlaying = true;
+    isPlayingFromFS = true;
+    currentStation_url = String("fs://") + filename;
+    digitalWrite(LED_PIN, HIGH); // Turn on LED when playing
+    Serial.println("✅ SPIFFS playback started");
+  }
+  else
+  {
+    Serial.println("❌ Failed to start SPIFFS playback");
+    delete fileBuffer;
+    delete fileSource;
+    fileBuffer = nullptr;
+    fileSource = nullptr;
+  }
+
+  return success;
 }
 
-// Construct Firebase Storage public URL
-// Requires Firebase Storage rules to allow public read access
-// Format: https://firebasestorage.googleapis.com/v0/b/BUCKET/o/FILE?alt=media
-String getFirebasePublicURL(String filePath)
+// Stop all audio playback (both libraries)
+void stopAllPlayback()
 {
-  // URL encode the file path
-  String encodedPath = filePath;
-  encodedPath.replace("/", "%2F");
-  encodedPath.replace(" ", "%20");
+  // Stop ESP32-audioI2S streaming
+  if (isPlaying && !isPlayingFromFS)
+  {
+    Serial.println("   Stopping ESP32-audioI2S playback...");
+    audio.stopSong();
+    delay(100);
+  }
 
-  // Extract bucket name without gs:// prefix
-  String bucket = String(FIREBASE_STORAGE_BUCKET);
-  bucket.replace("gs://", "");
+  // Stop ESP8266Audio filesystem playback
+  if (isPlayingFromFS && mp3 != nullptr)
+  {
+    Serial.println("   Stopping ESP8266Audio playback...");
+    if (mp3->isRunning())
+    {
+      mp3->stop();
+    }
+    if (fileBuffer != nullptr)
+    {
+      delete fileBuffer;
+      fileBuffer = nullptr;
+    }
+    if (fileSource != nullptr)
+    {
+      delete fileSource;
+      fileSource = nullptr;
+    }
+  }
 
-  // Build URL using concatenation to avoid operator ambiguity
-  String publicURL = "https://firebasestorage.googleapis.com/v0/b/";
-  publicURL += bucket;
-  publicURL += "/o/";
-  publicURL += encodedPath;
-  publicURL += "?alt=media";
-
-  Serial.printf("🔥 Public URL (no token, requires public read rules): %s\n", publicURL.c_str());
-  return publicURL;
+  // Reset state
+  isPlaying = false;
+  isPlayingFromFS = false;
+  currentStation_url = "";
+  digitalWrite(LED_PIN, LOW); // Turn off LED when stopped
 }
