@@ -2,7 +2,8 @@
 #include "uart_commands.h"
 #include "audio_client.h"
 #include <WiFi.h>
-#include <WebServer.h>
+#include <AsyncTCP.h>
+#include <ESPAsyncWebServer.h>
 #include <ESPmDNS.h>
 
 #include <time.h> // For time functions
@@ -17,300 +18,14 @@ const char* CAMERA_IP = "192.168.1.100";  // TODO: Update with actual camera IP
 // mDNS hostname - device will be accessible at http://doorbell.local
 const char* MDNS_HOSTNAME = "doorbell";
 
-WebServer server(80);
+AsyncWebServer server(80);
 AudioClient* audioClient = nullptr;
 
-// CORS headers for all responses
-void enableCORS() {
-  server.sendHeader("Access-Control-Allow-Origin", "*");
-  server.sendHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-  server.sendHeader("Access-Control-Allow-Headers", "Content-Type");
-}
-
-// OPTIONS handler for CORS preflight
-void handleOptions() {
-  enableCORS();
-  server.send(204);
-}
-
-// Root endpoint - API info (JSON)
-void handleRoot() {
-  enableCORS();
-
-  JsonDocument doc;
-  doc["name"] = "ESP32 Doorbell LCD API";
-  doc["version"] = "1.0";
-  doc["endpoints"]["GET /status"] = "Get system status";
-  doc["endpoints"]["GET /info"] = "Get device info";
-  doc["endpoints"]["GET /camera/start"] = "Start camera";
-  doc["endpoints"]["GET /camera/stop"] = "Stop camera";
-  doc["endpoints"]["GET /ping"] = "Send ping to slave";
-  doc["endpoints"]["GET /face/count"] = "Get face count";
-  doc["endpoints"]["GET /face/list"] = "List faces (to serial)";
-  doc["endpoints"]["GET /face/check"] = "Check face DB";
-  doc["endpoints"]["GET /mic/start"] = "Start microphone";
-  doc["endpoints"]["GET /mic/stop"] = "Stop microphone";
-  doc["endpoints"]["GET /mic/status"] = "Microphone status";
-  doc["endpoints"]["GET /audio/start"] = "Start audio stream";
-  doc["endpoints"]["GET /audio/stop"] = "Stop audio stream";
-  doc["endpoints"]["GET /audio/status"] = "Audio stream status";
-  doc["endpoints"]["GET /amp/play?url=<url>"] = "Play URL on amp";
-  doc["endpoints"]["GET /amp/stop"] = "Stop amp playback";
-  doc["endpoints"]["GET /amp/restart"] = "Restart amp ESP32";
-  doc["endpoints"]["GET /system/restart"] = "Restart LCD ESP32";
-  doc["endpoints"]["POST /command"] = "Send custom UART command";
-  doc["note"] = "Web UI available at: https://github.com/yourusername/doorbell-ui or open doorbell-control.html";
-
-  String output;
-  serializeJson(doc, output);
-  server.send(200, "application/json", output);
-}
-
-// Camera start
-void handleCameraStart() {
-  enableCORS();
-  sendUARTCommand("camera_control", "camera_start");
-  server.send(200, "application/json", "{\"status\":\"ok\",\"message\":\"Camera start command sent\"}");
-}
-
-// Camera stop
-void handleCameraStop() {
-  enableCORS();
-  sendUARTCommand("camera_control", "camera_stop");
-  server.send(200, "application/json", "{\"status\":\"ok\",\"message\":\"Camera stop command sent\"}");
-}
-
-// Get status
-void handleStatus() {
-  enableCORS();
-  sendUARTCommand("get_status");
-
-  JsonDocument doc;
-  doc["status"] = "ok";
-  doc["slave_status"] = slave_status;
-  doc["message"] = "Status request sent";
-
-  String output;
-  serializeJson(doc, output);
-  server.send(200, "application/json", output);
-}
-
-// Send ping
-void handlePing() {
-  enableCORS();
-  sendUARTPing();
-  server.send(200, "application/json", "{\"status\":\"ok\",\"message\":\"Ping sent\"}");
-}
-
-// Get face count from database
-void handleGetFaceCount() {
-  enableCORS();
-  sendUARTCommand("get_face_count");
-  server.send(200, "application/json", "{\"status\":\"ok\",\"message\":\"Get face count command sent\"}");
-}
-
-// Print all faces (output to slave serial console)
-void handlePrintFaces() {
-  enableCORS();
-  sendUARTCommand("print_faces");
-  server.send(200, "application/json", "{\"status\":\"ok\",\"message\":\"Print faces command sent (check slave serial)\"}");
-}
-
-// Check database status
-void handleCheckDB() {
-  enableCORS();
-  sendUARTCommand("check_db");
-  server.send(200, "application/json", "{\"status\":\"ok\",\"message\":\"Check database command sent\"}");
-}
-
-// Get system info
-void handleInfo() {
-  enableCORS();
-
-  JsonDocument doc;
-  doc["ip"] = WiFi.localIP().toString();
-  doc["uptime"] = millis();
-  doc["slave_status"] = slave_status;
-  doc["amp_status"] = amp_status;
-  doc["free_heap"] = ESP.getFreeHeap();
-  doc["ping_count"] = ping_counter;
-
-  String output;
-  serializeJson(doc, output);
-  server.send(200, "application/json", output);
-}
-
-// Custom command endpoint
-void handleCustomCommand() {
-  enableCORS();
-
-  if (server.hasArg("plain")) {
-    String body = server.arg("plain");
-
-    JsonDocument doc;
-    DeserializationError error = deserializeJson(doc, body);
-
-    if (error) {
-      server.send(400, "application/json", "{\"status\":\"error\",\"message\":\"Invalid JSON\"}");
-      return;
-    }
-
-    if (!doc.containsKey("cmd")) {
-      server.send(400, "application/json", "{\"status\":\"error\",\"message\":\"Missing 'cmd' field\"}");
-      return;
-    }
-
-    const char* cmd = doc["cmd"];
-
-    // Build UART JSON command
-    JsonDocument uart_doc;
-    uart_doc["cmd"] = cmd;
-
-    // Check if params object exists and add it
-    if (doc.containsKey("params") && doc["params"].is<JsonObject>()) {
-      uart_doc["params"] = doc["params"];
-    }
-
-    // Send to UART
-    String output;
-    serializeJson(uart_doc, output);
-    Serial.println(output);  // Debug
-    MasterSerial.println(output);
-
-    String response = "{\"status\":\"ok\",\"message\":\"Command sent: ";
-    response += cmd;
-    response += "\"}";
-    server.send(200, "application/json", response);
-  } else {
-    server.send(400, "application/json", "{\"status\":\"error\",\"message\":\"No body provided\"}");
-  }
-}
-
-// Microphone start
-void handleMicStart() {
-  enableCORS();
-  sendUARTCommand("mic_start");
-  server.send(200, "application/json", "{\"status\":\"ok\",\"message\":\"Microphone start command sent\"}");
-}
-
-// Microphone stop
-void handleMicStop() {
-  enableCORS();
-  sendUARTCommand("mic_stop");
-  server.send(200, "application/json", "{\"status\":\"ok\",\"message\":\"Microphone stop command sent\"}");
-}
-
-// Microphone status
-void handleMicStatus() {
-  enableCORS();
-  sendUARTCommand("mic_status");
-  server.send(200, "application/json", "{\"status\":\"ok\",\"message\":\"Microphone status request sent\"}");
-}
-
-// Audio stream start - automatically starts microphone first
-void handleAudioStreamStart() {
-  enableCORS();
-  Serial.println("[HTTP] Audio start request received");
-
-  // Clean up any existing audio client to prevent socket leaks
-  if (audioClient) {
-    Serial.println("[HTTP] Cleaning up existing AudioClient...");
-    if (audioClient->isStreaming()) {
-      audioClient->stop();
-    }
-    delete audioClient;
-    audioClient = nullptr;
-  }
-
-  Serial.println("[HTTP] Sending mic_start to camera...");
-  sendUARTCommand("mic_start");
-
-  server.send(200, "application/json", "{\"status\":\"ok\",\"message\":\"Microphone started (audio streaming disabled)\"}");
-}
-
-// Audio stream stop - automatically stops microphone too
-void handleAudioStreamStop() {
-  enableCORS();
-
-  // Clean up any existing audio client to prevent socket leaks
-  if (audioClient) {
-    Serial.println("[HTTP] Cleaning up AudioClient...");
-    if (audioClient->isStreaming()) {
-      audioClient->stop();
-    }
-    delete audioClient;
-    audioClient = nullptr;
-  }
-
-  // Stop the microphone on camera via UART
-  sendUARTCommand("mic_stop");
-
-  server.send(200, "application/json", "{\"status\":\"ok\",\"message\":\"Microphone stopped (audio streaming disabled)\"}");
-}
-
-// Audio stream status - shows both microphone and stream status
-void handleAudioStreamStatus() {
-  enableCORS();
-
-  JsonDocument doc;
-  doc["status"] = "ok";
-  doc["mic_status"] = "checking";
-  doc["stream_status"] = "disabled";
-  doc["message"] = "Audio streaming functionality not active";
-
-  sendUARTCommand("mic_status");
-
-  String output;
-  serializeJson(doc, output);
-  server.send(200, "application/json", output);
-}
-
-// ==================== Audio Amp (UART2) Handlers ====================
-
-void handleAmpPlay() {
-  enableCORS();
-
-  if (!server.hasArg("url")) {
-    server.send(400, "application/json", "{\"status\":\"error\",\"message\":\"Missing 'url' parameter\"}");
-    return;
-  }
-
-  String url = server.arg("url");
-  sendUART2Command("play", url.c_str());
-
-  JsonDocument doc;
-  doc["status"] = "ok";
-  doc["message"] = "Sent play command to Amp";
-  doc["url"] = url;
-
-  String output;
-  serializeJson(doc, output);
-  server.send(200, "application/json", output);
-}
-
-void handleAmpStop() {
-  enableCORS();
-  sendUART2Command("stop", "");
-  server.send(200, "application/json", "{\"status\":\"ok\",\"message\":\"Sent stop command to Amp\"}");
-}
-
-void handleAmpRestart() {
-  enableCORS();
-  sendUART2Command("restart", "");
-  server.send(200, "application/json", "{\"status\":\"ok\",\"message\":\"Sent restart command to Amp - Board will reboot\"}");
-}
-
-void handleLCDRestart() {
-  enableCORS();
-  server.send(200, "application/json", "{\"status\":\"ok\",\"message\":\"LCD ESP32 restarting in 1 second...\"}");
-  delay(1000);
-  ESP.restart();
-}
-
-// 404 handler
-void handleNotFound() {
-  enableCORS();
-  server.send(404, "application/json", "{\"status\":\"error\",\"message\":\"Not Found\"}");
+// CORS headers helper for AsyncWebServer
+void enableCORS(AsyncWebServerResponse *response) {
+  response->addHeader("Access-Control-Allow-Origin", "*");
+  response->addHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  response->addHeader("Access-Control-Allow-Headers", "Content-Type");
 }
 
 // Initialize HTTP server
@@ -320,6 +35,9 @@ void initHTTPServer() {
   Serial.printf("Connecting to %s...\n", WIFI_SSID);
 
   WiFi.mode(WIFI_STA);
+  WiFi.setAutoReconnect(true);  // Auto-reconnect on WiFi drop
+  WiFi.setAutoConnect(true);
+  WiFi.setSleep(false);         // Disable WiFi sleep for better stability
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
 
   int timeout = 20; // 20 second timeout
@@ -350,41 +68,311 @@ void initHTTPServer() {
     return;
   }
 
-  // Setup HTTP endpoints
-  // CORS preflight handler - must be registered before specific endpoints
-  server.onNotFound([]() {
-    if (server.method() == HTTP_OPTIONS) {
-      handleOptions();
+  // ==================== CORS Preflight Handler ====================
+  server.onNotFound([](AsyncWebServerRequest *request) {
+    if (request->method() == HTTP_OPTIONS) {
+      AsyncWebServerResponse *response = request->beginResponse(204);
+      enableCORS(response);
+      request->send(response);
     } else {
-      handleNotFound();
+      AsyncWebServerResponse *response = request->beginResponse(404, "application/json", "{\"status\":\"error\",\"message\":\"Not Found\"}");
+      enableCORS(response);
+      request->send(response);
     }
   });
 
-  server.on("/", HTTP_GET, handleRoot);
-  server.on("/camera/start", HTTP_GET, handleCameraStart);
-  server.on("/camera/stop", HTTP_GET, handleCameraStop);
-  server.on("/status", HTTP_GET, handleStatus);
-  server.on("/ping", HTTP_GET, handlePing);
-  server.on("/info", HTTP_GET, handleInfo);
-  server.on("/face/count", HTTP_GET, handleGetFaceCount);
-  server.on("/face/list", HTTP_GET, handlePrintFaces);
-  server.on("/face/check", HTTP_GET, handleCheckDB);
-  server.on("/mic/start", HTTP_GET, handleMicStart);
-  server.on("/mic/stop", HTTP_GET, handleMicStop);
-  server.on("/mic/status", HTTP_GET, handleMicStatus);
-  server.on("/audio/start", HTTP_GET, handleAudioStreamStart);
-  server.on("/audio/stop", HTTP_GET, handleAudioStreamStop);
-  server.on("/audio/status", HTTP_GET, handleAudioStreamStatus);
-  server.on("/amp/play", HTTP_GET, handleAmpPlay);
-  server.on("/amp/stop", HTTP_GET, handleAmpStop);
-  server.on("/amp/restart", HTTP_GET, handleAmpRestart);
-  server.on("/system/restart", HTTP_GET, handleLCDRestart);
-  server.on("/command", HTTP_POST, handleCustomCommand);
+  // ==================== Root - API Info ====================
+  server.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
+    JsonDocument doc;
+    doc["name"] = "ESP32 Doorbell LCD API";
+    doc["version"] = "2.0-async";
+    doc["endpoints"]["GET /status"] = "Get system status";
+    doc["endpoints"]["GET /info"] = "Get device info";
+    doc["endpoints"]["GET /camera/start"] = "Start camera";
+    doc["endpoints"]["GET /camera/stop"] = "Stop camera";
+    doc["endpoints"]["GET /ping"] = "Send ping to slave";
+    doc["endpoints"]["GET /face/count"] = "Get face count";
+    doc["endpoints"]["GET /face/list"] = "List faces (to serial)";
+    doc["endpoints"]["GET /face/check"] = "Check face DB";
+    doc["endpoints"]["GET /mic/start"] = "Start microphone";
+    doc["endpoints"]["GET /mic/stop"] = "Stop microphone";
+    doc["endpoints"]["GET /mic/status"] = "Microphone status";
+    doc["endpoints"]["GET /audio/start"] = "Start audio stream";
+    doc["endpoints"]["GET /audio/stop"] = "Stop audio stream";
+    doc["endpoints"]["GET /audio/status"] = "Audio stream status";
+    doc["endpoints"]["GET /amp/play?url=<url>"] = "Play URL on amp";
+    doc["endpoints"]["GET /amp/stop"] = "Stop amp playback";
+    doc["endpoints"]["GET /amp/restart"] = "Restart amp ESP32";
+    doc["endpoints"]["GET /system/restart"] = "Restart LCD ESP32";
+    doc["endpoints"]["POST /command"] = "Send custom UART command";
+    doc["note"] = "Web UI available at: open doorbell-control.html";
+
+    String output;
+    serializeJson(doc, output);
+
+    AsyncWebServerResponse *response = request->beginResponse(200, "application/json", output);
+    enableCORS(response);
+    request->send(response);
+  });
+
+  // ==================== Camera Control ====================
+  server.on("/camera/start", HTTP_GET, [](AsyncWebServerRequest *request) {
+    sendUARTCommand("camera_control", "camera_start");
+    AsyncWebServerResponse *response = request->beginResponse(200, "application/json", "{\"status\":\"ok\",\"message\":\"Camera start command sent\"}");
+    enableCORS(response);
+    request->send(response);
+  });
+
+  server.on("/camera/stop", HTTP_GET, [](AsyncWebServerRequest *request) {
+    sendUARTCommand("camera_control", "camera_stop");
+    AsyncWebServerResponse *response = request->beginResponse(200, "application/json", "{\"status\":\"ok\",\"message\":\"Camera stop command sent\"}");
+    enableCORS(response);
+    request->send(response);
+  });
+
+  // ==================== Status & Ping ====================
+  server.on("/status", HTTP_GET, [](AsyncWebServerRequest *request) {
+    sendUARTCommand("get_status");
+
+    JsonDocument doc;
+    doc["status"] = "ok";
+    doc["slave_status"] = slave_status;
+    doc["message"] = "Status request sent";
+
+    String output;
+    serializeJson(doc, output);
+
+    AsyncWebServerResponse *response = request->beginResponse(200, "application/json", output);
+    enableCORS(response);
+    request->send(response);
+  });
+
+  server.on("/ping", HTTP_GET, [](AsyncWebServerRequest *request) {
+    sendUARTPing();
+    AsyncWebServerResponse *response = request->beginResponse(200, "application/json", "{\"status\":\"ok\",\"message\":\"Ping sent\"}");
+    enableCORS(response);
+    request->send(response);
+  });
+
+  server.on("/info", HTTP_GET, [](AsyncWebServerRequest *request) {
+    JsonDocument doc;
+    doc["ip"] = WiFi.localIP().toString();
+    doc["uptime"] = millis();
+    doc["slave_status"] = slave_status;
+    doc["amp_status"] = amp_status;
+    doc["free_heap"] = ESP.getFreeHeap();
+    doc["ping_count"] = ping_counter;
+
+    String output;
+    serializeJson(doc, output);
+
+    AsyncWebServerResponse *response = request->beginResponse(200, "application/json", output);
+    enableCORS(response);
+    request->send(response);
+  });
+
+  // ==================== Face Management ====================
+  server.on("/face/count", HTTP_GET, [](AsyncWebServerRequest *request) {
+    sendUARTCommand("get_face_count");
+    AsyncWebServerResponse *response = request->beginResponse(200, "application/json", "{\"status\":\"ok\",\"message\":\"Get face count command sent\"}");
+    enableCORS(response);
+    request->send(response);
+  });
+
+  server.on("/face/list", HTTP_GET, [](AsyncWebServerRequest *request) {
+    sendUARTCommand("print_faces");
+    AsyncWebServerResponse *response = request->beginResponse(200, "application/json", "{\"status\":\"ok\",\"message\":\"Print faces command sent (check slave serial)\"}");
+    enableCORS(response);
+    request->send(response);
+  });
+
+  server.on("/face/check", HTTP_GET, [](AsyncWebServerRequest *request) {
+    sendUARTCommand("check_db");
+    AsyncWebServerResponse *response = request->beginResponse(200, "application/json", "{\"status\":\"ok\",\"message\":\"Check database command sent\"}");
+    enableCORS(response);
+    request->send(response);
+  });
+
+  // ==================== Microphone Control ====================
+  server.on("/mic/start", HTTP_GET, [](AsyncWebServerRequest *request) {
+    sendUARTCommand("mic_start");
+    AsyncWebServerResponse *response = request->beginResponse(200, "application/json", "{\"status\":\"ok\",\"message\":\"Microphone start command sent\"}");
+    enableCORS(response);
+    request->send(response);
+  });
+
+  server.on("/mic/stop", HTTP_GET, [](AsyncWebServerRequest *request) {
+    sendUARTCommand("mic_stop");
+    AsyncWebServerResponse *response = request->beginResponse(200, "application/json", "{\"status\":\"ok\",\"message\":\"Microphone stop command sent\"}");
+    enableCORS(response);
+    request->send(response);
+  });
+
+  server.on("/mic/status", HTTP_GET, [](AsyncWebServerRequest *request) {
+    sendUARTCommand("mic_status");
+    AsyncWebServerResponse *response = request->beginResponse(200, "application/json", "{\"status\":\"ok\",\"message\":\"Microphone status request sent\"}");
+    enableCORS(response);
+    request->send(response);
+  });
+
+  // ==================== Audio Streaming ====================
+  server.on("/audio/start", HTTP_GET, [](AsyncWebServerRequest *request) {
+    Serial.println("[HTTP] Audio start request received");
+
+    // Clean up any existing audio client to prevent socket leaks
+    if (audioClient) {
+      Serial.println("[HTTP] Cleaning up existing AudioClient...");
+      if (audioClient->isStreaming()) {
+        audioClient->stop();
+      }
+      delete audioClient;
+      audioClient = nullptr;
+    }
+
+    Serial.println("[HTTP] Sending mic_start to camera...");
+    sendUARTCommand("mic_start");
+
+    AsyncWebServerResponse *response = request->beginResponse(200, "application/json", "{\"status\":\"ok\",\"message\":\"Microphone started (audio streaming disabled)\"}");
+    enableCORS(response);
+    request->send(response);
+  });
+
+  server.on("/audio/stop", HTTP_GET, [](AsyncWebServerRequest *request) {
+    // Clean up any existing audio client to prevent socket leaks
+    if (audioClient) {
+      Serial.println("[HTTP] Cleaning up AudioClient...");
+      if (audioClient->isStreaming()) {
+        audioClient->stop();
+      }
+      delete audioClient;
+      audioClient = nullptr;
+    }
+
+    // Stop the microphone on camera via UART
+    sendUARTCommand("mic_stop");
+
+    AsyncWebServerResponse *response = request->beginResponse(200, "application/json", "{\"status\":\"ok\",\"message\":\"Microphone stopped (audio streaming disabled)\"}");
+    enableCORS(response);
+    request->send(response);
+  });
+
+  server.on("/audio/status", HTTP_GET, [](AsyncWebServerRequest *request) {
+    JsonDocument doc;
+    doc["status"] = "ok";
+    doc["mic_status"] = "checking";
+    doc["stream_status"] = "disabled";
+    doc["message"] = "Audio streaming functionality not active";
+
+    sendUARTCommand("mic_status");
+
+    String output;
+    serializeJson(doc, output);
+
+    AsyncWebServerResponse *response = request->beginResponse(200, "application/json", output);
+    enableCORS(response);
+    request->send(response);
+  });
+
+  // ==================== Audio Amp Control (UART2) ====================
+  server.on("/amp/play", HTTP_GET, [](AsyncWebServerRequest *request) {
+    if (!request->hasParam("url")) {
+      AsyncWebServerResponse *response = request->beginResponse(400, "application/json", "{\"status\":\"error\",\"message\":\"Missing 'url' parameter\"}");
+      enableCORS(response);
+      request->send(response);
+      return;
+    }
+
+    String url = request->getParam("url")->value();
+    sendUART2Command("play", url.c_str());
+
+    JsonDocument doc;
+    doc["status"] = "ok";
+    doc["message"] = "Sent play command to Amp";
+    doc["url"] = url;
+
+    String output;
+    serializeJson(doc, output);
+
+    AsyncWebServerResponse *response = request->beginResponse(200, "application/json", output);
+    enableCORS(response);
+    request->send(response);
+  });
+
+  server.on("/amp/stop", HTTP_GET, [](AsyncWebServerRequest *request) {
+    sendUART2Command("stop", "");
+    AsyncWebServerResponse *response = request->beginResponse(200, "application/json", "{\"status\":\"ok\",\"message\":\"Sent stop command to Amp\"}");
+    enableCORS(response);
+    request->send(response);
+  });
+
+  server.on("/amp/restart", HTTP_GET, [](AsyncWebServerRequest *request) {
+    sendUART2Command("restart", "");
+    AsyncWebServerResponse *response = request->beginResponse(200, "application/json", "{\"status\":\"ok\",\"message\":\"Sent restart command to Amp - Board will reboot\"}");
+    enableCORS(response);
+    request->send(response);
+  });
+
+  // ==================== System Control ====================
+  server.on("/system/restart", HTTP_GET, [](AsyncWebServerRequest *request) {
+    AsyncWebServerResponse *response = request->beginResponse(200, "application/json", "{\"status\":\"ok\",\"message\":\"LCD ESP32 restarting in 1 second...\"}");
+    enableCORS(response);
+    request->send(response);
+    delay(1000);
+    ESP.restart();
+  });
+
+  // ==================== Custom Command (POST) ====================
+  server.on("/command", HTTP_POST, [](AsyncWebServerRequest *request) {}, NULL,
+    [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
+      // Parse JSON body
+      JsonDocument doc;
+      DeserializationError error = deserializeJson(doc, (const char*)data);
+
+      if (error) {
+        AsyncWebServerResponse *response = request->beginResponse(400, "application/json", "{\"status\":\"error\",\"message\":\"Invalid JSON\"}");
+        enableCORS(response);
+        request->send(response);
+        return;
+      }
+
+      if (!doc.containsKey("cmd")) {
+        AsyncWebServerResponse *response = request->beginResponse(400, "application/json", "{\"status\":\"error\",\"message\":\"Missing 'cmd' field\"}");
+        enableCORS(response);
+        request->send(response);
+        return;
+      }
+
+      const char* cmd = doc["cmd"];
+
+      // Build UART JSON command
+      JsonDocument uart_doc;
+      uart_doc["cmd"] = cmd;
+
+      // Check if params object exists and add it
+      if (doc.containsKey("params") && doc["params"].is<JsonObject>()) {
+        uart_doc["params"] = doc["params"];
+      }
+
+      // Send to UART
+      String output;
+      serializeJson(uart_doc, output);
+      Serial.println(output);  // Debug
+      MasterSerial.println(output);
+
+      String response_body = "{\"status\":\"ok\",\"message\":\"Command sent: ";
+      response_body += cmd;
+      response_body += "\"}";
+
+      AsyncWebServerResponse *response = request->beginResponse(200, "application/json", response_body);
+      enableCORS(response);
+      request->send(response);
+    }
+  );
 
   server.begin();
-  Serial.println("✅ HTTP server started on port 80");
+  Serial.println("✅ AsyncWebServer started on port 80");
   Serial.println("\nAvailable endpoints:");
-  Serial.println("  GET  /                - Web interface");
+  Serial.println("  GET  /                - API documentation");
   Serial.println("  GET  /camera/start    - Start camera");
   Serial.println("  GET  /camera/stop     - Stop camera");
   Serial.println("  GET  /status          - Get slave status");
@@ -401,10 +389,17 @@ void initHTTPServer() {
   Serial.println("  GET  /audio/status    - Get audio stream status");
   Serial.println("  GET  /amp/play?url=<url> - Play audio URL on Amp (UART2)");
   Serial.println("  GET  /amp/stop        - Stop Amp playback (UART2)");
+  Serial.println("  GET  /amp/restart     - Restart Amp ESP32 (UART2)");
+  Serial.println("  GET  /system/restart  - Restart LCD ESP32");
   Serial.println("  POST /command         - Send custom command");
+  Serial.println("\n🌐 Open doorbell-control.html in your browser");
+  Serial.printf("📡 API URL: http://%s.local or http://%s\n", MDNS_HOSTNAME, WiFi.localIP().toString().c_str());
 }
 
-// Handle HTTP client requests
-void handleHTTPClient() {
-  server.handleClient();
+// WiFi watchdog - call periodically to check connection
+void checkWiFiConnection() {
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("⚠️ WiFi disconnected! Attempting reconnect...");
+    WiFi.reconnect();
+  }
 }

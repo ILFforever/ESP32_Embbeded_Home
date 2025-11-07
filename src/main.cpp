@@ -118,6 +118,7 @@ void lcdhandoff();
 void checkButtons();
 void checkSlaveSyncTask();
 void updateWeather();
+void wifiWatchdogTask();
 void drawWifiSymbol(int x, int y, int strength);
 void onCardDetected(NFCCardData card);
 bool tft_jpg_render_callback(int16_t x, int16_t y, uint16_t w, uint16_t h, uint16_t *bitmap);
@@ -131,7 +132,7 @@ Task taskSendAmpPing(1000, TASK_FOREVER, &sendAmpPingTask);                   //
 Task taskCheckTimeout(1000, TASK_FOREVER, &checkPingTimeout);                 // Check timeout every 1s
 Task taskCheckAmpTimeout(1000, TASK_FOREVER, &checkAmpPingTimeout);           // Check Amp timeout every 1s
 Task taskCheckDisconnectWarning(1000, TASK_FOREVER, &checkDisconnectWarning); // Check for 30s disconnects
-Task taskHTTPHandler(10, TASK_FOREVER, &handleHTTPTask);                      // Handle HTTP requests every 10ms
+Task taskWiFiWatchdog(30000, TASK_FOREVER, &wifiWatchdogTask);                // Check WiFi connection every 30s
 Task taskProcessFrame(5, TASK_FOREVER, &ProcessFrame);                        // Check for frames every 5ms
 Task taskdrawUIOverlay(10, TASK_FOREVER, &drawUIOverlay);                     // Update UI overlay every 10ms
 Task tasklcdhandoff(200, TASK_FOREVER, &lcdhandoff);                          // Check if we need to hand off LCD to ProcessFrame
@@ -248,7 +249,7 @@ void setup()
   myscheduler.addTask(taskCheckTimeout);
   myscheduler.addTask(taskCheckAmpTimeout);
   myscheduler.addTask(taskCheckDisconnectWarning);
-  myscheduler.addTask(taskHTTPHandler);
+  myscheduler.addTask(taskWiFiWatchdog);
   myscheduler.addTask(taskProcessFrame);
   myscheduler.addTask(taskdrawUIOverlay);
   myscheduler.addTask(tasklcdhandoff);
@@ -262,7 +263,7 @@ void setup()
   taskCheckTimeout.enable();
   taskCheckAmpTimeout.enable();
   taskCheckDisconnectWarning.enable();
-  taskHTTPHandler.enable();
+  taskWiFiWatchdog.enable();
   taskProcessFrame.enable();
   taskdrawUIOverlay.enable();
   tasklcdhandoff.enable();
@@ -978,10 +979,10 @@ void onCardDetected(NFCCardData card)
   updateStatusMsg(msg.c_str(), true, "Standing By");
 }
 
-// Task: Handle HTTP requests
-void handleHTTPTask()
+// Task: WiFi Watchdog - check connection health
+void wifiWatchdogTask()
 {
-  handleHTTPClient();
+  checkWiFiConnection();
 }
 
 // Helper function to update button state with debouncing

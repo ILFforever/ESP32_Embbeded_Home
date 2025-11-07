@@ -2,12 +2,13 @@
 #define HTTP_CONTROL_H
 
 #include <Arduino.h>
-#include <WebServer.h>
+#include <AsyncTCP.h>
+#include <ESPAsyncWebServer.h>
 
-// Initialize HTTP server
+// Initialize Async HTTP server
 void initHTTPServer();
 
-// Handle HTTP requests
-void handleHTTPClient();
+// WiFi watchdog - call periodically to check WiFi connection
+void checkWiFiConnection();
 
 #endif
