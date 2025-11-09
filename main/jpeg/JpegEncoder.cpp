@@ -7,10 +7,10 @@ RawJpegEncoder::RawJpegEncoder(int quality) : quality_(quality), encoder_handle_
 jpeg_pixel_format_t RawJpegEncoder::toJpegPixFormat(PixelFormat fmt) const {
     switch(fmt) {
         case PixelFormat::RGB565:   return JPEG_PIXEL_FORMAT_RGB565_LE;
-        case PixelFormat::RGB888:   return JPEG_PIXEL_FORMAT_BGR888;  // fmt2rgb888 outputs BGR
+        case PixelFormat::RGB888:   return JPEG_PIXEL_FORMAT_RGB888;
         case PixelFormat::GRAYSCALE:return JPEG_PIXEL_FORMAT_GRAY;
         case PixelFormat::YUV422:   return JPEG_PIXEL_FORMAT_YCbYCr;
-        default:                    return JPEG_PIXEL_FORMAT_BGR888;
+        default:                    return JPEG_PIXEL_FORMAT_RGB888;
     }
 }
 
@@ -59,10 +59,9 @@ bool RawJpegEncoder::encode(const uint8_t *src, size_t src_len, int width, int h
         }
 
         // Update pointers for hardware encoder
-        // fmt2rgb888 outputs BGR888, so we keep it as-is
         src = rgb888_buf;
         src_len = rgb888_size;
-        fmt = PixelFormat::RGB888;  // Will use BGR888 encoder format
+        fmt = PixelFormat::RGB888;  // Treat as RGB888 now
     }
 
     // Use hardware encoder for YUV422 and GRAYSCALE
