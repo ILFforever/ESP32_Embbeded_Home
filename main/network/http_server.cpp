@@ -9,15 +9,20 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/event_groups.h"
 #include "i2s_microphone.hpp"
+#include "JpegEncoder.hpp"
+#include "driver/gpio.h"
 #include <cstring>
 
 static const char *TAG = "HTTP_SERVER";
+
+// LED indicator for camera streaming
+#define CAMERA_LED_GPIO GPIO_NUM_1
 
 #define WIFI_SSID "ILFforever2"
 #define WIFI_PASS "19283746"
 
 // Static IP configuration for camera
-#define CAMERA_STATIC_IP      "192.168.1.100"
+#define CAMERA_STATIC_IP      "192.168.1.50"
 #define CAMERA_GATEWAY        "192.168.1.1"
 #define CAMERA_SUBNET         "255.255.255.0"
 #define CAMERA_DNS            "192.168.1.1"
@@ -27,6 +32,7 @@ static who::standby::XiaoStandbyControl *g_standby_ctrl = nullptr;
 static who::recognition::WhoRecognition *g_recognition = nullptr;
 static who::recognition::FaceDbReader *g_face_db_reader = nullptr;
 static who::audio::I2SMicrophone *g_microphone = nullptr;
+static who::frame_cap::WhoFrameCap *g_frame_cap = nullptr;
 
 // Track server and WiFi state
 static httpd_handle_t g_server = nullptr;
@@ -156,17 +162,134 @@ static esp_err_t audio_stream_handler(httpd_req_t *req)
     return ESP_OK;
 }
 
+// MJPEG camera streaming handler
+static esp_err_t camera_stream_handler(httpd_req_t *req)
+{
+    if (!g_frame_cap || !g_standby_ctrl) {
+        httpd_resp_set_status(req, "503 Service Unavailable");
+        httpd_resp_sendstr(req, "Camera not available");
+        return ESP_OK;
+    }
+
+    // Check if camera is in standby (powered off)
+    if (strcmp(g_standby_ctrl->get_power_state(), "STANDBY") == 0) {
+        httpd_resp_set_status(req, "503 Service Unavailable");
+        httpd_resp_sendstr(req, "Camera in standby mode");
+        return ESP_OK;
+    }
+
+    ESP_LOGI(TAG, "MJPEG stream started");
+
+    // Set MJPEG multipart headers
+    httpd_resp_set_type(req, "multipart/x-mixed-replace; boundary=frame");
+    httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-cache, no-store, must-revalidate");
+
+    auto frame_cap_node = g_frame_cap->get_last_node();
+    RawJpegEncoder encoder(50);  // JPEG quality 50 for bandwidth
+
+    uint32_t frames_sent = 0;
+    uint32_t last_report = xTaskGetTickCount();
+    bool logged_format = false;  // Log format only once
+
+    while (true) {
+        // Peek at latest frame
+        who::cam::cam_fb_t *frame = frame_cap_node->cam_fb_peek(-1);
+
+        if (frame != nullptr && frame->buf != nullptr && frame->len > 0) {
+            // Log pixel format on first frame
+            if (!logged_format) {
+                ESP_LOGI(TAG, "Camera frame: %dx%d, format=%d, len=%zu",
+                        frame->width, frame->height, frame->format, frame->len);
+                logged_format = true;
+            }
+
+            bool encoded = false;
+
+            const uint8_t *jpeg_data = nullptr;
+            uint32_t jpeg_size = 0;
+
+            // Check if frame is already JPEG
+            if (static_cast<pixformat_t>(frame->format) == PIXFORMAT_JPEG) {
+                // Frame is already JPEG, use directly
+                jpeg_data = static_cast<const uint8_t *>(frame->buf);
+                jpeg_size = frame->len;
+                encoded = true;
+            } else {
+                // Encode to JPEG
+                RawJpegEncoder::PixelFormat fmt = RawJpegEncoder::PixelFormat::RGB565;
+                if (static_cast<pixformat_t>(frame->format) == PIXFORMAT_RGB888) {
+                    fmt = RawJpegEncoder::PixelFormat::RGB888;
+                } else if (static_cast<pixformat_t>(frame->format) == PIXFORMAT_YUV422) {
+                    fmt = RawJpegEncoder::PixelFormat::YUV422;
+                } else if (static_cast<pixformat_t>(frame->format) == PIXFORMAT_GRAYSCALE) {
+                    fmt = RawJpegEncoder::PixelFormat::GRAYSCALE;
+                }
+
+                encoded = encoder.encode(
+                    static_cast<const uint8_t *>(frame->buf),
+                    frame->len,
+                    frame->width,
+                    frame->height,
+                    fmt);
+
+                if (encoded) {
+                    jpeg_data = encoder.data();
+                    jpeg_size = encoder.size();
+                }
+            }
+
+            if (encoded && jpeg_data && jpeg_size > 0) {
+
+                // Send multipart boundary and headers
+                char part_buf[128];  // Increased size to avoid truncation warning
+                snprintf(part_buf, sizeof(part_buf),
+                        "\r\n--frame\r\nContent-Type: image/jpeg\r\nContent-Length: %lu\r\n\r\n",
+                        jpeg_size);
+
+                if (httpd_resp_send_chunk(req, part_buf, strlen(part_buf)) != ESP_OK) {
+                    ESP_LOGI(TAG, "Client disconnected");
+                    break;
+                }
+
+                // Send JPEG data
+                if (httpd_resp_send_chunk(req, (const char*)jpeg_data, jpeg_size) != ESP_OK) {
+                    ESP_LOGI(TAG, "Client disconnected");
+                    break;
+                }
+
+                frames_sent++;
+
+                // Log stats every 5 seconds
+                if (xTaskGetTickCount() - last_report > pdMS_TO_TICKS(5000)) {
+                    ESP_LOGI(TAG, "MJPEG: %lu frames sent", frames_sent);
+                    last_report = xTaskGetTickCount();
+                }
+            }
+        }
+
+        // Limit to ~10 FPS to save bandwidth
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
+
+    ESP_LOGI(TAG, "MJPEG stream ended: %lu frames sent", frames_sent);
+
+    // End chunked response
+    httpd_resp_send_chunk(req, NULL, 0);
+    return ESP_OK;
+}
+
 static httpd_handle_t start_webserver(void)
 {
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.lru_purge_enable = true;
-    config.max_uri_handlers = 3;   // Only need 2 handlers (/, /audio/stream) + margin
-    config.stack_size = 6144;      // Reduced from 8192 (audio streaming uses less)
+    config.max_uri_handlers = 4;   // 3 handlers: /, /audio/stream, /camera/stream
+    config.stack_size = 8192;      // Increased for JPEG encoding
     config.send_wait_timeout = 3;  // Reduce send timeout to 3 seconds (from 5)
     config.recv_wait_timeout = 3;  // Reduce receive timeout to 3 seconds
 
     httpd_handle_t server = NULL;
-    
+
     if (httpd_start(&server, &config) == ESP_OK) {
         // Root endpoint - simple status
         httpd_uri_t status_uri = {
@@ -177,7 +300,7 @@ static httpd_handle_t start_webserver(void)
         };
         httpd_register_uri_handler(server, &status_uri);
 
-        // Audio streaming endpoint - the main feature
+        // Audio streaming endpoint
         httpd_uri_t audio_stream_uri = {
             .uri = "/audio/stream",
             .method = HTTP_GET,
@@ -185,6 +308,15 @@ static httpd_handle_t start_webserver(void)
             .user_ctx = NULL
         };
         httpd_register_uri_handler(server, &audio_stream_uri);
+
+        // Camera MJPEG streaming endpoint
+        httpd_uri_t camera_stream_uri = {
+            .uri = "/camera/stream",
+            .method = HTTP_GET,
+            .handler = camera_stream_handler,
+            .user_ctx = NULL
+        };
+        httpd_register_uri_handler(server, &camera_stream_uri);
 
         return server;
     }
@@ -196,10 +328,15 @@ static void wifi_event_handler(void* arg, esp_event_base_t event_base,
                                 int32_t event_id, void* event_data)
 {
     if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
+        ESP_LOGI(TAG, "WiFi started, connecting...");
         esp_wifi_connect();
     } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
-        ESP_LOGI(TAG, "Disconnected, retrying...");
+        wifi_event_sta_disconnected_t* disconnected = (wifi_event_sta_disconnected_t*) event_data;
+        ESP_LOGW(TAG, "Disconnected (reason: %d), retrying...", disconnected->reason);
+        vTaskDelay(pdMS_TO_TICKS(1000));  // Wait 1 second before retry
         esp_wifi_connect();
+    } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_CONNECTED) {
+        ESP_LOGI(TAG, "WiFi connected to AP");
     } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
         ip_event_got_ip_t* event = (ip_event_got_ip_t*) event_data;
         ESP_LOGI(TAG, "Got IP: " IPSTR, IP2STR(&event->ip_info.ip));
@@ -215,6 +352,9 @@ void init_wifi_and_server()
     }
 
     ESP_LOGI(TAG, "Initializing WiFi and HTTP server...");
+    ESP_LOGI(TAG, "Free heap: %lu bytes | PSRAM: %zu bytes",
+             esp_get_free_heap_size(),
+             heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
 
     // NVS might already be initialized - handle gracefully
     esp_err_t ret = nvs_flash_init();
@@ -268,8 +408,15 @@ void init_wifi_and_server()
 
     ESP_LOGI(TAG, "Static IP configured: %s", CAMERA_STATIC_IP);
 
+    // Use minimal WiFi config to reduce memory usage (audio streaming only)
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
+    cfg.static_rx_buf_num = 4;      // Reduce from 10 to 4 (minimum for audio streaming)
+    cfg.dynamic_rx_buf_num = 16;    // Reduce from 32 to 16
+    // Keep default tx_buf_type (1 = dynamic) and cache settings from WIFI_INIT_CONFIG_DEFAULT()
+
+    ESP_LOGI(TAG, "Free heap before WiFi init: %lu bytes", esp_get_free_heap_size());
     ESP_ERROR_CHECK(esp_wifi_init(&cfg));
+    ESP_LOGI(TAG, "Free heap after WiFi init: %lu bytes", esp_get_free_heap_size());
 
     ESP_ERROR_CHECK(esp_event_handler_register(WIFI_EVENT, ESP_EVENT_ANY_ID, &wifi_event_handler, NULL));
     ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, &wifi_event_handler, NULL));
@@ -277,6 +424,13 @@ void init_wifi_and_server()
     wifi_config_t wifi_config = {};
     strcpy((char*)wifi_config.sta.ssid, WIFI_SSID);
     strcpy((char*)wifi_config.sta.password, WIFI_PASS);
+    wifi_config.sta.threshold.authmode = WIFI_AUTH_WPA_WPA2_PSK;  // Accept both WPA and WPA2
+    wifi_config.sta.pmf_cfg.capable = true;
+    wifi_config.sta.pmf_cfg.required = false;
+    wifi_config.sta.scan_method = WIFI_FAST_SCAN;  // Fast scan mode
+    wifi_config.sta.sort_method = WIFI_CONNECT_AP_BY_SIGNAL;  // Connect to strongest signal
+    wifi_config.sta.threshold.rssi = -127;  // Accept any signal strength
+    wifi_config.sta.channel = 0;  // Auto channel
 
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
@@ -323,10 +477,12 @@ void stop_webserver_and_wifi()
 void set_http_server_refs(who::standby::XiaoStandbyControl *standby,
                           who::recognition::WhoRecognition *recognition,
                           who::recognition::FaceDbReader *face_db_reader,
-                          who::audio::I2SMicrophone *microphone)
+                          who::audio::I2SMicrophone *microphone,
+                          who::frame_cap::WhoFrameCap *frame_cap)
 {
     g_standby_ctrl = standby;
     g_recognition = recognition;
     g_face_db_reader = face_db_reader;
     g_microphone = microphone;
+    g_frame_cap = frame_cap;
 }

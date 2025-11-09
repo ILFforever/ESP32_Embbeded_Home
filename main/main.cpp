@@ -86,6 +86,17 @@ extern "C" void app_main(void)
         detect_task,
         g_standby_control);
 
+    // Enter standby mode immediately to power OFF camera hardware (prevents heating)
+    ESP_LOGI("Main", "Entering standby mode to power down camera...");
+    if (enter_standby_mode())
+    {
+        ESP_LOGI("Main", "Camera hardware powered OFF - no heat generation");
+    }
+    else
+    {
+        ESP_LOGW("Main", "Failed to enter standby - camera may be running!");
+    }
+
     g_uart = new who::uart::UartComm();
     if (!g_uart->start())
     { // Start UART tasks
@@ -105,7 +116,8 @@ extern "C" void app_main(void)
     set_http_server_refs(g_standby_control,
                          g_recognition_app->get_recognition(),
                          g_face_db_reader,
-                         g_microphone);
+                         g_microphone,
+                         g_frame_cap);
 
     // Send immediate status to master on startup
     vTaskDelay(pdMS_TO_TICKS(500)); // Small delay to ensure UART is ready
@@ -231,6 +243,19 @@ void create_uart_commands()
                  esp_get_free_heap_size());
         g_uart->send_status("ok", stats_msg); });
 
+    g_uart->register_command("reboot", [](const char *cmd, cJSON *params)
+                             {
+        ESP_LOGI(TAG, "UART reboot command received. Restarting...");
+        
+        // Send the confirmation message first
+        g_uart->send_status("ok", "Rebooting device now...");
+        
+        // Short delay to ensure the UART message has time to send
+        vTaskDelay(pdMS_TO_TICKS(100)); 
+        
+        // Call the ESP-IDF restart function
+        esp_restart(); });
+
     // test command
     g_uart->register_command("test", [](const char *cmd, cJSON *params)
                              { g_uart->send_status("ok", "UART test successful!"); });
@@ -344,7 +369,7 @@ void create_uart_commands()
         snprintf(msg, sizeof(msg), "Face count: %d", face_count);
         g_uart->send_status("ok", msg); });
 
-    // Print all faces in database (detailed info to serial console)
+    // Get all faces in database and send to LCD via UART
     g_uart->register_command("print_faces", [](const char *cmd, cJSON *params)
                              {
         if (!g_face_db_reader) {
@@ -352,8 +377,30 @@ void create_uart_commands()
             return;
         }
 
-        g_face_db_reader->print_all_faces();
-        g_uart->send_status("ok", "Face list printed to console (see serial monitor)"); });
+        int face_count = g_face_db_reader->get_face_count();
+
+        if (face_count == 0) {
+            g_uart->send_status("ok", "No faces enrolled");
+            return;
+        }
+        
+        // Send face list as formatted string (one face per line)
+        char face_list[512];
+        int offset = 0;
+        offset += snprintf(face_list + offset, sizeof(face_list) - offset,
+                          "Total: %d faces\n", face_count);
+
+        for (int i = 1; i <= face_count && offset < (int)sizeof(face_list) - 50; i++) {
+            std::string name = g_face_db_reader->get_name(i);
+            offset += snprintf(face_list + offset, sizeof(face_list) - offset,
+                             "ID %d: %s\n", i, name.c_str());
+        }
+
+        // Send to LCD via UART
+        g_uart->send_status("ok", face_list);
+
+        // Also print detailed info to serial console
+        g_face_db_reader->print_all_faces(); });
 
     // Check if database is valid and accessible
     g_uart->register_command("check_db", [](const char *cmd, cJSON *params)
@@ -469,7 +516,8 @@ void create_uart_commands()
             set_http_server_refs(g_standby_control,
                                g_recognition_app->get_recognition(),
                                g_face_db_reader,
-                               g_microphone);
+                               g_microphone,
+                               g_frame_cap);
         }
 
         if (g_microphone->is_running()) {
