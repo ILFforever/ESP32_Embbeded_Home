@@ -2,8 +2,12 @@
 #include "xiao_standby_control.hpp"
 #include "esp_log.h"
 #include "who_yield2idle.hpp"
+#include "driver/gpio.h"
 
 static const char *TAG = "StandbyCtrl";
+
+// Camera status LED
+#define CAMERA_LED_GPIO GPIO_NUM_1
 
 namespace who
 {
@@ -14,7 +18,19 @@ namespace who
                                                frame_cap::WhoFrameCap *frame_cap)
             : m_recognition(recognition), m_frame_cap(frame_cap), m_is_standby(true)
         {
-            ESP_LOGI(TAG, "Standby control initialized (camera off by default)");
+            // Initialize camera status LED
+            gpio_config_t io_conf = {};
+            io_conf.pin_bit_mask = (1ULL << CAMERA_LED_GPIO);
+            io_conf.mode = GPIO_MODE_OUTPUT;
+            io_conf.pull_up_en = GPIO_PULLUP_DISABLE;
+            io_conf.pull_down_en = GPIO_PULLDOWN_DISABLE;
+            io_conf.intr_type = GPIO_INTR_DISABLE;
+            gpio_config(&io_conf);
+
+            // LED off by default (camera in standby)
+            gpio_set_level(CAMERA_LED_GPIO, 0);
+
+            ESP_LOGI(TAG, "Standby control initialized (camera off by default, LED on GPIO %d)", CAMERA_LED_GPIO);
         }
 
         XiaoStandbyControl::~XiaoStandbyControl()
@@ -70,6 +86,10 @@ namespace who
             }
 
             m_is_standby = true;
+
+            // Turn off camera LED
+            gpio_set_level(CAMERA_LED_GPIO, 0);
+
             ESP_LOGI(TAG, "=== Standby Mode Active ===");
             ESP_LOGI(TAG, "All systems shut down - maximum power savings");
 
@@ -127,6 +147,10 @@ namespace who
             ESP_LOGI(TAG, "  ✓ Recognition system restarted");
 
             m_is_standby = false;
+
+            // Turn on camera LED
+            gpio_set_level(CAMERA_LED_GPIO, 1);
+
             ESP_LOGI(TAG, "=== System Active ===");
 
             return true;

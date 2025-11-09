@@ -10,13 +10,9 @@
 #include "freertos/event_groups.h"
 #include "i2s_microphone.hpp"
 #include "JpegEncoder.hpp"
-#include "driver/gpio.h"
 #include <cstring>
 
 static const char *TAG = "HTTP_SERVER";
-
-// LED indicator for camera streaming
-#define CAMERA_LED_GPIO GPIO_NUM_1
 
 #define WIFI_SSID "ILFforever2"
 #define WIFI_PASS "19283746"
