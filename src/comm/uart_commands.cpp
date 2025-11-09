@@ -189,14 +189,13 @@ void handleUARTResponse(String line)
         char msg[64];
         snprintf(msg, sizeof(msg), "Welcome %s!", name);
         updateStatusMsg(msg, true, "Doorbell Active");
-        recognition_success = true;
+        recognition_state = 1; // Success
       }
       else
       {
         sendUART2Command("play", "error");
         updateStatusMsg("Unknown Person : Try again", true, "Doorbell Active");
-        recognition_success = false;
-        //sendUARTCommand("resume_detection"); // what to run after successfull activation
+        recognition_state = 2; // Failure
       }
     }
     return;
@@ -229,6 +228,20 @@ void handleUARTResponse(String line)
     {
       const char *msg = doc["msg"];
       // Serial.printf(" - %s", msg);
+
+      // Handle error status
+      if (strcmp(status, "error") == 0)
+      {
+        if (strcmp(msg, "Camera already stopped") == 0)
+        {
+          slave_status = 0;
+          updateActualMode(0); // Sync actual mode
+          updateStatusMsg("Doorbell Off", true, "Standing by");
+        }
+        Serial.printf("❌ Cam Slave Error: %s\n", msg);
+        sendUART2Command("play", "error"); // Play error sound
+        return;
+      }
 
       // Check if message indicates camera started
       if (strcmp(msg, "Camera and SPI sender started") == 0)
@@ -290,12 +303,6 @@ void handleUARTResponse(String line)
           // }
         }
       }
-    }
-
-    if (doc.containsKey("free_heap"))
-    {
-      int heap = doc["free_heap"];
-      // Serial.printf(" (Free heap: %d KB)", heap / 1024);
     }
   }
 }

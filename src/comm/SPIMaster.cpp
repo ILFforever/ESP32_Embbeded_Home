@@ -54,12 +54,7 @@ void SPIMaster::update()
                     _framesReceived++;
                     _lastTransferTime = millis();
 
-                    delay(2);
-                    // Serial.print("[SPI] Frame ");
-                    // Serial.print(_frameId);
-                    // Serial.print(" complete (");
-                    // Serial.print(_frameSize);
-                    // Serial.println(" bytes)");
+                    // Serial.printf("[SPI] Frame %d complete (%u bytes)\n", _frameId, _frameSize);  // Disabled to reduce spam
                     break;
                 }
 
@@ -137,26 +132,25 @@ bool SPIMaster::_receiveHeader()
         return false;
     }
 
-    // Allocate buffer
+    // Allocate buffer - use nothrow to prevent exception
     if (_frameBuffer != nullptr)
     {
         Serial.println("[SPI] WARNING: Dropping previous frame");
         delete[] _frameBuffer;
+        _frameBuffer = nullptr;
         _framesDropped++;
     }
 
-    _frameBuffer = new uint8_t[_frameSize];
+    _frameBuffer = new (std::nothrow) uint8_t[_frameSize];
     if (_frameBuffer == nullptr)
     {
-        Serial.println("[SPI] ERROR: Failed to allocate buffer");
+        Serial.printf("[SPI] ERROR: Failed to allocate %u bytes (free heap: %u, largest block: %u)\n",
+                     _frameSize, ESP.getFreeHeap(), ESP.getMaxAllocHeap());
         _state = SPI_ERROR;
         return false;
     }
+
     delay(2);
-    // Serial.print("[SPI] Header received: Frame ");
-    // Serial.print(_frameId);
-    // Serial.print(", Size ");
-    // Serial.println(_frameSize);
 
     return true;
 }

@@ -3,6 +3,7 @@
 #include <HardwareSerial.h>
 #include <TFT_eSPI.h>
 #include <SPI.h>
+#include <WiFi.h>
 #include <TaskScheduler.h>
 #include "uart_commands.h"
 #include "lcd_helper.h"
@@ -24,16 +25,21 @@
 #define Call_bt 35     // Analog pin
 #define UART_BAUD 115200
 #define BUTTON_THRESHOLD 4000 // ADC threshold for button press (0-4095 scale)
-
+#define Warn_led 4
+#define Ready_led 2
 // Create objects
 TFT_eSPI tft = TFT_eSPI();
 TFT_eSprite videoSprite = TFT_eSprite(&tft); // Sprite for video frames
 TFT_eSprite topuiSprite = TFT_eSprite(&tft); // Sprite for UI overlay
 TFT_eSprite botuiSprite = TFT_eSprite(&tft); // Sprite for UI overlay
 TFT_eSprite miduiSprite = TFT_eSprite(&tft); // Sprite for UI overlay
+
+// Mutex for TFT/sprite access (thread safety)
+SemaphoreHandle_t tftMutex = NULL;
+
 String status_msg = "";
 bool status_msg_is_temporary = false; // Flag to indicate temporary status message
-bool recognition_success = false;
+int recognition_state = 0;            // 0=none, 1=success, 2=failure
 bool card_success = false;
 String status_msg_fallback = "";          // Message to display after temporary message is shown once
 unsigned long status_msg_last_update = 0; // Timestamp of last status message update
@@ -65,6 +71,10 @@ unsigned long slave_disconnect_start = 0;
 unsigned long amp_disconnect_start = 0;
 bool slave_disconnect_warning_sent = false;
 bool amp_disconnect_warning_sent = false;
+
+// Ready LED timer (blink on UART activity)
+unsigned long ready_led_timer = 0;
+#define READY_LED_DURATION 2000 // 2 seconds
 
 // UI state
 bool uiNeedsUpdate = true; // Flag to redraw UI elements
@@ -143,32 +153,40 @@ Task taskUpdateWeather(1800000, TASK_FOREVER, &updateWeather);                //
 void setup()
 {
   Serial.begin(115200);
-  delay(100); // Give Serial time to initialize
 
-  // Only use Serial if USB is connected
-  if (Serial)
-  {
-    Serial.println("\n\n=================================");
-    Serial.println("ESP32_Embbeded_Home - Doorbell_lcd");
-    Serial.println("=================================\n");
-  }
+  //Setup GPIOs
+  pinMode(Warn_led, OUTPUT);
+  pinMode(Ready_led, OUTPUT);
+
+  digitalWrite(Warn_led, HIGH);
+  digitalWrite(Ready_led, LOW);
+
   delay(100);
 
-  if (Serial)
-    Serial.println("Starting TFT_eSPI ST7789 screen");
+  Serial.println("\n\n=================================");
+  Serial.println("ESP32_Embbeded_Home - Doorbell_lcd");
+  Serial.println("=================================\n");
+
+  // Create mutex for TFT/sprite thread safety
+  tftMutex = xSemaphoreCreateMutex();
+  if (tftMutex == NULL)
+  {
+    Serial.println("[ERROR] Failed to create TFT mutex");
+    while (1)
+      delay(100);
+  }
+
+  Serial.println("Starting TFT_eSPI ST7789 screen");
   tft.init();
   tft.setRotation(0);
-  delay(100);
   tft.setSwapBytes(true); // Match TFT byte order
 
   // Initialize sprites
-  if (Serial)
-    Serial.println("Creating video sprite...");
+  Serial.println("Creating video sprite...");
   videoSprite.setColorDepth(16); // 16-bit color for video
   videoSprite.createSprite(tft.width(), VIDEO_HEIGHT);
 
-  if (Serial)
-    Serial.println("Creating UI sprite...");
+  Serial.println("Creating UI sprite...");
   topuiSprite.setColorDepth(16); // 16-bit for UI overlay
   topuiSprite.createSprite(tft.width(), VIDEO_Y_OFFSET + 5);
 
@@ -178,38 +196,31 @@ void setup()
   botuiSprite.setColorDepth(16);
   botuiSprite.createSprite(tft.width(), VIDEO_Y_OFFSET + 5);
 
-  if (Serial)
-    Serial.println("Sprites initialized successfully");
+  Serial.println("Sprites initialized successfully");
 
   // GPIO 34 and 35 are ADC1 channels - will use analogRead()
-  if (Serial)
-  {
-    Serial.printf("Buttons initialized: Doorbell=GPIO%d, Call=GPIO%d (analog mode, threshold=%d)\n",
-                  Doorbell_bt, Call_bt, BUTTON_THRESHOLD);
-  }
+
+  Serial.printf("Buttons initialized: Doorbell=GPIO%d, Call=GPIO%d (analog mode, threshold=%d)\n",
+                Doorbell_bt, Call_bt, BUTTON_THRESHOLD);
 
   MasterSerial.begin(UART_BAUD, SERIAL_8N1, RX2, TX2);
   AmpSerial.begin(UART_BAUD, SERIAL_8N1, RX3, TX3);
 
-  if (Serial)
-    Serial.printf("UART initialized: RX=GPIO%d, TX=GPIO%d, Baud=%d\n", RX2, TX2, UART_BAUD);
+  Serial.printf("UART initialized: RX=GPIO%d, TX=GPIO%d, Baud=%d\n", RX2, TX2, UART_BAUD);
   delay(100);
 
   if (!spiMaster.begin())
   {
-    if (Serial)
-      Serial.println("[ERROR] SPI initialization failed");
+    Serial.println("[ERROR] SPI initialization failed");
     while (1)
       delay(100);
   }
-  if (Serial)
-    Serial.println("SPI initialization started");
+  Serial.println("SPI initialization started");
 
   // Start SPI task on Core 1 for dedicated frame reception
   if (!spiMaster.startTask())
   {
-    if (Serial)
-      Serial.println("[ERROR] Failed to start SPI task on Core 1");
+    Serial.println("[ERROR] Failed to start SPI task on Core 1");
     while (1)
       delay(100);
   }
@@ -217,8 +228,7 @@ void setup()
   if (initNFC())
   {
     setNFCCardCallback(onCardDetected);
-    if (Serial)
-      Serial.println("[MAIN] NFC initialized");
+    Serial.println("[MAIN] NFC initialized");
   }
 
   // Initialize HTTP server
@@ -227,8 +237,7 @@ void setup()
 
   // Initialize weather module
   initWeather();
-  if (Serial)
-    Serial.println("[MAIN] Weather module initialized");
+  Serial.println("[MAIN] Weather module initialized");
 
   // Fetch weather immediately on startup (instead of waiting 10 minutes)
   fetchWeatherTask();
@@ -276,8 +285,7 @@ void setup()
   sendUARTCommand("get_status");
 
   // Clear screen and show startup message
-  if (Serial)
-    Serial.println("Clearing screen...");
+  Serial.println("Clearing screen...");
   tft.fillScreen(TFT_BLACK);
 
   // Initial status message
@@ -285,6 +293,8 @@ void setup()
   sendUARTCommand("get_status");
   drawUIOverlay();
 
+  // stop warning led
+  digitalWrite(Warn_led, LOW);
   delay(50);
   updateStatusMsg("Getting ready...", true, "Standing By");
   uiNeedsUpdate = true;
@@ -323,6 +333,15 @@ void ProcessFrame()
   if (!spiMaster.isFrameReady())
     return;
 
+  // Acquire mutex for thread-safe TFT access
+  if (xSemaphoreTake(tftMutex, pdMS_TO_TICKS(20)) != pdTRUE)
+  {
+    // Couldn't acquire mutex - drop this frame to free the buffer
+    Serial.println("[FRAME] Mutex timeout - dropping frame");
+    spiMaster.ackFrame();
+    return;
+  }
+
   static unsigned long lastFrameTime = 0;
   static unsigned long frameCount = 0;
   static float currentFPS = 0.0;
@@ -332,7 +351,10 @@ void ProcessFrame()
   uint16_t frameId = spiMaster.getFrameId();
 
   if (!frame || frameSize == 0)
+  {
+    xSemaphoreGive(tftMutex);
     return;
+  }
 
   // Calculate FPS
   unsigned long now = millis();
@@ -345,29 +367,42 @@ void ProcessFrame()
     uiNeedsUpdate = true; // Tri/gger UI update for FPS counter
   }
 
-  // Quick validation (minimal logging)
-  if (frameSize < 100 || frame[0] != 0xFF || frame[1] != 0xD8)
+  // Enhanced JPEG validation
+  if (frameSize < 100 || frameSize > 50000)
   {
-    Serial.println("[ERROR] Invalid JPEG");
-    static unsigned long lastErrorMsg = 0;
-    if (millis() - lastErrorMsg > 3000)
-    {
-      updateStatusMsg("video Error", true, status_msg.c_str());
-      lastErrorMsg = millis();
-    }
+    Serial.printf("[FRAME] Invalid size: %u bytes\n", frameSize);
     spiMaster.ackFrame();
+    xSemaphoreGive(tftMutex);
     return;
   }
 
-  // Clear video sprite
-  videoSprite.fillSprite(TFT_BLACK);
+  // Validate JPEG SOI (Start of Image: 0xFFD8)
+  if (frame[0] != 0xFF || frame[1] != 0xD8)
+  {
+    Serial.printf("[FRAME] Bad header: 0x%02X%02X\n", frame[0], frame[1]);
+    spiMaster.ackFrame();
+    xSemaphoreGive(tftMutex);
+    return;
+  }
 
-  // Decode JPEG to video sprite (via callback)
+  // Validate JPEG EOI (End of Image: 0xFFD9) - check last 2 bytes
+  if (frame[frameSize - 2] != 0xFF || frame[frameSize - 1] != 0xD9)
+  {
+    Serial.printf("[FRAME] Incomplete: last=0x%02X%02X (size=%u)\n",
+                  frame[frameSize - 2], frame[frameSize - 1], frameSize);
+    spiMaster.ackFrame();
+    xSemaphoreGive(tftMutex);
+    return;
+  }
+
+  // Decode JPEG to video sprite (via callback) - decode directly without clearing
   uint16_t result = TJpgDec.drawJpg(0, 0, frame, frameSize);
 
   if (result != 0)
   { // JDR_OK = 0 means success!
     Serial.printf("[ERROR] JPEG decode failed: %d\n", result);
+    // Only clear on decode failure to prevent artifacts
+    videoSprite.fillSprite(TFT_BLACK);
   }
 
   // Keep it here for now
@@ -411,6 +446,8 @@ void ProcessFrame()
   videoSprite.pushSprite(0, VIDEO_Y_OFFSET + 25);
 
   // Draw UI overlay (optimized - only when needed or during animation)
+  // Note: drawUIOverlay() will acquire/release mutex internally
+  xSemaphoreGive(tftMutex); // Release before calling drawUIOverlay
   drawUIOverlay();
 
   spiMaster.ackFrame();
@@ -433,6 +470,13 @@ void lcdhandoff() // check if we need to hand off LCD to ProcessFrame
 // Draw UI overlay (status bar, icons, etc.)
 void drawUIOverlay()
 {
+  // Acquire mutex for thread-safe TFT access
+  if (xSemaphoreTake(tftMutex, pdMS_TO_TICKS(10)) != pdTRUE)
+  {
+    // Couldn't acquire mutex - skip this frame to avoid blocking
+    return;
+  }
+
   // Update cached time strings every second
   unsigned long now = millis();
   if (now - lastTimeUpdate >= 1000)
@@ -537,8 +581,34 @@ void drawUIOverlay()
     }
   }
 
-  // WiFi indicator
-  int wifiStrength = (ping_counter > 0 && (now - last_pong_time < 6000)) ? 3 : 0;
+  // WiFi indicator: Calculate strength based on RSSI
+  int wifiStrength = 0;
+  if (WiFi.status() == WL_CONNECTED)
+  {
+    int32_t rssi = WiFi.RSSI();
+    // RSSI to bars conversion:
+    // > -50 dBm = Excellent (3 bars)
+    // -50 to -60 dBm = Good (3 bars)
+    // -60 to -70 dBm = Fair (2 bars)
+    // -70 to -80 dBm = Weak (1 bar)
+    // < -80 dBm = Very weak (0 bars)
+    if (rssi > -60)
+    {
+      wifiStrength = 3;
+    }
+    else if (rssi > -70)
+    {
+      wifiStrength = 2;
+    }
+    else if (rssi > -80)
+    {
+      wifiStrength = 1;
+    }
+    else
+    {
+      wifiStrength = 0;
+    }
+  }
   drawWifiSymbol(tft.width() - 25, 28, wifiStrength);
 
   // Display status message with smooth vertical scroll animation
@@ -734,40 +804,46 @@ void drawUIOverlay()
   // No need to set uiNeedsUpdate since drawUIOverlay is called frequently
 
   // Draw borders for camera area
-  static int recognition_success_timer = 0;
+  static int recognition_state_timer = 0;
   static int card_success_timer = 0;
 
-  if (recognition_success && card_success)
+  // Handle recognition state (0=none, 1=success, 2=failure)
+  if (recognition_state == 1 && card_success)
   {
-    statusColor = TFT_GREEN; // TODO show a different color
-    recognition_success_timer++;
+    statusColor = TFT_GREEN; // Both success - show green
+    recognition_state_timer++;
     card_success_timer++;
   }
-  else if (recognition_success)
+  else if (recognition_state == 1)
   {
-    statusColor = TFT_GREEN;
-    recognition_success_timer++;
+    statusColor = TFT_GREEN; // Recognition success - show green
+    recognition_state_timer++;
+  }
+  else if (recognition_state == 2)
+  {
+    statusColor = TFT_RED; // Recognition failure - show red
+    recognition_state_timer++;
   }
   else if (card_success)
   {
-    statusColor = TFT_GREEN;
+    statusColor = TFT_GREEN; // Card success - show green
     card_success_timer++;
   }
   else
-    statusColor = TFT_LIGHTGREY;
+    statusColor = TFT_LIGHTGREY; // Default - grey border
 
-  if (recognition_success_timer > 100) // Show green border
+  // Handle recognition state timer
+  if (recognition_state_timer > 25) // Show border for ~2.5 seconds (100 * 25ms)
   {
-    recognition_success = false;
-    recognition_success_timer = 0;
-    // sendUARTCommand("resume_detection");              // Resume detection after showing success
-    sendUARTCommand("camera_control", "camera_stop"); // stop camera after successfull scan
+    sendUARTCommand("camera_control", "camera_stop");
+    recognition_state = 0; // Reset to none
+    recognition_state_timer = 0;
   }
-  if (card_success_timer > 100) // Show green border
+
+  if (card_success_timer > 100) // Show green border for card
   {
     card_success = false;
     card_success_timer = 0;
-    // UH nothing needed here right? we already have a call back
   }
 
   topuiSprite.fillRect(0, topuiSprite.height() - 4, tft.width(), 4, statusColor);
@@ -776,6 +852,9 @@ void drawUIOverlay()
   // Push UI sprite to screen (top bar)
   topuiSprite.pushSprite(0, 20);
   botuiSprite.pushSprite(0, 265);
+
+  // Release mutex
+  xSemaphoreGive(tftMutex);
 }
 
 void drawWifiSymbol(int x, int y, int strength)
@@ -1018,21 +1097,7 @@ void updateButtonState(ButtonState &btn, int pin, const char *buttonName)
 
       Serial.printf("[BTN] %s pressed\n", buttonName);
 
-      // Handle button press action
-      if (strcmp(buttonName, "Doorbell") == 0)
-      {
-        // Doorbell button pressed send to hub
-        updateStatusMsg("Doorbell Pressed", true, "On Stand By");
-        sendUART2Command("play", "doorbell");
-        // TODO add connnection to hub
-      }
-      else if (strcmp(buttonName, "Call") == 0)
-      {
-        // Call button pressed - start camera without recognition
-        updateStatusMsg("Call Button Pressed", true, "On Stand By");
-        sendUARTCommand("camera_control", "camera_start");
-        sendUARTCommand("stop_detection");
-      }
+      // Don't handle action here - wait for release to determine if press or hold
     }
 
     // Detect button hold (held down for BUTTON_HOLD_THRESHOLD_MS)
@@ -1068,6 +1133,30 @@ void updateButtonState(ButtonState &btn, int pin, const char *buttonName)
     {
       unsigned long pressDuration = currentTime - btn.pressStartTime;
       Serial.printf("[BTN] %s released (held for %lu ms)\n", buttonName, pressDuration);
+
+      // Only trigger press action if button was released before hold threshold
+      // and press hasn't been handled yet
+      if (!btn.holdHandled && !btn.pressHandled && pressDuration < BUTTON_HOLD_THRESHOLD_MS)
+      {
+        btn.pressHandled = true;
+
+        // Handle button press action (short press)
+        if (strcmp(buttonName, "Doorbell") == 0)
+        {
+          // Doorbell button pressed send to hub
+          String oldStatus = status_msg;
+          updateStatusMsg("Ringing...", true, oldStatus.c_str());
+          sendUART2Command("play", "doorbell");
+          // TODO add connnection to hub
+        }
+        else if (strcmp(buttonName, "Call") == 0)
+        {
+          // Call button pressed - start camera without recognition
+          updateStatusMsg("Connecting...", true, "Ready");
+          sendUARTCommand("camera_control", "camera_start");
+          sendUARTCommand("stop_detection");
+        }
+      }
     }
   }
 }

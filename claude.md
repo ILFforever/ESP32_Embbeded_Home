@@ -21,9 +21,9 @@ Part of Chulalongkorn's 2110356 Embedded System class project simulating a smart
 
 ### Communication Channels
 1. **UART (RX2/TX2)** - Command/control with slave ESP32
-2. **SPI** - High-speed JPEG frame transfer from slave
+2. **SPI** - High-speed JPEG frame transfer from slave for local LCD display
 3. **I2C** - NFC reader communication
-4. **WiFi** - HTTP web server for remote control (Only for testing, removed in production )
+4. **WiFi** - HTTP API for remote control and snapshot endpoint (testing/development)
 
 ### Pin Configuration
 - **UART:** RX2=16, TX2=17 @ 115200 baud
@@ -157,13 +157,16 @@ struct NFCCardData {
 ```
 
 #### 5. HTTP Control (`http_control.cpp/h`)
-**Purpose:** Web-based remote control
+**Purpose:** HTTP API for remote control and testing
 
-**Endpoints:**
-- Camera control (start/stop)
-- Face recognition control
-- Face enrollment
-- System status queries
+**Key Endpoints:**
+- `/camera/start`, `/camera/stop` - Camera control
+- `/snapshot` - Get current JPEG frame from SPI buffer
+- `/face/*` - Face database management
+- `/status`, `/info` - System status queries
+- `/amp/*` - Audio amplifier control (UART2)
+
+**Note:** Video streaming is handled by the camera module (slave ESP32), not the LCD ESP32. The LCD ESP32 only receives frames via SPI for local display.
 
 #### 6. Main Program (`main.cpp`)
 **Purpose:** UI rendering, task orchestration
@@ -191,14 +194,20 @@ struct NFCCardData {
 - UI sprites update on `uiNeedsUpdate` flag
 
 **Tasks (TaskScheduler):**
-- `taskCheckUART` (20ms) - Poll UART buffer
-- `taskSendPing` (1000ms) - Send ping to slave
-- `taskCheckTimeout` (1000ms) - Monitor connection
-- `taskHTTPHandler` (10ms) - Handle HTTP requests
-- `taskProcessFrame` (5ms) - Check for new SPI frames
-- `taskdrawUIOverlay` (25ms) - Update UI sprites
+- `taskCheckUART` (20ms) - Poll UART buffer from camera module
+- `taskCheckUART2` (20ms) - Poll UART2 buffer from amp module
+- `taskSendPing` (1000ms) - Send ping to camera module
+- `taskSendAmpPing` (1000ms) - Send ping to amp module
+- `taskCheckTimeout` (1000ms) - Monitor camera connection
+- `taskCheckAmpTimeout` (1000ms) - Monitor amp connection
+- `taskCheckDisconnectWarning` (1000ms) - Check for 30s disconnects
+- `taskWiFiWatchdog` (30000ms) - Check WiFi connection
+- `taskProcessFrame` (5ms) - Check for new SPI frames and display
+- `taskdrawUIOverlay` (10ms) - Update UI sprites
 - `tasklcdhandoff` (200ms) - Manage LCD arbitration
-- `taskGetCameraStatus` (1000ms) - Poll camera status
+- `taskCheckButtons` (10ms) - Check button state
+- `taskCheckSlaveSync` (1000ms) - Check slave mode sync
+- `taskUpdateWeather` (1800000ms) - Update weather every 30 minutes
 
 **Performance:**
 - RAM: 16.7% (54,752 bytes)
@@ -211,8 +220,9 @@ struct NFCCardData {
 - **TFT_eSPI** (2.5.43) - Display driver
 - **TJpg_Decoder** (1.1.0) - Hardware-accelerated JPEG decoding
 - **Adafruit PN532** (1.3.4) - NFC reader library
+- **ESPAsyncWebServer** (3.8.1) - Async HTTP server
+- **AsyncTCP** (3.4.9) - Async TCP library
 - **WiFi** - ESP32 WiFi
-- **WebServer** - HTTP server
 
 ## Design Decisions & Patterns
 
@@ -236,13 +246,28 @@ struct NFCCardData {
 
 ### Communication Protocol
 - **JSON over UART** - Human-readable, flexible
-- **Binary SPI protocol** - High-speed frame transfer
+- **Binary SPI protocol** - High-speed frame transfer for local display only
 - **Ping/pong heartbeat** - Connection monitoring
 - **Event-driven** - Callback patterns for async events
 
+### Video Streaming Architecture
+**Important:** The LCD ESP32 does NOT handle video streaming to clients. Video frames are:
+1. Captured by the camera module (slave ESP32)
+2. Transferred to LCD ESP32 via SPI for local display only
+3. **Streamed to network clients directly from the camera module**
+
+The LCD ESP32 only provides a `/snapshot` endpoint for single JPEG captures from the SPI buffer. For continuous video streaming, clients should connect directly to the camera module.
+
 ## Important Notes
 
-### Recent Refactoring (2025-10-19)
+### Recent Changes (2025-11-09)
+- **Removed TCP streaming functionality** - Video streaming moved to camera module (slave ESP32)
+- Deleted `tcp_stream.cpp` and `tcp_stream.h` files
+- Removed `/stream` endpoint and all TCP streaming tasks
+- LCD ESP32 now only receives frames via SPI for local display
+- `/snapshot` endpoint retained for single frame capture
+
+### Previous Refactoring (2025-10-19)
 Moved `updateStatusMsg` from `uart_commands.cpp` to new `lcd_helper.cpp` module to improve separation of concerns. UART module now only handles communication protocol.
 
 ### Build System
@@ -257,8 +282,9 @@ Moved `updateStatusMsg` from `uart_commands.cpp` to new `lcd_helper.cpp` module 
 
 ### Development Context
 - Multi-ESP32 system (this is the LCD/display unit)
-- Works in conjunction with separate camera/AI ESP32 (slave)
+- Works in conjunction with separate camera/AI ESP32 (slave) - handles video streaming
 - Part of larger smart home ecosystem project
+- Camera module should implement its own streaming server for network clients
 
 ## Common Workflows
 

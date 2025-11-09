@@ -12,7 +12,7 @@ extern HardwareSerial AmpSerial;
 extern uint32_t ping_counter;
 extern unsigned long last_pong_time;
 extern int slave_status;
-extern bool recognition_success;
+extern int recognition_state; // 0=none, 1=success, 2=failure
 
 // Amp ping-pong
 extern uint32_t amp_ping_counter;

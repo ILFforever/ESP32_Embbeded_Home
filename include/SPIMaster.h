@@ -67,17 +67,17 @@ public:
 private:
     SPIClass _spi;
     SPITransferState _state;
-    
+
     // Frame data
     uint8_t* _frameBuffer;
     uint32_t _frameSize;
     uint16_t _frameId;
     uint32_t _frameTimestamp;
-    
+
     // Transfer management
     uint32_t _bytesReceived;
     uint32_t _chunkSize;
-    
+
     // Statistics
     uint32_t _framesReceived;
     uint32_t _framesDropped;

@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -111,17 +112,38 @@
       transform: translateY(0);
     }
 
-    .btn.success { background: #28a745; }
-    .btn.success:hover { background: #218838; }
+    .btn.success {
+      background: #28a745;
+    }
 
-    .btn.danger { background: #dc3545; }
-    .btn.danger:hover { background: #c82333; }
+    .btn.success:hover {
+      background: #218838;
+    }
 
-    .btn.warning { background: #ffc107; color: #212529; }
-    .btn.warning:hover { background: #e0a800; }
+    .btn.danger {
+      background: #dc3545;
+    }
 
-    .btn.info { background: #17a2b8; }
-    .btn.info:hover { background: #138496; }
+    .btn.danger:hover {
+      background: #c82333;
+    }
+
+    .btn.warning {
+      background: #ffc107;
+      color: #212529;
+    }
+
+    .btn.warning:hover {
+      background: #e0a800;
+    }
+
+    .btn.info {
+      background: #17a2b8;
+    }
+
+    .btn.info:hover {
+      background: #138496;
+    }
 
     .input-group {
       margin-bottom: 15px;
@@ -189,9 +211,17 @@
       transform: translateY(0);
     }
 
-    .toast.success { background: #28a745; }
-    .toast.error { background: #dc3545; }
-    .toast.info { background: #17a2b8; }
+    .toast.success {
+      background: #28a745;
+    }
+
+    .toast.error {
+      background: #dc3545;
+    }
+
+    .toast.info {
+      background: #17a2b8;
+    }
 
     @media (max-width: 768px) {
       .content {
@@ -205,6 +235,7 @@
     }
   </style>
 </head>
+
 <body>
   <div class="container">
     <div class="header">
@@ -214,7 +245,8 @@
 
     <div class="config">
       <label for="apiUrl">ESP32 API URL:</label>
-      <input type="text" id="apiUrl" value="http://doorbell.local" placeholder="http://192.168.1.xxx or http://doorbell.local">
+      <input type="text" id="apiUrl" value="http://doorbell.local"
+        placeholder="http://192.168.1.xxx or http://doorbell.local">
     </div>
 
     <div class="status-bar" id="statusBar">
@@ -230,16 +262,16 @@
     </div>
 
     <div class="content">
-      <!-- Camera Control -->
       <div class="section">
         <h2>📷 Camera Control</h2>
         <button class="btn success" onclick="sendCommand('/camera/start')">▶ Start Camera</button>
         <button class="btn danger" onclick="sendCommand('/camera/stop')">⏹ Stop Camera</button>
         <button class="btn info" onclick="sendCommand('/ping')">📡 Send Ping</button>
         <button class="btn" onclick="getStatus()">📊 Get Status</button>
+        <button class="btn warning" onclick="restartCamera()">🔄 Restart Camera</button>
+
       </div>
 
-      <!-- Face Recognition -->
       <div class="section">
         <h2>👤 Face Recognition</h2>
         <button class="btn success" onclick="sendCustomCommand('enroll_face')">➕ Enroll Face</button>
@@ -249,7 +281,6 @@
         <button class="btn" onclick="sendCustomCommand('resume_detection')">▶️ Resume Detection</button>
       </div>
 
-      <!-- Face Database -->
       <div class="section">
         <h2>📋 Face Database</h2>
         <button class="btn" onclick="sendCommand('/face/count')">📊 Get Face Count</button>
@@ -268,7 +299,6 @@
         <button class="btn info" onclick="getFaceName()">📖 Get Name</button>
       </div>
 
-      <!-- Audio Amp Control -->
       <div class="section">
         <h2>🔊 Audio Amp Control</h2>
         <div class="input-group">
@@ -290,7 +320,6 @@
         <button class="btn warning" onclick="restartAmp()">🔄 Restart Amp</button>
       </div>
 
-      <!-- System Control -->
       <div class="section">
         <h2>⚙️ System Control</h2>
         <button class="btn info" onclick="sendCommand('/mic/start')">🎤 Start Microphone</button>
@@ -300,7 +329,6 @@
         <button class="btn danger" onclick="restartLCD()">🔄 Restart LCD ESP32</button>
       </div>
 
-      <!-- Custom Command -->
       <div class="section">
         <h2>⌨️ Custom Command</h2>
         <div class="input-group">
@@ -324,6 +352,12 @@
       const input = document.getElementById('apiUrl').value.trim();
       localStorage.setItem('apiUrl', input);
       return input || 'http://doorbell.local';
+    }
+
+    // === NEW HELPER FUNCTION ===
+    // Helper to pause for a specified time
+    function sleep(ms) {
+      return new Promise(resolve => setTimeout(resolve, ms));
     }
 
     // Load saved API URL
@@ -436,6 +470,18 @@
       await sendCustomCommand('get_name', { id });
     }
 
+    // restart camera module
+    async function restartCamera() {
+      if (!confirm('Are you sure you want to restart the camera?')) {
+        return;
+      }
+      showToast('Restarting camera module...', 'info');
+
+      await sendCommand('/camera/restart');
+
+      showToast('Camera restart complete', 'success');
+    }
+
     // Play audio on amp
     async function playAmp() {
       const url = document.getElementById('ampUrl').value.trim();
@@ -487,4 +533,5 @@
     }
   </script>
 </body>
+
 </html>
