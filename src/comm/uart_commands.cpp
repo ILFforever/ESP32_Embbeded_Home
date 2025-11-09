@@ -182,6 +182,9 @@ void handleUARTResponse(String line)
       Serial.printf("Face Recognized: ID=%d, Name=%s, Confidence=%.2f\n",
                     id, name, confidence);
 
+      // Clear face recognition timeout (face was recognized)
+      face_recognition_active = false;
+
       // Update LCD status with recognition result
       if (id >= 0)
       {
@@ -263,6 +266,8 @@ void handleUARTResponse(String line)
           updateActualMode(0);
           Serial.print(" [Camera stopped - status set to 0]");
         }
+        // Clear face recognition timeout when camera stops
+        face_recognition_active = false;
       }
       else if (strcmp(msg, "Face recognition started") == 0)
       {

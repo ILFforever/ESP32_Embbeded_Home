@@ -15,7 +15,7 @@ extern SPIMaster spiMaster;
 // WiFi credentials - CHANGE THESE
 const char *WIFI_SSID = "ILFforever2";
 const char *WIFI_PASSWORD = "19283746";
-
+#define Ready_led 2
 // mDNS hostname - device will be accessible at http://doorbell.local
 const char *MDNS_HOSTNAME = "doorbell";
 
@@ -128,6 +128,8 @@ void initHTTPServer()
   // ==================== Camera Control ====================
   server.on("/camera/start", HTTP_GET, [](AsyncWebServerRequest *request)
             {
+    digitalWrite(Ready_led, HIGH);
+    Ready_led_on_time = millis();
     sendUARTCommand("camera_control", "camera_start");
     AsyncWebServerResponse *response = request->beginResponse(200, "application/json", "{\"status\":\"ok\",\"message\":\"Camera start command sent\"}");
     enableCORS(response);
@@ -135,6 +137,8 @@ void initHTTPServer()
 
   server.on("/camera/stop", HTTP_GET, [](AsyncWebServerRequest *request)
             {
+    digitalWrite(Ready_led, HIGH);
+    Ready_led_on_time = millis();
     sendUARTCommand("camera_control", "camera_stop");
     AsyncWebServerResponse *response = request->beginResponse(200, "application/json", "{\"status\":\"ok\",\"message\":\"Camera stop command sent\"}");
     enableCORS(response);
@@ -142,6 +146,8 @@ void initHTTPServer()
 
   server.on("/camera/restart", HTTP_GET, [](AsyncWebServerRequest *request)
             {
+    digitalWrite(Ready_led, HIGH);
+    Ready_led_on_time = millis();
     sendUARTCommand("reboot");
     AsyncWebServerResponse *response = request->beginResponse(200, "application/json", "{\"status\":\"ok\",\"message\":\"Camera restart command sent\"}");
     enableCORS(response);
@@ -150,6 +156,8 @@ void initHTTPServer()
   // ==================== Status & Ping ====================
   server.on("/status", HTTP_GET, [](AsyncWebServerRequest *request)
             {
+    digitalWrite(Ready_led, HIGH);
+    Ready_led_on_time = millis();
     sendUARTCommand("get_status");
 
     JsonDocument doc;
@@ -166,6 +174,8 @@ void initHTTPServer()
 
   server.on("/info", HTTP_GET, [](AsyncWebServerRequest *request)
             {
+    digitalWrite(Ready_led, HIGH);
+    Ready_led_on_time = millis();
     JsonDocument doc;
     doc["ip"] = WiFi.localIP().toString();
     doc["uptime"] = millis();
@@ -184,6 +194,8 @@ void initHTTPServer()
   // ==================== Face Management ====================
   server.on("/face/count", HTTP_GET, [](AsyncWebServerRequest *request)
             {
+    digitalWrite(Ready_led, HIGH);
+    Ready_led_on_time = millis();
     sendUARTCommand("get_face_count");
     AsyncWebServerResponse *response = request->beginResponse(200, "application/json", "{\"status\":\"ok\",\"message\":\"Get face count command sent\"}");
     enableCORS(response);
@@ -191,6 +203,8 @@ void initHTTPServer()
 
   server.on("/face/list", HTTP_GET, [](AsyncWebServerRequest *request)
             {
+    digitalWrite(Ready_led, HIGH);
+    Ready_led_on_time = millis();
     sendUARTCommand("print_faces");
     AsyncWebServerResponse *response = request->beginResponse(200, "application/json", "{\"status\":\"ok\",\"message\":\"Print faces command sent (check slave serial)\"}");
     enableCORS(response);
@@ -206,6 +220,8 @@ void initHTTPServer()
   // ==================== Microphone Control ====================
   server.on("/mic/start", HTTP_GET, [](AsyncWebServerRequest *request)
             {
+    digitalWrite(Ready_led, HIGH);
+    Ready_led_on_time = millis();
     sendUARTCommand("mic_start");
     AsyncWebServerResponse *response = request->beginResponse(200, "application/json", "{\"status\":\"ok\",\"message\":\"Microphone start command sent\"}");
     enableCORS(response);
@@ -213,6 +229,8 @@ void initHTTPServer()
 
   server.on("/mic/stop", HTTP_GET, [](AsyncWebServerRequest *request)
             {
+    digitalWrite(Ready_led, HIGH);
+    Ready_led_on_time = millis();
     sendUARTCommand("mic_stop");
     AsyncWebServerResponse *response = request->beginResponse(200, "application/json", "{\"status\":\"ok\",\"message\":\"Microphone stop command sent\"}");
     enableCORS(response);
@@ -220,6 +238,8 @@ void initHTTPServer()
 
   server.on("/mic/status", HTTP_GET, [](AsyncWebServerRequest *request)
             {
+    digitalWrite(Ready_led, HIGH);
+    Ready_led_on_time = millis();
     sendUARTCommand("mic_status");
     AsyncWebServerResponse *response = request->beginResponse(200, "application/json", "{\"status\":\"ok\",\"message\":\"Microphone status request sent\"}");
     enableCORS(response);
@@ -228,6 +248,8 @@ void initHTTPServer()
   // ==================== Audio Streaming ====================
   server.on("/audio/start", HTTP_GET, [](AsyncWebServerRequest *request)
             {
+    digitalWrite(Ready_led, HIGH);
+    Ready_led_on_time = millis();
     Serial.println("[HTTP] Audio start request received");
 
     // Clean up any existing audio client to prevent socket leaks
@@ -249,6 +271,8 @@ void initHTTPServer()
 
   server.on("/audio/stop", HTTP_GET, [](AsyncWebServerRequest *request)
             {
+    digitalWrite(Ready_led, HIGH);
+    Ready_led_on_time = millis();
     // Clean up any existing audio client to prevent socket leaks
     if (audioClient) {
       Serial.println("[HTTP] Cleaning up AudioClient...");
@@ -268,6 +292,8 @@ void initHTTPServer()
 
   server.on("/audio/status", HTTP_GET, [](AsyncWebServerRequest *request)
             {
+    digitalWrite(Ready_led, HIGH);
+    Ready_led_on_time = millis();
     JsonDocument doc;
     doc["status"] = "ok";
     doc["mic_status"] = "checking";
@@ -286,6 +312,8 @@ void initHTTPServer()
   // ==================== Audio Amp Control (UART2) ====================
   server.on("/amp/play", HTTP_GET, [](AsyncWebServerRequest *request)
             {
+    digitalWrite(Ready_led, HIGH);
+    Ready_led_on_time = millis();
     if (!request->hasParam("url")) {
       AsyncWebServerResponse *response = request->beginResponse(400, "application/json", "{\"status\":\"error\",\"message\":\"Missing 'url' parameter\"}");
       enableCORS(response);
@@ -310,6 +338,8 @@ void initHTTPServer()
 
   server.on("/amp/stop", HTTP_GET, [](AsyncWebServerRequest *request)
             {
+    digitalWrite(Ready_led, HIGH);
+    Ready_led_on_time = millis();
     sendUART2Command("stop", "");
     AsyncWebServerResponse *response = request->beginResponse(200, "application/json", "{\"status\":\"ok\",\"message\":\"Sent stop command to Amp\"}");
     enableCORS(response);
@@ -322,39 +352,11 @@ void initHTTPServer()
     enableCORS(response);
     request->send(response); });
 
-  // ==================== Snapshot ====================
-  server.on("/snapshot", HTTP_GET, [](AsyncWebServerRequest *request)
-            {
-    // Get current frame from SPI buffer
-    if (!spiMaster.isFrameReady()) {
-      AsyncWebServerResponse *response = request->beginResponse(503, "application/json",
-        "{\"status\":\"error\",\"message\":\"No frame available\"}");
-      enableCORS(response);
-      request->send(response);
-      return;
-    }
-
-    uint8_t* frameData = spiMaster.getFrameData();
-    uint32_t frameSize = spiMaster.getFrameSize();
-
-    if (!frameData || frameSize == 0) {
-      AsyncWebServerResponse *response = request->beginResponse(503, "application/json",
-        "{\"status\":\"error\",\"message\":\"Invalid frame data\"}");
-      enableCORS(response);
-      request->send(response);
-      return;
-    }
-
-    // Send JPEG image
-    AsyncWebServerResponse *response = request->beginResponse_P(200, "image/jpeg", frameData, frameSize);
-    enableCORS(response);
-    request->send(response);
-
-    Serial.printf("[HTTP] Snapshot sent: %u bytes\n", frameSize); });
-
   // ==================== System Control ====================
   server.on("/system/restart", HTTP_GET, [](AsyncWebServerRequest *request)
             {
+    digitalWrite(Ready_led, HIGH);
+    Ready_led_on_time = millis();
     AsyncWebServerResponse *response = request->beginResponse(200, "application/json", "{\"status\":\"ok\",\"message\":\"LCD ESP32 restarting in 1 second...\"}");
     enableCORS(response);
     request->send(response);
@@ -364,6 +366,8 @@ void initHTTPServer()
   // ==================== Custom Command (POST) ====================
   server.on("/command", HTTP_POST, [](AsyncWebServerRequest *request) {}, NULL, [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total)
             {
+      digitalWrite(Ready_led, HIGH);
+      Ready_led_on_time = millis();
       // Parse JSON body
       JsonDocument doc;
       DeserializationError error = deserializeJson(doc, (const char*)data);

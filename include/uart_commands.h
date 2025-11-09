@@ -27,6 +27,10 @@ extern int face_bbox_w;
 extern int face_bbox_h;
 extern unsigned long lastFaceDetectionTime;
 
+// Face recognition timeout
+extern unsigned long face_recognition_start_time;
+extern bool face_recognition_active;
+
 // Send command to Slave (with automatic mode tracking)
 void sendUARTCommand(const char *cmd, const char *param = nullptr, int value = -1);
 

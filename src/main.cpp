@@ -27,6 +27,8 @@
 #define BUTTON_THRESHOLD 4000 // ADC threshold for button press (0-4095 scale)
 #define Warn_led 4
 #define Ready_led 2
+
+
 // Create objects
 TFT_eSPI tft = TFT_eSPI();
 TFT_eSprite videoSprite = TFT_eSprite(&tft); // Sprite for video frames
@@ -72,9 +74,14 @@ unsigned long amp_disconnect_start = 0;
 bool slave_disconnect_warning_sent = false;
 bool amp_disconnect_warning_sent = false;
 
-// Ready LED timer (blink on UART activity)
-unsigned long ready_led_timer = 0;
-#define READY_LED_DURATION 2000 // 2 seconds
+// Ready LED timer
+unsigned long Ready_led_on_time = 0;
+#define READY_LED_DURATION 1000
+
+// Face recognition timeout
+unsigned long face_recognition_start_time = 0;
+bool face_recognition_active = false;
+#define FACE_RECOGNITION_TIMEOUT 10000 // 10 seconds
 
 // UI state
 bool uiNeedsUpdate = true; // Flag to redraw UI elements
@@ -121,7 +128,6 @@ void sendAmpPingTask();
 void checkPingTimeout();
 void checkAmpPingTimeout();
 void checkDisconnectWarning();
-void handleHTTPTask();
 void ProcessFrame();
 void drawUIOverlay();
 void lcdhandoff();
@@ -131,6 +137,7 @@ void updateWeather();
 void wifiWatchdogTask();
 void drawWifiSymbol(int x, int y, int strength);
 void onCardDetected(NFCCardData card);
+void checkTimers();
 bool tft_jpg_render_callback(int16_t x, int16_t y, uint16_t w, uint16_t h, uint16_t *bitmap);
 String getCurrentTimeAsString();
 String getCurrentDateAsString();
@@ -144,6 +151,7 @@ Task taskCheckAmpTimeout(1000, TASK_FOREVER, &checkAmpPingTimeout);           //
 Task taskCheckDisconnectWarning(1000, TASK_FOREVER, &checkDisconnectWarning); // Check for 30s disconnects
 Task taskWiFiWatchdog(30000, TASK_FOREVER, &wifiWatchdogTask);                // Check WiFi connection every 30s
 Task taskProcessFrame(5, TASK_FOREVER, &ProcessFrame);                        // Check for frames every 5ms
+Task taskCheckTimers(100, TASK_FOREVER, &checkTimers);                        // Check LED and face recognition timers
 Task taskdrawUIOverlay(10, TASK_FOREVER, &drawUIOverlay);                     // Update UI overlay every 10ms
 Task tasklcdhandoff(200, TASK_FOREVER, &lcdhandoff);                          // Check if we need to hand off LCD to ProcessFrame
 Task taskCheckButtons(10, TASK_FOREVER, &checkButtons);                       // Check button state every 10ms
@@ -154,7 +162,7 @@ void setup()
 {
   Serial.begin(115200);
 
-  //Setup GPIOs
+  // Setup GPIOs
   pinMode(Warn_led, OUTPUT);
   pinMode(Ready_led, OUTPUT);
 
@@ -265,6 +273,7 @@ void setup()
   myscheduler.addTask(taskCheckButtons);
   myscheduler.addTask(taskCheckSlaveSync);
   myscheduler.addTask(taskUpdateWeather);
+  myscheduler.addTask(taskCheckTimers);
   taskCheckUART.enable();
   taskCheckUART2.enable();
   taskSendPing.enable();
@@ -279,6 +288,7 @@ void setup()
   taskCheckButtons.enable();
   taskCheckSlaveSync.enable();
   taskUpdateWeather.enable();
+  taskCheckTimers.enable();
 
   last_pong_time = millis();
   last_amp_pong_time = millis();
@@ -295,6 +305,8 @@ void setup()
 
   // stop warning led
   digitalWrite(Warn_led, LOW);
+  digitalWrite(Ready_led, HIGH);
+  Ready_led_on_time = millis();
   delay(50);
   updateStatusMsg("Getting ready...", true, "Standing By");
   uiNeedsUpdate = true;
@@ -428,8 +440,9 @@ void ProcessFrame()
     {
       // Scale bounding box from camera resolution to display (tft.width() x VIDEO_HEIGHT)
       // Camera appears to be wider, adjust X scale
-      float scaleX = (float)videoSprite.width() / 280.0; // Adjusted for wider camera FOV
-      float scaleY = (float)VIDEO_HEIGHT / 240.0;
+      // Reduced scale by 0.7 to fix oversized bounding box
+      float scaleX = ((float)videoSprite.width() / 280.0) * 0.9;
+      float scaleY = ((float)VIDEO_HEIGHT / 240.0) * 0.9;
 
       int scaled_x = (int)(face_bbox_x * scaleX);
       int scaled_y = (int)(face_bbox_y * scaleY);
@@ -1112,12 +1125,16 @@ void updateButtonState(ButtonState &btn, int pin, const char *buttonName)
         // Handle button hold action
         if (strcmp(buttonName, "Doorbell") == 0)
         {
-          // Start face recognition
+          // Start face recognition with preview
           sendUARTCommand("camera_control", "camera_start");
           delay(100);
           sendUARTCommand("resume_detection");
-          delay(100); // Small delay to ensure camera is ready
+          delay(500); // Show face bounding box for half a second
           sendUARTCommand("recognize_face");
+
+          // Start face recognition timeout timer
+          face_recognition_start_time = millis();
+          face_recognition_active = true;
         }
         else if (strcmp(buttonName, "Call") == 0)
         {
@@ -1181,6 +1198,25 @@ void checkSlaveSyncTask()
   slave_status = actual_slave_mode;
 
   checkStatusMessageExpiration();
+}
+
+void checkTimers()
+{
+  // Check Ready LED timeout
+  if (Ready_led_on_time != 0 && (millis() - Ready_led_on_time > READY_LED_DURATION))
+  {
+    digitalWrite(Ready_led, LOW); // Turn the LED off
+    Ready_led_on_time = 0;        // Stop the timer
+  }
+
+  // Check face recognition timeout (10 seconds)
+  if (face_recognition_active && (millis() - face_recognition_start_time > FACE_RECOGNITION_TIMEOUT))
+  {
+    Serial.println("[TIMEOUT] Face recognition timeout - no face detected in 10 seconds");
+    updateStatusMsg("Recognition timeout", true, "Standing By");
+    sendUARTCommand("camera_control", "camera_stop");
+    face_recognition_active = false;
+  }
 }
 
 // Task: Update weather data

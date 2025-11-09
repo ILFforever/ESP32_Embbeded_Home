@@ -5,6 +5,8 @@
 #include <AsyncTCP.h>
 #include <ESPAsyncWebServer.h>
 
+extern unsigned long Ready_led_on_time;
+
 // Initialize Async HTTP server
 void initHTTPServer();
 
