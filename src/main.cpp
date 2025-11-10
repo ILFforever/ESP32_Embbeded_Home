@@ -83,6 +83,9 @@ unsigned long face_recognition_start_time = 0;
 bool face_recognition_active = false;
 #define FACE_RECOGNITION_TIMEOUT 10000 // 10 seconds
 
+// Dual button hold detection (for system reboot)
+bool both_buttons_hold_handled = false;
+
 // UI state
 bool uiNeedsUpdate = true; // Flag to redraw UI elements
 #define VIDEO_Y_OFFSET 40  // Reserve top 20px for status bar
@@ -1183,6 +1186,43 @@ void checkButtons()
 {
   updateButtonState(doorbellButton, Doorbell_bt, "Doorbell");
   updateButtonState(callButton, Call_bt, "Call");
+
+  // Check if both buttons are held down simultaneously (for system reboot)
+  if (doorbellButton.currentState && callButton.currentState && !both_buttons_hold_handled)
+  {
+    unsigned long currentTime = millis();
+    unsigned long bothHeldDuration = currentTime - max(doorbellButton.pressStartTime, callButton.pressStartTime);
+
+    // If both buttons held for 3 seconds, trigger system reboot
+    if (bothHeldDuration >= 3000)
+    {
+      both_buttons_hold_handled = true;
+
+      Serial.println("[BTN] Both buttons held - rebooting system!");
+      updateStatusMsg("Rebooting system...");
+
+      // Reboot Camera Slave
+      Serial.println("[REBOOT] Sending reboot command to Camera...");
+      sendUARTCommand("reboot");
+      delay(100);
+
+      // Reboot Amp Slave
+      Serial.println("[REBOOT] Sending reboot command to Amp...");
+      sendUART2Command("restart", "");
+      delay(100);
+
+      // Reboot LCD ESP32 (this device)
+      Serial.println("[REBOOT] Rebooting LCD ESP32...");
+      delay(500);
+      ESP.restart();
+    }
+  }
+
+  // Reset dual-button flag when either button is released
+  if (!doorbellButton.currentState || !callButton.currentState)
+  {
+    both_buttons_hold_handled = false;
+  }
 }
 
 // Task: Check if slave mode is synchronized and recover if needed
