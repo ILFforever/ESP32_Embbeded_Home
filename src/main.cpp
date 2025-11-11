@@ -28,7 +28,6 @@
 #define Warn_led 4
 #define Ready_led 2
 
-
 // Create objects
 TFT_eSPI tft = TFT_eSPI();
 TFT_eSprite videoSprite = TFT_eSprite(&tft); // Sprite for video frames
@@ -1121,29 +1120,66 @@ void updateButtonState(ButtonState &btn, int pin, const char *buttonName)
     {
       if ((currentTime - btn.pressStartTime) >= BUTTON_HOLD_THRESHOLD_MS)
       {
-        btn.holdHandled = true;
+        // Check if BOTH buttons are held (for system reboot - takes priority)
+        bool bothButtonsHeld = doorbellButton.currentState && callButton.currentState;
 
-        Serial.printf("[BTN] %s held\n", buttonName);
-
-        // Handle button hold action
-        if (strcmp(buttonName, "Doorbell") == 0)
+        if (bothButtonsHeld && !both_buttons_hold_handled)
         {
-          // Start face recognition with preview
-          sendUARTCommand("camera_control", "camera_start");
-          delay(100);
-          sendUARTCommand("resume_detection");
-          delay(500); // Show face bounding box for half a second
-          sendUARTCommand("recognize_face");
+          // Check if both have been held long enough (3 seconds from the later press)
+          unsigned long bothHeldDuration = currentTime - max(doorbellButton.pressStartTime, callButton.pressStartTime);
 
-          // Start face recognition timeout timer
-          face_recognition_start_time = millis();
-          face_recognition_active = true;
+          if (bothHeldDuration >= 3000)
+          {
+            both_buttons_hold_handled = true;
+            doorbellButton.holdHandled = true;
+            callButton.holdHandled = true;
+            sendUART2Command("play", "error");
+            Serial.println("[BTN] Both buttons held - rebooting system!");
+            updateStatusMsg("Rebooting system...");
+
+            // Reboot Camera Slave
+            Serial.println("[REBOOT] Sending reboot command to Camera...");
+            sendUARTCommand("reboot");
+            delay(500);
+
+            // Reboot Amp Slave
+            Serial.println("[REBOOT] Sending reboot command to Amp...");
+            sendUART2Command("restart", "");
+            delay(500);
+
+            // Reboot LCD ESP32 (this device)
+            Serial.println("[REBOOT] Rebooting LCD ESP32...");
+            delay(1000);
+            ESP.restart();
+          }
         }
-        else if (strcmp(buttonName, "Call") == 0)
+        else
         {
-          // Call button held - stop camera
-          updateStatusMsg("End call", true, "On Stand By");
-          sendUARTCommand("camera_control", "camera_stop");
+          // Only one button held - handle individual button action
+          btn.holdHandled = true;
+
+          Serial.printf("[BTN] %s held\n", buttonName);
+
+          // Handle button hold action
+          if (strcmp(buttonName, "Doorbell") == 0)
+          {
+            // Start face recognition with preview
+            sendUARTCommand("camera_control", "camera_start");
+            delay(100);
+            sendUARTCommand("resume_detection");
+            delay(500); // Show face bounding box for half a second
+            sendUARTCommand("recognize_face");
+
+            // Start face recognition timeout timer
+            face_recognition_start_time = millis();
+            face_recognition_active = true;
+          }
+          else if (strcmp(buttonName, "Call") == 0)
+          {
+            // Call button held - stop camera
+            updateStatusMsg("End call", true, "On Stand By");
+            sendUARTCommand("camera_control", "camera_stop");
+          }
         }
       }
     }
@@ -1153,6 +1189,12 @@ void updateButtonState(ButtonState &btn, int pin, const char *buttonName)
     {
       unsigned long pressDuration = currentTime - btn.pressStartTime;
       Serial.printf("[BTN] %s released (held for %lu ms)\n", buttonName, pressDuration);
+
+      // Reset dual-button flag when either button is released
+      if (!doorbellButton.currentState || !callButton.currentState)
+      {
+        both_buttons_hold_handled = false;
+      }
 
       // Only trigger press action if button was released before hold threshold
       // and press hasn't been handled yet
@@ -1186,43 +1228,6 @@ void checkButtons()
 {
   updateButtonState(doorbellButton, Doorbell_bt, "Doorbell");
   updateButtonState(callButton, Call_bt, "Call");
-
-  // Check if both buttons are held down simultaneously (for system reboot)
-  if (doorbellButton.currentState && callButton.currentState && !both_buttons_hold_handled)
-  {
-    unsigned long currentTime = millis();
-    unsigned long bothHeldDuration = currentTime - max(doorbellButton.pressStartTime, callButton.pressStartTime);
-
-    // If both buttons held for 3 seconds, trigger system reboot
-    if (bothHeldDuration >= 3000)
-    {
-      both_buttons_hold_handled = true;
-
-      Serial.println("[BTN] Both buttons held - rebooting system!");
-      updateStatusMsg("Rebooting system...");
-
-      // Reboot Camera Slave
-      Serial.println("[REBOOT] Sending reboot command to Camera...");
-      sendUARTCommand("reboot");
-      delay(100);
-
-      // Reboot Amp Slave
-      Serial.println("[REBOOT] Sending reboot command to Amp...");
-      sendUART2Command("restart", "");
-      delay(100);
-
-      // Reboot LCD ESP32 (this device)
-      Serial.println("[REBOOT] Rebooting LCD ESP32...");
-      delay(500);
-      ESP.restart();
-    }
-  }
-
-  // Reset dual-button flag when either button is released
-  if (!doorbellButton.currentState || !callButton.currentState)
-  {
-    both_buttons_hold_handled = false;
-  }
 }
 
 // Task: Check if slave mode is synchronized and recover if needed
