@@ -12,7 +12,7 @@ const apiClient = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
-  withCredentials: true, // Important: This enables cookies to be sent
+  withCredentials: true,
 });
 
 // Interfaces matching your backend responses
@@ -60,11 +60,8 @@ export const loginUser = async (
     console.log('Login response:', response.data);
     
     if (response.data.success && response.data.token) {
-      // Store token in localStorage AND as a cookie for the backend
+      // Store token in localStorage
       localStorage.setItem('token', response.data.token);
-      
-      // Set the token as a cookie (backend expects it)
-      document.cookie = `token=${response.data.token}; path=/; max-age=86400; SameSite=Lax`;
       
       return response.data;
     }
@@ -96,23 +93,18 @@ export const loginUser = async (
 };
 
 // Get current user - Changed to GET request to match backend
-export const getCurrentUser = async (
-  token?: string
-): Promise<CurrentUserResponse | null> => {
+export const getCurrentUser = async (): Promise<CurrentUserResponse | null> => {
   try {
-    const authToken = token || localStorage.getItem('token');
+    const authToken = localStorage.getItem('token');
     
     if (!authToken) {
       return null;
     }
 
-    // Ensure token is set as cookie
-    document.cookie = `token=${authToken}; path=/; max-age=86400; SameSite=Lax`;
-
     // Changed from POST to GET to match your Postman request
     const response = await apiClient.get('/auth/curuser', {
       headers: {
-        'Cookie': `token=${authToken}`, // Add token in Cookie header
+        Authorization: `Bearer ${authToken}`,
       },
     });
 
@@ -141,9 +133,8 @@ export const registerUser = async (
     });
 
     if (response.data.success && response.data.token) {
-      // Store token in localStorage and cookie
+      // Store token in localStorage
       localStorage.setItem('token', response.data.token);
-      document.cookie = `token=${response.data.token}; path=/; max-age=86400; SameSite=Lax`;
     }
 
     return response.data;
@@ -167,20 +158,18 @@ export const logoutUser = async (token?: string): Promise<AuthResponse> => {
 
     const response = await apiClient.get('/auth/logout', {
       headers: {
-        'Cookie': `token=${authToken}`,
+        Authorization: `Bearer ${authToken}`,
       },
     });
 
-    // Clear token from localStorage and cookies
+    // Clear token from localStorage
     localStorage.removeItem('token');
-    document.cookie = 'token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
 
     return response.data;
   } catch (error: any) {
     console.error('Logout error:', error);
     // Still clear token even if request fails
     localStorage.removeItem('token');
-    document.cookie = 'token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
     return {
       success: false,
       message: error.response?.data?.message || 'Logout failed',
@@ -197,12 +186,9 @@ export const getUsers = async (token?: string): Promise<UserData[]> => {
       throw new Error('No authentication token');
     }
 
-    // Ensure cookie is set
-    document.cookie = `token=${authToken}; path=/; max-age=86400; SameSite=Lax`;
-
     const response = await apiClient.get('/auth/users', {
       headers: {
-        'Cookie': `token=${authToken}`,
+        Authorization: `Bearer ${authToken}`,
       },
     });
 
@@ -226,12 +212,9 @@ export const getAdmins = async (token?: string): Promise<UserData[]> => {
       throw new Error('No authentication token');
     }
 
-    // Ensure cookie is set
-    document.cookie = `token=${authToken}; path=/; max-age=86400; SameSite=Lax`;
-
     const response = await apiClient.get('/auth/admins', {
       headers: {
-        'Cookie': `token=${authToken}`,
+        Authorization: `Bearer ${authToken}`,
       },
     });
 
@@ -258,12 +241,9 @@ export const deleteUser = async (
       throw new Error('No authentication token');
     }
 
-    // Ensure cookie is set
-    document.cookie = `token=${authToken}; path=/; max-age=86400; SameSite=Lax`;
-
     const response = await apiClient.delete(`/auth/users/${userId}`, {
       headers: {
-        'Cookie': `token=${authToken}`,
+        Authorization: `Bearer ${authToken}`,
       },
     });
 
@@ -289,12 +269,9 @@ export const deleteAdmin = async (
       throw new Error('No authentication token');
     }
 
-    // Ensure cookie is set
-    document.cookie = `token=${authToken}; path=/; max-age=86400; SameSite=Lax`;
-
     const response = await apiClient.delete(`/auth/admins/${adminId}`, {
       headers: {
-        'Cookie': `token=${authToken}`,
+        Authorization: `Bearer ${authToken}`,
       },
     });
 
