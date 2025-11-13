@@ -12,11 +12,16 @@ connectDB();
 
 const app = express();
 
-const allowedOrigins = ['http://localhost:3000', 'https://yourfrontend.com'];
+const allowedOrigins = [
+  /^http:\/\/localhost(:\d+)?$/, // Allow localhost on any port
+  'https://yourfrontend.com' // Your production frontend URL
+];
 
 app.use(cors({
   origin: function (origin, callback) {
-    if (!origin || allowedOrigins.includes(origin)) {
+    // allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.some(allowedOrigin => typeof allowedOrigin === 'string' ? allowedOrigin === origin : allowedOrigin.test(origin))) {
       callback(null, true);
     } else {
       callback(new Error('Not allowed by CORS'));
@@ -54,4 +59,3 @@ process.on('unhandledRejection', (err, promise) => {
   // Close server & exit process
   server.close(() => process.exit(1));
 });
-
