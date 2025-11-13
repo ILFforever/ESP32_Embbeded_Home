@@ -12,7 +12,19 @@ connectDB();
 
 const app = express();
 
-app.use(cors());
+const allowedOrigins = ['http://localhost:3000', 'https://yourfrontend.com'];
+
+app.use(cors({
+  origin: function (origin, callback) {
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  credentials: true,
+}));
+
 
 // Body parser
 app.use(express.json());
@@ -39,4 +51,3 @@ process.on('unhandledRejection', (err, promise) => {
   server.close(() => process.exit(1));
 });
 
-//test
