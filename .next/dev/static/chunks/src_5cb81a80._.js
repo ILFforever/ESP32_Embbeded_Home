@@ -48,8 +48,10 @@ const loginUser = async (email, password)=>{
         });
         console.log('Login response:', response.data);
         if (response.data.success && response.data.token) {
-            // Store token in localStorage
+            // Store token in localStorage AND as a cookie for the backend
             localStorage.setItem('token', response.data.token);
+            // Set the token as a cookie (backend expects it)
+            document.cookie = `token=${response.data.token}; path=/; max-age=86400; SameSite=Lax`;
             return response.data;
         }
         return {
@@ -81,9 +83,12 @@ const getCurrentUser = async (token)=>{
         if (!authToken) {
             return null;
         }
-        const response = await apiClient.post('/auth/curuser', {}, {
+        // Ensure token is set as cookie
+        document.cookie = `token=${authToken}; path=/; max-age=86400; SameSite=Lax`;
+        // Changed from POST to GET to match your Postman request
+        const response = await apiClient.get('/auth/curuser', {
             headers: {
-                Authorization: `Bearer ${authToken}`
+                'Cookie': `token=${authToken}`
             }
         });
         if (response.status === 200 && response.data.success) {
@@ -104,6 +109,11 @@ const registerUser = async (data)=>{
             password: data.password,
             role: data.role || 'user'
         });
+        if (response.data.success && response.data.token) {
+            // Store token in localStorage and cookie
+            localStorage.setItem('token', response.data.token);
+            document.cookie = `token=${response.data.token}; path=/; max-age=86400; SameSite=Lax`;
+        }
         return response.data;
     } catch (error) {
         console.error('Registration error:', error);
@@ -124,16 +134,18 @@ const logoutUser = async (token)=>{
         }
         const response = await apiClient.get('/auth/logout', {
             headers: {
-                Authorization: `Bearer ${authToken}`
+                'Cookie': `token=${authToken}`
             }
         });
-        // Clear token from localStorage
+        // Clear token from localStorage and cookies
         localStorage.removeItem('token');
+        document.cookie = 'token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
         return response.data;
     } catch (error) {
         console.error('Logout error:', error);
         // Still clear token even if request fails
         localStorage.removeItem('token');
+        document.cookie = 'token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
         return {
             success: false,
             message: error.response?.data?.message || 'Logout failed'
@@ -146,9 +158,11 @@ const getUsers = async (token)=>{
         if (!authToken) {
             throw new Error('No authentication token');
         }
+        // Ensure cookie is set
+        document.cookie = `token=${authToken}; path=/; max-age=86400; SameSite=Lax`;
         const response = await apiClient.get('/auth/users', {
             headers: {
-                Authorization: `Bearer ${authToken}`
+                'Cookie': `token=${authToken}`
             }
         });
         if (response.data.success) {
@@ -166,9 +180,11 @@ const getAdmins = async (token)=>{
         if (!authToken) {
             throw new Error('No authentication token');
         }
+        // Ensure cookie is set
+        document.cookie = `token=${authToken}; path=/; max-age=86400; SameSite=Lax`;
         const response = await apiClient.get('/auth/admins', {
             headers: {
-                Authorization: `Bearer ${authToken}`
+                'Cookie': `token=${authToken}`
             }
         });
         if (response.data.success) {
@@ -186,9 +202,11 @@ const deleteUser = async (userId, token)=>{
         if (!authToken) {
             throw new Error('No authentication token');
         }
+        // Ensure cookie is set
+        document.cookie = `token=${authToken}; path=/; max-age=86400; SameSite=Lax`;
         const response = await apiClient.delete(`/auth/users/${userId}`, {
             headers: {
-                Authorization: `Bearer ${authToken}`
+                'Cookie': `token=${authToken}`
             }
         });
         return response.data;
@@ -206,9 +224,11 @@ const deleteAdmin = async (adminId, token)=>{
         if (!authToken) {
             throw new Error('No authentication token');
         }
+        // Ensure cookie is set
+        document.cookie = `token=${authToken}; path=/; max-age=86400; SameSite=Lax`;
         const response = await apiClient.delete(`/auth/admins/${adminId}`, {
             headers: {
-                Authorization: `Bearer ${authToken}`
+                'Cookie': `token=${authToken}`
             }
         });
         return response.data;
