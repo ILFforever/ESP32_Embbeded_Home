@@ -8,6 +8,7 @@ This is an IoT project simulating a full-fledged smart home ecosystem using ESP3
 - **Room_Sensors** - Code for room sensors (PlatformIO)
 - **Doorbell_lcd** - LCD for doorbell, communicates with Doorbell_Camera via SPI (PlatformIO)
 - **Doorbell_Camera** - Code for Xiao ESP32-S3 Sense camera running AI face recognition, communicates with Doorbell_lcd using SPI (ESP-IDF)
+- **Doorbell_Amp** - Code for ESP32S3 runnin the amp anb audio system inside doorbell
 ## ⚠️ Important Workflow Note
 **Each branch contains operational code for a different hardware module.**
 
