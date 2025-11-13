@@ -56,9 +56,9 @@ boolean ER_RA8875::begin(enum RA8875sizes s) {
   /*SPI.beginTransaction(SPISettings(20000000, MSBFIRST, SPI_MODE0));
   SPI.begin();*/
 
-  SPI.setDataMode(SPI_MODE0);
-  SPI.setClockDivider(SPI_CLOCK_DIV16);
-  SPI.begin();
+  // SPI.setDataMode(SPI_MODE0);
+  // SPI.setClockDivider(SPI_CLOCK_DIV16);
+  //SPI.begin();
 
 #ifdef __AVR__
   SPI.setClockDivider(SPI_CLOCK_DIV128);

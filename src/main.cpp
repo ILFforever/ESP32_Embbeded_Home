@@ -1,18 +1,12 @@
 /*
  * LovyanGFX Sprite Examples for RA8875
  *
- * This demonstrates:
- * - Creating and managing sprites
- * - Sprite transparency
- * - Animation with sprites
- * - Buffered drawing for smooth graphics
- * - Multiple sprite layers
- *
- * Hardware: ESP32s3 + EastRising RA8875 800x480 Display
+ * Hardware: ESP32 + EastRising RA8875 800x480 Display
  */
 
 #define LGFX_USE_V1
 #include <LovyanGFX.hpp>
+#include <Panel_RA8875_Fixed.h>
 
 // ============================================================================
 // Display Configuration with EastRising Fix
@@ -20,7 +14,7 @@
 
 class LGFX : public lgfx::LGFX_Device
 {
-  lgfx::Panel_RA8875  _panel_instance;
+  lgfx::Panel_RA8875_Fixed  _panel_instance;  // Use our fixed version
   lgfx::Bus_SPI       _bus_instance;
   lgfx::Light_PWM     _light_instance;
 
@@ -29,12 +23,12 @@ public:
   {
     {
       auto cfg = _bus_instance.config();
-      cfg.spi_host = SPI2_HOST;  // ESP32-S3 uses SPI2_HOST instead of VSPI_HOST
+      cfg.spi_host = VSPI_HOST;
       cfg.freq_write = 2000000;
       cfg.freq_read  = 2000000;
-      cfg.pin_sclk = 12;         // SCK
-      cfg.pin_mosi = 11;         // MOSI (SDO)
-      cfg.pin_miso = 13;         // MISO (SDI)
+      cfg.pin_sclk = 18;
+      cfg.pin_mosi = 23;
+      cfg.pin_miso = 19;
       cfg.spi_3wire = false;
       _bus_instance.config(cfg);
       _panel_instance.setBus(&_bus_instance);
@@ -42,8 +36,8 @@ public:
 
     {
       auto cfg = _panel_instance.config();
-      cfg.pin_cs = 10;           // CS (Chip Select)
-      cfg.pin_rst = 14;          // RST (Reset)
+      cfg.pin_cs = 5;
+      cfg.pin_rst = 16;
       cfg.pin_busy = -1;
       cfg.panel_width = 800;
       cfg.panel_height = 480;
@@ -66,40 +60,6 @@ public:
     }
 
     setPanel(&_panel_instance);
-  }
-
-  // CRITICAL: Enable GPIOX for EastRising displays
-  void enableDisplay() {
-    // Access the panel directly to write RA8875 registers
-    auto panel = static_cast<lgfx::Panel_RA8875*>(getPanel());
-
-    // Enable GPIOX (register 0xC7 = 0x01)
-    startWrite();
-    _panel_instance.writeCommand(0xC7, 8);
-    _panel_instance.writeData(0x01, 8);
-    endWrite();
-    delay(100);
-
-    // Display ON (register 0x01 = 0x80)
-    startWrite();
-    _panel_instance.writeCommand(0x01, 8);
-    _panel_instance.writeData(0x80, 8);
-    endWrite();
-    delay(100);
-
-    // PWM config (register 0x8A = 0x8B)
-    startWrite();
-    _panel_instance.writeCommand(0x8A, 8);
-    _panel_instance.writeData(0x8B, 8);
-    endWrite();
-    delay(10);
-
-    // Max brightness (register 0x8B = 0xFF)
-    startWrite();
-    _panel_instance.writeCommand(0x8B, 8);
-    _panel_instance.writeData(0xFF, 8);
-    endWrite();
-    delay(100);
   }
 };
 
@@ -533,7 +493,6 @@ void setup(void) {
 
   Serial.println("Initializing display...");
   lcd.init();
-  lcd.enableDisplay();  // CRITICAL for EastRising
   Serial.println("Display ready!\n");
 
   // Show welcome screen
