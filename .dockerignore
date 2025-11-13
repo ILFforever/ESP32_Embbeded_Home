@@ -10,7 +10,6 @@ node_modules/
 
 # Firebase credentials and service account keys
 *firebase-adminsdk*.json
-serviceAccountKey.json
 firebase-debug.log
 .firebase/
 

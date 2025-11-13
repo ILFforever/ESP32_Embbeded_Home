@@ -38,6 +38,10 @@ const auth = require('./routes/auth');
 // Mount routers
 app.use('/api/v1/auth', auth);
 
+app.get('/info', (req, res) => {
+  res.send('Arduino-888-SmartHome is running');
+});
+
 const PORT = process.env.PORT || 5000;
 
 const server = app.listen(PORT, () => {
