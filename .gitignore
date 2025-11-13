@@ -1,6 +1,17 @@
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
 # Dependencies
-node_modules/
-package-lock.json
+/node_modules
+/package-lock.json
+
+# Next.js build output
+.next/
+/out/
+
+# Other build outputs
+/build/
+/dist/
+*.tsbuildinfo
 
 # Environment variables
 .env
@@ -23,6 +34,19 @@ yarn-error.log*
 lerna-debug.log*
 pnpm-debug.log*
 
+# IDE and editor directories
+.vscode/
+.idea/
+
+# Editor files
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
 # Runtime data
 pids/
 *.pid
@@ -30,7 +54,7 @@ pids/
 *.pid.lock
 
 # Testing
-coverage/
+/coverage/
 *.lcov
 .nyc_output/
 
@@ -48,8 +72,8 @@ build/
 *.tsbuildinfo
 
 # Temporary files
-tmp/
-temp/
+/tmp/
+/temp/
 *.tmp
 
 # Optional npm cache directory
