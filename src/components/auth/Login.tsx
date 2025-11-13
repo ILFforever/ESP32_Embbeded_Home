@@ -1,13 +1,13 @@
 import React, { useState } from 'react';
 import { loginUser } from '@/services/auth.service';
-import { useNavigate } from 'react-router-dom';
+import { useRouter } from 'next/navigation';
 
 interface LoginProps {
   onLoginSuccess?: () => void;
 }
 
 const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
-  const navigate = useNavigate();
+  const router = useRouter();
   const [formData, setFormData] = useState({
     email: '',
     password: '',
@@ -50,7 +50,7 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
         }
         
         // Navigate to dashboard or home
-        navigate('/dashboard');
+        router.push('/dashboard');
       } else {
         // Login failed
         setError(response.message || 'Invalid credentials');

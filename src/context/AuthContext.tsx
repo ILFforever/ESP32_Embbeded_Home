@@ -1,10 +1,12 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+'use client';
+import React, {createContext, useContext, useState, useEffect } from 'react';
 import {
   loginUser as loginUserService,
   logoutUser as logoutUserService,
   getCurrentUser,
   UserData,
 } from '../services/auth.service';
+
 
 interface AuthContextType {
   user: UserData | null;

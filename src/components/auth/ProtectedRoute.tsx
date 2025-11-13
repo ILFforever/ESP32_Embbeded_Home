@@ -1,5 +1,5 @@
-import React from 'react';
-import { Navigate } from 'react-router-dom';
+import React, {useEffect} from 'react';
+import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 
 interface ProtectedRouteProps {
@@ -31,8 +31,11 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
 
   // Redirect to login if not authenticated
   if (!isAuthenticated) {
-    return <Navigate to="/login" replace />;
+    const router = useRouter();
+    useEffect(() => { router.push('/login'); }, [router]);
+    return null; 
   }
+
 
   // Check admin access if required
   if (requireAdmin && user?.role !== 'admin') {

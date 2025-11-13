@@ -1,10 +1,19 @@
 import axios from 'axios';
 
-// Base API configuration
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000';
+// Base API configuration - Use NEXT_PUBLIC_ prefix for client-side env vars
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
 const API_VERSION = '/api/v1';
 
 const apiPath = (path: string) => `${API_BASE_URL}${API_VERSION}${path}`;
+
+// Create axios instance with default config
+const apiClient = axios.create({
+  baseURL: `${API_BASE_URL}${API_VERSION}`,
+  headers: {
+    'Content-Type': 'application/json',
+  },
+  withCredentials: true,
+});
 
 // Interfaces matching your backend responses
 export interface AuthResponse {
@@ -41,36 +50,48 @@ export const loginUser = async (
   password: string
 ): Promise<AuthResponse> => {
   try {
-    const response = await axios.post(
-      apiPath('/auth/login'),
-      { email, password },
-      {
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        withCredentials: true, // Important for cookies
-      }
-    );
+    console.log('Attempting login to:', apiPath('/auth/login'));
     
-    if (response.data.success) {
+    const response = await apiClient.post('/auth/login', { 
+      email, 
+      password 
+    });
+    
+    console.log('Login response:', response.data);
+    
+    if (response.data.success && response.data.token) {
       // Store token in localStorage
-      if (response.data.token) {
-        localStorage.setItem('token', response.data.token);
-      }
+      localStorage.setItem('token', response.data.token);
       return response.data;
     }
     
-    return { success: false, message: 'Login failed' };
+    return { 
+      success: false, 
+      message: response.data.message || 'Login failed' 
+    };
   } catch (error: any) {
-    console.error('Login error:', error);
+    console.error('Login error details:', {
+      message: error.message,
+      response: error.response?.data,
+      status: error.response?.status,
+      config: error.config
+    });
+    
+    if (error.code === 'ERR_NETWORK') {
+      return {
+        success: false,
+        message: 'Cannot connect to server. Please ensure the backend is running on ' + API_BASE_URL,
+      };
+    }
+    
     return {
       success: false,
-      message: error.response?.data?.msg || 'Login failed',
+      message: error.response?.data?.msg || error.response?.data?.message || 'Login failed',
     };
   }
 };
 
-// Get current user (Note: backend uses POST, not GET)
+// Get current user
 export const getCurrentUser = async (
   token?: string
 ): Promise<CurrentUserResponse | null> => {
@@ -81,15 +102,13 @@ export const getCurrentUser = async (
       return null;
     }
 
-    const response = await axios.post(
-      apiPath('/auth/curuser'),
+    const response = await apiClient.post(
+      '/auth/curuser',
       {},
       {
         headers: {
-          'Content-Type': 'application/json',
           Authorization: `Bearer ${authToken}`,
         },
-        withCredentials: true,
       }
     );
 
@@ -109,21 +128,13 @@ export const registerUser = async (
   data: RegisterForm
 ): Promise<AuthResponse> => {
   try {
-    const response = await axios.post(
-      apiPath('/auth/register'),
-      {
-        name: data.name,
-        telephone_number: data.telephone_number,
-        email: data.email,
-        password: data.password,
-        role: data.role || 'user',
-      },
-      {
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      }
-    );
+    const response = await apiClient.post('/auth/register', {
+      name: data.name,
+      telephone_number: data.telephone_number,
+      email: data.email,
+      password: data.password,
+      role: data.role || 'user',
+    });
 
     return response.data;
   } catch (error: any) {
@@ -144,11 +155,10 @@ export const logoutUser = async (token?: string): Promise<AuthResponse> => {
       return { success: false, message: 'No token found' };
     }
 
-    const response = await axios.get(apiPath('/auth/logout'), {
+    const response = await apiClient.get('/auth/logout', {
       headers: {
         Authorization: `Bearer ${authToken}`,
       },
-      withCredentials: true,
     });
 
     // Clear token from localStorage
@@ -175,11 +185,10 @@ export const getUsers = async (token?: string): Promise<UserData[]> => {
       throw new Error('No authentication token');
     }
 
-    const response = await axios.get(apiPath('/auth/users'), {
+    const response = await apiClient.get('/auth/users', {
       headers: {
         Authorization: `Bearer ${authToken}`,
       },
-      withCredentials: true,
     });
 
     if (response.data.success) {
@@ -202,11 +211,10 @@ export const getAdmins = async (token?: string): Promise<UserData[]> => {
       throw new Error('No authentication token');
     }
 
-    const response = await axios.get(apiPath('/auth/admins'), {
+    const response = await apiClient.get('/auth/admins', {
       headers: {
         Authorization: `Bearer ${authToken}`,
       },
-      withCredentials: true,
     });
 
     if (response.data.success) {
@@ -232,11 +240,10 @@ export const deleteUser = async (
       throw new Error('No authentication token');
     }
 
-    const response = await axios.delete(apiPath(`/auth/users/${userId}`), {
+    const response = await apiClient.delete(`/auth/users/${userId}`, {
       headers: {
         Authorization: `Bearer ${authToken}`,
       },
-      withCredentials: true,
     });
 
     return response.data;
@@ -261,11 +268,10 @@ export const deleteAdmin = async (
       throw new Error('No authentication token');
     }
 
-    const response = await axios.delete(apiPath(`/auth/admins/${adminId}`), {
+    const response = await apiClient.delete(`/auth/admins/${adminId}`, {
       headers: {
         Authorization: `Bearer ${authToken}`,
       },
-      withCredentials: true,
     });
 
     return response.data;
