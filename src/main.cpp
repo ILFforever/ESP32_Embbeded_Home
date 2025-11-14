@@ -74,7 +74,6 @@ void DisplayUpdate();
 
 Task taskDisplayUpdate(TASK_SECOND * 0.05, TASK_FOREVER, &DisplayUpdate);
 
-
 // ============================================================================
 // Setup and Main Loop
 // ============================================================================
@@ -82,7 +81,7 @@ Task taskDisplayUpdate(TASK_SECOND * 0.05, TASK_FOREVER, &DisplayUpdate);
 void setup(void)
 {
   Serial.begin(115200);
-  delay(1000);
+  delay(200);
 
   Serial.println("\n╔════════════════════════════════════════╗");
   Serial.println("║  LovyanGFX Sprite Examples            ║");
@@ -95,58 +94,6 @@ void setup(void)
 
   scheduler.addTask(taskDisplayUpdate);
   taskDisplayUpdate.enable();
-
-  // Show welcome screen
-  lcd.fillScreen(TFT_BLUE);
-
-  // Create welcome screen sprite (workaround for direct text rendering issue)
-  lgfx::LGFX_Sprite welcome(&lcd);
-  welcome.createSprite(800, 480);
-  welcome.setColorDepth(8);
-  welcome.fillSprite(TFT_BLUE);
-  welcome.setTextColor(TFT_WHITE);
-  welcome.setTextDatum(middle_center);
-
-  // Use beautiful TrueType fonts
-  welcome.setFont(&fonts::FreeSansBold24pt7b);
-  welcome.drawString("LovyanGFX", 400, 200);
-
-  welcome.setFont(&fonts::FreeSans18pt7b);
-  welcome.drawString("Sprite Examples", 400, 260);
-
-  welcome.setFont(&fonts::FreeSans12pt7b);
-  welcome.drawString("Starting in 2 seconds...", 400, 320);
-
-  welcome.pushSprite(0, 0);
-  welcome.deleteSprite();
-  // delay(2000);
-
-  // // Run all examples
-  // example1_basicSprite();
-  // example2_transparentSprite();
-  // example3_animatedSprite();
-  // example4_multipleSprites();
-  // example5_rotatedSprite();
-  // example6_doubleBuffer();
-  // example7_uiElements();
-
-  // Final screen
-  lcd.fillScreen(TFT_GREEN);
-
-  // Create final screen sprite (workaround for direct text rendering issue)
-  lgfx::LGFX_Sprite final(&lcd);
-  final.createSprite(800, 480);
-  final.fillSprite(TFT_GREEN);
-  final.setTextColor(TFT_BLACK);
-  final.setTextDatum(middle_center);
-
-  // Use bold font for completion message
-  final.setFont(&fonts::FreeSansBold24pt7b);
-  final.drawString("All Examples", 400, 220);
-  final.drawString("Complete!", 400, 280);
-
-  final.pushSprite(0, 0);
-  final.deleteSprite();
 }
 
 void loop(void)
@@ -154,7 +101,7 @@ void loop(void)
   scheduler.execute();
 }
 
-//This function renders the display and handles touch
+// This function renders the display and handles touch
 void DisplayUpdate()
 {
   static int num = 1;
@@ -168,8 +115,8 @@ void DisplayUpdate()
     lcd.fillScreen(TFT_RED);
     num++;
     break;
-    case 3:
-    lcd.fillScreen(TFT_BLUE); 
+  case 3:
+    lcd.fillScreen(TFT_BLUE);
     num++;
     break;
   }
