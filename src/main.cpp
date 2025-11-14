@@ -125,38 +125,46 @@ void DisplayUpdate()
 
 void updateTouch()
 {
-  if (digitalRead(GSL1680_INT) == HIGH)
-    GSLX680_read_data();
+  GSLX680_read_data();
+
+  if (ts_event.fingers > 0)
+  {
+    Serial.printf("Fingers: %d\n", ts_event.fingers);
+    Serial.printf("  x1: %d, y1: %d\n", ts_event.x1 & 0x0FFF, ts_event.y1 & 0x0FFF);
+    Serial.printf("  x2: %d, y2: %d\n", ts_event.x2 & 0x0FFF, ts_event.y2 & 0x0FFF);
+    Serial.printf("  x3: %d, y3: %d\n", ts_event.x3 & 0x0FFF, ts_event.y3 & 0x0FFF);
+    Serial.printf("  x4: %d, y4: %d\n", ts_event.x4 & 0x0FFF, ts_event.y4 & 0x0FFF);
+    Serial.printf("  x5: %d, y5: %d\n", ts_event.x5 & 0x0FFF, ts_event.y5 & 0x0FFF);
+  }
+
   if (ts_event.fingers == 1)
-            {
-                lcd.fillCircle(ts_event.x1, ts_event.y1, 5, TFT_RED);
-            }
-            if (ts_event.fingers == 2)
-            {
-                lcd.fillCircle(ts_event.x1, ts_event.y1, 5, TFT_RED);
-                lcd.fillCircle(ts_event.x2, ts_event.y2, 5, TFT_GREEN);
-            }
-            if (ts_event.fingers == 3)
-            {
-                lcd.fillCircle(ts_event.x1, ts_event.y1, 5, TFT_RED);
-                lcd.fillCircle(ts_event.x2, ts_event.y2, 5, TFT_GREEN);
-                lcd.fillCircle(ts_event.x3, ts_event.y3, 5, TFT_BLUE);
-            }
-            if (ts_event.fingers == 4)
-            {
-                lcd.fillCircle(ts_event.x1, ts_event.y1, 5, TFT_RED);
-                lcd.fillCircle(ts_event.x2, ts_event.y2, 5, TFT_GREEN);
-                lcd.fillCircle(ts_event.x3, ts_event.y3, 5, TFT_BLUE);
-                lcd.fillCircle(ts_event.x4, ts_event.y4, 5, TFT_CYAN);
-            }
-            if (ts_event.fingers == 5)
-            {
-                lcd.fillCircle(ts_event.x1, ts_event.y1, 5, TFT_RED);
-                lcd.fillCircle(ts_event.x2, ts_event.y2, 5, TFT_GREEN);
-                lcd.fillCircle(ts_event.x3, ts_event.y3, 5, TFT_BLUE);
-                lcd.fillCircle(ts_event.x4, ts_event.y4, 5, TFT_CYAN);
-                lcd.fillCircle(ts_event.x5, ts_event.y5, 5, TFT_MAGENTA);
-            }
-  Serial.println("Touch numbers = " + String(ts_event.fingers));
-  Serial.println("X1 = " + String(ts_event.x1) + " Y1 = " + String(ts_event.y1 - 4116));
+  {
+    lcd.fillCircle(ts_event.x1 & 0x0FFF, ts_event.y1 & 0x0FFF, 5, TFT_RED);
+  }
+  if (ts_event.fingers == 2)
+  {
+    lcd.fillCircle(ts_event.x1 & 0x0FFF, ts_event.y1 & 0x0FFF, 5, TFT_RED);
+    lcd.fillCircle(ts_event.x2 & 0x0FFF, ts_event.y2 & 0x0FFF, 5, TFT_GREEN);
+  }
+  if (ts_event.fingers == 3)
+  {
+    lcd.fillCircle(ts_event.x1 & 0x0FFF, ts_event.y1 & 0x0FFF, 5, TFT_RED);
+    lcd.fillCircle(ts_event.x2 & 0x0FFF, ts_event.y2 & 0x0FFF, 5, TFT_GREEN);
+    lcd.fillCircle(ts_event.x3 & 0x0FFF, ts_event.y3 & 0x0FFF, 5, TFT_BLUE);
+  }
+  if (ts_event.fingers == 4)
+  {
+    lcd.fillCircle(ts_event.x1 & 0x0FFF, ts_event.y1 & 0x0FFF, 5, TFT_RED);
+    lcd.fillCircle(ts_event.x2 & 0x0FFF, ts_event.y2 & 0x0FFF, 5, TFT_GREEN);
+    lcd.fillCircle(ts_event.x3 & 0x0FFF, ts_event.y3 & 0x0FFF, 5, TFT_BLUE);
+    lcd.fillCircle(ts_event.x4 & 0x0FFF, ts_event.y4 & 0x0FFF, 5, TFT_CYAN);
+  }
+  if (ts_event.fingers == 5)
+  {
+    lcd.fillCircle(ts_event.x1 & 0x0FFF, ts_event.y1 & 0x0FFF, 5, TFT_RED);
+    lcd.fillCircle(ts_event.x2 & 0x0FFF, ts_event.y2 & 0x0FFF, 5, TFT_GREEN);
+    lcd.fillCircle(ts_event.x3 & 0x0FFF, ts_event.y3 & 0x0FFF, 5, TFT_BLUE);
+    lcd.fillCircle(ts_event.x4 & 0x0FFF, ts_event.y4 & 0x0FFF, 5, TFT_CYAN);
+    lcd.fillCircle(ts_event.x5 & 0x0FFF, ts_event.y5 & 0x0FFF, 5, TFT_MAGENTA);
+  }
 }
