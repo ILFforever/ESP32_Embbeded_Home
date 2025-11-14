@@ -8,16 +8,18 @@
 #include <LovyanGFX.hpp>
 #include <Panel_RA8875_Fixed.h>
 #include "TaskScheduler.h"
-
+#include <Wire.h>
+#include <Touch.h>
 // ============================================================================
 // Display Configuration with EastRising Fix
 // ============================================================================
+
+lgfx::touch_point_t tp;
 
 class LGFX : public lgfx::LGFX_Device
 {
   lgfx::Panel_RA8875_Fixed _panel_instance; // Use our fixed version
   lgfx::Bus_SPI _bus_instance;
-  lgfx::Light_PWM _light_instance;
 
 public:
   LGFX(void)
@@ -52,28 +54,20 @@ public:
       _panel_instance.config(cfg);
     }
 
-    {
-      auto cfg = _light_instance.config();
-      cfg.pin_bl = -1;
-      cfg.invert = false;
-      _light_instance.config(cfg);
-      _panel_instance.setLight(&_light_instance);
-    }
-
     setPanel(&_panel_instance);
   }
 };
 
 static LGFX lcd;
 Scheduler scheduler;
-
 // ============================================================================
 // Sprite Examples
 // ============================================================================
 void DisplayUpdate();
+void updateTouch();
 
-Task taskDisplayUpdate(TASK_SECOND * 0.05, TASK_FOREVER, &DisplayUpdate);
-
+Task taskDisplayUpdate(TASK_SECOND * 5, TASK_FOREVER, &DisplayUpdate);
+Task taskTouchUpdate(10, TASK_FOREVER, &updateTouch);
 // ============================================================================
 // Setup and Main Loop
 // ============================================================================
@@ -91,8 +85,10 @@ void setup(void)
   Serial.println("Initializing display...");
   lcd.init();
   Serial.println("Display ready!\n");
-
+  touchsetup();
   scheduler.addTask(taskDisplayUpdate);
+  scheduler.addTask(taskTouchUpdate);
+  taskTouchUpdate.enable();
   taskDisplayUpdate.enable();
 }
 
@@ -125,4 +121,42 @@ void DisplayUpdate()
   {
     num = 1;
   }
+}
+
+void updateTouch()
+{
+  if (digitalRead(GSL1680_INT) == HIGH)
+    GSLX680_read_data();
+  if (ts_event.fingers == 1)
+            {
+                lcd.fillCircle(ts_event.x1, ts_event.y1, 5, TFT_RED);
+            }
+            if (ts_event.fingers == 2)
+            {
+                lcd.fillCircle(ts_event.x1, ts_event.y1, 5, TFT_RED);
+                lcd.fillCircle(ts_event.x2, ts_event.y2, 5, TFT_GREEN);
+            }
+            if (ts_event.fingers == 3)
+            {
+                lcd.fillCircle(ts_event.x1, ts_event.y1, 5, TFT_RED);
+                lcd.fillCircle(ts_event.x2, ts_event.y2, 5, TFT_GREEN);
+                lcd.fillCircle(ts_event.x3, ts_event.y3, 5, TFT_BLUE);
+            }
+            if (ts_event.fingers == 4)
+            {
+                lcd.fillCircle(ts_event.x1, ts_event.y1, 5, TFT_RED);
+                lcd.fillCircle(ts_event.x2, ts_event.y2, 5, TFT_GREEN);
+                lcd.fillCircle(ts_event.x3, ts_event.y3, 5, TFT_BLUE);
+                lcd.fillCircle(ts_event.x4, ts_event.y4, 5, TFT_CYAN);
+            }
+            if (ts_event.fingers == 5)
+            {
+                lcd.fillCircle(ts_event.x1, ts_event.y1, 5, TFT_RED);
+                lcd.fillCircle(ts_event.x2, ts_event.y2, 5, TFT_GREEN);
+                lcd.fillCircle(ts_event.x3, ts_event.y3, 5, TFT_BLUE);
+                lcd.fillCircle(ts_event.x4, ts_event.y4, 5, TFT_CYAN);
+                lcd.fillCircle(ts_event.x5, ts_event.y5, 5, TFT_MAGENTA);
+            }
+  Serial.println("Touch numbers = " + String(ts_event.fingers));
+  Serial.println("X1 = " + String(ts_event.x1) + " Y1 = " + String(ts_event.y1 - 4116));
 }
