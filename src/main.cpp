@@ -60,6 +60,18 @@ public:
 
 static LGFX lcd;
 Scheduler scheduler;
+
+// Touch position struct for application use
+struct TouchPosition
+{
+    uint16_t x;
+    uint16_t y;
+    bool isPressed;
+    uint32_t timestamp;
+};
+
+TouchPosition currentTouch = {0, 0, false, 0};
+
 // ============================================================================
 // Sprite Examples
 // ============================================================================
@@ -84,6 +96,7 @@ void setup(void)
 
   Serial.println("Initializing display...");
   lcd.init();
+  lcd.setRotation(2);
   Serial.println("Display ready!\n");
   touchsetup();
   scheduler.addTask(taskDisplayUpdate);
@@ -120,21 +133,25 @@ void DisplayUpdate()
   if (num > 3)
   {
     num = 1;
-  }
+  }  lcd.drawString("LovyanGFX Sprite Example",50,50);
+
 }
 
 void updateTouch()
 {
   GSLX680_read_data();
 
+  // Update currentTouch struct
   if (ts_event.fingers > 0)
   {
-    Serial.printf("Fingers: %d\n", ts_event.fingers);
-    Serial.printf("  x1: %d, y1: %d\n", ts_event.x1 & 0x0FFF, ts_event.y1 & 0x0FFF);
-    Serial.printf("  x2: %d, y2: %d\n", ts_event.x2 & 0x0FFF, ts_event.y2 & 0x0FFF);
-    Serial.printf("  x3: %d, y3: %d\n", ts_event.x3 & 0x0FFF, ts_event.y3 & 0x0FFF);
-    Serial.printf("  x4: %d, y4: %d\n", ts_event.x4 & 0x0FFF, ts_event.y4 & 0x0FFF);
-    Serial.printf("  x5: %d, y5: %d\n", ts_event.x5 & 0x0FFF, ts_event.y5 & 0x0FFF);
+    currentTouch.x = ts_event.x1 & 0x0FFF;
+    currentTouch.y = ts_event.y1 & 0x0FFF;
+    currentTouch.isPressed = true;
+    currentTouch.timestamp = millis();
+  }
+  else
+  {
+    currentTouch.isPressed = false;
   }
 
   if (ts_event.fingers == 1)

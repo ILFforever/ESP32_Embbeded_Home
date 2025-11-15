@@ -14,8 +14,6 @@
 uint8_t addr = 0x40;
 
 #define GSL1680_WAKE 15
-#define GSL1680_INT 17
-
 uint16_t tx, ty;
 struct _ts_event
 {
@@ -4535,20 +4533,21 @@ uint8_t GSLX680_read_data(void)
 
     ts_event.fingers = touch_data[0];
 
-    ts_event.y5 = (uint16_t)(touch_data[23]) << 8 | (uint16_t)touch_data[22];
-    ts_event.x5 = (uint16_t)(touch_data[21]) << 8 | (uint16_t)touch_data[20];
+    // Read raw coordinates and flip for lcd.setRotation(2) - 180 degree rotation
+    ts_event.y5 = 480 - ((uint16_t)(touch_data[23]) << 8 | (uint16_t)touch_data[22]);
+    ts_event.x5 = 800 - ((uint16_t)(touch_data[21]) << 8 | (uint16_t)touch_data[20]);
 
-    ts_event.y4 = (uint16_t)(touch_data[19]) << 8 | (uint16_t)touch_data[18];
-    ts_event.x4 = (uint16_t)(touch_data[17]) << 8 | (uint16_t)touch_data[16];
+    ts_event.y4 = 480 - ((uint16_t)(touch_data[19]) << 8 | (uint16_t)touch_data[18]);
+    ts_event.x4 = 800 - ((uint16_t)(touch_data[17]) << 8 | (uint16_t)touch_data[16]);
 
-    ts_event.y3 = (uint16_t)(touch_data[15]) << 8 | (uint16_t)touch_data[14];
-    ts_event.x3 = (uint16_t)(touch_data[13]) << 8 | (uint16_t)touch_data[12];
+    ts_event.y3 = 480 - ((uint16_t)(touch_data[15]) << 8 | (uint16_t)touch_data[14]);
+    ts_event.x3 = 800 - ((uint16_t)(touch_data[13]) << 8 | (uint16_t)touch_data[12]);
 
-    ts_event.y2 = (uint16_t)(touch_data[11]) << 8 | (uint16_t)touch_data[10];
-    ts_event.x2 = (uint16_t)(touch_data[9]) << 8 | (uint16_t)touch_data[8];
+    ts_event.y2 = 480 - ((uint16_t)(touch_data[11]) << 8 | (uint16_t)touch_data[10]);
+    ts_event.x2 = 800 - ((uint16_t)(touch_data[9]) << 8 | (uint16_t)touch_data[8]);
 
-    ts_event.y1 = (uint16_t)(touch_data[7]) << 8 | (uint16_t)touch_data[6];
-    ts_event.x1 = (uint16_t)(touch_data[5]) << 8 | (uint16_t)touch_data[4];
+    ts_event.y1 = 480 - ((uint16_t)(touch_data[7]) << 8 | (uint16_t)touch_data[6]);
+    ts_event.x1 = 800 - ((uint16_t)(touch_data[5]) << 8 | (uint16_t)touch_data[4]);
 
     return 0;
 }
@@ -4571,8 +4570,6 @@ void touchsetup()
     Wire.begin(); // join i2c bus (address optional for master)
 
     Serial.println("Please wait CTP initialization..............");
-
-    pinMode(GSL1680_INT, INPUT);
     pinMode(GSL1680_WAKE, OUTPUT);
     digitalWrite(GSL1680_WAKE, HIGH);
     delay(20);
