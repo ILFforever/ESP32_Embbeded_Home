@@ -7,7 +7,7 @@
 #include <Arduino.h>
 
 #define GSL1680_WAKE 15
-#define GSL1680_INT 17
+#define GSL1680_INT 34
 
 struct _ts_event
 {

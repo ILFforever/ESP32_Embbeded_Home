@@ -10,6 +10,7 @@
 #include "TaskScheduler.h"
 #include <Wire.h>
 #include <Touch.h>
+#include <CapSensor.h>
 // ============================================================================
 // Display Configuration with EastRising Fix
 // ============================================================================
@@ -64,22 +65,32 @@ Scheduler scheduler;
 // Touch position struct for application use
 struct TouchPosition
 {
-    uint16_t x;
-    uint16_t y;
-    bool isPressed;
-    uint32_t timestamp;
+  uint16_t x;
+  uint16_t y;
+  bool isPressed;
+  uint32_t timestamp;
 };
 
 TouchPosition currentTouch = {0, 0, false, 0};
 
+// Touch interrupt flag
+volatile bool touchDataReady = false;
+
+void IRAM_ATTR touchISR()
+{
+  touchDataReady = true;
+}
+
 // ============================================================================
-// Sprite Examples
+// Task Functions
 // ============================================================================
 void DisplayUpdate();
 void updateTouch();
+void updateCapSensor();
 
 Task taskDisplayUpdate(TASK_SECOND * 5, TASK_FOREVER, &DisplayUpdate);
-Task taskTouchUpdate(10, TASK_FOREVER, &updateTouch);
+Task taskTouchUpdate(20, TASK_FOREVER, &updateTouch);
+Task taskCapSensorUpdate(100, TASK_FOREVER, &updateCapSensor);
 // ============================================================================
 // Setup and Main Loop
 // ============================================================================
@@ -98,11 +109,36 @@ void setup(void)
   lcd.init();
   lcd.setRotation(2);
   Serial.println("Display ready!\n");
+
+  // Initialize I2C (shared by touch screen and capacitive sensor)
+  Wire.begin(); // SDA=21, SCL=22 (default ESP32 pins)
+
+  // Initialize touch screen (uses I2C)
   touchsetup();
+
+  // Setup touch interrupt
+  pinMode(GSL1680_INT, INPUT);
+  attachInterrupt(digitalPinToInterrupt(GSL1680_INT), touchISR, RISING);
+  Serial.println("Touch interrupt enabled on pin 34");
+
+  // Initialize capacitive sensor (uses same I2C bus)
+  // Try a few times
+  for (int i = 0; i < 3; i++)
+  {
+    if (!capSensorSetup())
+      Serial.println("Warning: Capacitive sensor initialization failed!");
+    else
+      break;
+  }
+
+  // Setup scheduler tasks
   scheduler.addTask(taskDisplayUpdate);
   scheduler.addTask(taskTouchUpdate);
-  taskTouchUpdate.enable();
+  scheduler.addTask(taskCapSensorUpdate);
+
   taskDisplayUpdate.enable();
+  taskTouchUpdate.enable();
+  taskCapSensorUpdate.enable();
 }
 
 void loop(void)
@@ -133,12 +169,17 @@ void DisplayUpdate()
   if (num > 3)
   {
     num = 1;
-  }  lcd.drawString("LovyanGFX Sprite Example",50,50);
-
+  }
+  lcd.drawString("LovyanGFX Sprite Example", 50, 50);
 }
 
 void updateTouch()
 {
+  // Only read if interrupt fired
+  if (!touchDataReady)
+    return;
+  touchDataReady = false;
+
   GSLX680_read_data();
 
   // Update currentTouch struct
@@ -184,4 +225,16 @@ void updateTouch()
     lcd.fillCircle(ts_event.x4 & 0x0FFF, ts_event.y4 & 0x0FFF, 5, TFT_CYAN);
     lcd.fillCircle(ts_event.x5 & 0x0FFF, ts_event.y5 & 0x0FFF, 5, TFT_MAGENTA);
   }
+}
+
+void updateCapSensor()
+{
+  capSensorUpdate();
+
+  // Example: Check specific pads
+  // if (isPadPressed(0))
+  // {
+  //   Serial.println("Button 0 pressed!");
+  //   lcd.fillCircle(100, 100, 20, TFT_YELLOW);
+  // }
 }
