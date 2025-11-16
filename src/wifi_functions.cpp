@@ -5,7 +5,7 @@
 #include <time.h> // For time functions
 
 // Replace with your network credentials
-const char *WIFI_SSID = "ILFforever";
+const char *WIFI_SSID = "ILFforever2";
 const char *WIFI_PASSWORD = "19283746";
 const char *MDNS_HOSTNAME = "HomeHub";
 

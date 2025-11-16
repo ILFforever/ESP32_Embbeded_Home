@@ -56,6 +56,7 @@ void updateCapSensor();
 void pushSpritesToDisplay();
 void sendHeartbeatTask();
 void checkDoorbellTask();
+void drawWifiSymbol(int x, int y, int strength);
 
 Task taskUpdateTopBar(1000, TASK_FOREVER, &updateTopBar);
 Task taskUpdateContent(TASK_SECOND * 10, TASK_FOREVER, &updateContent);
@@ -156,15 +157,12 @@ void setup(void)
       break;
   }
 
-  // Initialize network and heartbeat
-  // TODO: Update WiFi credentials and device tokens
-  initNetwork(
-    "ILFforever",                       // WiFi SSID
-    "19283746",                   // WiFi password
+  // Initialize heartbeat module (WiFi already initialized by wifi_init())
+  initHeartbeat(
     "http://embedded-smarthome.fly.dev",   // Backend URL
     "hb_001",                              // Hub device ID
     "hub",                                  // Device type
-    "f59ac83960ac8d7cd4fdc2915af85ed30ce562b410cfc0217b88b6fd2f7c4739",                 // Hub API token (from registration)
+    "f59ac83960ac8d7cd4fdc2915af85ed30ce562b410cfc0217b88b6fd2f7c4739", // Hub API token
     "db_001"                                // Doorbell device ID to monitor
   );
 
@@ -203,14 +201,6 @@ void updateTopBar()
   // Display hub info
   topBar.drawString("ESP32 Hub - Control Center", 50, 10);
 
-  // Display WiFi status
-  char buffer[50];
-  if (WiFi.status() == WL_CONNECTED) {
-    topBar.drawString("WiFi: Connected", 300, 10);
-  } else {
-    topBar.drawString("WiFi: Disconnected", 300, 10);
-  }
-
   // Display doorbell status - show brief status in top bar
   if (doorbellStatus.data_valid) {
     if (doorbellOnline) {
@@ -227,6 +217,36 @@ void updateTopBar()
     topBar.drawString("DB: ...", 600, 10);
     topBar.setTextColor(TFT_BLACK, TFT_WHITE);
   }
+
+  // WiFi indicator: Calculate strength based on RSSI
+  int wifiStrength = 0;
+  if (WiFi.status() == WL_CONNECTED)
+  {
+    int32_t rssi = WiFi.RSSI();
+    // RSSI to bars conversion:
+    // > -50 dBm = Excellent (3 bars)
+    // -50 to -60 dBm = Good (3 bars)
+    // -60 to -70 dBm = Fair (2 bars)
+    // -70 to -80 dBm = Weak (1 bar)
+    // < -80 dBm = Very weak (0 bars)
+    if (rssi > -60)
+    {
+      wifiStrength = 3;
+    }
+    else if (rssi > -70)
+    {
+      wifiStrength = 2;
+    }
+    else if (rssi > -80)
+    {
+      wifiStrength = 1;
+    }
+    else
+    {
+      wifiStrength = 0;
+    }
+  }
+  drawWifiSymbol(780, 20, wifiStrength);
 
   // Mark that top bar needs update
   topBarNeedsUpdate = true;
@@ -345,4 +365,28 @@ void checkDoorbellTask()
 {
   doorbellStatus = checkDoorbellStatus();
   doorbellOnline = doorbellStatus.online;
+}
+
+// Draw WiFi symbol with signal strength indicator
+void drawWifiSymbol(int x, int y, int strength)
+{
+  // strength: 0=very weak/off, 1=weak, 2=medium, 3=strong
+  uint16_t color = (strength > 0) ? TFT_GREEN : TFT_RED;
+
+  // Draw dot at center
+  topBar.fillCircle(x, y, 2, color);
+
+  // Draw arcs based on strength using drawArc(x, y, r0, r1, angle0, angle1, color)
+  if (strength >= 1)
+  {
+    topBar.drawArc(x, y, 5, 6, 225, 315, color); // Smallest arc
+  }
+  if (strength >= 2)
+  {
+    topBar.drawArc(x, y, 9, 10, 225, 315, color); // Middle arc
+  }
+  if (strength >= 3)
+  {
+    topBar.drawArc(x, y, 13, 14, 225, 315, color); // Largest arc
+  }
 }
