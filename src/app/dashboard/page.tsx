@@ -96,7 +96,7 @@ export default function DashboardPage() {
     let content;
     switch (expandedCard) {
       case 'system-status':
-        content = <SystemStatusCard devicesStatus={devicesStatus} />;
+        content = <SystemStatusCard devicesStatus={devicesStatus} isExpanded={true} />;
         break;
       case 'alerts':
         content = <AlertsCard alerts={alerts} />;
@@ -235,6 +235,9 @@ export default function DashboardPage() {
               className="card-large-main"
               onClick={() => openExpandedCard('system-status')}
             >
+              <button className="card-eye-icon" onClick={(e) => { e.stopPropagation(); openExpandedCard('system-status'); }}>
+                👁️
+              </button>
               <SystemStatusCard devicesStatus={devicesStatus} />
             </div>
 
@@ -243,6 +246,9 @@ export default function DashboardPage() {
               className="card-top-right-1"
               onClick={() => openExpandedCard('alerts')}
             >
+              <button className="card-eye-icon" onClick={(e) => { e.stopPropagation(); openExpandedCard('alerts'); }}>
+                👁️
+              </button>
               <AlertsCard alerts={alerts} />
             </div>
 
@@ -251,6 +257,9 @@ export default function DashboardPage() {
               className="card-top-right-2"
               onClick={() => openExpandedCard('temperature')}
             >
+              <button className="card-eye-icon" onClick={(e) => { e.stopPropagation(); openExpandedCard('temperature'); }}>
+                👁️
+              </button>
               <TemperatureCard temperatureData={temperatureData} />
             </div>
 
@@ -259,6 +268,9 @@ export default function DashboardPage() {
               className="card-row3-1"
               onClick={() => openExpandedCard('gas')}
             >
+              <button className="card-eye-icon" onClick={(e) => { e.stopPropagation(); openExpandedCard('gas'); }}>
+                👁️
+              </button>
               <GasReadingsCard gasReadings={gasReadings} />
             </div>
 
@@ -266,6 +278,9 @@ export default function DashboardPage() {
               className="card-row3-2"
               onClick={() => openExpandedCard('doors')}
             >
+              <button className="card-eye-icon" onClick={(e) => { e.stopPropagation(); openExpandedCard('doors'); }}>
+                👁️
+              </button>
               <DoorsWindowsCard doorsWindows={doorsWindows} />
             </div>
 
@@ -273,6 +288,9 @@ export default function DashboardPage() {
               className="card-row3-3"
               onClick={() => openExpandedCard('doorbell')}
             >
+              <button className="card-eye-icon" onClick={(e) => { e.stopPropagation(); openExpandedCard('doorbell'); }}>
+                👁️
+              </button>
               <DoorbellControlCard doorbellControl={doorbellControl} />
             </div>
 
@@ -280,6 +298,9 @@ export default function DashboardPage() {
               className="card-row3-4"
               onClick={() => openExpandedCard('security')}
             >
+              <button className="card-eye-icon" onClick={(e) => { e.stopPropagation(); openExpandedCard('security'); }}>
+                👁️
+              </button>
               <SecurityCard securityDevices={securityDevices} />
             </div>
           </div>
