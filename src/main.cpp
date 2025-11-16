@@ -9,10 +9,7 @@
 #include <Wire.h>
 #include <Touch.h>
 #include <CapSensor.h>
-#include "TaskScheduler.h"
-#include "DisplayConfig.h"
-#include "TaskFunctions.h"
-#include "wifi_functions.h"
+#include "hub_network.h"
 // ============================================================================
 // Global Objects
 // ============================================================================
@@ -28,13 +25,9 @@ LGFX_Sprite contentArea(&lcd); // Main content area (800x440)
 TouchPosition currentTouch = {0, 0, false, 0};
 volatile bool touchDataReady = false;
 
-// Sprite update flags
-volatile bool topBarNeedsUpdate = false;
-volatile bool contentNeedsUpdate = false;
-
-// ============================================================================
-// Interrupt Handlers
-// ============================================================================
+// Doorbell status
+DeviceStatus doorbellStatus;
+bool doorbellOnline = false;
 
 void IRAM_ATTR touchISR()
 {
@@ -44,13 +37,18 @@ void IRAM_ATTR touchISR()
 // ============================================================================
 // Task Definitions
 // ============================================================================
+void DisplayUpdate();
+void updateTouch();
+void updateCapSensor();
+void sendHeartbeatTask();
+void checkDoorbellTask();
 
 Task taskUpdateTopBar(1000, TASK_FOREVER, &updateTopBar);
 Task taskUpdateContent(TASK_SECOND * 10, TASK_FOREVER, &updateContent);
 Task taskTouchUpdate(20, TASK_FOREVER, &updateTouch);
-Task taskCapSensorUpdate(250, TASK_FOREVER, &updateCapSensor);
-Task taskPushSprites(50, TASK_FOREVER, &pushSpritesToDisplay);
-
+Task taskCapSensorUpdate(100, TASK_FOREVER, &updateCapSensor);
+Task taskSendHeartbeat(60000, TASK_FOREVER, &sendHeartbeatTask);        // Every 60s
+Task taskCheckDoorbell(60000, TASK_FOREVER, &checkDoorbellTask);        // Every 60s
 // ============================================================================
 // Setup and Main Loop
 // ============================================================================
@@ -143,18 +141,32 @@ void setup(void)
       break;
   }
 
+  // Initialize network and heartbeat
+  // TODO: Update WiFi credentials and device tokens
+  initNetwork(
+    "YOUR_WIFI_SSID",                       // WiFi SSID
+    "YOUR_WIFI_PASSWORD",                   // WiFi password
+    "http://embedded-smarthome.fly.dev",   // Backend URL
+    "hub_001",                              // Hub device ID
+    "hub",                                  // Device type
+    "YOUR_HUB_TOKEN_HERE",                 // Hub API token (from registration)
+    "db_001"                                // Doorbell device ID to monitor
+  );
+
   // Setup scheduler tasks
   scheduler.addTask(taskUpdateTopBar);
   scheduler.addTask(taskUpdateContent);
   scheduler.addTask(taskTouchUpdate);
   scheduler.addTask(taskCapSensorUpdate);
-  scheduler.addTask(taskPushSprites);
+  scheduler.addTask(taskSendHeartbeat);
+  scheduler.addTask(taskCheckDoorbell);
 
   taskUpdateTopBar.enable();
   taskUpdateContent.enable();
   taskTouchUpdate.enable();
   taskCapSensorUpdate.enable();
-  taskPushSprites.enable();
+  taskSendHeartbeat.enable();
+  taskCheckDoorbell.enable();
 }
 
 void loop(void)
@@ -166,54 +178,43 @@ void updateTopBar()
 {
   static uint32_t secondCounter = 0;
 
-  // Clear the top bar
-  topBar.fillScreen(TFT_BLACK);
-  topBar.setTextColor(TFT_WHITE, TFT_BLACK);
-  topBar.setTextSize(2);
+  if (num > 3)
+  {
+    num = 1;
+  }
 
-  // Format time as HH:MM:SS
-  uint32_t hours = (secondCounter / 3600) % 24;
-  uint32_t minutes = (secondCounter / 60) % 60;
-  uint32_t seconds = secondCounter % 60;
+  // Display hub info
+  lcd.drawString("ESP32 Hub - Control Center", 50, 50);
 
-  char timeStr[9];
-  sprintf(timeStr, "%02d:%02d:%02d", hours, minutes, seconds);
+  // Display WiFi status
+  if (isWiFiConnected()) {
+    lcd.drawString("WiFi: Connected", 50, 100);
+  } else {
+    lcd.drawString("WiFi: Disconnected", 50, 100);
+  }
 
-  // Center the time (roughly centered for 8-char string with textSize 2)
-  topBar.setCursor(350, 10);
-  topBar.print(timeStr);
+  // Display doorbell status
+  if (doorbellStatus.data_valid) {
+    if (doorbellOnline) {
+      lcd.setTextColor(TFT_GREEN);
+      lcd.drawString("Doorbell: ONLINE", 50, 150);
+    } else {
+      lcd.setTextColor(TFT_RED);
+      lcd.drawString("Doorbell: OFFLINE", 50, 150);
+    }
+    lcd.setTextColor(TFT_WHITE);
 
-  // Mark for update
-  topBarNeedsUpdate = true;
-
-  secondCounter++;
-}
-
-void updateContent()
-{
-  static int colorIndex = 0;
-  uint32_t colors[] = {TFT_BLUE, TFT_GREEN, TFT_RED, TFT_CYAN, TFT_MAGENTA, TFT_YELLOW};
-
-  // Fill content area with rotating colors
-  contentArea.fillScreen(colors[colorIndex]);
-  contentArea.setTextColor(TFT_WHITE, colors[colorIndex]);
-  contentArea.setTextSize(3);
-  contentArea.drawString("LovyanGFX Multi-Sprite!", 50, 10);
-
-  // Show memory info
-  contentArea.setTextSize(2);
-  char psramStr[40];
-  sprintf(psramStr, "Free PSRAM: %d bytes", ESP.getFreePsram());
-  contentArea.drawString(psramStr, 50, 60);
-
-  char heapStr[40];
-  sprintf(heapStr, "Free Heap: %d bytes", ESP.getFreeHeap());
-  contentArea.drawString(heapStr, 50, 90);
-
-  // Mark for update
-  contentNeedsUpdate = true;
-
-  colorIndex = (colorIndex + 1) % 6;
+    // Show additional info if available
+    if (doorbellOnline) {
+      char buffer[50];
+      sprintf(buffer, "RSSI: %d dBm", doorbellStatus.wifi_rssi);
+      lcd.drawString(buffer, 50, 200);
+    }
+  } else {
+    lcd.setTextColor(TFT_YELLOW);
+    lcd.drawString("Doorbell: Checking...", 50, 150);
+    lcd.setTextColor(TFT_WHITE);
+  }
 }
 
 void updateTouch()
@@ -289,4 +290,17 @@ void updateCapSensor()
   //   Serial.println("Button 0 pressed!");
   //   lcd.fillCircle(100, 100, 20, TFT_YELLOW);
   // }
+}
+
+// Task: Send hub's heartbeat to backend
+void sendHeartbeatTask()
+{
+  sendHubHeartbeat();
+}
+
+// Task: Check doorbell online/offline status
+void checkDoorbellTask()
+{
+  doorbellStatus = checkDoorbellStatus();
+  doorbellOnline = doorbellStatus.online;
 }
