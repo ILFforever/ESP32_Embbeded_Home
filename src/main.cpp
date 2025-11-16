@@ -6,83 +6,35 @@
 
 #define LGFX_USE_V1
 #include <LovyanGFX.hpp>
-#include <Panel_RA8875_Fixed.h>
-#include "TaskScheduler.h"
 #include <Wire.h>
 #include <Touch.h>
 #include <CapSensor.h>
+#include "TaskScheduler.h"
+#include "DisplayConfig.h"
+#include "TaskFunctions.h"
+#include "wifi_functions.h"
 // ============================================================================
-// Display Configuration with EastRising Fix
+// Global Objects
 // ============================================================================
-
-lgfx::touch_point_t tp;
-
-class LGFX : public lgfx::LGFX_Device
-{
-  lgfx::Panel_RA8875_Fixed _panel_instance; // Use our fixed version
-  lgfx::Bus_SPI _bus_instance;
-
-public:
-  LGFX(void)
-  {
-    {
-      auto cfg = _bus_instance.config();
-      cfg.spi_host = VSPI_HOST;
-      cfg.freq_write = 40000000;
-      cfg.freq_read = 40000000;
-      cfg.pin_sclk = 18;
-      cfg.pin_mosi = 23;
-      cfg.pin_miso = 19;
-      cfg.spi_3wire = false;
-      _bus_instance.config(cfg);
-      _panel_instance.setBus(&_bus_instance);
-    }
-
-    {
-      auto cfg = _panel_instance.config();
-      cfg.pin_cs = 5;
-      cfg.pin_rst = -1;
-      cfg.pin_busy = -1;
-      cfg.panel_width = 800;
-      cfg.panel_height = 480;
-      cfg.memory_width = 800;
-      cfg.memory_height = 480;
-      cfg.offset_x = 0;
-      cfg.offset_y = 0;
-      cfg.dummy_read_pixel = 16;
-      cfg.dummy_read_bits = 0;
-      cfg.readable = false;
-      _panel_instance.config(cfg);
-    }
-
-    setPanel(&_panel_instance);
-  }
-};
 
 static LGFX lcd;
 Scheduler scheduler;
 
-// Create two sprites for better performance
+// Sprites for better performance
 LGFX_Sprite topBar(&lcd);      // Top status bar (800x40)
-LGFX_Sprite contentArea(&lcd);  // Main content area (800x440)
+LGFX_Sprite contentArea(&lcd); // Main content area (800x440)
 
-// Touch position struct for application use
-struct TouchPosition
-{
-  uint16_t x;
-  uint16_t y;
-  bool isPressed;
-  uint32_t timestamp;
-};
-
+// Touch state
 TouchPosition currentTouch = {0, 0, false, 0};
-
-// Touch interrupt flag
 volatile bool touchDataReady = false;
 
 // Sprite update flags
 volatile bool topBarNeedsUpdate = false;
 volatile bool contentNeedsUpdate = false;
+
+// ============================================================================
+// Interrupt Handlers
+// ============================================================================
 
 void IRAM_ATTR touchISR()
 {
@@ -90,19 +42,15 @@ void IRAM_ATTR touchISR()
 }
 
 // ============================================================================
-// Task Functions
+// Task Definitions
 // ============================================================================
-void updateTopBar();
-void updateContent();
-void updateTouch();
-void updateCapSensor();
-void pushSpritesToDisplay();
 
-Task taskUpdateTopBar(1000, TASK_FOREVER, &updateTopBar);  // Update top bar every 1 second (time display)
-Task taskUpdateContent(TASK_SECOND * 10, TASK_FOREVER, &updateContent);  // Update content every 10 seconds
+Task taskUpdateTopBar(1000, TASK_FOREVER, &updateTopBar);
+Task taskUpdateContent(TASK_SECOND * 10, TASK_FOREVER, &updateContent);
 Task taskTouchUpdate(20, TASK_FOREVER, &updateTouch);
 Task taskCapSensorUpdate(250, TASK_FOREVER, &updateCapSensor);
-Task taskPushSprites(50, TASK_FOREVER, &pushSpritesToDisplay);  // Push sprites at 20 FPS
+Task taskPushSprites(50, TASK_FOREVER, &pushSpritesToDisplay);
+
 // ============================================================================
 // Setup and Main Loop
 // ============================================================================
@@ -125,16 +73,14 @@ void setup(void)
   }
   else
   {
-    Serial.println("WARNING: PSRAM not found! Large sprites may fail.");
+    Serial.println("WARNING: PSRAM not found!");
+    ESP.restart(); // restart since something is definitely wrong
   }
-
+  wifi_init();
   Serial.println("Initializing display...");
   lcd.init();
-  lcd.setRotation(2);
+  lcd.setRotation(2); // 180-degree rotation
   Serial.println("Display ready!\n");
-
-  // Create two sprites in PSRAM for better performance
-  Serial.println("Creating sprites in PSRAM...");
 
   // Top bar sprite (800x40 = 64,000 bytes)
   topBar.setColorDepth(16);
@@ -154,8 +100,8 @@ void setup(void)
     Serial.printf("Free PSRAM after sprites: %d bytes\n", ESP.getFreePsram());
 
     // Initialize top bar
-    topBar.fillScreen(TFT_BLACK);
-    topBar.setTextColor(TFT_WHITE, TFT_BLACK);
+    topBar.fillScreen(TFT_WHITE);
+    topBar.setTextColor(TFT_BLACK, TFT_WHITE);
     topBar.setTextSize(2);
     topBar.setCursor(350, 10);
     topBar.print("12:00:00");
@@ -166,17 +112,18 @@ void setup(void)
     contentArea.setTextColor(TFT_WHITE, TFT_BLUE);
     contentArea.setTextSize(3);
     contentArea.drawString("LovyanGFX Multi-Sprite!", 50, 10);
-    contentArea.pushSprite(0, 40);  // Below top bar
+    contentArea.pushSprite(0, 40); // Below top bar
   }
   else
   {
     Serial.println("ERROR: Failed to create sprites!");
+    ESP.restart();
   }
 
   Serial.println();
 
   // Initialize I2C (shared by touch screen and capacitive sensor)
-  Wire.begin(); // SDA=21, SCL=22 (default ESP32 pins)
+  Wire.begin(); // SDA=21, SCL=22
 
   // Initialize touch screen (uses I2C)
   touchsetup();
@@ -187,7 +134,7 @@ void setup(void)
   Serial.println("Touch interrupt enabled on pin 34");
 
   // Initialize capacitive sensor (uses same I2C bus)
-  // Try a few times
+  // Try a few times sometimes it fails
   for (int i = 0; i < 3; i++)
   {
     if (!capSensorSetup())
@@ -327,7 +274,7 @@ void pushSpritesToDisplay()
   // Push content if updated (larger: 800x440 = 704KB, ~88ms transfer)
   if (contentNeedsUpdate)
   {
-    contentArea.pushSprite(0, 40);  // Position below top bar
+    contentArea.pushSprite(0, 40); // Position below top bar
     contentNeedsUpdate = false;
   }
 }
