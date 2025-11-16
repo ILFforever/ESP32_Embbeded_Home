@@ -1,14 +1,14 @@
 import React, { useState } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
-import { ChevronDown, ChevronUp, Thermometer } from 'lucide-react';
+import { Thermometer } from 'lucide-react';
 import type { TemperatureData } from '@/types/dashboard';
 
 interface TemperatureCardProps {
   temperatureData: TemperatureData[];
+  isExpanded?: boolean;
 }
 
-export function TemperatureCard({ temperatureData }: TemperatureCardProps) {
-  const [expanded, setExpanded] = useState(false);
+export function TemperatureCard({ temperatureData, isExpanded = false }: TemperatureCardProps) {
   const [selectedRoom, setSelectedRoom] = useState<string | null>(null);
 
   // Prepare data for multi-room chart
@@ -33,19 +33,16 @@ export function TemperatureCard({ temperatureData }: TemperatureCardProps) {
   const colors = ['#FF6600', '#00FF88', '#0088FF', '#FF00FF'];
 
   return (
-    <div className={`card ${expanded ? 'card-expanded' : ''}`}>
-      <div className="card-header" onClick={() => setExpanded(!expanded)}>
+    <div className="card">
+      <div className="card-header">
         <div className="card-title-group">
           <Thermometer size={20} />
           <h3>TEMPERATURE</h3>
         </div>
-        <button className="expand-button">
-          {expanded ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
-        </button>
       </div>
 
       <div className="card-content">
-        {!expanded ? (
+        {!isExpanded ? (
           /* Compact view - show current temps */
           <div className="temperature-compact">
             <div className="temp-grid">

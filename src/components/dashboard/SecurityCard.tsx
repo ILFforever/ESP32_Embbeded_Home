@@ -1,13 +1,13 @@
-import React, { useState } from 'react';
-import { ChevronDown, ChevronUp, Shield, Lock, Unlock, Camera, Bell as AlarmIcon, Battery } from 'lucide-react';
+import React from 'react';
+import { Shield, Lock, Unlock, Camera, Bell as AlarmIcon, Battery } from 'lucide-react';
 import type { SecurityDevice } from '@/types/dashboard';
 
 interface SecurityCardProps {
   securityDevices: SecurityDevice[];
+  isExpanded?: boolean;
 }
 
-export function SecurityCard({ securityDevices }: SecurityCardProps) {
-  const [expanded, setExpanded] = useState(false);
+export function SecurityCard({ securityDevices, isExpanded = false }: SecurityCardProps) {
 
   const getDeviceIcon = (device: SecurityDevice) => {
     switch (device.type) {
@@ -45,19 +45,16 @@ export function SecurityCard({ securityDevices }: SecurityCardProps) {
   const allAlarmsArmed = alarms.every(alarm => alarm.status === 'armed');
 
   return (
-    <div className={`card ${expanded ? 'card-expanded' : ''}`}>
-      <div className="card-header" onClick={() => setExpanded(!expanded)}>
+    <div className="card">
+      <div className="card-header">
         <div className="card-title-group">
           <Shield size={20} />
           <h3>SECURITY</h3>
         </div>
-        <button className="expand-button">
-          {expanded ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
-        </button>
       </div>
 
       <div className="card-content">
-        {!expanded ? (
+        {!isExpanded ? (
           /* Compact view */
           <div className="security-compact">
             <div className="security-overview">

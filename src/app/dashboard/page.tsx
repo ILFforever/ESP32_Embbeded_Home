@@ -102,19 +102,19 @@ export default function DashboardPage() {
         content = <AlertsCard alerts={alerts} isExpanded={true} />;
         break;
       case 'temperature':
-        content = <TemperatureCard temperatureData={temperatureData} />;
+        content = <TemperatureCard temperatureData={temperatureData} isExpanded={true} />;
         break;
       case 'gas':
-        content = <GasReadingsCard gasReadings={gasReadings} />;
+        content = <GasReadingsCard gasReadings={gasReadings} isExpanded={true} />;
         break;
       case 'doors':
-        content = <DoorsWindowsCard doorsWindows={doorsWindows} />;
+        content = <DoorsWindowsCard doorsWindows={doorsWindows} isExpanded={true} />;
         break;
       case 'doorbell':
-        content = <DoorbellControlCard doorbellControl={doorbellControl} />;
+        content = <DoorbellControlCard doorbellControl={doorbellControl} isExpanded={true} />;
         break;
       case 'security':
-        content = <SecurityCard securityDevices={securityDevices} />;
+        content = <SecurityCard securityDevices={securityDevices} isExpanded={true} />;
         break;
       default:
         content = null;
