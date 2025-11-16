@@ -2,6 +2,7 @@ const express = require('express');
 const dotenv = require('dotenv');
 const cookieParser = require('cookie-parser');
 const connectDB = require('./config/db');
+const { initializeFirebase } = require('./config/firebase');
 const cors = require('cors');
 
 // Load env vars
@@ -9,6 +10,9 @@ dotenv.config();
 
 // Connect to database
 connectDB();
+
+// Initialize Firebase
+initializeFirebase();
 
 const app = express();
 
@@ -26,9 +30,11 @@ app.use(cookieParser());
 
 // Import route files
 const auth = require('./routes/auth');
+const devices = require('./routes/devices');
 
 // Mount routers
 app.use('/api/v1/auth', auth);
+app.use('/api/v1/devices', devices);
 
 app.get('/info', (req, res) => {
   res.send('Arduino-888-SmartHome is running!');
