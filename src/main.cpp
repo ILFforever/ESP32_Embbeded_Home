@@ -11,6 +11,7 @@
 #include <Wire.h>
 #include <Touch.h>
 #include <CapSensor.h>
+#include "hub_network.h"
 // ============================================================================
 // Display Configuration with EastRising Fix
 // ============================================================================
@@ -76,6 +77,10 @@ TouchPosition currentTouch = {0, 0, false, 0};
 // Touch interrupt flag
 volatile bool touchDataReady = false;
 
+// Doorbell status
+DeviceStatus doorbellStatus;
+bool doorbellOnline = false;
+
 void IRAM_ATTR touchISR()
 {
   touchDataReady = true;
@@ -87,10 +92,14 @@ void IRAM_ATTR touchISR()
 void DisplayUpdate();
 void updateTouch();
 void updateCapSensor();
+void sendHeartbeatTask();
+void checkDoorbellTask();
 
 Task taskDisplayUpdate(TASK_SECOND * 5, TASK_FOREVER, &DisplayUpdate);
 Task taskTouchUpdate(20, TASK_FOREVER, &updateTouch);
 Task taskCapSensorUpdate(100, TASK_FOREVER, &updateCapSensor);
+Task taskSendHeartbeat(60000, TASK_FOREVER, &sendHeartbeatTask);        // Every 60s
+Task taskCheckDoorbell(60000, TASK_FOREVER, &checkDoorbellTask);        // Every 60s
 // ============================================================================
 // Setup and Main Loop
 // ============================================================================
@@ -131,14 +140,30 @@ void setup(void)
       break;
   }
 
+  // Initialize network and heartbeat
+  // TODO: Update WiFi credentials and device tokens
+  initNetwork(
+    "YOUR_WIFI_SSID",                       // WiFi SSID
+    "YOUR_WIFI_PASSWORD",                   // WiFi password
+    "http://embedded-smarthome.fly.dev",   // Backend URL
+    "hub_001",                              // Hub device ID
+    "hub",                                  // Device type
+    "YOUR_HUB_TOKEN_HERE",                 // Hub API token (from registration)
+    "db_001"                                // Doorbell device ID to monitor
+  );
+
   // Setup scheduler tasks
   scheduler.addTask(taskDisplayUpdate);
   scheduler.addTask(taskTouchUpdate);
   scheduler.addTask(taskCapSensorUpdate);
+  scheduler.addTask(taskSendHeartbeat);
+  scheduler.addTask(taskCheckDoorbell);
 
   taskDisplayUpdate.enable();
   taskTouchUpdate.enable();
   taskCapSensorUpdate.enable();
+  taskSendHeartbeat.enable();
+  taskCheckDoorbell.enable();
 }
 
 void loop(void)
@@ -170,7 +195,39 @@ void DisplayUpdate()
   {
     num = 1;
   }
-  lcd.drawString("LovyanGFX Sprite Example", 50, 50);
+
+  // Display hub info
+  lcd.drawString("ESP32 Hub - Control Center", 50, 50);
+
+  // Display WiFi status
+  if (isWiFiConnected()) {
+    lcd.drawString("WiFi: Connected", 50, 100);
+  } else {
+    lcd.drawString("WiFi: Disconnected", 50, 100);
+  }
+
+  // Display doorbell status
+  if (doorbellStatus.data_valid) {
+    if (doorbellOnline) {
+      lcd.setTextColor(TFT_GREEN);
+      lcd.drawString("Doorbell: ONLINE", 50, 150);
+    } else {
+      lcd.setTextColor(TFT_RED);
+      lcd.drawString("Doorbell: OFFLINE", 50, 150);
+    }
+    lcd.setTextColor(TFT_WHITE);
+
+    // Show additional info if available
+    if (doorbellOnline) {
+      char buffer[50];
+      sprintf(buffer, "RSSI: %d dBm", doorbellStatus.wifi_rssi);
+      lcd.drawString(buffer, 50, 200);
+    }
+  } else {
+    lcd.setTextColor(TFT_YELLOW);
+    lcd.drawString("Doorbell: Checking...", 50, 150);
+    lcd.setTextColor(TFT_WHITE);
+  }
 }
 
 void updateTouch()
@@ -237,4 +294,17 @@ void updateCapSensor()
   //   Serial.println("Button 0 pressed!");
   //   lcd.fillCircle(100, 100, 20, TFT_YELLOW);
   // }
+}
+
+// Task: Send hub's heartbeat to backend
+void sendHeartbeatTask()
+{
+  sendHubHeartbeat();
+}
+
+// Task: Check doorbell online/offline status
+void checkDoorbellTask()
+{
+  doorbellStatus = checkDoorbellStatus();
+  doorbellOnline = doorbellStatus.online;
 }
