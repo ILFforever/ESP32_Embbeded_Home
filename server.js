@@ -11,9 +11,6 @@ dotenv.config();
 // Connect to database
 connectDB();
 
-// Initialize Firebase
-initializeFirebase();
-
 const app = express();
 
 app.use(cors({
