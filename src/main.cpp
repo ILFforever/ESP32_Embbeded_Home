@@ -9,7 +9,13 @@
 #include <Wire.h>
 #include <Touch.h>
 #include <CapSensor.h>
+#include "TaskScheduler.h"
+#include "DisplayConfig.h"
 #include "hub_network.h"
+#include "TaskFunctions.h"
+#include "wifi_functions.h"
+#include "WiFi.h"
+
 // ============================================================================
 // Global Objects
 // ============================================================================
@@ -17,7 +23,7 @@
 static LGFX lcd;
 Scheduler scheduler;
 
-// Sprites for better performance
+// Sprites
 LGFX_Sprite topBar(&lcd);      // Top status bar (800x40)
 LGFX_Sprite contentArea(&lcd); // Main content area (800x440)
 
@@ -29,6 +35,10 @@ volatile bool touchDataReady = false;
 DeviceStatus doorbellStatus;
 bool doorbellOnline = false;
 
+// Sprite update tracking
+volatile bool topBarNeedsUpdate = false;
+volatile bool contentNeedsUpdate = false;
+
 void IRAM_ATTR touchISR()
 {
   touchDataReady = true;
@@ -38,8 +48,11 @@ void IRAM_ATTR touchISR()
 // Task Definitions
 // ============================================================================
 void DisplayUpdate();
+void updateTopBar();
+void updateContent();
 void updateTouch();
 void updateCapSensor();
+void pushSpritesToDisplay();
 void sendHeartbeatTask();
 void checkDoorbellTask();
 
@@ -47,6 +60,7 @@ Task taskUpdateTopBar(1000, TASK_FOREVER, &updateTopBar);
 Task taskUpdateContent(TASK_SECOND * 10, TASK_FOREVER, &updateContent);
 Task taskTouchUpdate(20, TASK_FOREVER, &updateTouch);
 Task taskCapSensorUpdate(100, TASK_FOREVER, &updateCapSensor);
+Task taskPushSprites(50, TASK_FOREVER, &pushSpritesToDisplay);          // Every 50ms = 20 FPS max
 Task taskSendHeartbeat(60000, TASK_FOREVER, &sendHeartbeatTask);        // Every 60s
 Task taskCheckDoorbell(60000, TASK_FOREVER, &checkDoorbellTask);        // Every 60s
 // ============================================================================
@@ -144,12 +158,12 @@ void setup(void)
   // Initialize network and heartbeat
   // TODO: Update WiFi credentials and device tokens
   initNetwork(
-    "YOUR_WIFI_SSID",                       // WiFi SSID
-    "YOUR_WIFI_PASSWORD",                   // WiFi password
+    "ILFforever",                       // WiFi SSID
+    "19283746",                   // WiFi password
     "http://embedded-smarthome.fly.dev",   // Backend URL
-    "hub_001",                              // Hub device ID
+    "hb_001",                              // Hub device ID
     "hub",                                  // Device type
-    "YOUR_HUB_TOKEN_HERE",                 // Hub API token (from registration)
+    "f59ac83960ac8d7cd4fdc2915af85ed30ce562b410cfc0217b88b6fd2f7c4739",                 // Hub API token (from registration)
     "db_001"                                // Doorbell device ID to monitor
   );
 
@@ -158,6 +172,7 @@ void setup(void)
   scheduler.addTask(taskUpdateContent);
   scheduler.addTask(taskTouchUpdate);
   scheduler.addTask(taskCapSensorUpdate);
+  scheduler.addTask(taskPushSprites);
   scheduler.addTask(taskSendHeartbeat);
   scheduler.addTask(taskCheckDoorbell);
 
@@ -165,6 +180,7 @@ void setup(void)
   taskUpdateContent.enable();
   taskTouchUpdate.enable();
   taskCapSensorUpdate.enable();
+  taskPushSprites.enable();
   taskSendHeartbeat.enable();
   taskCheckDoorbell.enable();
 }
@@ -178,43 +194,68 @@ void updateTopBar()
 {
   static uint32_t secondCounter = 0;
 
-  if (num > 3)
-  {
-    num = 1;
-  }
+  // Clear top bar
+  topBar.fillScreen(TFT_WHITE);
+  topBar.setTextColor(TFT_BLACK, TFT_WHITE);
+  topBar.setTextSize(2);
 
   // Display hub info
-  lcd.drawString("ESP32 Hub - Control Center", 50, 50);
+  topBar.drawString("ESP32 Hub - Control Center", 50, 10);
 
   // Display WiFi status
-  if (isWiFiConnected()) {
-    lcd.drawString("WiFi: Connected", 50, 100);
+  char buffer[50];
+  if (WiFi.status() == WL_CONNECTED) {
+    topBar.drawString("WiFi: Connected", 300, 10);
   } else {
-    lcd.drawString("WiFi: Disconnected", 50, 100);
+    topBar.drawString("WiFi: Disconnected", 300, 10);
   }
 
-  // Display doorbell status
+  // Display doorbell status - show brief status in top bar
   if (doorbellStatus.data_valid) {
     if (doorbellOnline) {
-      lcd.setTextColor(TFT_GREEN);
-      lcd.drawString("Doorbell: ONLINE", 50, 150);
+      topBar.setTextColor(TFT_GREEN, TFT_WHITE);
+      topBar.drawString("DB: ON", 600, 10);
+      topBar.setTextColor(TFT_BLACK, TFT_WHITE);
     } else {
-      lcd.setTextColor(TFT_RED);
-      lcd.drawString("Doorbell: OFFLINE", 50, 150);
-    }
-    lcd.setTextColor(TFT_WHITE);
-
-    // Show additional info if available
-    if (doorbellOnline) {
-      char buffer[50];
-      sprintf(buffer, "RSSI: %d dBm", doorbellStatus.wifi_rssi);
-      lcd.drawString(buffer, 50, 200);
+      topBar.setTextColor(TFT_RED, TFT_WHITE);
+      topBar.drawString("DB: OFF", 600, 10);
+      topBar.setTextColor(TFT_BLACK, TFT_WHITE);
     }
   } else {
-    lcd.setTextColor(TFT_YELLOW);
-    lcd.drawString("Doorbell: Checking...", 50, 150);
-    lcd.setTextColor(TFT_WHITE);
+    topBar.setTextColor(TFT_YELLOW, TFT_WHITE);
+    topBar.drawString("DB: ...", 600, 10);
+    topBar.setTextColor(TFT_BLACK, TFT_WHITE);
   }
+
+  // Mark that top bar needs update
+  topBarNeedsUpdate = true;
+}
+
+void updateContent()
+{
+  // Update content area periodically
+  contentArea.fillScreen(TFT_BLUE);
+  contentArea.setTextColor(TFT_WHITE, TFT_BLUE);
+  contentArea.setTextSize(3);
+  contentArea.drawString("LovyanGFX Multi-Sprite!", 50, 10);
+
+  // Display system info
+  contentArea.setTextSize(2);
+  char buffer[100];
+  sprintf(buffer, "Free Heap: %d bytes", ESP.getFreeHeap());
+  contentArea.drawString(buffer, 50, 100);
+
+  sprintf(buffer, "Free PSRAM: %d bytes", ESP.getFreePsram());
+  contentArea.drawString(buffer, 50, 130);
+
+  // Display detailed doorbell info
+  if (doorbellStatus.data_valid && doorbellOnline) {
+    sprintf(buffer, "Doorbell RSSI: %d dBm", doorbellStatus.wifi_rssi);
+    contentArea.drawString(buffer, 50, 160);
+  }
+
+  // Mark that content needs update
+  contentNeedsUpdate = true;
 }
 
 void updateTouch()
@@ -262,6 +303,18 @@ void updateTouch()
   }
 }
 
+void updateCapSensor()
+{
+  capSensorUpdate();
+
+  // Example: Check specific pads
+  // if (isPadPressed(0))
+  // {
+  //   Serial.println("Button 0 pressed!");
+  //   lcd.fillCircle(100, 100, 20, TFT_YELLOW);
+  // }
+}
+
 // Push sprites to display at controlled rate (50ms = 20 FPS max)
 void pushSpritesToDisplay()
 {
@@ -278,18 +331,6 @@ void pushSpritesToDisplay()
     contentArea.pushSprite(0, 40); // Position below top bar
     contentNeedsUpdate = false;
   }
-}
-
-void updateCapSensor()
-{
-  capSensorUpdate();
-
-  // Example: Check specific pads
-  // if (isPadPressed(0))
-  // {
-  //   Serial.println("Button 0 pressed!");
-  //   lcd.fillCircle(100, 100, 20, TFT_YELLOW);
-  // }
 }
 
 // Task: Send hub's heartbeat to backend
