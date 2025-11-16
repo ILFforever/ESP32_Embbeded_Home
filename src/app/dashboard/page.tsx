@@ -27,7 +27,7 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [theme, setTheme] = useState<'purple' | 'green'>('purple');
   const [expandedCard, setExpandedCard] = useState<string | null>(null);
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -99,7 +99,7 @@ export default function DashboardPage() {
         content = <SystemStatusCard devicesStatus={devicesStatus} isExpanded={true} />;
         break;
       case 'alerts':
-        content = <AlertsCard alerts={alerts} />;
+        content = <AlertsCard alerts={alerts} isExpanded={true} />;
         break;
       case 'temperature':
         content = <TemperatureCard temperatureData={temperatureData} />;
@@ -236,7 +236,10 @@ export default function DashboardPage() {
               onClick={() => openExpandedCard('system-status')}
             >
               <button className="card-eye-icon" onClick={(e) => { e.stopPropagation(); openExpandedCard('system-status'); }}>
-                👁️
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                  <circle cx="12" cy="12" r="3"></circle>
+                </svg>
               </button>
               <SystemStatusCard devicesStatus={devicesStatus} />
             </div>
@@ -247,7 +250,10 @@ export default function DashboardPage() {
               onClick={() => openExpandedCard('alerts')}
             >
               <button className="card-eye-icon" onClick={(e) => { e.stopPropagation(); openExpandedCard('alerts'); }}>
-                👁️
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                  <circle cx="12" cy="12" r="3"></circle>
+                </svg>
               </button>
               <AlertsCard alerts={alerts} />
             </div>
@@ -258,7 +264,10 @@ export default function DashboardPage() {
               onClick={() => openExpandedCard('temperature')}
             >
               <button className="card-eye-icon" onClick={(e) => { e.stopPropagation(); openExpandedCard('temperature'); }}>
-                👁️
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                  <circle cx="12" cy="12" r="3"></circle>
+                </svg>
               </button>
               <TemperatureCard temperatureData={temperatureData} />
             </div>
@@ -269,7 +278,10 @@ export default function DashboardPage() {
               onClick={() => openExpandedCard('gas')}
             >
               <button className="card-eye-icon" onClick={(e) => { e.stopPropagation(); openExpandedCard('gas'); }}>
-                👁️
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                  <circle cx="12" cy="12" r="3"></circle>
+                </svg>
               </button>
               <GasReadingsCard gasReadings={gasReadings} />
             </div>
@@ -279,7 +291,10 @@ export default function DashboardPage() {
               onClick={() => openExpandedCard('doors')}
             >
               <button className="card-eye-icon" onClick={(e) => { e.stopPropagation(); openExpandedCard('doors'); }}>
-                👁️
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                  <circle cx="12" cy="12" r="3"></circle>
+                </svg>
               </button>
               <DoorsWindowsCard doorsWindows={doorsWindows} />
             </div>
@@ -289,7 +304,10 @@ export default function DashboardPage() {
               onClick={() => openExpandedCard('doorbell')}
             >
               <button className="card-eye-icon" onClick={(e) => { e.stopPropagation(); openExpandedCard('doorbell'); }}>
-                👁️
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                  <circle cx="12" cy="12" r="3"></circle>
+                </svg>
               </button>
               <DoorbellControlCard doorbellControl={doorbellControl} />
             </div>
@@ -299,7 +317,10 @@ export default function DashboardPage() {
               onClick={() => openExpandedCard('security')}
             >
               <button className="card-eye-icon" onClick={(e) => { e.stopPropagation(); openExpandedCard('security'); }}>
-                👁️
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                  <circle cx="12" cy="12" r="3"></circle>
+                </svg>
               </button>
               <SecurityCard securityDevices={securityDevices} />
             </div>

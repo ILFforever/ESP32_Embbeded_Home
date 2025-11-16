@@ -1,14 +1,13 @@
-import React, { useState } from 'react';
-import { AlertTriangle, Info, XCircle, ChevronDown, ChevronUp } from 'lucide-react';
+import React from 'react';
+import { AlertTriangle, Info, XCircle } from 'lucide-react';
 import type { Alert } from '@/types/dashboard';
 
 interface AlertsCardProps {
   alerts: Alert[];
+  isExpanded?: boolean;
 }
 
-export function AlertsCard({ alerts }: AlertsCardProps) {
-  const [expanded, setExpanded] = useState(false);
-
+export function AlertsCard({ alerts, isExpanded = false }: AlertsCardProps) {
   const getAlertIcon = (type: string) => {
     switch (type) {
       case 'critical':
@@ -27,21 +26,18 @@ export function AlertsCard({ alerts }: AlertsCardProps) {
   const criticalCount = alerts.filter(a => a.type === 'critical' && !a.acknowledged).length;
 
   return (
-    <div className={`card ${expanded ? 'card-expanded' : ''}`}>
-      <div className="card-header" onClick={() => setExpanded(!expanded)}>
+    <div className="card">
+      <div className="card-header">
         <div className="card-title-group">
           <h3>ALERTS</h3>
           {criticalCount > 0 && (
             <span className="badge badge-critical">{criticalCount} CRITICAL</span>
           )}
         </div>
-        <button className="expand-button">
-          {expanded ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
-        </button>
       </div>
 
       <div className="card-content">
-        {!expanded ? (
+        {!isExpanded ? (
           <div className="alerts-compact">
             {unacknowledgedAlerts.length === 0 ? (
               <p className="no-alerts">NO ACTIVE ALERTS</p>
