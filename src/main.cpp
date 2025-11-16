@@ -7,6 +7,7 @@
 #define LGFX_USE_V1
 #include <LovyanGFX.hpp>
 #include <Wire.h>
+#include <WiFi.h>
 #include <Touch.h>
 #include <CapSensor.h>
 #include "TaskScheduler.h"
