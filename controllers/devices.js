@@ -1,9 +1,15 @@
 const { getFirestore, admin } = require('../config/firebase');
+const crypto = require('crypto');
 
 // ============================================================================
 // In-Memory Cache for Throttling (reduces Firebase writes by 95%)
 // ============================================================================
 const deviceCache = new Map(); // { device_id: { lastWrite, lastData, ... } }
+
+// Helper: Generate secure random token
+function generateDeviceToken() {
+  return crypto.randomBytes(32).toString('hex');
+}
 
 // Thresholds
 const WRITE_INTERVAL_MS = 5 * 60 * 1000; // Write every 5 minutes
@@ -61,6 +67,68 @@ function updateCache(deviceId, data, dataType) {
     dataType
   });
 }
+
+// ============================================================================
+// @route   POST /api/v1/devices/register
+// @desc    Register a new device and generate API token
+// ============================================================================
+const registerDevice = async (req, res) => {
+  try {
+    const { device_id, device_type, name } = req.body;
+
+    // Validation
+    if (!device_id || !device_type) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'device_id and device_type are required'
+      });
+    }
+
+    const db = getFirestore();
+    const deviceRef = db.collection('devices').doc(device_id);
+
+    // Check if device already exists
+    const existingDevice = await deviceRef.get();
+    if (existingDevice.exists) {
+      return res.status(409).json({
+        status: 'error',
+        message: 'Device already registered. Use a different device_id or delete existing device first.'
+      });
+    }
+
+    // Generate secure token
+    const apiToken = generateDeviceToken();
+
+    // Create device in Firestore
+    await deviceRef.set({
+      type: device_type,
+      name: name || device_id,
+      api_token: apiToken,
+      created_at: admin.firestore.FieldValue.serverTimestamp(),
+      disabled: false
+    });
+
+    // Initialize status subcollection
+    await deviceRef.collection('status').doc('current').set({
+      online: false,
+      last_heartbeat: null
+    });
+
+    console.log(`[Register] New device registered: ${device_id} (${device_type})`);
+
+    res.status(201).json({
+      status: 'ok',
+      message: 'Device registered successfully',
+      device_id,
+      api_token: apiToken,
+      warning: 'Save this token securely! It will not be shown again.'
+    });
+
+  } catch (error) {
+    console.error('[Register] Error:', error);
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+};
 
 // ============================================================================
 // @route   POST /api/v1/devices/heartbeat
@@ -265,6 +333,7 @@ const getDeviceHistory = async (req, res) => {
 };
 
 module.exports = {
+  registerDevice,
   handleHeartbeat,
   getDeviceStatus,
   handleSensorData,
