@@ -1,11 +1,15 @@
 import React from 'react';
+import { useRouter } from 'next/navigation';
 import type { DevicesStatus } from '@/types/dashboard';
 
 interface SystemStatusCardProps {
   devicesStatus: DevicesStatus | null;
+  isExpanded?: boolean;
 }
 
-export function SystemStatusCard({ devicesStatus }: SystemStatusCardProps) {
+export function SystemStatusCard({ devicesStatus, isExpanded = false }: SystemStatusCardProps) {
+  const router = useRouter();
+
   const getDeviceStatusClass = (lastSeen: string | null | undefined) => {
     if (!lastSeen) return 'status-offline';
 
@@ -30,6 +34,16 @@ export function SystemStatusCard({ devicesStatus }: SystemStatusCardProps) {
     return 'OFFLINE';
   };
 
+  const handleDoorbellClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    router.push('/doorbell');
+  };
+
+  const handleHubClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    router.push('/hub');
+  };
+
   return (
     <div className="card card-large">
       <div className="card-header">
@@ -38,7 +52,11 @@ export function SystemStatusCard({ devicesStatus }: SystemStatusCardProps) {
       <div className="card-content">
         <div className="system-status-grid">
           {/* Doorbell Status */}
-          <div className="device-status-item">
+          <div
+            className="device-status-item device-clickable"
+            onClick={handleDoorbellClick}
+            style={{ cursor: 'pointer' }}
+          >
             <div className="device-status-header">
               <h3>DOORBELL</h3>
               <span className={`status-indicator ${getDeviceStatusClass(devicesStatus?.doorbell?.last_seen)}`}>
@@ -49,12 +67,24 @@ export function SystemStatusCard({ devicesStatus }: SystemStatusCardProps) {
               <div className="device-info">
                 <p>Last Heartbeat: {new Date(devicesStatus.doorbell.last_seen).toLocaleString()}</p>
                 <p>Device ID: {devicesStatus.doorbell.device_id || 'doorbell_001'}</p>
+                {isExpanded && (
+                  <>
+                    <p>IP Address: 192.168.1.100</p>
+                    <p>Firmware: v2.4.1</p>
+                    <p>WiFi Signal: -45 dBm</p>
+                  </>
+                )}
               </div>
             )}
+            <p className="device-hint">Click to configure →</p>
           </div>
 
           {/* Hub Status */}
-          <div className="device-status-item">
+          <div
+            className="device-status-item device-clickable"
+            onClick={handleHubClick}
+            style={{ cursor: 'pointer' }}
+          >
             <div className="device-status-header">
               <h3>HUB</h3>
               <span className={`status-indicator ${getDeviceStatusClass(devicesStatus?.hub?.last_seen)}`}>
@@ -64,9 +94,17 @@ export function SystemStatusCard({ devicesStatus }: SystemStatusCardProps) {
             {devicesStatus?.hub?.last_seen && (
               <div className="device-info">
                 <p>Last Heartbeat: {new Date(devicesStatus.hub.last_seen).toLocaleString()}</p>
-                <p>Device ID: {devicesStatus.hub.device_id || 'hub_001'}</p>
+                <p>Device ID: {devicesStatus?.hub.device_id || 'hub_001'}</p>
+                {isExpanded && (
+                  <>
+                    <p>IP Address: 192.168.1.50</p>
+                    <p>Firmware: v3.2.0</p>
+                    <p>Connected Devices: 12</p>
+                  </>
+                )}
               </div>
             )}
+            <p className="device-hint">Click to configure →</p>
           </div>
 
           {/* System Overview */}
@@ -96,6 +134,22 @@ export function SystemStatusCard({ devicesStatus }: SystemStatusCardProps) {
                   {devicesStatus ? new Date().toLocaleTimeString() : 'N/A'}
                 </span>
               </div>
+              {isExpanded && (
+                <>
+                  <div className="health-metric">
+                    <span className="metric-label">AVG RESPONSE TIME:</span>
+                    <span className="metric-value">42ms</span>
+                  </div>
+                  <div className="health-metric">
+                    <span className="metric-label">DATA USAGE TODAY:</span>
+                    <span className="metric-value">2.4 GB</span>
+                  </div>
+                  <div className="health-metric">
+                    <span className="metric-label">ALERTS THIS WEEK:</span>
+                    <span className="metric-value">15</span>
+                  </div>
+                </>
+              )}
             </div>
           </div>
         </div>
