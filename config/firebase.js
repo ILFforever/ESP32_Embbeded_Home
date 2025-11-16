@@ -3,6 +3,13 @@ const admin = require('firebase-admin');
 // Initialize Firebase Admin
 const initializeFirebase = () => {
   try {
+    // Check if Firebase is already initialized
+    if (admin.apps.length > 0) {
+      console.log('Firebase Admin already initialized, reusing existing app');
+      return admin.app();
+    }
+
+    // Initialize Firebase
     if (process.env.FIREBASE_PROJECT_ID) {
       admin.initializeApp({
         credential: admin.credential.cert({
@@ -20,6 +27,7 @@ const initializeFirebase = () => {
     }
 
     console.log('Firebase Admin initialized successfully');
+    return admin.app();
   } catch (error) {
     console.error('Error initializing Firebase:', error.message);
     throw error;
