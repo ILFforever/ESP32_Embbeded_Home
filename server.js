@@ -3,6 +3,7 @@ const dotenv = require('dotenv');
 const cookieParser = require('cookie-parser');
 const connectDB = require('./config/db');
 const { initializeFirebase } = require('./config/firebase');
+const enforceHttpsExceptIoT = require('./middleware/httpsEnforcement');
 const cors = require('cors');
 
 // Load env vars
@@ -18,6 +19,8 @@ app.use(cors({
   credentials: true,
 }));
 
+// Enforce HTTPS for all routes except IoT device endpoints
+app.use(enforceHttpsExceptIoT);
 
 // Body parser
 app.use(express.json());
