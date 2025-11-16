@@ -6,75 +6,23 @@
 
 #define LGFX_USE_V1
 #include <LovyanGFX.hpp>
-#include <Panel_RA8875_Fixed.h>
-#include "TaskScheduler.h"
 #include <Wire.h>
 #include <Touch.h>
 #include <CapSensor.h>
 #include "hub_network.h"
 // ============================================================================
-// Display Configuration with EastRising Fix
+// Global Objects
 // ============================================================================
-
-lgfx::touch_point_t tp;
-
-class LGFX : public lgfx::LGFX_Device
-{
-  lgfx::Panel_RA8875_Fixed _panel_instance; // Use our fixed version
-  lgfx::Bus_SPI _bus_instance;
-
-public:
-  LGFX(void)
-  {
-    {
-      auto cfg = _bus_instance.config();
-      cfg.spi_host = VSPI_HOST;
-      cfg.freq_write = 4000000;
-      cfg.freq_read = 4000000;
-      cfg.pin_sclk = 18;
-      cfg.pin_mosi = 23;
-      cfg.pin_miso = 19;
-      cfg.spi_3wire = false;
-      _bus_instance.config(cfg);
-      _panel_instance.setBus(&_bus_instance);
-    }
-
-    {
-      auto cfg = _panel_instance.config();
-      cfg.pin_cs = 5;
-      cfg.pin_rst = 16;
-      cfg.pin_busy = -1;
-      cfg.panel_width = 800;
-      cfg.panel_height = 480;
-      cfg.memory_width = 800;
-      cfg.memory_height = 480;
-      cfg.offset_x = 0;
-      cfg.offset_y = 0;
-      cfg.dummy_read_pixel = 16;
-      cfg.dummy_read_bits = 0;
-      cfg.readable = false;
-      _panel_instance.config(cfg);
-    }
-
-    setPanel(&_panel_instance);
-  }
-};
 
 static LGFX lcd;
 Scheduler scheduler;
 
-// Touch position struct for application use
-struct TouchPosition
-{
-  uint16_t x;
-  uint16_t y;
-  bool isPressed;
-  uint32_t timestamp;
-};
+// Sprites for better performance
+LGFX_Sprite topBar(&lcd);      // Top status bar (800x40)
+LGFX_Sprite contentArea(&lcd); // Main content area (800x440)
 
+// Touch state
 TouchPosition currentTouch = {0, 0, false, 0};
-
-// Touch interrupt flag
 volatile bool touchDataReady = false;
 
 // Doorbell status
@@ -87,7 +35,7 @@ void IRAM_ATTR touchISR()
 }
 
 // ============================================================================
-// Task Functions
+// Task Definitions
 // ============================================================================
 void DisplayUpdate();
 void updateTouch();
@@ -95,7 +43,8 @@ void updateCapSensor();
 void sendHeartbeatTask();
 void checkDoorbellTask();
 
-Task taskDisplayUpdate(TASK_SECOND * 5, TASK_FOREVER, &DisplayUpdate);
+Task taskUpdateTopBar(1000, TASK_FOREVER, &updateTopBar);
+Task taskUpdateContent(TASK_SECOND * 10, TASK_FOREVER, &updateContent);
 Task taskTouchUpdate(20, TASK_FOREVER, &updateTouch);
 Task taskCapSensorUpdate(100, TASK_FOREVER, &updateCapSensor);
 Task taskSendHeartbeat(60000, TASK_FOREVER, &sendHeartbeatTask);        // Every 60s
@@ -114,13 +63,65 @@ void setup(void)
   Serial.println("║  for RA8875 800x480 Display           ║");
   Serial.println("╚════════════════════════════════════════╝\n");
 
+  // Check PSRAM availability
+  if (psramFound())
+  {
+    Serial.printf("PSRAM found! Total: %d bytes, Free: %d bytes\n",
+                  ESP.getPsramSize(), ESP.getFreePsram());
+  }
+  else
+  {
+    Serial.println("WARNING: PSRAM not found!");
+    ESP.restart(); // restart since something is definitely wrong
+  }
+  wifi_init();
   Serial.println("Initializing display...");
   lcd.init();
-  lcd.setRotation(2);
+  lcd.setRotation(2); // 180-degree rotation
   Serial.println("Display ready!\n");
 
+  // Top bar sprite (800x40 = 64,000 bytes)
+  topBar.setColorDepth(16);
+  topBar.setPsram(true);
+  bool topBarCreated = topBar.createSprite(800, 40);
+
+  // Content area sprite (800x440 = 704,000 bytes)
+  contentArea.setColorDepth(16);
+  contentArea.setPsram(true);
+  bool contentCreated = contentArea.createSprite(800, 440);
+
+  if (topBarCreated && contentCreated)
+  {
+    Serial.printf("Sprites created successfully!\n");
+    Serial.printf("  Top bar: 800x40 (%d bytes)\n", 800 * 40 * 2);
+    Serial.printf("  Content: 800x440 (%d bytes)\n", 800 * 440 * 2);
+    Serial.printf("Free PSRAM after sprites: %d bytes\n", ESP.getFreePsram());
+
+    // Initialize top bar
+    topBar.fillScreen(TFT_WHITE);
+    topBar.setTextColor(TFT_BLACK, TFT_WHITE);
+    topBar.setTextSize(2);
+    topBar.setCursor(350, 10);
+    topBar.print("12:00:00");
+    topBar.pushSprite(0, 0);
+
+    // Initialize content area
+    contentArea.fillScreen(TFT_BLUE);
+    contentArea.setTextColor(TFT_WHITE, TFT_BLUE);
+    contentArea.setTextSize(3);
+    contentArea.drawString("LovyanGFX Multi-Sprite!", 50, 10);
+    contentArea.pushSprite(0, 40); // Below top bar
+  }
+  else
+  {
+    Serial.println("ERROR: Failed to create sprites!");
+    ESP.restart();
+  }
+
+  Serial.println();
+
   // Initialize I2C (shared by touch screen and capacitive sensor)
-  Wire.begin(); // SDA=21, SCL=22 (default ESP32 pins)
+  Wire.begin(); // SDA=21, SCL=22
 
   // Initialize touch screen (uses I2C)
   touchsetup();
@@ -131,7 +132,7 @@ void setup(void)
   Serial.println("Touch interrupt enabled on pin 34");
 
   // Initialize capacitive sensor (uses same I2C bus)
-  // Try a few times
+  // Try a few times sometimes it fails
   for (int i = 0; i < 3; i++)
   {
     if (!capSensorSetup())
@@ -153,13 +154,15 @@ void setup(void)
   );
 
   // Setup scheduler tasks
-  scheduler.addTask(taskDisplayUpdate);
+  scheduler.addTask(taskUpdateTopBar);
+  scheduler.addTask(taskUpdateContent);
   scheduler.addTask(taskTouchUpdate);
   scheduler.addTask(taskCapSensorUpdate);
   scheduler.addTask(taskSendHeartbeat);
   scheduler.addTask(taskCheckDoorbell);
 
-  taskDisplayUpdate.enable();
+  taskUpdateTopBar.enable();
+  taskUpdateContent.enable();
   taskTouchUpdate.enable();
   taskCapSensorUpdate.enable();
   taskSendHeartbeat.enable();
@@ -171,25 +174,9 @@ void loop(void)
   scheduler.execute();
 }
 
-// This function renders the display and handles touch
-void DisplayUpdate()
+void updateTopBar()
 {
-  static int num = 1;
-  switch (num)
-  {
-  case 1:
-    lcd.fillScreen(TFT_GREEN);
-    num++;
-    break;
-  case 2:
-    lcd.fillScreen(TFT_RED);
-    num++;
-    break;
-  case 3:
-    lcd.fillScreen(TFT_BLUE);
-    num++;
-    break;
-  }
+  static uint32_t secondCounter = 0;
 
   if (num > 3)
   {
@@ -252,35 +239,44 @@ void updateTouch()
     currentTouch.isPressed = false;
   }
 
-  if (ts_event.fingers == 1)
+  // Draw touch points DIRECTLY to LCD for immediate, responsive feedback
+  if (ts_event.fingers >= 1)
   {
     lcd.fillCircle(ts_event.x1 & 0x0FFF, ts_event.y1 & 0x0FFF, 5, TFT_RED);
   }
-  if (ts_event.fingers == 2)
+  if (ts_event.fingers >= 2)
   {
-    lcd.fillCircle(ts_event.x1 & 0x0FFF, ts_event.y1 & 0x0FFF, 5, TFT_RED);
     lcd.fillCircle(ts_event.x2 & 0x0FFF, ts_event.y2 & 0x0FFF, 5, TFT_GREEN);
   }
-  if (ts_event.fingers == 3)
+  if (ts_event.fingers >= 3)
   {
-    lcd.fillCircle(ts_event.x1 & 0x0FFF, ts_event.y1 & 0x0FFF, 5, TFT_RED);
-    lcd.fillCircle(ts_event.x2 & 0x0FFF, ts_event.y2 & 0x0FFF, 5, TFT_GREEN);
     lcd.fillCircle(ts_event.x3 & 0x0FFF, ts_event.y3 & 0x0FFF, 5, TFT_BLUE);
   }
-  if (ts_event.fingers == 4)
+  if (ts_event.fingers >= 4)
   {
-    lcd.fillCircle(ts_event.x1 & 0x0FFF, ts_event.y1 & 0x0FFF, 5, TFT_RED);
-    lcd.fillCircle(ts_event.x2 & 0x0FFF, ts_event.y2 & 0x0FFF, 5, TFT_GREEN);
-    lcd.fillCircle(ts_event.x3 & 0x0FFF, ts_event.y3 & 0x0FFF, 5, TFT_BLUE);
     lcd.fillCircle(ts_event.x4 & 0x0FFF, ts_event.y4 & 0x0FFF, 5, TFT_CYAN);
   }
-  if (ts_event.fingers == 5)
+  if (ts_event.fingers >= 5)
   {
-    lcd.fillCircle(ts_event.x1 & 0x0FFF, ts_event.y1 & 0x0FFF, 5, TFT_RED);
-    lcd.fillCircle(ts_event.x2 & 0x0FFF, ts_event.y2 & 0x0FFF, 5, TFT_GREEN);
-    lcd.fillCircle(ts_event.x3 & 0x0FFF, ts_event.y3 & 0x0FFF, 5, TFT_BLUE);
-    lcd.fillCircle(ts_event.x4 & 0x0FFF, ts_event.y4 & 0x0FFF, 5, TFT_CYAN);
     lcd.fillCircle(ts_event.x5 & 0x0FFF, ts_event.y5 & 0x0FFF, 5, TFT_MAGENTA);
+  }
+}
+
+// Push sprites to display at controlled rate (50ms = 20 FPS max)
+void pushSpritesToDisplay()
+{
+  // Push top bar if updated (small: 800x40 = 64KB, ~8ms transfer)
+  if (topBarNeedsUpdate)
+  {
+    topBar.pushSprite(0, 0);
+    topBarNeedsUpdate = false;
+  }
+
+  // Push content if updated (larger: 800x440 = 704KB, ~88ms transfer)
+  if (contentNeedsUpdate)
+  {
+    contentArea.pushSprite(0, 40); // Position below top bar
+    contentNeedsUpdate = false;
   }
 }
 
