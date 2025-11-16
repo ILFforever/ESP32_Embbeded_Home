@@ -1,0 +1,640 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ESP32 Hub GUI - Card Style Mockups</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            background: #1a1a1a;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+            color: #fff;
+        }
+        
+        .mockup-container {
+            margin: 20px auto;
+            max-width: 1200px;
+        }
+        
+        h1 {
+            text-align: center;
+            margin-bottom: 10px;
+            color: #4CAF50;
+        }
+        
+        .screen-info {
+            text-align: center;
+            color: #888;
+            margin-bottom: 30px;
+        }
+        
+        .screen {
+            width: 800px;
+            height: 480px;
+            background: linear-gradient(135deg, #1e1e1e 0%, #2d2d2d 100%);
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+            margin: 30px auto;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .layout-label {
+            text-align: center;
+            color: #4CAF50;
+            font-size: 18px;
+            font-weight: bold;
+            margin: 20px 0 10px 0;
+        }
+        
+        .layout-description {
+            text-align: center;
+            color: #aaa;
+            font-size: 14px;
+            margin-bottom: 20px;
+            max-width: 800px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+        
+        /* Status Bar */
+        .status-bar {
+            height: 40px;
+            background: rgba(0,0,0,0.3);
+            border-radius: 6px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0 15px;
+            margin-bottom: 15px;
+        }
+        
+        .status-left, .status-right {
+            display: flex;
+            gap: 15px;
+            align-items: center;
+            font-size: 14px;
+        }
+        
+        .status-icon {
+            width: 20px;
+            height: 20px;
+            background: #4CAF50;
+            border-radius: 50%;
+            display: inline-block;
+        }
+        
+        .wifi-icon::before {
+            content: "📶";
+            font-size: 16px;
+        }
+        
+        .time {
+            font-weight: bold;
+            color: #4CAF50;
+        }
+        
+        /* Cards Grid Layouts */
+        .cards-grid {
+            display: grid;
+            gap: 15px;
+            height: calc(100% - 55px);
+        }
+        
+        .grid-2x2 {
+            grid-template-columns: repeat(2, 1fr);
+            grid-template-rows: repeat(2, 1fr);
+        }
+        
+        .grid-3-cols {
+            grid-template-columns: repeat(3, 1fr);
+            grid-template-rows: repeat(2, 1fr);
+        }
+        
+        .grid-main-sidebar {
+            grid-template-columns: 2fr 1fr;
+            grid-template-rows: repeat(2, 1fr);
+        }
+        
+        /* Card Styles */
+        .card {
+            background: linear-gradient(135deg, rgba(76, 175, 80, 0.1) 0%, rgba(33, 150, 243, 0.1) 100%);
+            border: 2px solid rgba(76, 175, 80, 0.3);
+            border-radius: 12px;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            transition: all 0.3s ease;
+            cursor: pointer;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 4px;
+            background: linear-gradient(90deg, #4CAF50, #2196F3);
+        }
+        
+        .card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(76, 175, 80, 0.3);
+            border-color: rgba(76, 175, 80, 0.6);
+        }
+        
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        
+        .card-title {
+            font-size: 18px;
+            font-weight: bold;
+            color: #fff;
+        }
+        
+        .card-icon {
+            font-size: 32px;
+            opacity: 0.8;
+        }
+        
+        .card-value {
+            font-size: 36px;
+            font-weight: bold;
+            color: #4CAF50;
+            margin: 10px 0;
+        }
+        
+        .card-subtitle {
+            font-size: 14px;
+            color: #888;
+        }
+        
+        .card-status {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: bold;
+        }
+        
+        .status-online {
+            background: rgba(76, 175, 80, 0.2);
+            color: #4CAF50;
+        }
+        
+        .status-warning {
+            background: rgba(255, 152, 0, 0.2);
+            color: #FF9800;
+        }
+        
+        .status-offline {
+            background: rgba(244, 67, 54, 0.2);
+            color: #F44336;
+        }
+        
+        /* Special Card Variants */
+        .card-camera {
+            background: linear-gradient(135deg, rgba(33, 150, 243, 0.15) 0%, rgba(76, 175, 80, 0.1) 100%);
+            border-color: rgba(33, 150, 243, 0.3);
+        }
+        
+        .card-camera::before {
+            background: linear-gradient(90deg, #2196F3, #4CAF50);
+        }
+        
+        .camera-preview {
+            width: 100%;
+            height: 120px;
+            background: linear-gradient(135deg, #1a1a1a 0%, #2d2d2d 100%);
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 10px 0;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+        
+        .card-large {
+            grid-row: span 2;
+        }
+        
+        .room-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 8px;
+            margin-top: 10px;
+        }
+        
+        .room-item {
+            background: rgba(0,0,0,0.3);
+            padding: 8px;
+            border-radius: 6px;
+            font-size: 12px;
+        }
+        
+        .room-name {
+            font-weight: bold;
+            margin-bottom: 3px;
+        }
+        
+        .room-temp {
+            color: #4CAF50;
+        }
+        
+        /* Bottom Navigation */
+        .bottom-nav {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            right: 20px;
+            height: 60px;
+            background: rgba(0,0,0,0.5);
+            border-radius: 12px;
+            display: flex;
+            justify-content: space-around;
+            align-items: center;
+            backdrop-filter: blur(10px);
+        }
+        
+        .nav-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 5px;
+            color: #888;
+            font-size: 12px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        .nav-item:hover, .nav-item.active {
+            color: #4CAF50;
+        }
+        
+        .nav-icon {
+            font-size: 24px;
+        }
+    </style>
+</head>
+<body>
+    <div class="mockup-container">
+        <h1>ESP32 Hub GUI - Card Style Mockups</h1>
+        <p class="screen-info">800 × 480 pixels | Touch-enabled | Card-based Interface</p>
+        
+        <!-- Layout 1: 2x2 Grid -->
+        <div class="layout-label">Layout 1: 2×2 Grid (Equal Cards)</div>
+        <p class="layout-description">Classic balanced layout with four equal-sized cards. Perfect for primary sensors and status displays.</p>
+        <div class="screen">
+            <div class="status-bar">
+                <div class="status-left">
+                    <span class="wifi-icon"></span>
+                    <span>Hub Online</span>
+                </div>
+                <div class="status-right">
+                    <span class="time">14:32</span>
+                    <span>Nov 16</span>
+                </div>
+            </div>
+            
+            <div class="cards-grid grid-2x2">
+                <div class="card card-camera">
+                    <div class="card-header">
+                        <span class="card-title">Front Door</span>
+                        <span class="card-icon">📹</span>
+                    </div>
+                    <div class="camera-preview">
+                        <span style="font-size: 14px; color: #666;">Live Camera Feed</span>
+                    </div>
+                    <span class="card-status status-online">● ACTIVE</span>
+                </div>
+                
+                <div class="card">
+                    <div class="card-header">
+                        <span class="card-title">Temperature</span>
+                        <span class="card-icon">🌡️</span>
+                    </div>
+                    <div class="card-value">22.4°C</div>
+                    <div class="card-subtitle">Living Room • Humidity 45%</div>
+                </div>
+                
+                <div class="card">
+                    <div class="card-header">
+                        <span class="card-title">Access Control</span>
+                        <span class="card-icon">🔐</span>
+                    </div>
+                    <div class="card-value">3</div>
+                    <div class="card-subtitle">Recent entries • Last: 2 min ago</div>
+                </div>
+                
+                <div class="card">
+                    <div class="card-header">
+                        <span class="card-title">System Status</span>
+                        <span class="card-icon">⚙️</span>
+                    </div>
+                    <div style="margin-top: 10px;">
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                            <span style="font-size: 14px;">Camera Node</span>
+                            <span class="card-status status-online">●</span>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                            <span style="font-size: 14px;">Sensors (5)</span>
+                            <span class="card-status status-online">●</span>
+                        </div>
+                        <div style="display: flex; justify-content: space-between;">
+                            <span style="font-size: 14px;">Firebase</span>
+                            <span class="card-status status-online">●</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Layout 2: 3 Columns -->
+        <div class="layout-label">Layout 2: 3-Column Grid (More Cards)</div>
+        <p class="layout-description">Compact layout with 6 cards for displaying multiple room sensors or device states.</p>
+        <div class="screen">
+            <div class="status-bar">
+                <div class="status-left">
+                    <span class="wifi-icon"></span>
+                    <span>Hub Online</span>
+                </div>
+                <div class="status-right">
+                    <span class="time">14:32</span>
+                    <span>Nov 16</span>
+                </div>
+            </div>
+            
+            <div class="cards-grid grid-3-cols">
+                <div class="card">
+                    <div class="card-header">
+                        <span class="card-title">Living Room</span>
+                        <span class="card-icon">🛋️</span>
+                    </div>
+                    <div class="card-value">22.4°C</div>
+                    <div class="card-subtitle">Humidity 45% • Light 320lx</div>
+                </div>
+                
+                <div class="card">
+                    <div class="card-header">
+                        <span class="card-title">Bedroom</span>
+                        <span class="card-icon">🛏️</span>
+                    </div>
+                    <div class="card-value">20.1°C</div>
+                    <div class="card-subtitle">Humidity 52% • Light 15lx</div>
+                </div>
+                
+                <div class="card">
+                    <div class="card-header">
+                        <span class="card-title">Kitchen</span>
+                        <span class="card-icon">🍳</span>
+                    </div>
+                    <div class="card-value">23.8°C</div>
+                    <div class="card-subtitle">Humidity 60% • Light 480lx</div>
+                </div>
+                
+                <div class="card card-camera">
+                    <div class="card-header">
+                        <span class="card-title">Front Door</span>
+                        <span class="card-icon">📹</span>
+                    </div>
+                    <div style="font-size: 14px; margin-top: 10px;">
+                        <div style="margin-bottom: 5px;">Face Detection: ON</div>
+                        <span class="card-status status-online">● ACTIVE</span>
+                    </div>
+                </div>
+                
+                <div class="card">
+                    <div class="card-header">
+                        <span class="card-title">Door Lock</span>
+                        <span class="card-icon">🔒</span>
+                    </div>
+                    <div class="card-value" style="font-size: 28px;">LOCKED</div>
+                    <div class="card-subtitle">Last access: Dean • 2m ago</div>
+                </div>
+                
+                <div class="card">
+                    <div class="card-header">
+                        <span class="card-title">Power</span>
+                        <span class="card-icon">🔋</span>
+                    </div>
+                    <div class="card-value" style="font-size: 28px;">87%</div>
+                    <div class="card-subtitle">Backup battery • 4h remaining</div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Layout 3: Main + Sidebar -->
+        <div class="layout-label">Layout 3: Main Card + Sidebar</div>
+        <p class="layout-description">Hero layout featuring a large primary card (camera feed) with smaller status cards on the side.</p>
+        <div class="screen">
+            <div class="status-bar">
+                <div class="status-left">
+                    <span class="wifi-icon"></span>
+                    <span>Hub Online</span>
+                </div>
+                <div class="status-right">
+                    <span class="time">14:32</span>
+                    <span>Nov 16</span>
+                </div>
+            </div>
+            
+            <div class="cards-grid grid-main-sidebar">
+                <div class="card card-camera card-large">
+                    <div class="card-header">
+                        <span class="card-title">Front Door Camera</span>
+                        <span class="card-icon">📹</span>
+                    </div>
+                    <div class="camera-preview" style="height: 240px; font-size: 18px;">
+                        <div style="text-align: center;">
+                            <div style="font-size: 48px; margin-bottom: 10px;">👤</div>
+                            <div style="color: #4CAF50; font-weight: bold;">Face Detected</div>
+                            <div style="font-size: 14px; color: #666; margin-top: 5px;">Confidence: 92%</div>
+                        </div>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 10px;">
+                        <div>
+                            <div style="font-size: 14px; color: #888;">Last Detection</div>
+                            <div style="font-size: 16px; font-weight: bold;">Dean • 2 min ago</div>
+                        </div>
+                        <span class="card-status status-online">● LIVE</span>
+                    </div>
+                </div>
+                
+                <div class="card">
+                    <div class="card-header">
+                        <span class="card-title">Climate</span>
+                        <span class="card-icon">🌡️</span>
+                    </div>
+                    <div class="card-value" style="font-size: 28px;">22.4°C</div>
+                    <div class="card-subtitle">Avg across 5 rooms</div>
+                </div>
+                
+                <div class="card">
+                    <div class="card-header">
+                        <span class="card-title">Access Log</span>
+                        <span class="card-icon">📋</span>
+                    </div>
+                    <div style="font-size: 12px; margin-top: 8px;">
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 6px; padding: 6px; background: rgba(0,0,0,0.2); border-radius: 4px;">
+                            <span>Dean (NFC)</span>
+                            <span style="color: #888;">2m ago</span>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 6px; padding: 6px; background: rgba(0,0,0,0.2); border-radius: 4px;">
+                            <span>Sarah (Face)</span>
+                            <span style="color: #888;">1h ago</span>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; padding: 6px; background: rgba(0,0,0,0.2); border-radius: 4px;">
+                            <span>Guest (NFC)</span>
+                            <span style="color: #888;">3h ago</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Layout 4: Dashboard with Bottom Nav -->
+        <div class="layout-label">Layout 4: Dashboard with Bottom Navigation</div>
+        <p class="layout-description">Multi-view interface with bottom navigation bar for switching between different screen modes.</p>
+        <div class="screen">
+            <div class="status-bar">
+                <div class="status-left">
+                    <span class="wifi-icon"></span>
+                    <span>Smart Home Hub</span>
+                </div>
+                <div class="status-right">
+                    <span class="time">14:32</span>
+                    <span>Nov 16, 2024</span>
+                </div>
+            </div>
+            
+            <div class="cards-grid grid-2x2" style="height: calc(100% - 135px);">
+                <div class="card">
+                    <div class="card-header">
+                        <span class="card-title">All Rooms</span>
+                        <span class="card-icon">🏠</span>
+                    </div>
+                    <div class="room-grid">
+                        <div class="room-item">
+                            <div class="room-name">Living Room</div>
+                            <div class="room-temp">22.4°C • 45%</div>
+                        </div>
+                        <div class="room-item">
+                            <div class="room-name">Bedroom</div>
+                            <div class="room-temp">20.1°C • 52%</div>
+                        </div>
+                        <div class="room-item">
+                            <div class="room-name">Kitchen</div>
+                            <div class="room-temp">23.8°C • 60%</div>
+                        </div>
+                        <div class="room-item">
+                            <div class="room-name">Bathroom</div>
+                            <div class="room-temp">21.5°C • 68%</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="card card-camera">
+                    <div class="card-header">
+                        <span class="card-title">Security</span>
+                        <span class="card-icon">🔐</span>
+                    </div>
+                    <div style="margin-top: 15px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                            <span style="font-size: 16px;">Door Lock</span>
+                            <span class="card-status status-online">LOCKED</span>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                            <span style="font-size: 16px;">Face Recognition</span>
+                            <span class="card-status status-online">ACTIVE</span>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                            <span style="font-size: 16px;">Intrusion Alert</span>
+                            <span class="card-status status-online">ARMED</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="card">
+                    <div class="card-header">
+                        <span class="card-title">Network</span>
+                        <span class="card-icon">📡</span>
+                    </div>
+                    <div style="margin-top: 15px; font-size: 14px;">
+                        <div style="margin-bottom: 10px;">
+                            <div style="color: #888; font-size: 12px;">WiFi Mesh Nodes</div>
+                            <div style="font-size: 20px; color: #4CAF50; font-weight: bold;">5 / 5</div>
+                        </div>
+                        <div>
+                            <div style="color: #888; font-size: 12px;">Firebase Connection</div>
+                            <div style="font-size: 16px; color: #4CAF50;">Connected</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="card">
+                    <div class="card-header">
+                        <span class="card-title">Recent Activity</span>
+                        <span class="card-icon">⏱️</span>
+                    </div>
+                    <div style="font-size: 13px; margin-top: 10px;">
+                        <div style="margin-bottom: 8px; padding-bottom: 8px; border-bottom: 1px solid rgba(255,255,255,0.1);">
+                            <div style="font-weight: bold;">Door Unlocked</div>
+                            <div style="color: #888;">Dean via NFC • 2 minutes ago</div>
+                        </div>
+                        <div style="margin-bottom: 8px; padding-bottom: 8px; border-bottom: 1px solid rgba(255,255,255,0.1);">
+                            <div style="font-weight: bold;">Face Detected</div>
+                            <div style="color: #888;">Unknown person • 1 hour ago</div>
+                        </div>
+                        <div>
+                            <div style="font-weight: bold;">Temp Alert</div>
+                            <div style="color: #FF9800;">Kitchen exceeds 25°C • 3 hours ago</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="bottom-nav">
+                <div class="nav-item active">
+                    <div class="nav-icon">🏠</div>
+                    <div>Home</div>
+                </div>
+                <div class="nav-item">
+                    <div class="nav-icon">📹</div>
+                    <div>Camera</div>
+                </div>
+                <div class="nav-item">
+                    <div class="nav-icon">📊</div>
+                    <div>Stats</div>
+                </div>
+                <div class="nav-item">
+                    <div class="nav-icon">⚙️</div>
+                    <div>Settings</div>
+                </div>
+            </div>
+        </div>
+        
+        <div style="margin-top: 40px; padding: 20px; background: rgba(76, 175, 80, 0.1); border-radius: 8px; border: 1px solid rgba(76, 175, 80, 0.3);">
+            <h3 style="margin-top: 0; color: #4CAF50;">Implementation Notes:</h3>
+            <ul style="line-height: 1.8;">
+                <li><strong>Touch Targets:</strong> All cards and buttons should be at least 60×60px for reliable touch input</li>
+                <li><strong>Libraries:</strong> Use TFT_eSPI or LovyanGFX for rendering with hardware acceleration</li>
+                <li><strong>Performance:</strong> Update only changed card areas (partial refresh) to maintain smooth UI</li>
+                <li><strong>Colors:</strong> Use 16-bit RGB565 color format for ESP32 compatibility</li>
+                <li><strong>Animations:</strong> Keep animations minimal - simple fade or slide transitions work best</li>
+                <li><strong>Double Buffering:</strong> Use PSRAM for smooth rendering on larger displays</li>
+            </ul>
+        </div>
+    </div>
+</body>
+</html>
