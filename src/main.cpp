@@ -256,8 +256,13 @@ void setup()
   fetchWeatherTask();
 
   // Initialize heartbeat module
-  // TODO: Update server URL to your deployed backend
-  initHeartbeat("http://your-server.fly.dev", "doorbell_001", "doorbell");
+  // TODO: Update these values after registering the device with the backend
+  initHeartbeat(
+    "https://embedded-smarthome.fly.dev",  // Your backend URL
+    "doorbell_001",                         // Device ID
+    "doorbell",                              // Device type
+    "YOUR_DEVICE_TOKEN_HERE"                // API token (get from /api/v1/devices/register)
+  );
   Serial.println("[MAIN] Heartbeat module initialized");
 
   // Configure TJpg_Decoder

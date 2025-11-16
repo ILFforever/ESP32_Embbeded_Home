@@ -7,6 +7,7 @@
 const char* BACKEND_SERVER_URL = "";
 const char* DEVICE_ID = "";
 const char* DEVICE_TYPE = "";
+const char* DEVICE_API_TOKEN = "";
 
 // Status tracking
 static bool lastHeartbeatSuccess = false;
@@ -15,14 +16,16 @@ static unsigned long lastHeartbeatTime = 0;
 // ============================================================================
 // Initialize heartbeat module with server config
 // ============================================================================
-void initHeartbeat(const char* serverUrl, const char* deviceId, const char* deviceType) {
+void initHeartbeat(const char* serverUrl, const char* deviceId, const char* deviceType, const char* apiToken) {
   BACKEND_SERVER_URL = serverUrl;
   DEVICE_ID = deviceId;
   DEVICE_TYPE = deviceType;
+  DEVICE_API_TOKEN = apiToken;
 
   Serial.println("[Heartbeat] Initialized");
   Serial.printf("  Server: %s\n", serverUrl);
   Serial.printf("  Device: %s (%s)\n", deviceId, deviceType);
+  Serial.printf("  Token: %s\n", apiToken && strlen(apiToken) > 0 ? "***configured***" : "NOT SET");
 }
 
 // ============================================================================
@@ -41,6 +44,13 @@ void sendHeartbeat() {
 
   http.begin(url);
   http.addHeader("Content-Type", "application/json");
+
+  // Add Authorization header with Bearer token
+  if (DEVICE_API_TOKEN && strlen(DEVICE_API_TOKEN) > 0) {
+    String authHeader = String("Bearer ") + DEVICE_API_TOKEN;
+    http.addHeader("Authorization", authHeader.c_str());
+  }
+
   http.setTimeout(5000); // 5 second timeout
 
   // Build JSON payload
@@ -104,6 +114,13 @@ void sendSensorData(float temperature, float humidity, int motion) {
 
   http.begin(url);
   http.addHeader("Content-Type", "application/json");
+
+  // Add Authorization header with Bearer token
+  if (DEVICE_API_TOKEN && strlen(DEVICE_API_TOKEN) > 0) {
+    String authHeader = String("Bearer ") + DEVICE_API_TOKEN;
+    http.addHeader("Authorization", authHeader.c_str());
+  }
+
   http.setTimeout(5000);
 
   // Build JSON payload

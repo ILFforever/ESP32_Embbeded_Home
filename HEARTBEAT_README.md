@@ -3,6 +3,96 @@
 ## Overview
 This implementation provides a **smart throttling** heartbeat system that reduces Firebase writes by **95%** while maintaining responsive device monitoring.
 
+## Security - Device Authentication
+
+**⚠️ IMPORTANT**: All device endpoints are protected with API token authentication.
+
+### Why Authentication?
+Without authentication, anyone could:
+- Send fake heartbeat data
+- Impersonate your devices
+- Spam your API and increase costs
+- Inject false sensor readings
+
+### How It Works
+1. Each device has a unique **device_id** + **API token** (64-character hex string)
+2. ESP32 sends token in `Authorization: Bearer <token>` header
+3. Backend validates token matches device_id in Firestore
+4. Invalid/missing token → 401/403 error
+
+### Setup Process
+
+**Step 1: Register Device**
+
+Call the registration endpoint to create a new device and generate its token:
+
+```bash
+curl -X POST https://embedded-smarthome.fly.dev/api/v1/devices/register \
+  -H "Content-Type: application/json" \
+  -d '{
+    "device_id": "doorbell_001",
+    "device_type": "doorbell",
+    "name": "Front Doorbell"
+  }'
+```
+
+**Response:**
+```json
+{
+  "status": "ok",
+  "message": "Device registered successfully",
+  "device_id": "doorbell_001",
+  "api_token": "a1b2c3d4e5f6...64chars",
+  "warning": "Save this token securely! It will not be shown again."
+}
+```
+
+**⚠️ SAVE THE TOKEN!** It's only shown once during registration.
+
+**Step 2: Configure ESP32**
+
+Update `src/main.cpp` with your device credentials:
+
+```cpp
+initHeartbeat(
+  "https://embedded-smarthome.fly.dev",  // Your backend URL
+  "doorbell_001",                         // Device ID (same as registration)
+  "doorbell",                              // Device type
+  "a1b2c3d4e5f6...64chars"               // API token from Step 1
+);
+```
+
+**Step 3: Flash and Test**
+
+Upload to ESP32 and check serial output:
+```
+[Heartbeat] Initialized
+  Server: https://embedded-smarthome.fly.dev
+  Device: doorbell_001 (doorbell)
+  Token: ***configured***
+[Heartbeat] ✓ Sent (code: 200)
+```
+
+### Token Security Features
+
+- **64-character hex** (256-bit entropy)
+- **Device-specific** (each device has unique token)
+- **Revocable** (set `disabled: true` in Firestore)
+- **Firebase-stored** (not hardcoded in backend)
+
+### Revoking a Device
+
+If a device is compromised:
+
+```javascript
+// In Firebase Console or via Admin SDK
+db.collection('devices').doc('doorbell_001').update({
+  disabled: true
+});
+```
+
+The device will receive `403 Forbidden` on next heartbeat.
+
 ## Architecture
 
 ### Flow
