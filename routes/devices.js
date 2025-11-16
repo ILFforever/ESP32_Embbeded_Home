@@ -3,6 +3,7 @@ const router = express.Router();
 const {
   handleHeartbeat,
   getDeviceStatus,
+  getAllDevicesStatus,
   handleSensorData,
   getDeviceHistory,
   registerDevice
@@ -23,6 +24,11 @@ router.post('/heartbeat', authenticateDevice, handleHeartbeat);
 // @desc    Receive sensor data (throttled writes)
 // @access  Private (requires device token)
 router.post('/sensor', authenticateDevice, handleSensorData);
+
+// @route   GET /api/v1/devices/status/all
+// @desc    Get all devices status (for frontend dashboard)
+// @access  Public
+router.get('/status/all', getAllDevicesStatus);
 
 // @route   GET /api/v1/devices/:device_id/status
 // @desc    Get current device status

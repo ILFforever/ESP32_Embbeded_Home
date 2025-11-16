@@ -295,6 +295,78 @@ const getDeviceStatus = async (req, res) => {
 };
 
 // ============================================================================
+// @route   GET /api/v1/devices/status/all
+// @desc    Get status of all devices (for frontend dashboard)
+// ============================================================================
+const getAllDevicesStatus = async (req, res) => {
+  try {
+    const db = getFirestore();
+    const devicesSnapshot = await db.collection('devices').get();
+
+    const devices = [];
+    const now = Date.now();
+
+    for (const deviceDoc of devicesSnapshot.docs) {
+      const deviceId = deviceDoc.id;
+      const deviceData = deviceDoc.data();
+
+      // Get status subcollection
+      const statusDoc = await deviceDoc.ref.collection('status').doc('current').get();
+
+      if (statusDoc.exists) {
+        const statusData = statusDoc.data();
+        const lastHeartbeat = statusData.last_heartbeat?.toMillis() || 0;
+        const isOnline = (now - lastHeartbeat) < OFFLINE_THRESHOLD_MS;
+
+        devices.push({
+          device_id: deviceId,
+          type: deviceData.type || 'unknown',
+          name: deviceData.name || deviceId,
+          online: isOnline,
+          last_seen: lastHeartbeat ? new Date(lastHeartbeat).toISOString() : null,
+          uptime_ms: statusData.uptime_ms || 0,
+          free_heap: statusData.free_heap || 0,
+          wifi_rssi: statusData.wifi_rssi || 0,
+          ip_address: statusData.ip_address || null
+        });
+      } else {
+        // Device registered but never sent heartbeat
+        devices.push({
+          device_id: deviceId,
+          type: deviceData.type || 'unknown',
+          name: deviceData.name || deviceId,
+          online: false,
+          last_seen: null,
+          uptime_ms: 0,
+          free_heap: 0,
+          wifi_rssi: 0,
+          ip_address: null
+        });
+      }
+    }
+
+    // Summary stats
+    const onlineCount = devices.filter(d => d.online).length;
+    const offlineCount = devices.length - onlineCount;
+
+    res.json({
+      status: 'ok',
+      timestamp: new Date().toISOString(),
+      summary: {
+        total: devices.length,
+        online: onlineCount,
+        offline: offlineCount
+      },
+      devices
+    });
+
+  } catch (error) {
+    console.error('[AllDevices] Error:', error);
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+};
+
+// ============================================================================
 // @route   GET /api/v1/devices/:device_id/history
 // @desc    Get device history (last 24 hours)
 // ============================================================================
@@ -336,6 +408,7 @@ module.exports = {
   registerDevice,
   handleHeartbeat,
   getDeviceStatus,
+  getAllDevicesStatus,
   handleSensorData,
   getDeviceHistory
 };
