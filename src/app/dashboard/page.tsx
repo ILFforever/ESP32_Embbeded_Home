@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import ProtectedRoute from '@/components/auth/ProtectedRoute';
 import { AlertsCard } from '@/components/dashboard/AlertsCard';
 import { TemperatureCard } from '@/components/dashboard/TemperatureCard';
@@ -21,10 +22,12 @@ import {
 import type { DevicesStatus } from '@/types/dashboard';
 
 export default function DashboardPage() {
+  const router = useRouter();
   const [devicesStatus, setDevicesStatus] = useState<DevicesStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [theme, setTheme] = useState<'purple' | 'green'>('purple');
-  const [modalCard, setModalCard] = useState<React.ReactNode | null>(null);
+  const [expandedCard, setExpandedCard] = useState<string | null>(null);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -52,12 +55,21 @@ export default function DashboardPage() {
     setTheme(prev => prev === 'purple' ? 'green' : 'purple');
   };
 
-  const openModal = (cardContent: React.ReactNode) => {
-    setModalCard(cardContent);
+  const toggleSidebar = () => {
+    setSidebarOpen(!sidebarOpen);
   };
 
-  const closeModal = () => {
-    setModalCard(null);
+  const handleLogout = () => {
+    localStorage.removeItem('isAuthenticated');
+    router.push('/login');
+  };
+
+  const openExpandedCard = (cardId: string) => {
+    setExpandedCard(cardId);
+  };
+
+  const closeExpandedCard = () => {
+    setExpandedCard(null);
   };
 
   // Generate mock data
@@ -77,121 +89,204 @@ export default function DashboardPage() {
     );
   }
 
+  // Render expanded card content with more details
+  const renderExpandedCard = () => {
+    if (!expandedCard) return null;
+
+    let content;
+    switch (expandedCard) {
+      case 'system-status':
+        content = <SystemStatusCard devicesStatus={devicesStatus} />;
+        break;
+      case 'alerts':
+        content = <AlertsCard alerts={alerts} />;
+        break;
+      case 'temperature':
+        content = <TemperatureCard temperatureData={temperatureData} />;
+        break;
+      case 'gas':
+        content = <GasReadingsCard gasReadings={gasReadings} />;
+        break;
+      case 'doors':
+        content = <DoorsWindowsCard doorsWindows={doorsWindows} />;
+        break;
+      case 'doorbell':
+        content = <DoorbellControlCard doorbellControl={doorbellControl} />;
+        break;
+      case 'security':
+        content = <SecurityCard securityDevices={securityDevices} />;
+        break;
+      default:
+        content = null;
+    }
+
+    return (
+      <div className="modal-overlay" onClick={closeExpandedCard}>
+        <button className="modal-close" onClick={closeExpandedCard}>
+          ✕
+        </button>
+        <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+          {content}
+        </div>
+      </div>
+    );
+  };
+
   return (
     <ProtectedRoute>
-      <div className="dashboard-container">
-        {/* Theme Switcher */}
-        <div className="theme-switcher">
-          <span className="theme-switcher-label">Theme</span>
-          <div className="theme-toggle" data-theme={theme} onClick={toggleTheme}>
-            <div className="theme-toggle-slider"></div>
-            <span className="theme-icon theme-icon-purple">●</span>
-            <span className="theme-icon theme-icon-green">●</span>
-          </div>
+      {/* Sidebar */}
+      <aside className={`sidebar ${!sidebarOpen ? 'closed' : ''}`}>
+        <div className="sidebar-header">
+          <div className="sidebar-logo">Smart Home</div>
+          <button className="sidebar-toggle" onClick={toggleSidebar}>
+            ☰
+          </button>
         </div>
+        <nav>
+          <ul className="sidebar-nav">
+            <li className="sidebar-nav-item">
+              <div className="sidebar-nav-link active">
+                <span className="sidebar-nav-icon">🏠</span>
+                <span>Dashboard</span>
+              </div>
+            </li>
+            <li className="sidebar-nav-item">
+              <div className="sidebar-nav-link">
+                <span className="sidebar-nav-icon">🔔</span>
+                <span>Alerts</span>
+              </div>
+            </li>
+            <li className="sidebar-nav-item">
+              <div className="sidebar-nav-link">
+                <span className="sidebar-nav-icon">📊</span>
+                <span>Analytics</span>
+              </div>
+            </li>
+            <li className="sidebar-nav-item">
+              <div className="sidebar-nav-link">
+                <span className="sidebar-nav-icon">🔧</span>
+                <span>Devices</span>
+              </div>
+            </li>
+            <li className="sidebar-nav-item">
+              <div className="sidebar-nav-link">
+                <span className="sidebar-nav-icon">📹</span>
+                <span>Cameras</span>
+              </div>
+            </li>
+            <li className="sidebar-nav-item">
+              <div className="sidebar-nav-link">
+                <span className="sidebar-nav-icon">⚙️</span>
+                <span>Settings</span>
+              </div>
+            </li>
+          </ul>
+        </nav>
+      </aside>
 
-        <header className="dashboard-header">
-          <h1>SMART HOME CONTROL SYSTEM</h1>
-          <div className="header-info">
-            <span className="status-dot status-online"></span>
-            <span>ALL SYSTEMS OPERATIONAL</span>
-          </div>
-        </header>
+      {/* Sidebar Overlay for Mobile */}
+      <div
+        className={`sidebar-overlay ${sidebarOpen ? 'visible' : ''}`}
+        onClick={toggleSidebar}
+      ></div>
 
-        <div className="dashboard-grid">
-          {/* Top-left: Large card (2×2) - System Status */}
-          <div
-            className="card-large-main"
-            onClick={(e) => {
-              if (!(e.target as HTMLElement).closest('.expand-button')) {
-                openModal(<SystemStatusCard devicesStatus={devicesStatus} />);
-              }
-            }}
-          >
-            <SystemStatusCard devicesStatus={devicesStatus} />
-          </div>
+      {/* Main Content */}
+      <div className={`main-content ${sidebarOpen ? 'with-sidebar' : ''}`}>
+        <div className="dashboard-container">
+          {/* Header */}
+          <header className="dashboard-header">
+            <div className="dashboard-header-left">
+              {!sidebarOpen && (
+                <button className="sidebar-toggle" onClick={toggleSidebar}>
+                  ☰
+                </button>
+              )}
+              <h1>SMART HOME CONTROL SYSTEM</h1>
+            </div>
 
-          {/* Top-right row 1: Alerts */}
-          <div
-            className="card-top-right-1"
-            onClick={(e) => {
-              if (!(e.target as HTMLElement).closest('.expand-button')) {
-                openModal(<AlertsCard alerts={alerts} />);
-              }
-            }}
-          >
-            <AlertsCard alerts={alerts} />
-          </div>
+            <div className="dashboard-header-right">
+              <div className="header-info">
+                <span className="status-dot status-online"></span>
+                <span>ALL SYSTEMS OPERATIONAL</span>
+              </div>
 
-          {/* Top-right row 2: Temperature */}
-          <div
-            className="card-top-right-2"
-            onClick={(e) => {
-              if (!(e.target as HTMLElement).closest('.expand-button')) {
-                openModal(<TemperatureCard temperatureData={temperatureData} />);
-              }
-            }}
-          >
-            <TemperatureCard temperatureData={temperatureData} />
-          </div>
+              {/* Theme Switcher */}
+              <div className="theme-switcher">
+                <span className="theme-switcher-label">Theme</span>
+                <div className="theme-toggle" data-theme={theme} onClick={toggleTheme}>
+                  <div className="theme-toggle-slider"></div>
+                  <span className="theme-icon theme-icon-purple">●</span>
+                  <span className="theme-icon theme-icon-green">●</span>
+                </div>
+              </div>
 
-          {/* Row 3: 4 cards */}
-          <div
-            className="card-row3-1"
-            onClick={(e) => {
-              if (!(e.target as HTMLElement).closest('.expand-button')) {
-                openModal(<GasReadingsCard gasReadings={gasReadings} />);
-              }
-            }}
-          >
-            <GasReadingsCard gasReadings={gasReadings} />
-          </div>
+              {/* Logout Button */}
+              <button className="btn-logout" onClick={handleLogout}>
+                <span>Logout</span>
+                <span>→</span>
+              </button>
+            </div>
+          </header>
 
-          <div
-            className="card-row3-2"
-            onClick={(e) => {
-              if (!(e.target as HTMLElement).closest('.expand-button')) {
-                openModal(<DoorsWindowsCard doorsWindows={doorsWindows} />);
-              }
-            }}
-          >
-            <DoorsWindowsCard doorsWindows={doorsWindows} />
-          </div>
+          {/* Dashboard Grid */}
+          <div className="dashboard-grid">
+            {/* Top-left: Large card (2×2) - System Status */}
+            <div
+              className="card-large-main"
+              onClick={() => openExpandedCard('system-status')}
+            >
+              <SystemStatusCard devicesStatus={devicesStatus} />
+            </div>
 
-          <div
-            className="card-row3-3"
-            onClick={(e) => {
-              if (!(e.target as HTMLElement).closest('.expand-button')) {
-                openModal(<DoorbellControlCard doorbellControl={doorbellControl} />);
-              }
-            }}
-          >
-            <DoorbellControlCard doorbellControl={doorbellControl} />
-          </div>
+            {/* Top-right row 1: Alerts */}
+            <div
+              className="card-top-right-1"
+              onClick={() => openExpandedCard('alerts')}
+            >
+              <AlertsCard alerts={alerts} />
+            </div>
 
-          <div
-            className="card-row3-4"
-            onClick={(e) => {
-              if (!(e.target as HTMLElement).closest('.expand-button')) {
-                openModal(<SecurityCard securityDevices={securityDevices} />);
-              }
-            }}
-          >
-            <SecurityCard securityDevices={securityDevices} />
-          </div>
-        </div>
+            {/* Top-right row 2: Temperature */}
+            <div
+              className="card-top-right-2"
+              onClick={() => openExpandedCard('temperature')}
+            >
+              <TemperatureCard temperatureData={temperatureData} />
+            </div>
 
-        {/* Modal Overlay */}
-        {modalCard && (
-          <div className="modal-overlay" onClick={closeModal}>
-            <button className="modal-close" onClick={closeModal}>
-              ✕
-            </button>
-            <div className="modal-card" onClick={(e) => e.stopPropagation()}>
-              {modalCard}
+            {/* Row 3: 4 cards */}
+            <div
+              className="card-row3-1"
+              onClick={() => openExpandedCard('gas')}
+            >
+              <GasReadingsCard gasReadings={gasReadings} />
+            </div>
+
+            <div
+              className="card-row3-2"
+              onClick={() => openExpandedCard('doors')}
+            >
+              <DoorsWindowsCard doorsWindows={doorsWindows} />
+            </div>
+
+            <div
+              className="card-row3-3"
+              onClick={() => openExpandedCard('doorbell')}
+            >
+              <DoorbellControlCard doorbellControl={doorbellControl} />
+            </div>
+
+            <div
+              className="card-row3-4"
+              onClick={() => openExpandedCard('security')}
+            >
+              <SecurityCard securityDevices={securityDevices} />
             </div>
           </div>
-        )}
+
+          {/* Expanded Card Modal */}
+          {renderExpandedCard()}
+        </div>
       </div>
     </ProtectedRoute>
   );
