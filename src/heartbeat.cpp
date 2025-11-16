@@ -1,6 +1,7 @@
 #include "heartbeat.h"
 #include <WiFi.h>
 #include <HTTPClient.h>
+#include <WiFiClientSecure.h>
 #include <ArduinoJson.h>
 
 // Configuration variables (set via initHeartbeat)
@@ -39,10 +40,13 @@ void sendHeartbeat() {
     return;
   }
 
+  WiFiClientSecure client;
+  client.setInsecure(); // Skip SSL certificate validation (common for ESP32 IoT)
+
   HTTPClient http;
   String url = String(BACKEND_SERVER_URL) + "/api/v1/devices/heartbeat";
 
-  http.begin(url);
+  http.begin(client, url);
   http.addHeader("Content-Type", "application/json");
 
   // Add Authorization header with Bearer token
@@ -109,10 +113,13 @@ void sendSensorData(float temperature, float humidity, int motion) {
     return;
   }
 
+  WiFiClientSecure client;
+  client.setInsecure(); // Skip SSL certificate validation (common for ESP32 IoT)
+
   HTTPClient http;
   String url = String(BACKEND_SERVER_URL) + "/api/v1/devices/sensor";
 
-  http.begin(url);
+  http.begin(client, url);
   http.addHeader("Content-Type", "application/json");
 
   // Add Authorization header with Bearer token
@@ -156,10 +163,13 @@ void sendDisconnectWarning(const char* module_name, bool isDisconnected) {
     return;
   }
 
+  WiFiClientSecure client;
+  client.setInsecure(); // Skip SSL certificate validation (common for ESP32 IoT)
+
   HTTPClient http;
   String url = String(BACKEND_SERVER_URL) + "/api/v1/devices/warning";
 
-  http.begin(url);
+  http.begin(client, url);
   http.addHeader("Content-Type", "application/json");
   http.setTimeout(5000);
 
