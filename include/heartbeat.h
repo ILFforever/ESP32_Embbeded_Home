@@ -7,9 +7,10 @@
 extern const char* BACKEND_SERVER_URL;
 extern const char* DEVICE_ID;
 extern const char* DEVICE_TYPE;
+extern const char* DEVICE_API_TOKEN;
 
 // Initialize heartbeat module
-void initHeartbeat(const char* serverUrl, const char* deviceId, const char* deviceType);
+void initHeartbeat(const char* serverUrl, const char* deviceId, const char* deviceType, const char* apiToken);
 
 // Send heartbeat to backend server
 void sendHeartbeat();
