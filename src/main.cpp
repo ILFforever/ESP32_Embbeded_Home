@@ -258,10 +258,10 @@ void setup()
   // Initialize heartbeat module
   // TODO: Update device_id and token after registering via POST /api/v1/devices/register
   initHeartbeat(
-    "http://embedded-smarthome.fly.dev",   // HTTP (not HTTPS) - ESP32 memory optimization
-    "doorbell_001",                         // Device ID (must match registration)
-    "doorbell",                              // Device type
-    "YOUR_DEVICE_TOKEN_HERE"                // API token (from registration response)
+      "http://embedded-smarthome.fly.dev",                               // HTTP (not HTTPS) - ESP32 memory optimization
+      "db_001",                                                           // Device ID (must match registration)
+      "doorbell",                                                        // Device type
+      "d8ac2f1ee97b4a8b3f299696773e807e735284c47cfc30aadef1287e10a53b6d" // API token (from registration response)
   );
   Serial.println("[MAIN] Heartbeat module initialized");
 
