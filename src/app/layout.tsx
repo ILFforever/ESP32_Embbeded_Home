@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import { AuthProvider } from '@/context/AuthContext';
+import './globals.css';
 
 export const metadata: Metadata = {
   title: 'ESP32 Smart Home',
