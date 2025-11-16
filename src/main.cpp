@@ -9,6 +9,7 @@
 #include <Panel_RA8875_Fixed.h>
 #include "TaskScheduler.h"
 #include <Wire.h>
+#include <WiFi.h>
 #include <Touch.h>
 #include <CapSensor.h>
 #include "hub_network.h"
@@ -140,11 +141,31 @@ void setup(void)
       break;
   }
 
-  // Initialize network and heartbeat
-  // TODO: Update WiFi credentials and device tokens
-  initNetwork(
-    "YOUR_WIFI_SSID",                       // WiFi SSID
-    "YOUR_WIFI_PASSWORD",                   // WiFi password
+  // Initialize WiFi
+  // TODO: Update WiFi credentials
+  Serial.println("\n[WiFi] Connecting...");
+  WiFi.mode(WIFI_STA);
+  WiFi.setAutoReconnect(true);
+  WiFi.begin("YOUR_WIFI_SSID", "YOUR_WIFI_PASSWORD");
+
+  int timeout = 20;
+  while (WiFi.status() != WL_CONNECTED && timeout > 0) {
+    delay(500);
+    Serial.print(".");
+    timeout--;
+  }
+
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.println("\n[WiFi] ✓ Connected!");
+    Serial.printf("  IP: %s\n", WiFi.localIP().toString().c_str());
+    Serial.printf("  RSSI: %d dBm\n", WiFi.RSSI());
+  } else {
+    Serial.println("\n[WiFi] ✗ Connection Failed!");
+  }
+
+  // Initialize heartbeat module (WiFi must be connected first)
+  // TODO: Update device tokens
+  initHeartbeat(
     "http://embedded-smarthome.fly.dev",   // Backend URL
     "hub_001",                              // Hub device ID
     "hub",                                  // Device type
@@ -200,7 +221,7 @@ void DisplayUpdate()
   lcd.drawString("ESP32 Hub - Control Center", 50, 50);
 
   // Display WiFi status
-  if (isWiFiConnected()) {
+  if (WiFi.status() == WL_CONNECTED) {
     lcd.drawString("WiFi: Connected", 50, 100);
   } else {
     lcd.drawString("WiFi: Disconnected", 50, 100);
