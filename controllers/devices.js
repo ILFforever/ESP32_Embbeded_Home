@@ -404,11 +404,67 @@ const getDeviceHistory = async (req, res) => {
   }
 };
 
+// ============================================================================
+// @route   POST /api/v1/devices/doorbell/ring
+// @desc    Receive doorbell ring event - immediately write to Firebase (no throttling)
+//          Hub can listen to these events to play audio
+// ============================================================================
+const handleDoorbellRing = async (req, res) => {
+  try {
+    const { device_id, visitor_name, image_url, face_detected } = req.body;
+
+    // Validation
+    if (!device_id) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'device_id is required'
+      });
+    }
+
+    console.log(`[Doorbell] ${device_id} - Ring event received`);
+
+    const db = getFirestore();
+    const deviceRef = db.collection('devices').doc(device_id);
+
+    // Create doorbell event data
+    const doorbellEvent = {
+      timestamp: admin.firestore.FieldValue.serverTimestamp(),
+      visitor_name: visitor_name || 'Unknown',
+      face_detected: face_detected || false,
+      image_url: image_url || null,
+      acknowledged: false // Hub can set this to true after playing audio
+    };
+
+    // Write event to Firebase (no throttling - doorbell rings are important!)
+    const eventRef = await deviceRef.collection('doorbell_events').add(doorbellEvent);
+
+    // Update device's last doorbell ring
+    await deviceRef.set({
+      type: 'doorbell',
+      last_ring: admin.firestore.FieldValue.serverTimestamp(),
+      last_ring_id: eventRef.id
+    }, { merge: true });
+
+    // Respond to doorbell device
+    res.json({
+      status: 'ok',
+      message: 'Doorbell ring received',
+      event_id: eventRef.id,
+      timestamp: Date.now()
+    });
+
+  } catch (error) {
+    console.error('[Doorbell] Error:', error);
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+};
+
 module.exports = {
   registerDevice,
   handleHeartbeat,
   getDeviceStatus,
   getAllDevicesStatus,
   handleSensorData,
-  getDeviceHistory
+  getDeviceHistory,
+  handleDoorbellRing
 };
