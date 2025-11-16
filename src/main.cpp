@@ -256,12 +256,12 @@ void setup()
   fetchWeatherTask();
 
   // Initialize heartbeat module
-  // TODO: Update these values after registering the device with the backend
+  // TODO: Update device_id and token after registering via POST /api/v1/devices/register
   initHeartbeat(
-    "https://embedded-smarthome.fly.dev",  // Your backend URL
-    "doorbell_001",                         // Device ID
+    "http://embedded-smarthome.fly.dev",   // HTTP (not HTTPS) - ESP32 memory optimization
+    "doorbell_001",                         // Device ID (must match registration)
     "doorbell",                              // Device type
-    "YOUR_DEVICE_TOKEN_HERE"                // API token (get from /api/v1/devices/register)
+    "YOUR_DEVICE_TOKEN_HERE"                // API token (from registration response)
   );
   Serial.println("[MAIN] Heartbeat module initialized");
 
