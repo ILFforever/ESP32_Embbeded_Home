@@ -12,6 +12,7 @@
 #include "SPIMaster.h"
 #include "slave_state_manager.h"
 #include "weather.h"
+#include "heartbeat.h"
 #include <TJpg_Decoder.h>
 #include <cstring>
 #include <esp_system.h>
@@ -137,6 +138,7 @@ void checkButtons();
 void checkSlaveSyncTask();
 void updateWeather();
 void wifiWatchdogTask();
+void sendServerHeartbeatTask();
 void drawWifiSymbol(int x, int y, int strength);
 void onCardDetected(NFCCardData card);
 void checkTimers();
@@ -159,6 +161,7 @@ Task tasklcdhandoff(200, TASK_FOREVER, &lcdhandoff);                          //
 Task taskCheckButtons(10, TASK_FOREVER, &checkButtons);                       // Check button state every 10ms
 Task taskCheckSlaveSync(1000, TASK_FOREVER, &checkSlaveSyncTask);             // Check slave mode sync and recovery every 1s
 Task taskUpdateWeather(1800000, TASK_FOREVER, &updateWeather);                // Update weather every 30 minutes (1800000ms)
+Task taskSendServerHeartbeat(60000, TASK_FOREVER, &sendServerHeartbeatTask);  // Send heartbeat to server every 60s
 
 void setup()
 {
@@ -252,6 +255,11 @@ void setup()
   // Fetch weather immediately on startup (instead of waiting 10 minutes)
   fetchWeatherTask();
 
+  // Initialize heartbeat module
+  // TODO: Update server URL to your deployed backend
+  initHeartbeat("http://your-server.fly.dev", "doorbell_001", "doorbell");
+  Serial.println("[MAIN] Heartbeat module initialized");
+
   // Configure TJpg_Decoder
   TJpgDec.setCallback(tft_jpg_render_callback); // Set the callback
   TJpgDec.setJpgScale(1);                       // Full resolution
@@ -275,6 +283,7 @@ void setup()
   myscheduler.addTask(taskCheckButtons);
   myscheduler.addTask(taskCheckSlaveSync);
   myscheduler.addTask(taskUpdateWeather);
+  myscheduler.addTask(taskSendServerHeartbeat);
   myscheduler.addTask(taskCheckTimers);
   taskCheckUART.enable();
   taskCheckUART2.enable();
@@ -290,6 +299,7 @@ void setup()
   taskCheckButtons.enable();
   taskCheckSlaveSync.enable();
   taskUpdateWeather.enable();
+  taskSendServerHeartbeat.enable();
   taskCheckTimers.enable();
 
   last_pong_time = millis();
@@ -1027,8 +1037,8 @@ void checkDisconnectWarning()
     {
       Serial.println("========================================");
       Serial.println("!!! CAMERA MODULE DISCONNECTED FOR 30+ SECONDS !!!");
-      Serial.println("TODO: Send warning to server when implemented");
       Serial.println("========================================");
+      sendDisconnectWarning("camera", true); // Send warning to server
       slave_disconnect_warning_sent = true;
     }
   }
@@ -1049,8 +1059,8 @@ void checkDisconnectWarning()
     {
       Serial.println("========================================");
       Serial.println("!!! AMP MODULE DISCONNECTED FOR 30+ SECONDS !!!");
-      Serial.println("TODO: Send warning to server when implemented");
       Serial.println("========================================");
+      sendDisconnectWarning("amp", true); // Send warning to server
       amp_disconnect_warning_sent = true;
     }
   }
@@ -1268,4 +1278,10 @@ void checkTimers()
 void updateWeather()
 {
   fetchWeatherTask();
+}
+
+// Task: Send heartbeat to server
+void sendServerHeartbeatTask()
+{
+  sendHeartbeat();
 }
