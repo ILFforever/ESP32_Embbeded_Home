@@ -1,14 +1,14 @@
 import React, { useState } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
-import { ChevronDown, ChevronUp, Wind } from 'lucide-react';
+import { Wind } from 'lucide-react';
 import type { GasReading } from '@/types/dashboard';
 
 interface GasReadingsCardProps {
   gasReadings: GasReading[];
+  isExpanded?: boolean;
 }
 
-export function GasReadingsCard({ gasReadings }: GasReadingsCardProps) {
-  const [expanded, setExpanded] = useState(false);
+export function GasReadingsCard({ gasReadings, isExpanded = false }: GasReadingsCardProps) {
   const [selectedSensor, setSelectedSensor] = useState<string | null>(null);
 
   const getStatusColor = (status: string) => {
@@ -38,19 +38,16 @@ export function GasReadingsCard({ gasReadings }: GasReadingsCardProps) {
   };
 
   return (
-    <div className={`card ${expanded ? 'card-expanded' : ''}`}>
-      <div className="card-header" onClick={() => setExpanded(!expanded)}>
+    <div className="card">
+      <div className="card-header">
         <div className="card-title-group">
           <Wind size={20} />
           <h3>GAS SENSORS</h3>
         </div>
-        <button className="expand-button">
-          {expanded ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
-        </button>
       </div>
 
       <div className="card-content">
-        {!expanded ? (
+        {!isExpanded ? (
           /* Compact view - show current readings */
           <div className="gas-compact">
             {gasReadings.map(reading => (

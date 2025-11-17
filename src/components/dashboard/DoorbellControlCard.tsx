@@ -1,14 +1,14 @@
 import React, { useState } from 'react';
-import { ChevronDown, ChevronUp, Camera, Mic, UserCheck, Bell } from 'lucide-react';
+import { Camera, Mic, UserCheck, Bell } from 'lucide-react';
 import type { DoorbellControl } from '@/types/dashboard';
 import { controlDoorbell } from '@/services/devices.service';
 
 interface DoorbellControlCardProps {
   doorbellControl: DoorbellControl;
+  isExpanded?: boolean;
 }
 
-export function DoorbellControlCard({ doorbellControl }: DoorbellControlCardProps) {
-  const [expanded, setExpanded] = useState(false);
+export function DoorbellControlCard({ doorbellControl, isExpanded = false }: DoorbellControlCardProps) {
   const [cameraActive, setCameraActive] = useState(doorbellControl.camera_active);
   const [micActive, setMicActive] = useState(doorbellControl.mic_active);
   const [faceRecognition, setFaceRecognition] = useState(doorbellControl.face_recognition);
@@ -45,19 +45,16 @@ export function DoorbellControlCard({ doorbellControl }: DoorbellControlCardProp
   };
 
   return (
-    <div className={`card ${expanded ? 'card-expanded' : ''}`}>
-      <div className="card-header" onClick={() => setExpanded(!expanded)}>
+    <div className="card">
+      <div className="card-header">
         <div className="card-title-group">
           <Bell size={20} />
           <h3>DOORBELL CONTROL</h3>
         </div>
-        <button className="expand-button">
-          {expanded ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
-        </button>
       </div>
 
       <div className="card-content">
-        {!expanded ? (
+        {!isExpanded ? (
           /* Compact view */
           <div className="doorbell-compact">
             <div className="doorbell-status-grid">

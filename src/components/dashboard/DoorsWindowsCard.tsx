@@ -1,13 +1,13 @@
-import React, { useState } from 'react';
-import { ChevronDown, ChevronUp, DoorOpen, DoorClosed, Lock, Unlock, Battery } from 'lucide-react';
+import React from 'react';
+import { DoorOpen, DoorClosed, Lock, Unlock, Battery } from 'lucide-react';
 import type { DoorWindow } from '@/types/dashboard';
 
 interface DoorsWindowsCardProps {
   doorsWindows: DoorWindow[];
+  isExpanded?: boolean;
 }
 
-export function DoorsWindowsCard({ doorsWindows }: DoorsWindowsCardProps) {
-  const [expanded, setExpanded] = useState(false);
+export function DoorsWindowsCard({ doorsWindows, isExpanded = false }: DoorsWindowsCardProps) {
 
   const getStatusIcon = (item: DoorWindow) => {
     if (item.type === 'door') {
@@ -51,19 +51,16 @@ export function DoorsWindowsCard({ doorsWindows }: DoorsWindowsCardProps) {
   const windows = doorsWindows.filter(item => item.type === 'window');
 
   return (
-    <div className={`card ${expanded ? 'card-expanded' : ''}`}>
-      <div className="card-header" onClick={() => setExpanded(!expanded)}>
+    <div className="card">
+      <div className="card-header">
         <div className="card-title-group">
           <DoorClosed size={20} />
           <h3>DOORS & WINDOWS</h3>
         </div>
-        <button className="expand-button">
-          {expanded ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
-        </button>
       </div>
 
       <div className="card-content">
-        {!expanded ? (
+        {!isExpanded ? (
           /* Compact view */
           <div className="doors-windows-compact">
             {doorsWindows.map(item => (
