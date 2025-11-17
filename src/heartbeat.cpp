@@ -249,7 +249,7 @@ void sendDoorbellRing() {
 // ============================================================================
 // Send face detection event to backend (saves to Firebase, publishes to Hub)
 // ============================================================================
-void sendFaceDetection(bool recognized, const char* name, float confidence, const char* imageData) {
+void sendFaceDetection(bool recognized, const char* name, float confidence, const uint8_t* imageData, size_t imageSize) {
   if (WiFi.status() != WL_CONNECTED) {
     Serial.println("[FaceDetection] WiFi not connected - skipping");
     return;
@@ -259,31 +259,88 @@ void sendFaceDetection(bool recognized, const char* name, float confidence, cons
   String url = String(BACKEND_SERVER_URL) + "/api/v1/devices/doorbell/face-detection";
 
   http.begin(url);
-  http.addHeader("Content-Type", "application/json");
 
   // Add X-Device-Token header for authentication
   if (DEVICE_API_TOKEN && strlen(DEVICE_API_TOKEN) > 0) {
     http.addHeader("X-Device-Token", DEVICE_API_TOKEN);
   }
 
-  http.setTimeout(10000); // Longer timeout for image uploads
+  http.setTimeout(15000); // Longer timeout for image uploads
 
-  // Build JSON payload
-  JsonDocument doc;
-  doc["device_id"] = DEVICE_ID;
-  doc["recognized"] = recognized;  // Boolean field
-  doc["name"] = name;
-  doc["confidence"] = confidence;
-  if (imageData != nullptr) {
-    doc["image"] = imageData; // Base64 encoded image or URL
+  String boundary = "----ESP32Boundary" + String(millis());
+
+  // Build multipart/form-data payload
+  String payload = "";
+
+  // Add metadata fields
+  payload += "--" + boundary + "\r\n";
+  payload += "Content-Disposition: form-data; name=\"device_id\"\r\n\r\n";
+  payload += String(DEVICE_ID) + "\r\n";
+
+  payload += "--" + boundary + "\r\n";
+  payload += "Content-Disposition: form-data; name=\"recognized\"\r\n\r\n";
+  payload += String(recognized ? "true" : "false") + "\r\n";
+
+  payload += "--" + boundary + "\r\n";
+  payload += "Content-Disposition: form-data; name=\"name\"\r\n\r\n";
+  payload += String(name) + "\r\n";
+
+  payload += "--" + boundary + "\r\n";
+  payload += "Content-Disposition: form-data; name=\"confidence\"\r\n\r\n";
+  payload += String(confidence, 2) + "\r\n";
+
+  payload += "--" + boundary + "\r\n";
+  payload += "Content-Disposition: form-data; name=\"timestamp\"\r\n\r\n";
+  payload += String(millis()) + "\r\n";
+
+  // Calculate total length
+  size_t totalLength = payload.length();
+  if (imageData != nullptr && imageSize > 0) {
+    String imageHeader = "--" + boundary + "\r\n";
+    imageHeader += "Content-Disposition: form-data; name=\"image\"; filename=\"face.jpg\"\r\n";
+    imageHeader += "Content-Type: image/jpeg\r\n\r\n";
+    totalLength += imageHeader.length() + imageSize + 2; // +2 for \r\n
   }
-  doc["timestamp"] = millis();
+  String footer = "--" + boundary + "--\r\n";
+  totalLength += footer.length();
 
-  String jsonString;
-  serializeJson(doc, jsonString);
+  // Set headers
+  http.addHeader("Content-Type", "multipart/form-data; boundary=" + boundary);
+  http.addHeader("Content-Length", String(totalLength));
+
+  // Build complete payload
+  uint8_t* fullPayload = new uint8_t[totalLength];
+  size_t offset = 0;
+
+  // Copy metadata
+  memcpy(fullPayload + offset, payload.c_str(), payload.length());
+  offset += payload.length();
+
+  // Copy image if provided
+  if (imageData != nullptr && imageSize > 0) {
+    String imageHeader = "--" + boundary + "\r\n";
+    imageHeader += "Content-Disposition: form-data; name=\"image\"; filename=\"face.jpg\"\r\n";
+    imageHeader += "Content-Type: image/jpeg\r\n\r\n";
+
+    memcpy(fullPayload + offset, imageHeader.c_str(), imageHeader.length());
+    offset += imageHeader.length();
+
+    memcpy(fullPayload + offset, imageData, imageSize);
+    offset += imageSize;
+
+    fullPayload[offset++] = '\r';
+    fullPayload[offset++] = '\n';
+
+    Serial.printf("[FaceDetection] Including image: %u bytes\n", imageSize);
+  }
+
+  // Copy footer
+  memcpy(fullPayload + offset, footer.c_str(), footer.length());
 
   // Send POST request
-  int httpResponseCode = http.POST(jsonString);
+  int httpResponseCode = http.POST(fullPayload, totalLength);
+
+  delete[] fullPayload;
 
   if (httpResponseCode > 0) {
     String response = http.getString();
