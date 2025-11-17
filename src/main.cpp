@@ -14,17 +14,19 @@
 #include "DisplayConfig.h"
 #include "hub_network.h"
 #include "uart_slaves.h"
+#include "wifi_functions.h"
+#include "mqtt_client.h"
 
 // ============================================================================
 // UART Pin Configuration
 // ============================================================================
-#define MESH_RX 26  // Main Mesh UART RX
-#define MESH_TX 25  // Main Mesh UART TX
-#define AMP_RX 4    // Main Amp UART RX
-#define AMP_TX 33   // Main Amp UART TX
+#define MESH_RX 26 // Main Mesh UART RX
+#define MESH_TX 25 // Main Mesh UART TX
+#define AMP_RX 4   // Main Amp UART RX
+#define AMP_TX 33  // Main Amp UART TX
 #define UART_BAUD 115200
 
-#define PONG_TIMEOUT 10000  // 10 seconds timeout for ping-pong
+#define PONG_TIMEOUT 10000 // 10 seconds timeout for ping-pong
 
 // ============================================================================
 // Global Objects
@@ -71,7 +73,6 @@ void IRAM_ATTR touchISR()
 // ============================================================================
 // Task Definitions
 // ============================================================================
-void DisplayUpdate();
 void updateTopBar();
 void updateContent();
 void updateTouch();
@@ -85,18 +86,25 @@ void sendMeshPingTask();
 void sendAmpPingTask();
 void checkMeshTimeout();
 void checkAmpTimeout();
+void processMQTTTask();
+void onDoorbellRing();
+void onFaceDetection(bool recognized, const char *name, float confidence);
+void drawWifiSymbol(int x, int y, int strength);
 
-Task taskDisplayUpdate(TASK_SECOND * 5, TASK_FOREVER, &DisplayUpdate);
+Task taskUpdateTopBar(1000, TASK_FOREVER, &updateTopBar);
+Task taskUpdateContent(100, TASK_FOREVER, &updateContent);
 Task taskTouchUpdate(20, TASK_FOREVER, &updateTouch);
 Task taskCapSensorUpdate(100, TASK_FOREVER, &updateCapSensor);
-Task taskSendHeartbeat(60000, TASK_FOREVER, &sendHeartbeatTask);        // Every 60s
-Task taskCheckDoorbell(60000, TASK_FOREVER, &checkDoorbellTask);        // Every 60s
-Task taskCheckMeshUART(20, TASK_FOREVER, &checkMeshUARTData);           // Check Mesh UART every 20ms
-Task taskCheckAmpUART(20, TASK_FOREVER, &checkAmpUARTData);             // Check Amp UART every 20ms
-Task taskSendMeshPing(1000, TASK_FOREVER, &sendMeshPingTask);           // Send ping every 1s
-Task taskSendAmpPing(1000, TASK_FOREVER, &sendAmpPingTask);             // Send ping every 1s
-Task taskCheckMeshTimeout(1000, TASK_FOREVER, &checkMeshTimeout);       // Check timeout every 1s
-Task taskCheckAmpTimeout(1000, TASK_FOREVER, &checkAmpTimeout);         // Check timeout every 1s
+Task taskPushSprites(50, TASK_FOREVER, &pushSpritesToDisplay);
+Task taskSendHeartbeat(60000, TASK_FOREVER, &sendHeartbeatTask);  // Every 60s
+Task taskCheckDoorbell(60000, TASK_FOREVER, &checkDoorbellTask);  // Every 60s
+Task taskProcessMQTT(100, TASK_FOREVER, &processMQTTTask);        // Every 100ms
+Task taskCheckMeshUART(20, TASK_FOREVER, &checkMeshUARTData);     // Check Mesh UART every 20ms
+Task taskCheckAmpUART(20, TASK_FOREVER, &checkAmpUARTData);       // Check Amp UART every 20ms
+Task taskSendMeshPing(1000, TASK_FOREVER, &sendMeshPingTask);     // Send ping every 1s
+Task taskSendAmpPing(1000, TASK_FOREVER, &sendAmpPingTask);       // Send ping every 1s
+Task taskCheckMeshTimeout(1000, TASK_FOREVER, &checkMeshTimeout); // Check timeout every 1s
+Task taskCheckAmpTimeout(1000, TASK_FOREVER, &checkAmpTimeout);   // Check timeout every 1s
 // ============================================================================
 // Setup and Main Loop
 // ============================================================================
@@ -203,16 +211,13 @@ void setup(void)
   last_mesh_pong_time = millis();
   last_amp_pong_time = millis();
 
-  // Initialize network and heartbeat
-  // TODO: Update WiFi credentials and device tokens
-  initNetwork(
-    "YOUR_WIFI_SSID",                       // WiFi SSID
-    "YOUR_WIFI_PASSWORD",                   // WiFi password
-    "http://embedded-smarthome.fly.dev",   // Backend URL
-    "hb_001",                              // Hub device ID
-    "hub",                                  // Device type
-    "f59ac83960ac8d7cd4fdc2915af85ed30ce562b410cfc0217b88b6fd2f7c4739", // Hub API token
-    "db_001"                                // Doorbell device ID to monitor
+  // Initialize heartbeat module (WiFi already initialized by wifi_init())
+  initHeartbeat(
+      "http://embedded-smarthome.fly.dev",                                // Backend URL
+      "hb_001",                                                           // Hub device ID
+      "hub",                                                              // Device type
+      "f59ac83960ac8d7cd4fdc2915af85ed30ce562b410cfc0217b88b6fd2f7c4739", // Hub API token
+      "db_001"                                                            // Doorbell device ID to monitor
   );
 
   // Initialize MQTT client (WiFi already initialized)
@@ -220,10 +225,6 @@ void setup(void)
   connectMQTT(); // Initial connection attempt
 
   Serial.println("[MQTT] Hub will receive doorbell rings and face detection via MQTT!");
-
-  // Initialize Mesh UART communication (pins 25, 26)
-  initMeshUART(25, 26, 115200);  // RX=25, TX=26, Baud=115200
-  Serial.println("[MeshUART] Hub will communicate with Mesh module via UART");
 
   // Setup scheduler tasks
   scheduler.addTask(taskUpdateTopBar);
@@ -233,6 +234,7 @@ void setup(void)
   scheduler.addTask(taskPushSprites);
   scheduler.addTask(taskSendHeartbeat);
   scheduler.addTask(taskCheckDoorbell);
+  scheduler.addTask(taskProcessMQTT);
   scheduler.addTask(taskCheckMeshUART);
   scheduler.addTask(taskCheckAmpUART);
   scheduler.addTask(taskSendMeshPing);
@@ -240,12 +242,14 @@ void setup(void)
   scheduler.addTask(taskCheckMeshTimeout);
   scheduler.addTask(taskCheckAmpTimeout);
 
-  taskDisplayUpdate.enable();
+  taskUpdateTopBar.enable();
+  taskUpdateContent.enable();
   taskTouchUpdate.enable();
   taskCapSensorUpdate.enable();
   taskPushSprites.enable();
   taskSendHeartbeat.enable();
   taskCheckDoorbell.enable();
+  taskProcessMQTT.enable();
   taskCheckMeshUART.enable();
   taskCheckAmpUART.enable();
   taskSendMeshPing.enable();
@@ -274,17 +278,23 @@ void updateTopBar()
   topBar.drawString("ESP32 Hub - Control Center", 50, 10);
 
   // Display doorbell status - show brief status in top bar
-  if (doorbellStatus.data_valid) {
-    if (doorbellOnline) {
+  if (doorbellStatus.data_valid)
+  {
+    if (doorbellOnline)
+    {
       topBar.setTextColor(TFT_GREEN, TFT_WHITE);
       topBar.drawString("DB: ON", 600, 10);
       topBar.setTextColor(TFT_BLACK, TFT_WHITE);
-    } else {
+    }
+    else
+    {
       topBar.setTextColor(TFT_RED, TFT_WHITE);
       topBar.drawString("DB: OFF", 600, 10);
       topBar.setTextColor(TFT_BLACK, TFT_WHITE);
     }
-  } else {
+  }
+  else
+  {
     topBar.setTextColor(TFT_YELLOW, TFT_WHITE);
     topBar.drawString("DB: ...", 600, 10);
     topBar.setTextColor(TFT_BLACK, TFT_WHITE);
@@ -330,7 +340,8 @@ void updateContent()
   char buffer[100];
 
   // Initialize content area on first run (draw static elements once)
-  if (!contentInitialized) {
+  if (!contentInitialized)
+  {
     contentArea.fillScreen(TFT_BLUE);
     contentArea.setTextColor(TFT_WHITE, TFT_BLUE);
     contentArea.setTextSize(3);
@@ -340,48 +351,65 @@ void updateContent()
   }
 
   // Display Main Mesh status
-  if (mesh_status == -1) {
+  if (mesh_status == -1)
+  {
     lcd.setTextColor(TFT_RED);
     lcd.drawString("Main Mesh: OFFLINE", 50, 150);
-  } else if (mesh_status == 0) {
+  }
+  else if (mesh_status == 0)
+  {
     lcd.setTextColor(TFT_YELLOW);
     lcd.drawString("Main Mesh: STANDBY", 50, 150);
-  } else {
+  }
+  else
+  {
     lcd.setTextColor(TFT_GREEN);
     lcd.drawString("Main Mesh: RUNNING", 50, 150);
   }
   lcd.setTextColor(TFT_WHITE);
 
   // Display Main Amp status
-  if (amp_status == -1) {
+  if (amp_status == -1)
+  {
     lcd.setTextColor(TFT_RED);
     lcd.drawString("Main Amp: OFFLINE", 50, 200);
-  } else if (amp_status == 0) {
+  }
+  else if (amp_status == 0)
+  {
     lcd.setTextColor(TFT_YELLOW);
     lcd.drawString("Main Amp: STANDBY", 50, 200);
-  } else {
+  }
+  else
+  {
     lcd.setTextColor(TFT_GREEN);
     lcd.drawString("Main Amp: PLAYING", 50, 200);
   }
   lcd.setTextColor(TFT_WHITE);
 
   // Display doorbell status
-  if (doorbellStatus.data_valid) {
-    if (doorbellOnline) {
+  if (doorbellStatus.data_valid)
+  {
+    if (doorbellOnline)
+    {
       lcd.setTextColor(TFT_GREEN);
       lcd.drawString("Doorbell: ONLINE", 50, 250);
-    } else {
+    }
+    else
+    {
       lcd.setTextColor(TFT_RED);
       lcd.drawString("Doorbell: OFFLINE", 50, 250);
     }
 
     // Show additional info if available
-    if (doorbellOnline) {
+    if (doorbellOnline)
+    {
       char buffer[50];
       sprintf(buffer, "RSSI: %d dBm", doorbellStatus.wifi_rssi);
       lcd.drawString(buffer, 50, 300);
     }
-  } else {
+  }
+  else
+  {
     lcd.setTextColor(TFT_YELLOW);
     lcd.drawString("Doorbell: Checking...", 50, 250);
     lcd.setTextColor(TFT_WHITE);
@@ -474,6 +502,63 @@ void checkDoorbellTask()
 {
   doorbellStatus = checkDoorbellStatus();
   doorbellOnline = doorbellStatus.online;
+}
+
+// Task: Process MQTT messages (replaces polling!)
+void processMQTTTask()
+{
+  processMQTT();
+}
+
+// Callback: Called when doorbell rings (triggered by MQTT)
+void onDoorbellRing()
+{
+  Serial.println("[Hub] 🔔 DOORBELL RANG via MQTT! Playing notification...");
+
+  // Set flag for visual notification
+  doorbellJustRang = true;
+  doorbellRingTime = millis();
+  contentNeedsUpdate = true; // Trigger content area update
+  sendAmpCommand("play", "success");
+}
+
+// Callback: Called when face detection event received (triggered by MQTT)
+void onFaceDetection(bool recognized, const char *name, float confidence)
+{
+  Serial.printf("[Hub] 👤 Face Detection via MQTT!\n");
+  Serial.printf("  Name: %s\n", name);
+  Serial.printf("  Recognized: %s\n", recognized ? "Yes" : "No");
+  Serial.printf("  Confidence: %.2f\n", confidence);
+
+  // TODO: Display face detection on screen
+  // TODO: Log to Firebase via backend
+  // TODO: Show notification based on recognized status
+
+  contentNeedsUpdate = true; // Trigger content area update
+}
+
+// Draw WiFi symbol with signal strength indicator
+void drawWifiSymbol(int x, int y, int strength)
+{
+  // strength: 0=very weak/off, 1=weak, 2=medium, 3=strong
+  uint16_t color = (strength > 0) ? TFT_GREEN : TFT_RED;
+
+  // Draw dot at center
+  topBar.fillCircle(x, y, 2, color);
+
+  // Draw arcs based on strength using drawArc(x, y, r0, r1, angle0, angle1, color)
+  if (strength >= 1)
+  {
+    topBar.drawArc(x, y, 5, 6, 225, 315, color); // Smallest arc
+  }
+  if (strength >= 2)
+  {
+    topBar.drawArc(x, y, 9, 10, 225, 315, color); // Middle arc
+  }
+  if (strength >= 3)
+  {
+    topBar.drawArc(x, y, 13, 14, 225, 315, color); // Largest arc
+  }
 }
 
 // ============================================================================
