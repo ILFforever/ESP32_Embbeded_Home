@@ -1,222 +1,189 @@
-# ESP32-S3 Main Mesh Node
+# ESP32-S3 Main Mesh Hub
 
-Environmental monitoring node for ESP32 Smart Home ecosystem with PM2.5 air quality and climate sensing.
+Central mesh networking hub for ESP32 Smart Home ecosystem. This node aggregates sensor data from mesh network nodes and forwards it to the Main LCD via UART.
 
-## 📋 Features
+## 🏗️ Architecture
 
-- **Air Quality Monitoring:** PMS5003 particulate matter sensor
-  - PM1.0, PM2.5, PM10 measurements
-  - Air quality assessment (Good/Moderate/Unhealthy)
-  - Real-time particle count
+```
+┌─────────────────┐
+│  Room Sensors   │ ─┐
+│   (Mesh Nodes)  │  │
+└─────────────────┘  │
+                      │
+┌─────────────────┐  │  Painless
+│  Door Sensors   │ ─┤   Mesh
+│   (Mesh Nodes)  │  │  Network
+└─────────────────┘  │
+                      │
+┌─────────────────┐  │
+│  Other Sensors  │ ─┤
+│   (Mesh Nodes)  │  │
+└─────────────────┘  │
+                      ▼
+              ┌──────────────┐
+              │  Main Mesh   │ ◄─── PMS5003, DHT11
+              │   (This Hub) │      (Local Sensors)
+              └──────────────┘
+                      │
+                      │ UART
+                      ▼
+              ┌──────────────┐
+              │   Main LCD   │
+              └──────────────┘
+                      │
+                      │ WiFi/MQTT
+                      ▼
+              ┌──────────────┐
+              │   Backend    │
+              │     API      │
+              └──────────────┘
+```
 
-- **Climate Monitoring:** DHT11 temperature & humidity sensor
-  - Temperature measurement (±2°C accuracy)
-  - Humidity measurement (±5% accuracy)
-  - 5-second refresh rate
+## 🎯 Features
 
-- **Connectivity:**
-  - WiFi connection to backend API
-  - Automatic reconnection on network loss
-  - Data transmission every 60 seconds
+- **Painless Mesh Networking**: Automatically forms self-healing mesh network
+- **Local Sensor Reading**: Reads PMS5003 air quality and DHT11 temperature/humidity
+- **Data Aggregation**: Collects and organizes data from all mesh nodes
+- **UART Communication**: Sends aggregated JSON data to Main LCD
+- **Real-time Updates**: 15-second transmission interval
+- **Automatic Cleanup**: Removes stale data from disconnected nodes
 
-- **Status Indicators:**
-  - LED blink patterns for system events
-  - Serial debug output (115200 baud)
-  - Real-time air quality assessment
+## 🔌 Hardware Requirements
 
-## 🔌 Hardware
+### Main Components
+- **ESP32-S3-DevKit-C-1-N16R8V** (this hub)
+- **PMS5003** Particulate Matter Sensor
+- **DHT11** Temperature/Humidity Sensor
+- **Main LCD ESP32** (connected via UART)
 
-- **ESP32-S3 DevKit-C** - Main microcontroller
-- **PMS5003** - Laser particulate matter sensor
-- **DHT11** - Digital temperature & humidity sensor
+### Pin Configuration
 
-## 📊 Pin Configuration
+| Component | ESP32-S3 Pin | Connection |
+|-----------|--------------|------------|
+| **DHT11** |
+| Data | GPIO4 | DHT11 DATA |
+| VCC | 3.3V | DHT11 VCC |
+| GND | GND | DHT11 GND |
+| **PMS5003** |
+| TX → RX | GPIO16 | PMS5003 TX (Pin 4) |
+| RX → TX | GPIO17 | PMS5003 RX (Pin 5) |
+| VCC | 5V | PMS5003 VCC (Pin 1) |
+| GND | GND | PMS5003 GND (Pin 2) |
+| **Main LCD UART** |
+| TX → RX | GPIO19 | Main LCD RX |
+| RX → TX | GPIO18 | Main LCD TX |
+| GND | GND | Main LCD GND |
+| **Status LED** |
+| LED | GPIO48 | Built-in RGB LED |
 
-| Component | Pin        | ESP32-S3 GPIO |
-|-----------|------------|---------------|
-| DHT11     | Data       | GPIO4         |
-| PMS5003   | TX → ESP   | GPIO16 (RX1)  |
-| PMS5003   | RX ← ESP   | GPIO17 (TX1)  |
-| Status LED| RGB LED    | GPIO48        |
+## 📡 Mesh Network Configuration
 
-**Power:**
-- DHT11: 3.3V
-- PMS5003: 5V (important!)
-- Total: ~180mA typical, 1A max
+### Network Settings
+```cpp
+#define MESH_PREFIX       "ESP32_SmartHome_Mesh"
+#define MESH_PASSWORD     "smarthome2024"
+#define MESH_PORT         5555
+```
 
-See [WIRING_DIAGRAM.md](WIRING_DIAGRAM.md) for detailed wiring instructions.
+### Supported Mesh Nodes
+- Room temperature/humidity sensors
+- Door/window sensors
+- Motion sensors
+- Gas/smoke detectors
+- Any ESP32 device running compatible firmware
+
+## 📊 Data Format
+
+### UART Output to Main LCD
+```json
+{
+  "source": "main_mesh",
+  "device_id": "main_mesh_001",
+  "device_type": "mesh_hub",
+  "timestamp": 123456789,
+  "mesh_node_id": 3482719283,
+  "mesh_node_count": 3,
+  "local_sensors": {
+    "temperature": 25.5,
+    "humidity": 60.2,
+    "pm1_0": 8,
+    "pm2_5": 15,
+    "pm10": 20
+  },
+  "mesh_sensors": [
+    {
+      "node_id": 1234567890,
+      "device_id": "room_sensor_001",
+      "device_type": "room_sensor",
+      "age_ms": 2500,
+      "data": {
+        "temperature": 24.0,
+        "humidity": 55.0
+      }
+    },
+    {
+      "node_id": 9876543210,
+      "device_id": "door_sensor_001",
+      "device_type": "door_sensor",
+      "age_ms": 1200,
+      "data": {
+        "door_state": "closed"
+      }
+    }
+  ]
+}
+```
+
+### Expected Input from Mesh Nodes
+Each mesh node should send JSON formatted as:
+```json
+{
+  "device_id": "room_sensor_001",
+  "device_type": "room_sensor",
+  "temperature": 24.0,
+  "humidity": 55.0
+}
+```
 
 ## 🚀 Quick Start
 
-### 1. Hardware Setup
-
-```
-ESP32-S3        DHT11          PMS5003
-┌─────┐        ┌────┐         ┌──────┐
-│3.3V │────────│VCC │         │      │
-│GPIO4│────────│DATA│         │      │
-│GND  │────────│GND │────┬────│GND   │
-│     │        └────┘    │    │      │
-│5V   │─────────────────┴────│VCC   │
-│RX1  │──────────────────────│TX    │
-│TX1  │──────────────────────│RX    │
-└─────┘                       └──────┘
-```
-
-### 2. Software Setup
-
+### 1. Install PlatformIO
 ```bash
-# Install PlatformIO
+# Install PlatformIO Core
 pip install platformio
 
-# Clone repository (if not already)
+# Or use PlatformIO IDE extension in VS Code
+```
+
+### 2. Clone and Configure
+```bash
+# Clone the repository
 git clone <repo-url>
 cd ESP32_Embbeded_Home
-git checkout Main_mesh
 
-# Build and upload
+# Switch to Main_mesh branch
+git checkout Main_mesh
+```
+
+### 3. Update Configuration (Optional)
+Edit `src/main.cpp` to customize:
+- `MESH_PREFIX` - Your mesh network name
+- `MESH_PASSWORD` - Your mesh network password
+- `DEVICE_ID` - This hub's unique identifier
+- Pin assignments if needed
+
+### 4. Build and Upload
+```bash
+# Build the project
+pio run
+
+# Upload to ESP32-S3
 pio run --target upload
 
 # Monitor serial output
 pio device monitor
 ```
 
-### 3. Configure WiFi & API
-
-Edit `src/main.cpp` lines 42-47:
-
-```cpp
-const char* WIFI_SSID     = "YourWiFiSSID";
-const char* WIFI_PASSWORD = "YourWiFiPassword";
-const char* API_URL       = "https://your-backend.fly.dev/api/v1/devices/sensor";
-const char* DEVICE_ID     = "main_mesh_001";
-const char* API_TOKEN     = "your_device_api_token_here";
+### 5. Verify Operation
+Check serial monitor for:
 ```
-
-## 📡 Data Format
-
-### Sent to Backend (JSON)
-
-```json
-{
-  "device_id": "main_mesh_001",
-  "sensors": {
-    "temperature": 25.3,
-    "humidity": 60.5,
-    "pm1_0": 8,
-    "pm2_5": 12,
-    "pm10": 15
-  }
-}
-```
-
-### Reading Intervals
-
-- **DHT11:** Every 5 seconds
-- **PMS5003:** Every 30 seconds
-- **Server Upload:** Every 60 seconds
-
-## 📈 Air Quality Index
-
-Based on PM2.5 levels (µg/m³):
-
-| PM2.5 Range | AQI Category                    | Color  |
-|-------------|---------------------------------|--------|
-| 0-12        | Good                            | Green  |
-| 12-35       | Moderate                        | Yellow |
-| 35-55       | Unhealthy (Sensitive Groups)    | Orange |
-| 55+         | Unhealthy                       | Red    |
-
-## 🔧 Troubleshooting
-
-**DHT11 returns NaN:**
-- Check 3.3V power connection
-- Verify GPIO4 connection
-- Ensure 10kΩ pull-up resistor (if not built-in)
-- Wait 2 seconds after power-on
-
-**PMS5003 no data:**
-- Wait 30 seconds for sensor warm-up
-- Verify 5V power (not 3.3V!)
-- Check TX/RX connections (TX → RX, RX → TX)
-- Listen for fan noise
-- Baud rate must be 9600
-
-**WiFi not connecting:**
-- Verify 2.4GHz network (ESP32 doesn't support 5GHz)
-- Check SSID/password are correct
-- Ensure WiFi is in range
-
-**Server upload fails:**
-- Verify API URL is correct and accessible
-- Check device is registered with valid API token
-- Ensure backend is running
-
-## 🛠️ Development
-
-### Project Structure
-
-```
-ESP32_Embbeded_Home/
-├── platformio.ini          # PlatformIO configuration
-├── src/
-│   └── main.cpp            # Main application code
-├── WIRING_DIAGRAM.md       # Detailed wiring guide
-└── README.md               # This file
-```
-
-### Libraries Used
-
-- **DHT sensor library** (Adafruit) - DHT11/DHT22 sensors
-- **PMS Library** (fu-hsi) - PMS5003/PMS7003 sensors
-- **ArduinoJson** - JSON serialization
-- **WiFi** (ESP32 built-in) - Network connectivity
-- **HTTPClient** (ESP32 built-in) - REST API calls
-
-### Building for Production
-
-```bash
-# Build release version
-pio run -e esp32-s3-devkitc-1
-
-# Upload via USB
-pio run --target upload
-
-# Upload via OTA (if configured)
-pio run --target upload --upload-port 192.168.1.100
-```
-
-## 📊 Serial Monitor Output
-
-```
-========================================
-ESP32-S3 Main Mesh Node
-PMS5003 + DHT11 Sensors
-========================================
-
-[WiFi] Connecting to MyNetwork.... Connected!
-[WiFi] IP Address: 192.168.1.100
-[WiFi] Signal Strength: -45 dBm
-
-[DHT11] Temperature: 25.3°C | Humidity: 60.5%
-[PMS5003] ✓ PM1.0: 8 µg/m³ | PM2.5: 12 µg/m³ | PM10: 15 µg/m³
-[PMS5003] Air Quality: GOOD
-
-[Server] ✓ Response code: 200
-```
-
-## 🔗 Related Projects
-
-- **Backend** - Express/Firebase API server
-- **Frontend** - Next.js dashboard
-- **Main_lcd** - Central hub LCD display
-- **Doorbell_Camera** - Face recognition doorbell
-
-## 📝 License
-
-MIT License - See [LICENSE](LICENSE) file
-
-## 🎓 Course Project
-
-Developed for Chulalongkorn University's **2110356 Embedded Systems** course.
-
