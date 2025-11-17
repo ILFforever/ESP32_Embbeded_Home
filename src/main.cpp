@@ -47,6 +47,15 @@ unsigned long doorbellRingTime = 0;
 volatile bool topBarNeedsUpdate = false;
 volatile bool contentNeedsUpdate = false;
 
+// Track previous values to detect changes
+static int prevFreeHeap = 0;
+static int prevFreePsram = 0;
+static int prevDoorbellRssi = 0;
+static bool prevDoorbellOnline = false;
+static bool prevDoorbellDataValid = false;
+static bool prevDoorbellRinging = false;
+static bool contentInitialized = false;
+
 void IRAM_ATTR touchISR()
 {
   touchDataReady = true;
@@ -68,12 +77,12 @@ void onDoorbellRing();
 void drawWifiSymbol(int x, int y, int strength);
 
 Task taskUpdateTopBar(1000, TASK_FOREVER, &updateTopBar);
-Task taskUpdateContent(TASK_SECOND * 10, TASK_FOREVER, &updateContent);
+Task taskUpdateContent(100, TASK_FOREVER, &updateContent);         // Every 100ms - check for updates
 Task taskTouchUpdate(20, TASK_FOREVER, &updateTouch);
 Task taskCapSensorUpdate(100, TASK_FOREVER, &updateCapSensor);
 Task taskPushSprites(50, TASK_FOREVER, &pushSpritesToDisplay);     // Every 50ms = 20 FPS max
-Task taskSendHeartbeat(60000, TASK_FOREVER, &sendHeartbeatTask);   // Every 60s
-Task taskCheckDoorbell(60000, TASK_FOREVER, &checkDoorbellTask);   // Every 60s
+Task taskSendHeartbeat(TASK_SECOND * 60, TASK_FOREVER, &sendHeartbeatTask);   // Every 60s
+Task taskCheckDoorbell(TASK_SECOND * 60, TASK_FOREVER, &checkDoorbellTask);   // Every 60s
 Task taskProcessMQTT(100, TASK_FOREVER, &processMQTTTask);          // Every 100ms - Process MQTT messages
 Task taskMicrophoneLoudness(100, TASK_FOREVER, &updateMicrophoneLoudness); // Every 100ms
 // ============================================================================
@@ -275,45 +284,98 @@ void updateTopBar()
 
 void updateContent()
 {
-  // Update content area periodically
-  contentArea.fillScreen(TFT_BLUE);
-  contentArea.setTextColor(TFT_WHITE, TFT_BLUE);
-  contentArea.setTextSize(3);
-  contentArea.drawString("LovyanGFX Multi-Sprite!", 50, 10);
-
-  // Display system info
-  contentArea.setTextSize(2);
+  bool needsUpdate = false;
   char buffer[100];
-  sprintf(buffer, "Free Heap: %d bytes", ESP.getFreeHeap());
-  contentArea.drawString(buffer, 50, 100);
 
-  sprintf(buffer, "Free PSRAM: %d bytes", ESP.getFreePsram());
-  contentArea.drawString(buffer, 50, 130);
-
-  // Display detailed doorbell info
-  if (doorbellStatus.data_valid && doorbellOnline) {
-    sprintf(buffer, "Doorbell RSSI: %d dBm", doorbellStatus.wifi_rssi);
-    contentArea.drawString(buffer, 50, 160);
-  }
-
-  // Display doorbell ring notification (large, centered)
-  if (doorbellJustRang && (millis() - doorbellRingTime < RING_NOTIFICATION_DURATION)) {
-    // Draw large notification
-    contentArea.fillRect(100, 200, 600, 100, TFT_RED);
-    contentArea.setTextColor(TFT_WHITE, TFT_RED);
-    contentArea.setTextSize(5);
-    contentArea.drawString("DOORBELL RINGING!", 150, 220);
-
+  // Initialize content area on first run (draw static elements once)
+  if (!contentInitialized) {
+    contentArea.fillScreen(TFT_BLUE);
+    contentArea.setTextColor(TFT_WHITE, TFT_BLUE);
     contentArea.setTextSize(3);
-    contentArea.setTextColor(TFT_YELLOW, TFT_RED);
-    contentArea.drawString("Someone is at the door", 200, 270);
-  } else if (doorbellJustRang) {
-    // Clear notification after duration
-    doorbellJustRang = false;
+    contentArea.drawString("LovyanGFX Multi-Sprite!", 50, 10);
+    contentInitialized = true;
+    needsUpdate = true;
   }
 
-  // Mark that content needs update
-  contentNeedsUpdate = true;
+  // Get current values
+  int currentFreeHeap = ESP.getFreeHeap();
+  int currentFreePsram = ESP.getFreePsram();
+  bool currentDoorbellRinging = doorbellJustRang && (millis() - doorbellRingTime < RING_NOTIFICATION_DURATION);
+
+  // Update heap info only if changed (update every ~100 checks to avoid minor fluctuations)
+  static int heapUpdateCounter = 0;
+  heapUpdateCounter++;
+  if (heapUpdateCounter >= 10 || !prevFreeHeap) { // Update every 1 second (100ms * 10)
+    if (abs(currentFreeHeap - prevFreeHeap) > 1000 || !prevFreeHeap) { // Only if changed by >1KB
+      contentArea.setTextSize(2);
+      contentArea.setTextColor(TFT_WHITE, TFT_BLUE);
+      // Clear previous text area
+      contentArea.fillRect(50, 100, 400, 20, TFT_BLUE);
+      sprintf(buffer, "Free Heap: %d bytes", currentFreeHeap);
+      contentArea.drawString(buffer, 50, 100);
+      prevFreeHeap = currentFreeHeap;
+      needsUpdate = true;
+    }
+
+    if (abs(currentFreePsram - prevFreePsram) > 1000 || !prevFreePsram) { // Only if changed by >1KB
+      contentArea.setTextSize(2);
+      contentArea.setTextColor(TFT_WHITE, TFT_BLUE);
+      // Clear previous text area
+      contentArea.fillRect(50, 130, 400, 20, TFT_BLUE);
+      sprintf(buffer, "Free PSRAM: %d bytes", currentFreePsram);
+      contentArea.drawString(buffer, 50, 130);
+      prevFreePsram = currentFreePsram;
+      needsUpdate = true;
+    }
+    heapUpdateCounter = 0;
+  }
+
+  // Update doorbell info only if status changed
+  if (doorbellStatus.data_valid != prevDoorbellDataValid ||
+      doorbellOnline != prevDoorbellOnline ||
+      doorbellStatus.wifi_rssi != prevDoorbellRssi) {
+
+    // Clear the doorbell info area
+    contentArea.fillRect(50, 160, 400, 20, TFT_BLUE);
+
+    if (doorbellStatus.data_valid && doorbellOnline) {
+      contentArea.setTextSize(2);
+      contentArea.setTextColor(TFT_WHITE, TFT_BLUE);
+      sprintf(buffer, "Doorbell RSSI: %d dBm", doorbellStatus.wifi_rssi);
+      contentArea.drawString(buffer, 50, 160);
+      prevDoorbellRssi = doorbellStatus.wifi_rssi;
+    }
+
+    prevDoorbellDataValid = doorbellStatus.data_valid;
+    prevDoorbellOnline = doorbellOnline;
+    needsUpdate = true;
+  }
+
+  // Handle doorbell ring notification (time-sensitive, update immediately)
+  if (currentDoorbellRinging != prevDoorbellRinging) {
+    if (currentDoorbellRinging) {
+      // Draw large notification
+      contentArea.fillRect(100, 200, 600, 100, TFT_RED);
+      contentArea.setTextColor(TFT_WHITE, TFT_RED);
+      contentArea.setTextSize(5);
+      contentArea.drawString("DOORBELL RINGING!", 150, 220);
+
+      contentArea.setTextSize(3);
+      contentArea.setTextColor(TFT_YELLOW, TFT_RED);
+      contentArea.drawString("Someone is at the door", 200, 270);
+    } else {
+      // Clear notification area
+      contentArea.fillRect(100, 200, 600, 100, TFT_BLUE);
+      doorbellJustRang = false; // Reset flag
+    }
+    prevDoorbellRinging = currentDoorbellRinging;
+    needsUpdate = true;
+  }
+
+  // Only mark for update if something actually changed
+  if (needsUpdate) {
+    contentNeedsUpdate = true;
+  }
 }
 
 void updateTouch()
