@@ -35,15 +35,12 @@ export default function Home() {
 
   // Show loading state while checking authentication
   return (
-    <div style={{
-      display: 'flex',
-      justifyContent: 'center',
-      alignItems: 'center',
-      minHeight: '100vh',
-      fontSize: '18px',
-      color: '#666'
-    }}>
-      Loading...
+    <div className="loading-page">
+      <div className="loading-content">
+        <div className="loading-spinner"></div>
+        <h1>ESP32 SMART HOME</h1>
+        <p>Initializing system...</p>
+      </div>
     </div>
   );
 }

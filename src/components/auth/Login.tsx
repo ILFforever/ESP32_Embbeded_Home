@@ -1,5 +1,5 @@
 'use client';
-import { useState, FormEvent } from 'react';
+import { useState, FormEvent, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 
@@ -8,9 +8,18 @@ export default function Login() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  
+  const [theme, setTheme] = useState<'purple' | 'green'>('purple');
+
   const router = useRouter();
   const { login } = useAuth();
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme);
+  }, [theme]);
+
+  const toggleTheme = () => {
+    setTheme(prev => prev === 'purple' ? 'green' : 'purple');
+  };
 
   const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -34,116 +43,84 @@ export default function Login() {
   };
 
   return (
-    <div style={{
-      display: 'flex',
-      justifyContent: 'center',
-      alignItems: 'center',
-      minHeight: '100vh',
-      backgroundColor: '#f5f5f5'
-    }}>
-      <div style={{
-        backgroundColor: 'white',
-        padding: '40px',
-        borderRadius: '8px',
-        boxShadow: '0 2px 10px rgba(0,0,0,0.1)',
-        width: '100%',
-        maxWidth: '400px'
-      }}>
-        <h1 style={{ 
-          marginBottom: '30px', 
-          textAlign: 'center',
-          color: '#333'
-        }}>
-          ESP32 Smart Home
-        </h1>
-        
-        <form onSubmit={handleSubmit}>
-          {error && (
-            <div style={{
-              padding: '10px',
-              marginBottom: '20px',
-              backgroundColor: '#fee',
-              color: '#c33',
-              borderRadius: '4px',
-              fontSize: '14px'
-            }}>
-              {error}
+    <div className="login-page">
+      {/* Theme Toggle */}
+      <div className="login-theme-toggle">
+        <button
+          onClick={toggleTheme}
+          className="theme-toggle-btn"
+          aria-label="Toggle theme"
+        >
+          <div className={`toggle-track ${theme}`}>
+            <div className="toggle-thumb"></div>
+          </div>
+        </button>
+      </div>
+
+      <div className="login-container">
+        <div className="login-card">
+          <div className="login-header">
+            <div className="login-icon">🏠</div>
+            <h1>ESP32 SMART HOME</h1>
+            <p className="login-subtitle">SECURE ACCESS CONTROL</p>
+          </div>
+
+          <form onSubmit={handleSubmit} className="login-form">
+            {error && (
+              <div className="login-error">
+                <span>⚠</span>
+                {error}
+              </div>
+            )}
+
+            <div className="form-group">
+              <label htmlFor="email">EMAIL ADDRESS</label>
+              <input
+                id="email"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+                disabled={isLoading}
+                placeholder="user@example.com"
+                autoComplete="email"
+              />
             </div>
-          )}
-          
-          <div style={{ marginBottom: '20px' }}>
-            <label htmlFor="email" style={{
-              display: 'block',
-              marginBottom: '8px',
-              fontWeight: '500',
-              color: '#333'
-            }}>
-              Email
-            </label>
-            <input
-              id="email"
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
+
+            <div className="form-group">
+              <label htmlFor="password">PASSWORD</label>
+              <input
+                id="password"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                disabled={isLoading}
+                placeholder="••••••••"
+                autoComplete="current-password"
+              />
+            </div>
+
+            <button
+              type="submit"
               disabled={isLoading}
-              style={{
-                width: '100%',
-                padding: '10px',
-                border: '1px solid #ddd',
-                borderRadius: '4px',
-                fontSize: '16px',
-                boxSizing: 'border-box'
-              }}
-            />
+              className="login-submit-btn"
+            >
+              {isLoading ? (
+                <>
+                  <span className="btn-spinner"></span>
+                  AUTHENTICATING...
+                </>
+              ) : (
+                'SIGN IN'
+              )}
+            </button>
+          </form>
+
+          <div className="login-footer">
+            <p>POWERED BY ESP32 | SECURED CONNECTION</p>
           </div>
-          
-          <div style={{ marginBottom: '30px' }}>
-            <label htmlFor="password" style={{
-              display: 'block',
-              marginBottom: '8px',
-              fontWeight: '500',
-              color: '#333'
-            }}>
-              Password
-            </label>
-            <input
-              id="password"
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-              disabled={isLoading}
-              style={{
-                width: '100%',
-                padding: '10px',
-                border: '1px solid #ddd',
-                borderRadius: '4px',
-                fontSize: '16px',
-                boxSizing: 'border-box'
-              }}
-            />
-          </div>
-          
-          <button
-            type="submit"
-            disabled={isLoading}
-            style={{
-              width: '100%',
-              padding: '12px',
-              backgroundColor: isLoading ? '#999' : '#007bff',
-              color: 'white',
-              border: 'none',
-              borderRadius: '4px',
-              fontSize: '16px',
-              fontWeight: '500',
-              cursor: isLoading ? 'not-allowed' : 'pointer',
-              transition: 'background-color 0.2s'
-            }}
-          >
-            {isLoading ? 'Signing in...' : 'Sign In'}
-          </button>
-        </form>
+        </div>
       </div>
     </div>
   );
