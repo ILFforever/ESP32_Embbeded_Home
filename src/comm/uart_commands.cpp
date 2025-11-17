@@ -5,7 +5,7 @@
 // Send command to Slave (with automatic mode tracking)
 void sendUARTCommand(const char *cmd, const char *param, int value)
 {
-  JsonDocument doc;
+  StaticJsonDocument<256> doc;
   doc["cmd"] = cmd;
 
   // Create nested params object if there are parameters
@@ -53,7 +53,7 @@ void sendUARTCommand(const char *cmd, const char *param, int value)
 // Send command to AMP board
 void sendUART2Command(const char *cmd, const char *urls)
 {
-  JsonDocument doc;
+  StaticJsonDocument<256> doc;
   doc["cmd"] = cmd;
   doc["url"] = urls;
 
@@ -65,7 +65,7 @@ void sendUART2Command(const char *cmd, const char *urls)
 // Send ping message to Slave (Camera)
 void sendUARTPing()
 {
-  JsonDocument doc;
+  StaticJsonDocument<128> doc;
   doc["type"] = "ping";
   doc["seq"] = ping_counter++;
   doc["timestamp"] = millis();
@@ -81,7 +81,7 @@ void sendUART2Ping()
 {
   extern uint32_t amp_ping_counter;
 
-  JsonDocument doc;
+  StaticJsonDocument<128> doc;
   doc["type"] = "ping";
   doc["seq"] = amp_ping_counter++;
   doc["timestamp"] = millis();
@@ -97,7 +97,7 @@ void sendMeshPing()
 {
   extern uint32_t mesh_ping_counter;
 
-  JsonDocument doc;
+  StaticJsonDocument<128> doc;
   doc["type"] = "ping";
   doc["seq"] = mesh_ping_counter++;
   doc["timestamp"] = millis();

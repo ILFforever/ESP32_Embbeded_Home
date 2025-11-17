@@ -69,7 +69,7 @@ void fetchWeatherTask() {
         String payload = http.getString();
 
         // Parse JSON response
-        JsonDocument doc;
+        StaticJsonDocument<512> doc;
         DeserializationError error = deserializeJson(doc, payload);
 
         if (!error) {
