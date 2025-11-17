@@ -3,7 +3,7 @@
 #include "slave_state_manager.h"
 #include "heartbeat.h"
 #include "SPIMaster.h"
-#include <base64.hpp>
+#include <base64.h>  // ESP32 Arduino built-in
 
 // External references
 extern SPIMaster spiMaster;
@@ -201,8 +201,8 @@ void handleUARTResponse(String line)
 
         if (frameData != nullptr && frameSize > 0)
         {
-          // Encode JPEG frame to Base64
-          imageBase64 = base64::encode(frameData, frameSize);
+          // Encode JPEG frame to Base64 using ESP32 built-in function
+          imageBase64 = base64_encode(frameData, frameSize);
           Serial.printf("[FaceDetection] Captured frame: %u bytes -> %u Base64 chars\n",
                         frameSize, imageBase64.length());
         }
