@@ -21,6 +21,9 @@ void sendSensorData(float temperature, float humidity, int motion);
 // Send warning to backend (for 30s disconnect events)
 void sendDisconnectWarning(const char* module_name, bool isDisconnected);
 
+// Send doorbell ring event to backend (notify hub to play audio)
+void sendDoorbellRing();
+
 // Get last heartbeat status
 bool getLastHeartbeatSuccess();
 unsigned long getLastHeartbeatTime();

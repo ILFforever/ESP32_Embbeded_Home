@@ -190,6 +190,63 @@ void sendDisconnectWarning(const char* module_name, bool isDisconnected) {
 }
 
 // ============================================================================
+// Send doorbell ring event to backend (notify hub to play audio)
+// ============================================================================
+void sendDoorbellRing() {
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("[Doorbell] WiFi not connected - skipping ring event");
+    return;
+  }
+
+  HTTPClient http;
+  String url = String(BACKEND_SERVER_URL) + "/api/v1/devices/doorbell/ring";
+
+  http.begin(url);  // Plain HTTP - no SSL (memory optimization for ESP32)
+  http.addHeader("Content-Type", "application/json");
+
+  // Add X-Device-Token header for authentication
+  if (DEVICE_API_TOKEN && strlen(DEVICE_API_TOKEN) > 0) {
+    http.addHeader("X-Device-Token", DEVICE_API_TOKEN);
+  }
+
+  http.setTimeout(5000);
+
+  // Build JSON payload
+  JsonDocument doc;
+  doc["device_id"] = DEVICE_ID;
+
+  String jsonString;
+  serializeJson(doc, jsonString);
+
+  // Send POST request
+  int httpResponseCode = http.POST(jsonString);
+
+  if (httpResponseCode > 0) {
+    String response = http.getString();
+
+    if (httpResponseCode == 200) {
+      Serial.printf("[Doorbell] ✓ Ring event sent (code: %d)\n", httpResponseCode);
+
+      // Optional: Parse response
+      JsonDocument responseDoc;
+      DeserializationError error = deserializeJson(responseDoc, response);
+      if (!error && responseDoc.containsKey("status")) {
+        const char* status = responseDoc["status"];
+        Serial.printf("[Doorbell] → Server response: %s\n", status);
+      }
+    } else {
+      Serial.printf("[Doorbell] ✗ Failed (code: %d)\n", httpResponseCode);
+      Serial.printf("[Doorbell] Response: %s\n", response.c_str());
+    }
+  } else {
+    Serial.printf("[Doorbell] ✗ Connection failed: %s\n",
+                  http.errorToString(httpResponseCode).c_str());
+  }
+
+  http.end();
+}
+
+// ============================================================================
 // Status getters
 // ============================================================================
 bool getLastHeartbeatSuccess() {

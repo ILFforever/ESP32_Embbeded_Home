@@ -1220,11 +1220,13 @@ void updateButtonState(ButtonState &btn, int pin, const char *buttonName)
         // Handle button press action (short press)
         if (strcmp(buttonName, "Doorbell") == 0)
         {
-          // Doorbell button pressed send to hub
+          // Doorbell button pressed - play audio and send to backend
           String oldStatus = status_msg;
           updateStatusMsg("Ringing...", true, oldStatus.c_str());
           sendUART2Command("play", "doorbell");
-          // TODO add connnection to hub
+
+          // Send doorbell ring event to backend (hub will be notified)
+          sendDoorbellRing();
         }
         else if (strcmp(buttonName, "Call") == 0)
         {
