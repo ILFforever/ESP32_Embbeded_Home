@@ -17,6 +17,24 @@ const WRITE_INTERVAL_MS = 5 * 60 * 1000; // Write every 5 minutes
 const SENSOR_DELTA_THRESHOLD = 5; // Write if sensor changes by 5%
 const OFFLINE_THRESHOLD_MS = 2 * 60 * 1000; // 2 minutes = offline
 
+// TTL Settings (Firestore auto-deletion)
+const STATUS_TTL_SECONDS = 120; // 2 minutes - document auto-deletes if no heartbeat
+const HISTORY_RETENTION_DAYS = 30; // Keep history for 30 days
+
+// Helper: Calculate expiration timestamp for status (2 minutes)
+function getStatusExpiration() {
+  const expirationDate = new Date();
+  expirationDate.setSeconds(expirationDate.getSeconds() + STATUS_TTL_SECONDS);
+  return admin.firestore.Timestamp.fromDate(expirationDate);
+}
+
+// Helper: Calculate expiration timestamp for history (30 days)
+function getHistoryExpiration() {
+  const expirationDate = new Date();
+  expirationDate.setDate(expirationDate.getDate() + HISTORY_RETENTION_DAYS);
+  return admin.firestore.Timestamp.fromDate(expirationDate);
+}
+
 // Helper: Check if should write to Firebase
 function shouldWriteToFirebase(deviceId, newData, dataType = 'heartbeat') {
   const cached = deviceCache.get(deviceId);
@@ -109,11 +127,8 @@ const registerDevice = async (req, res) => {
       disabled: false
     });
 
-    // Initialize status subcollection
-    await deviceRef.collection('status').doc('current').set({
-      online: false,
-      last_heartbeat: null
-    });
+    // Note: No initial status document - it will be created on first heartbeat with TTL
+    // This ensures TTL-based online detection works from the start
 
     console.log(`[Register] New device registered: ${device_id} (${device_type})`);
 
@@ -164,17 +179,33 @@ const handleHeartbeat = async (req, res) => {
 
       const db = getFirestore();
       const deviceRef = db.collection('devices').doc(device_id);
+      const now = admin.firestore.FieldValue.serverTimestamp();
+      const statusExpireAt = getStatusExpiration();
+      const historyExpireAt = getHistoryExpiration();
 
-      // Write to Firebase
+      // Write current status WITH TTL - auto-deletes if device goes offline
       await deviceRef.collection('status').doc('current').set({
         ...heartbeatData,
-        last_heartbeat: admin.firestore.FieldValue.serverTimestamp(),
+        last_heartbeat: now,
+        updated_at: now,
+        expireAt: statusExpireAt  // TTL: Auto-delete after 2 min if no heartbeat
       }, { merge: true });
 
+      // Update device metadata (no TTL)
       await deviceRef.set({
         type: device_type,
-        last_seen: admin.firestore.FieldValue.serverTimestamp(),
+        last_seen: now,
       }, { merge: true });
+
+      // Add to heartbeat history with TTL (auto-delete after 30 days)
+      await deviceRef.collection('heartbeat_history').add({
+        timestamp: now,
+        ip_address: heartbeatData.ip_address,
+        uptime_ms: heartbeatData.uptime_ms,
+        free_heap: heartbeatData.free_heap,
+        wifi_rssi: heartbeatData.wifi_rssi,
+        expireAt: historyExpireAt  // TTL: Auto-delete old history
+      });
 
       // Update cache
       updateCache(device_id, heartbeatData, 'heartbeat');
@@ -256,7 +287,7 @@ const handleSensorData = async (req, res) => {
 
 // ============================================================================
 // @route   GET /api/v1/devices/:device_id/status
-// @desc    Get current device status (checks online/offline)
+// @desc    Get current device status (TTL-based: document exists = online, missing = offline)
 // ============================================================================
 const getDeviceStatus = async (req, res) => {
   try {
@@ -269,25 +300,28 @@ const getDeviceStatus = async (req, res) => {
       .doc('current')
       .get();
 
-    if (!statusDoc.exists) {
-      return res.status(404).json({
-        status: 'error',
-        message: 'Device not found'
+    if (statusDoc.exists) {
+      // Document exists = device is online (TTL hasn't deleted it)
+      const data = statusDoc.data();
+      res.json({
+        status: 'ok',
+        device_id,
+        online: true,
+        last_heartbeat: data.last_heartbeat,
+        uptime_ms: data.uptime_ms,
+        free_heap: data.free_heap,
+        wifi_rssi: data.wifi_rssi,
+        ip_address: data.ip_address
+      });
+    } else {
+      // Document doesn't exist = device went offline and TTL deleted it
+      res.json({
+        status: 'ok',
+        device_id,
+        online: false,
+        message: 'Device offline (no heartbeat in 2+ minutes)'
       });
     }
-
-    const data = statusDoc.data();
-    const lastHeartbeat = data.last_heartbeat?.toMillis() || 0;
-    const now = Date.now();
-    const isOnline = (now - lastHeartbeat) < OFFLINE_THRESHOLD_MS;
-
-    res.json({
-      status: 'ok',
-      device_id,
-      online: isOnline,
-      last_seen: new Date(lastHeartbeat).toISOString(),
-      ...data
-    });
 
   } catch (error) {
     console.error('[Status] Error:', error);
@@ -297,7 +331,7 @@ const getDeviceStatus = async (req, res) => {
 
 // ============================================================================
 // @route   GET /api/v1/devices/status/all
-// @desc    Get status of all devices (for frontend dashboard)
+// @desc    Get status of all devices (TTL-based: document exists = online)
 // ============================================================================
 const getAllDevicesStatus = async (req, res) => {
   try {
@@ -305,7 +339,6 @@ const getAllDevicesStatus = async (req, res) => {
     const devicesSnapshot = await db.collection('devices').get();
 
     const devices = [];
-    const now = Date.now();
 
     for (const deviceDoc of devicesSnapshot.docs) {
       const deviceId = deviceDoc.id;
@@ -315,15 +348,15 @@ const getAllDevicesStatus = async (req, res) => {
       const statusDoc = await deviceDoc.ref.collection('status').doc('current').get();
 
       if (statusDoc.exists) {
+        // Document exists = device is online (TTL hasn't deleted it)
         const statusData = statusDoc.data();
         const lastHeartbeat = statusData.last_heartbeat?.toMillis() || 0;
-        const isOnline = (now - lastHeartbeat) < OFFLINE_THRESHOLD_MS;
 
         devices.push({
           device_id: deviceId,
           type: deviceData.type || 'unknown',
           name: deviceData.name || deviceId,
-          online: isOnline,
+          online: true,  // Document exists = online
           last_seen: lastHeartbeat ? new Date(lastHeartbeat).toISOString() : null,
           uptime_ms: statusData.uptime_ms || 0,
           free_heap: statusData.free_heap || 0,
@@ -331,12 +364,12 @@ const getAllDevicesStatus = async (req, res) => {
           ip_address: statusData.ip_address || null
         });
       } else {
-        // Device registered but never sent heartbeat
+        // Document doesn't exist = device offline (TTL deleted it or never sent heartbeat)
         devices.push({
           device_id: deviceId,
           type: deviceData.type || 'unknown',
           name: deviceData.name || deviceId,
-          online: false,
+          online: false,  // Document missing = offline
           last_seen: null,
           uptime_ms: 0,
           free_heap: 0,
