@@ -3,7 +3,6 @@
 #include "slave_state_manager.h"
 #include "heartbeat.h"
 #include "SPIMaster.h"
-#include <base64.hpp>
 
 // External references
 extern SPIMaster spiMaster;
@@ -192,24 +191,24 @@ void handleUARTResponse(String line)
       // Clear face recognition timeout (face was recognized)
       face_recognition_active = false;
 
-      // Capture last frame and convert to Base64
-      String imageBase64 = "";
+      // Capture last frame (raw JPEG - no Base64 encoding needed!)
+      uint8_t* frameData = nullptr;
+      uint32_t frameSize = 0;
+
       if (spiMaster.isFrameReady())
       {
-        uint8_t* frameData = spiMaster.getFrameData();
-        uint32_t frameSize = spiMaster.getFrameSize();
+        frameData = spiMaster.getFrameData();
+        frameSize = spiMaster.getFrameSize();
 
         if (frameData != nullptr && frameSize > 0)
         {
-          // Encode JPEG frame to Base64
-          imageBase64 = base64::encode(frameData, frameSize);
-          Serial.printf("[FaceDetection] Captured frame: %u bytes -> %u Base64 chars\n",
-                        frameSize, imageBase64.length());
+          Serial.printf("[FaceDetection] Captured frame: %u bytes (raw JPEG)\n", frameSize);
         }
       }
 
       // Send face detection event to backend (saves to Firebase + publishes to Hub via MQTT)
-      sendFaceDetection(recognized, name, confidence, imageBase64.c_str());
+      // Sends raw JPEG binary - much more efficient than Base64!
+      sendFaceDetection(recognized, name, confidence, frameData, frameSize);
 
       // Update LCD status with recognition result
       if (recognized)
