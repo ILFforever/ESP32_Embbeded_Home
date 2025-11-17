@@ -54,7 +54,7 @@ void sendHeartbeat() {
   http.setTimeout(5000); // 5 second timeout
 
   // Build JSON payload
-  JsonDocument doc;
+  StaticJsonDocument<512> doc;
   doc["device_id"] = DEVICE_ID;
   doc["device_type"] = DEVICE_TYPE;
   doc["uptime_ms"] = millis();
@@ -77,7 +77,7 @@ void sendHeartbeat() {
       lastHeartbeatTime = millis();
 
       // Optional: Parse response to see if data was written to Firebase
-      JsonDocument responseDoc;
+      StaticJsonDocument<1024> responseDoc;
       DeserializationError error = deserializeJson(responseDoc, response);
       if (!error && responseDoc.containsKey("written")) {
         bool written = responseDoc["written"];
@@ -124,7 +124,7 @@ void sendSensorData(float temperature, float humidity, int motion) {
   http.setTimeout(5000);
 
   // Build JSON payload
-  JsonDocument doc;
+  StaticJsonDocument<512> doc;
   doc["device_id"] = DEVICE_ID;
 
   JsonObject sensors = doc["sensors"].to<JsonObject>();
@@ -164,7 +164,7 @@ void sendDisconnectWarning(const char* module_name, bool isDisconnected) {
   http.setTimeout(5000);
 
   // Build JSON payload
-  JsonDocument doc;
+  StaticJsonDocument<512> doc;
   doc["device_id"] = DEVICE_ID;
   doc["module"] = module_name;
   doc["status"] = isDisconnected ? "disconnected" : "reconnected";
@@ -213,7 +213,7 @@ void sendDoorbellRing() {
   http.setTimeout(5000);
 
   // Build JSON payload
-  JsonDocument doc;
+  StaticJsonDocument<512> doc;
   doc["device_id"] = DEVICE_ID;
 
   String jsonString;
@@ -229,7 +229,7 @@ void sendDoorbellRing() {
       Serial.printf("[Doorbell] ✓ Ring event sent (code: %d)\n", httpResponseCode);
 
       // Optional: Parse response
-      JsonDocument responseDoc;
+      StaticJsonDocument<1024> responseDoc;
       DeserializationError error = deserializeJson(responseDoc, response);
       if (!error && responseDoc.containsKey("status")) {
         const char* status = responseDoc["status"];

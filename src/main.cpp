@@ -62,19 +62,19 @@ SPIMaster spiMaster;
 // Ping-Pong (Camera/Slave)
 uint32_t ping_counter = 0;
 unsigned long last_pong_time = 0;
-#define PONG_TIMEOUT 10000
+#define PONG_TIMEOUT 60000 // 1 minute
 int slave_status = 0; // 0 = standby, -1 = disconneccted, 1 = camera_running, 2 = face_recog running
 
 // Ping-Pong (Amp Module)
 uint32_t amp_ping_counter = 0;
 unsigned long last_amp_pong_time = 0;
-#define AMP_PONG_TIMEOUT 10000
+#define AMP_PONG_TIMEOUT 60000 // 1 minute
 int amp_status = 0; // 0 = standby, -1 = disconnected, 1 = playing
 
 // Ping-Pong (Mesh Module)
 uint32_t mesh_ping_counter = 0;
 unsigned long last_mesh_pong_time = 0;
-#define MESH_PONG_TIMEOUT 10000
+#define MESH_PONG_TIMEOUT 60000 // 1 minute
 int mesh_status = 0; // 0 = standby, -1 = disconnected, 1 = active
 
 // Disconnect Warning Timer (30 seconds)

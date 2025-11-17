@@ -94,7 +94,7 @@ void initHTTPServer()
   // ==================== Root - API Info ====================
   server.on("/", HTTP_GET, [](AsyncWebServerRequest *request)
             {
-    JsonDocument doc;
+    StaticJsonDocument<1024> doc;
     doc["name"] = "ESP32 Doorbell LCD API";
     doc["version"] = "2.0-async";
     doc["endpoints"]["GET /status"] = "Get system status";
@@ -160,7 +160,7 @@ void initHTTPServer()
     Ready_led_on_time = millis();
     sendUARTCommand("get_status");
 
-    JsonDocument doc;
+    StaticJsonDocument<512> doc;
     doc["status"] = "ok";
     doc["slave_status"] = slave_status;
     doc["message"] = "Status request sent";
@@ -174,15 +174,20 @@ void initHTTPServer()
 
   server.on("/info", HTTP_GET, [](AsyncWebServerRequest *request)
             {
+    extern int mesh_status;
+    extern uint32_t mesh_ping_counter;
+
     digitalWrite(Ready_led, HIGH);
     Ready_led_on_time = millis();
-    JsonDocument doc;
+    StaticJsonDocument<512> doc;
     doc["ip"] = WiFi.localIP().toString();
     doc["uptime"] = millis();
     doc["slave_status"] = slave_status;
     doc["amp_status"] = amp_status;
+    doc["mesh_status"] = mesh_status;
     doc["free_heap"] = ESP.getFreeHeap();
     doc["ping_count"] = ping_counter;
+    doc["mesh_ping_count"] = mesh_ping_counter;
 
     String output;
     serializeJson(doc, output);
@@ -294,7 +299,7 @@ void initHTTPServer()
             {
     digitalWrite(Ready_led, HIGH);
     Ready_led_on_time = millis();
-    JsonDocument doc;
+    StaticJsonDocument<512> doc;
     doc["status"] = "ok";
     doc["mic_status"] = "checking";
     doc["stream_status"] = "disabled";
@@ -324,7 +329,7 @@ void initHTTPServer()
     String url = request->getParam("url")->value();
     sendUART2Command("play", url.c_str());
 
-    JsonDocument doc;
+    StaticJsonDocument<512> doc;
     doc["status"] = "ok";
     doc["message"] = "Sent play command to Amp";
     doc["url"] = url;
@@ -369,7 +374,7 @@ void initHTTPServer()
       digitalWrite(Ready_led, HIGH);
       Ready_led_on_time = millis();
       // Parse JSON body
-      JsonDocument doc;
+      StaticJsonDocument<512> doc;
       DeserializationError error = deserializeJson(doc, (const char*)data);
 
       if (error) {
@@ -389,7 +394,7 @@ void initHTTPServer()
       const char* cmd = doc["cmd"];
 
       // Build UART JSON command
-      JsonDocument uart_doc;
+      StaticJsonDocument<512> uart_doc;
       uart_doc["cmd"] = cmd;
 
       // Check if params object exists and add it

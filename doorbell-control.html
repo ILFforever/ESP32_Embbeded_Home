@@ -255,13 +255,32 @@
         <span id="connectionStatus">Connecting...</span>
       </div>
       <div class="status-item">
-        <span>Slave Status: <span id="slaveStatus">-</span></span>
-        <span>Amp Status: <span id="ampStatus">-</span></span>
-        <span>Uptime: <span id="uptime">-</span></span>
+        <span>Camera: <span id="slaveStatus" style="font-weight: bold;">-</span></span>
+        <span>Amp: <span id="ampStatus" style="font-weight: bold;">-</span></span>
+        <span>Mesh: <span id="meshStatus" style="font-weight: bold;">-</span></span>
+        <span>Heap: <span id="freeHeap" style="font-weight: bold;">-</span></span>
+        <span>Uptime: <span id="uptime" style="font-weight: bold;">-</span></span>
       </div>
     </div>
 
     <div class="content">
+      <div class="section">
+        <h2>📊 System Statistics</h2>
+        <div style="background: white; padding: 15px; border-radius: 8px; margin-bottom: 10px;">
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; font-size: 14px;">
+            <div><strong>IP Address:</strong> <span id="ipAddress">-</span></div>
+            <div><strong>Free Heap:</strong> <span id="heapDetailed">-</span></div>
+            <div><strong>Ping Count:</strong> <span id="pingCount">-</span></div>
+            <div><strong>Uptime:</strong> <span id="uptimeDetailed">-</span></div>
+            <div><strong>Camera Status:</strong> <span id="slaveStatusDetailed">-</span></div>
+            <div><strong>Amp Status:</strong> <span id="ampStatusDetailed">-</span></div>
+            <div><strong>Mesh Status:</strong> <span id="meshStatusDetailed">-</span></div>
+            <div><strong>WiFi Signal:</strong> <span id="wifiSignal">-</span></div>
+          </div>
+        </div>
+        <button class="btn info" onclick="updateStatus()">🔄 Refresh Stats</button>
+      </div>
+
       <div class="section">
         <h2>📷 Camera Control</h2>
         <button class="btn success" onclick="sendCommand('/camera/start')">▶ Start Camera</button>
@@ -418,6 +437,38 @@
       await sendCommand('/status');
     }
 
+    // Helper to format status with color
+    function formatStatus(status) {
+      const statusMap = {
+        '-1': { text: 'Disconnected', color: '#dc3545' },
+        '0': { text: 'Standby', color: '#ffc107' },
+        '1': { text: 'Active', color: '#28a745' },
+        '2': { text: 'Running', color: '#17a2b8' }
+      };
+      const s = statusMap[status] || { text: 'Unknown', color: '#6c757d' };
+      return `<span style="color: ${s.color}">${s.text}</span>`;
+    }
+
+    // Helper to format uptime
+    function formatUptime(ms) {
+      const seconds = Math.floor(ms / 1000);
+      const minutes = Math.floor(seconds / 60);
+      const hours = Math.floor(minutes / 60);
+      const days = Math.floor(hours / 24);
+
+      if (days > 0) return `${days}d ${hours % 24}h ${minutes % 60}m`;
+      if (hours > 0) return `${hours}h ${minutes % 60}m ${seconds % 60}s`;
+      if (minutes > 0) return `${minutes}m ${seconds % 60}s`;
+      return `${seconds}s`;
+    }
+
+    // Helper to format bytes
+    function formatBytes(bytes) {
+      if (bytes < 1024) return bytes + ' B';
+      if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+      return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
+    }
+
     // Update status bar
     async function updateStatus() {
       const url = getApiUrl() + '/info';
@@ -425,23 +476,61 @@
       const connectionStatus = document.getElementById('connectionStatus');
       const slaveStatus = document.getElementById('slaveStatus');
       const ampStatus = document.getElementById('ampStatus');
+      const meshStatus = document.getElementById('meshStatus');
+      const freeHeap = document.getElementById('freeHeap');
       const uptime = document.getElementById('uptime');
+
+      // Detailed stats elements
+      const ipAddress = document.getElementById('ipAddress');
+      const heapDetailed = document.getElementById('heapDetailed');
+      const pingCount = document.getElementById('pingCount');
+      const uptimeDetailed = document.getElementById('uptimeDetailed');
+      const slaveStatusDetailed = document.getElementById('slaveStatusDetailed');
+      const ampStatusDetailed = document.getElementById('ampStatusDetailed');
+      const meshStatusDetailed = document.getElementById('meshStatusDetailed');
+      const wifiSignal = document.getElementById('wifiSignal');
 
       try {
         const response = await fetch(url);
         const data = await response.json();
 
+        // Update status bar
         statusBar.classList.remove('disconnected');
         connectionStatus.textContent = `Connected to ${data.ip}`;
-        slaveStatus.textContent = data.slave_status;
-        ampStatus.textContent = data.amp_status;
-        uptime.textContent = Math.floor(data.uptime / 1000) + 's';
+        slaveStatus.innerHTML = formatStatus(data.slave_status);
+        ampStatus.innerHTML = formatStatus(data.amp_status);
+        meshStatus.innerHTML = formatStatus(data.mesh_status || '-1');
+        freeHeap.textContent = formatBytes(data.free_heap);
+        uptime.textContent = formatUptime(data.uptime);
+
+        // Update detailed stats
+        ipAddress.textContent = data.ip;
+        heapDetailed.textContent = formatBytes(data.free_heap);
+        pingCount.textContent = data.ping_count || '0';
+        uptimeDetailed.textContent = formatUptime(data.uptime);
+        slaveStatusDetailed.innerHTML = formatStatus(data.slave_status);
+        ampStatusDetailed.innerHTML = formatStatus(data.amp_status);
+        meshStatusDetailed.innerHTML = formatStatus(data.mesh_status || '-1');
+        wifiSignal.textContent = 'Connected'; // WiFi RSSI not exposed yet
       } catch (error) {
+        // Connection failed
         statusBar.classList.add('disconnected');
         connectionStatus.textContent = 'Disconnected';
         slaveStatus.textContent = '-';
         ampStatus.textContent = '-';
+        meshStatus.textContent = '-';
+        freeHeap.textContent = '-';
         uptime.textContent = '-';
+
+        // Clear detailed stats
+        ipAddress.textContent = '-';
+        heapDetailed.textContent = '-';
+        pingCount.textContent = '-';
+        uptimeDetailed.textContent = '-';
+        slaveStatusDetailed.textContent = '-';
+        ampStatusDetailed.textContent = '-';
+        meshStatusDetailed.textContent = '-';
+        wifiSignal.textContent = '-';
       }
     }
 

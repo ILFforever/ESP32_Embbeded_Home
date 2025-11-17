@@ -3,6 +3,226 @@
 ## Overview
 This implementation provides a **smart throttling** heartbeat system that reduces Firebase writes by **95%** while maintaining responsive device monitoring.
 
+## Automatic Online/Offline Detection with Firestore TTL
+
+### The Problem
+
+Without TTL, marking devices offline requires resource-intensive solutions:
+- ❌ Cloud Function running every minute to check all devices
+- ❌ Backend cron job scanning for stale heartbeats
+- ❌ Manual cleanup logic that can fail
+
+### The Solution: TTL for Auto-Offline Detection
+
+Use Firestore TTL to automatically delete status documents when devices go offline:
+
+**How it works:**
+1. Device sends heartbeat every 60 seconds
+2. Backend writes `status/current` with `expireAt` = now + 2 minutes
+3. If device stays online → new heartbeat updates `expireAt` (TTL resets)
+4. If device goes offline → no new heartbeat, document auto-deletes after 2 minutes
+5. Frontend/Backend: **Document exists = Online**, **Document missing = Offline**
+
+**Benefits:**
+- ✅ Zero backend resources (Firestore handles it)
+- ✅ Automatic offline detection within 1 minute
+- ✅ No explicit `online: false` flag needed
+- ✅ 100% reliable (Firestore guarantee)
+
+### TTL Implementation
+
+**Step 1: Update Backend to Use TTL for Online Status**
+
+```javascript
+const admin = require('firebase-admin');
+const db = admin.firestore();
+
+// Heartbeat every 60s, expire after 2 minutes of no heartbeat
+const STATUS_TTL_SECONDS = 120; // 2 minutes
+const HISTORY_RETENTION_DAYS = 30; // Keep history for 30 days
+
+// Helper to calculate expiration timestamp
+function getStatusExpiration() {
+  const expirationDate = new Date();
+  expirationDate.setSeconds(expirationDate.getSeconds() + STATUS_TTL_SECONDS);
+  return admin.firestore.Timestamp.fromDate(expirationDate);
+}
+
+function getHistoryExpiration() {
+  const expirationDate = new Date();
+  expirationDate.setDate(expirationDate.getDate() + HISTORY_RETENTION_DAYS);
+  return admin.firestore.Timestamp.fromDate(expirationDate);
+}
+
+// POST /api/v1/devices/heartbeat
+router.post('/heartbeat', async (req, res) => {
+  const { device_id, device_type, uptime_ms, free_heap, wifi_rssi, ip_address } = req.body;
+  const now = admin.firestore.Timestamp.now();
+  const statusExpireAt = getStatusExpiration();
+  const historyExpireAt = getHistoryExpiration();
+
+  // Update device metadata (no TTL)
+  await db.collection('devices').doc(device_id).set({
+    device_type,
+    last_seen: now
+  }, { merge: true });
+
+  // Write current status WITH TTL - auto-deletes if device goes offline
+  await db.collection('devices').doc(device_id)
+    .collection('status').doc('current').set({
+      last_heartbeat: now,
+      ip_address,
+      uptime_ms,
+      free_heap,
+      wifi_rssi,
+      updated_at: now,
+      expireAt: statusExpireAt  // ← Auto-delete after 2 min if no heartbeat
+    });
+
+  // Add to history with TTL (auto-delete after 30 days)
+  await db.collection('devices').doc(device_id)
+    .collection('heartbeat_history').add({
+      timestamp: now,
+      ip_address,
+      uptime_ms,
+      free_heap,
+      wifi_rssi,
+      expireAt: historyExpireAt  // ← Auto-delete old history
+    });
+
+  res.json({ status: 'ok', message: 'Heartbeat received', written: true });
+});
+
+// GET /api/v1/devices/:device_id/status - Check if device is online
+router.get('/devices/:device_id/status', async (req, res) => {
+  const { device_id } = req.params;
+
+  const statusDoc = await db.collection('devices').doc(device_id)
+    .collection('status').doc('current').get();
+
+  if (statusDoc.exists) {
+    // Document exists = device is online
+    const data = statusDoc.data();
+    res.json({
+      status: 'ok',
+      device_id,
+      online: true,
+      last_heartbeat: data.last_heartbeat,
+      uptime_ms: data.uptime_ms,
+      free_heap: data.free_heap,
+      wifi_rssi: data.wifi_rssi,
+      ip_address: data.ip_address
+    });
+  } else {
+    // Document doesn't exist = device went offline and TTL deleted it
+    res.json({
+      status: 'ok',
+      device_id,
+      online: false,
+      message: 'Device offline (no heartbeat in 2+ minutes)'
+    });
+  }
+});
+```
+
+**Step 2: Configure TTL Policies in Firebase**
+
+```bash
+# Install Firebase CLI
+npm install -g firebase-tools
+
+# Login
+firebase login
+
+# Create TTL policy for current status (auto-offline detection)
+firebase firestore:ttl-policies:create \
+  --collection-group=status \
+  --field=expireAt
+
+# Create TTL policy for heartbeat history (cleanup old data)
+firebase firestore:ttl-policies:create \
+  --collection-group=heartbeat_history \
+  --field=expireAt
+```
+
+**Step 3: Adjust Timeouts Based on Heartbeat Interval**
+
+Match TTL to your heartbeat frequency:
+
+```javascript
+// Heartbeat every 60s → expire after 2 minutes (allows 1 missed heartbeat)
+const STATUS_TTL_SECONDS = 120;
+
+// Heartbeat every 30s → expire after 60 seconds
+const STATUS_TTL_SECONDS = 60;
+
+// Heartbeat every 5 minutes → expire after 10 minutes
+const STATUS_TTL_SECONDS = 600;
+```
+
+**Rule of thumb:** `TTL = heartbeat_interval * 2` (allows 1 missed heartbeat before offline)
+
+### Data Structure with TTL
+
+```
+firestore/
+├── devices/
+│   ├── doorbell_001/
+│   │   ├── device_type: "doorbell"
+│   │   ├── last_seen: timestamp
+│   │   ├── status/
+│   │   │   └── current/                    ← WITH TTL (auto-delete = offline)
+│   │   │       ├── last_heartbeat: timestamp
+│   │   │       ├── ip_address: "192.168.1.100"
+│   │   │       ├── uptime_ms: 123456789
+│   │   │       ├── free_heap: 45000
+│   │   │       ├── wifi_rssi: -65
+│   │   │       ├── updated_at: timestamp
+│   │   │       └── expireAt: timestamp (2 min from now)
+│   │   └── heartbeat_history/              ← WITH TTL (cleanup old data)
+│   │       └── {auto-id}/
+│   │           ├── timestamp: timestamp
+│   │           ├── ip_address: "192.168.1.100"
+│   │           ├── uptime_ms: 123456789
+│   │           ├── free_heap: 45000
+│   │           ├── wifi_rssi: -65
+│   │           └── expireAt: timestamp (30 days from now)
+```
+
+### Checking Device Online Status
+
+**In your backend/frontend:**
+
+```javascript
+// Simple check - document exists = online
+const statusDoc = await db.collection('devices')
+  .doc(device_id)
+  .collection('status')
+  .doc('current')
+  .get();
+
+const isOnline = statusDoc.exists;
+```
+
+**Firestore Security Rules:**
+
+```javascript
+// Allow read if authenticated
+match /devices/{device_id}/status/current {
+  allow read: if request.auth != null;
+}
+```
+
+### Why This Works Better
+
+| Feature | TTL Auto-Offline | Manual Offline Flag |
+|---------|------------------|---------------------|
+| **Backend Resources** | Zero | Cron job or Cloud Function |
+| **Accuracy** | 100% (Firestore guarantee) | Can fail if job doesn't run |
+| **Response Time** | < 2 minutes | Depends on check interval |
+| **Code Complexity** | Simple (1 field) | Complex (multiple updates) |
+| **Cost** | Free | Function invocations |
+
 ## Security - Device Authentication
 
 **⚠️ IMPORTANT**: All device endpoints are protected with API token authentication.
@@ -185,29 +405,6 @@ ESP32 → POST every 60s → Backend (always responds OK)
   "free_heap": 45000,
   "wifi_rssi": -65
 }
-```
-
-## Firestore Data Structure
-
-```
-firestore/
-├── devices/
-│   ├── doorbell_001/
-│   │   ├── type: "doorbell"
-│   │   ├── last_seen: timestamp
-│   │   ├── status/
-│   │   │   └── current/
-│   │   │       ├── online: true
-│   │   │       ├── last_heartbeat: timestamp
-│   │   │       ├── ip_address: "192.168.1.100"
-│   │   │       ├── uptime_ms: 123456789
-│   │   │       ├── free_heap: 45000
-│   │   │       └── wifi_rssi: -65
-│   │   └── sensors/
-│   │       └── current/
-│   │           ├── temperature: 25.5
-│   │           ├── humidity: 60.2
-│   │           └── last_updated: timestamp
 ```
 
 ## ESP32 Implementation
