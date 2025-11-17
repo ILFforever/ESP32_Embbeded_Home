@@ -204,9 +204,10 @@ void sendDoorbellRing() {
   http.begin(url);  // Plain HTTP - no SSL (memory optimization for ESP32)
   http.addHeader("Content-Type", "application/json");
 
-  // Add X-Device-Token header for authentication
+  // Add Authorization header with Bearer token
   if (DEVICE_API_TOKEN && strlen(DEVICE_API_TOKEN) > 0) {
-    http.addHeader("X-Device-Token", DEVICE_API_TOKEN);
+    String authHeader = String("Bearer ") + DEVICE_API_TOKEN;
+    http.addHeader("Authorization", authHeader.c_str());
   }
 
   http.setTimeout(5000);
@@ -261,9 +262,10 @@ void sendFaceDetection(bool recognized, const char* name, float confidence, cons
   http.begin(url);
   http.addHeader("Content-Type", "application/json");
 
-  // Add X-Device-Token header for authentication
+  // Add Authorization header with Bearer token
   if (DEVICE_API_TOKEN && strlen(DEVICE_API_TOKEN) > 0) {
-    http.addHeader("X-Device-Token", DEVICE_API_TOKEN);
+    String authHeader = String("Bearer ") + DEVICE_API_TOKEN;
+    http.addHeader("Authorization", authHeader.c_str());
   }
 
   http.setTimeout(10000); // Longer timeout for image uploads
