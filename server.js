@@ -3,6 +3,7 @@ const dotenv = require('dotenv');
 const cookieParser = require('cookie-parser');
 const connectDB = require('./config/db');
 const { initializeFirebase } = require('./config/firebase');
+const { initMQTT } = require('./config/mqtt');
 const enforceHttpsExceptIoT = require('./middleware/httpsEnforcement');
 const cors = require('cors');
 
@@ -11,6 +12,9 @@ dotenv.config();
 
 // Connect to database
 connectDB();
+
+// Initialize MQTT client (publish-only)
+initMQTT();
 
 const app = express();
 
