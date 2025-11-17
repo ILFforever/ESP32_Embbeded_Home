@@ -1,40 +1,94 @@
-# ESP32_Embedded_Home
-This is an IoT project simulating a full-fledged smart home ecosystem using ESP32 boards, developed in accordance with Chulalongkorn's 2110356 Embedded System class.
+# Doorbell LCD Module
+ESP32 LCD display module for doorbell system with NFC authentication and live video display.
 
-## Branches Explanation
-- **3D-Models** - Holds project's 3D models for 3D printing (SketchUp and Cura files)
-- **Main_lcd** - Holds code for main LCD hub (PlatformIO)
-- **Main_mesh** - Secondary LCD which connects Main_lcd to sensor mesh (PlatformIO)
-- **Room_Sensors** - Code for room sensors (PlatformIO)
-- **Doorbell_lcd** - LCD for doorbell, communicates with Doorbell_Camera via SPI (PlatformIO)
-- **Doorbell_Camera** - Code for Xiao ESP32-S3 Sense camera running AI face recognition, communicates with Doorbell_lcd using SPI (ESP-IDF)
-- **Doorbell_Amp** - Code for ESP32S3 runnin the amp anb audio system inside doorbell
-## ⚠️ Important Workflow Note
-**Each branch contains operational code for a different hardware module.**
+## Overview
+This module provides the user interface for the smart doorbell system, displaying live video from the camera module, managing NFC card authentication, handling button inputs, and communicating with the camera slave via UART/SPI.
 
-- Each branch is **independent** and should **NOT** be merged together
-- Do **NOT** merge branches together 😡😡😡
-- ใครทำเเตกเเก้เองนะ 🫠
+## Hardware
+- **Board:** ESP32 DOIT DevKit V1
+- **Display:** ST7789 TFT LCD (240x240)
+- **NFC Reader:** PN532 (I2C interface)
+- **Communication:** UART + SPI to camera module
+- **Buttons:** 2x tactile buttons (Doorbell, Call)
 
-## Branch Usage
-- Clone the branch you are assigned to!!!
-- Keep the codes off main and in their respective branches :)
+## Features
+- **Real-time video streaming** - JPEG frame display from camera module
+- **NFC card authentication** - PN532 reader with IRQ-based detection
+- **Face detection overlay** - Bounding box display on detected faces
+- **Button controls** - Doorbell press, call button, hold actions
+- **WiFi + HTTP interface** - Remote control via web browser
+- **Status animations** - Smooth scrolling status messages
+- **Auto-expiring messages** - Temporary status with fallback to system state
+- **Multi-core processing** - RTOS tasks on dual cores for responsive UI
 
-## Branch Commands
+## Pin Configuration
 
-### View all branches
-```bash
-git branch -a
-```
-### Clone a specific branch
-```bash
-git clone -b <branch-name> <repository-url>
-```
-### Switch to your assigned branch
-```bash
-git switch <branch-name>
-```
-### Check Current Branch
-```bash
-git branch
-```
+### Display (ST7789)
+- `TFT_MOSI`: GPIO 23 (SDA)
+- `TFT_SCLK`: GPIO 22 (SCK)
+- `TFT_CS`: GPIO 21
+- `TFT_DC`: GPIO 19
+- `TFT_RST`: GPIO 18
+
+### NFC Reader (PN532)
+- `NFC_SDA`: GPIO 13 (I2C + 2kΩ pull-up to 3.3V)
+- `NFC_SCL`: GPIO 15 (I2C + 2kΩ pull-up to 3.3V)
+- `NFC_IRQ`: GPIO 5
+- `NFC_RESET`: NC
+
+### Communication with Camera Module
+- **UART:** RX2=GPIO16, TX2=GPIO17 @ 115200 baud
+- **SPI:** SCK=GPIO25, MISO=GPIO26, MOSI=GPIO27, CS=GPIO14 @ 20MHz
+
+### Buttons
+- `Doorbell_bt`: GPIO 34 (analog input, requires external 10kΩ pull-down)
+- `Call_bt`: GPIO 35 (analog input, requires external 10kΩ pull-down)
+
+## Software Architecture
+
+### Core Modules
+- `main.cpp` - Main program, UI rendering, task orchestration
+- `lcd_helper.cpp/h` - Status message management with auto-expiration
+- `uart_commands.cpp/h` - UART protocol with camera slave
+- `SPIMaster.cpp/h` - High-speed JPEG frame reception
+- `nfc_controller.cpp/h` - NFC card reading (RTOS task on Core 0)
+- `http_control.cpp/h` - Web server for remote control
+- `slave_state_manager.cpp/h` - Synchronization with camera module state
+
+### State Management
+**Slave Status Values:**
+- `-1` = Disconnected (no UART communication)
+- `0` = Standby (camera off)
+- `1` = Camera Running (streaming video)
+- `2` = Face Recognition Active
+
+### Communication Protocols
+
+#### UART (JSON-based)
+Commands sent to camera:
+- `{"cmd":"camera_control","params":"camera_start"}`
+- `{"cmd":"camera_control","params":"camera_stop"}`
+- `{"cmd":"start_recognition"}`
+- `{"cmd":"stop_recognition"}`
+- `{"cmd":"enroll_face"}`
+- `{"cmd":"recognize_face"}`
+
+Events received from camera:
+- `{"event":"face_detected","bbox":{x,y,w,h}}`
+- `{"event":"face_recognized","id":N,"name":"...","confidence":X}`
+- `{"event":"status","mode":N}`
+- `{"event":"pong","counter":N}`
+
+#### SPI (Binary Frame Transfer)
+- **Frame Header:** Magic bytes (0x55, 0xAA) + frame_id + size + timestamp
+- **Frame Data:** JPEG compressed image
+- **Transfer Rate:** 20MHz SPI clock
+- **Processing:** Hardware-accelerated JPEG decoding (TJpg_Decoder)
+
+## Project Context
+Part of **ESP32_Embedded_Home** smart home ecosystem developed for Chulalongkorn University's 2110356 Embedded Systems course. This module works in conjunction with:
+- **Doorbell Camera Module** (XIAO ESP32-S3 Sense) - Face recognition slave
+- **Central Hub** - IoT gateway and control center
+
+## Authors
+Developed as part of embedded systems coursework
