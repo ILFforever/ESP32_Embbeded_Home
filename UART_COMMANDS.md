@@ -1,6 +1,8 @@
-# UART Command Reference
+# UART Command Reference - Main Amp Module
 
 All commands are JSON formatted and sent via UART (115200 baud).
+
+This module receives commands from the Main LCD hub and responds with status updates.
 
 ## Playback Commands
 
