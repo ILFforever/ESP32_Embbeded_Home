@@ -6,11 +6,12 @@
 
 #define LGFX_USE_V1
 #include <LovyanGFX.hpp>
-#include <Panel_RA8875_Fixed.h>
-#include "TaskScheduler.h"
 #include <Wire.h>
+#include <WiFi.h>
 #include <Touch.h>
 #include <CapSensor.h>
+#include "TaskScheduler.h"
+#include "DisplayConfig.h"
 #include "hub_network.h"
 #include "uart_slaves.h"
 
@@ -26,73 +27,41 @@
 #define PONG_TIMEOUT 10000  // 10 seconds timeout for ping-pong
 
 // ============================================================================
-// Display Configuration with EastRising Fix
+// Global Objects
 // ============================================================================
-
-lgfx::touch_point_t tp;
-
-class LGFX : public lgfx::LGFX_Device
-{
-  lgfx::Panel_RA8875_Fixed _panel_instance; // Use our fixed version
-  lgfx::Bus_SPI _bus_instance;
-
-public:
-  LGFX(void)
-  {
-    {
-      auto cfg = _bus_instance.config();
-      cfg.spi_host = VSPI_HOST;
-      cfg.freq_write = 4000000;
-      cfg.freq_read = 4000000;
-      cfg.pin_sclk = 18;
-      cfg.pin_mosi = 23;
-      cfg.pin_miso = 19;
-      cfg.spi_3wire = false;
-      _bus_instance.config(cfg);
-      _panel_instance.setBus(&_bus_instance);
-    }
-
-    {
-      auto cfg = _panel_instance.config();
-      cfg.pin_cs = 5;
-      cfg.pin_rst = 16;
-      cfg.pin_busy = -1;
-      cfg.panel_width = 800;
-      cfg.panel_height = 480;
-      cfg.memory_width = 800;
-      cfg.memory_height = 480;
-      cfg.offset_x = 0;
-      cfg.offset_y = 0;
-      cfg.dummy_read_pixel = 16;
-      cfg.dummy_read_bits = 0;
-      cfg.readable = false;
-      _panel_instance.config(cfg);
-    }
-
-    setPanel(&_panel_instance);
-  }
-};
 
 static LGFX lcd;
 Scheduler scheduler;
 
-// Touch position struct for application use
-struct TouchPosition
-{
-  uint16_t x;
-  uint16_t y;
-  bool isPressed;
-  uint32_t timestamp;
-};
+// Sprites
+LGFX_Sprite topBar(&lcd);      // Top status bar (800x40)
+LGFX_Sprite contentArea(&lcd); // Main content area (800x440)
 
+// Touch state
 TouchPosition currentTouch = {0, 0, false, 0};
-
-// Touch interrupt flag
 volatile bool touchDataReady = false;
 
 // Doorbell status
 DeviceStatus doorbellStatus;
 bool doorbellOnline = false;
+
+// Doorbell ring notification
+volatile bool doorbellJustRang = false;
+unsigned long doorbellRingTime = 0;
+#define RING_NOTIFICATION_DURATION 3000 // Show notification for 3 seconds
+
+// Sprite update tracking
+volatile bool topBarNeedsUpdate = false;
+volatile bool contentNeedsUpdate = false;
+
+// Track previous values to detect changes
+static int prevFreeHeap = 0;
+static int prevFreePsram = 0;
+static int prevDoorbellRssi = 0;
+static bool prevDoorbellOnline = false;
+static bool prevDoorbellDataValid = false;
+static bool prevDoorbellRinging = false;
+static bool contentInitialized = false;
 
 void IRAM_ATTR touchISR()
 {
@@ -100,11 +69,14 @@ void IRAM_ATTR touchISR()
 }
 
 // ============================================================================
-// Task Functions
+// Task Definitions
 // ============================================================================
 void DisplayUpdate();
+void updateTopBar();
+void updateContent();
 void updateTouch();
 void updateCapSensor();
+void pushSpritesToDisplay();
 void sendHeartbeatTask();
 void checkDoorbellTask();
 void checkMeshUARTData();
@@ -139,13 +111,65 @@ void setup(void)
   Serial.println("║  for RA8875 800x480 Display           ║");
   Serial.println("╚════════════════════════════════════════╝\n");
 
+  // Check PSRAM availability
+  if (psramFound())
+  {
+    Serial.printf("PSRAM found! Total: %d bytes, Free: %d bytes\n",
+                  ESP.getPsramSize(), ESP.getFreePsram());
+  }
+  else
+  {
+    Serial.println("WARNING: PSRAM not found!");
+    ESP.restart(); // restart since something is definitely wrong
+  }
+  wifi_init();
   Serial.println("Initializing display...");
   lcd.init();
-  lcd.setRotation(2);
+  lcd.setRotation(2); // 180-degree rotation
   Serial.println("Display ready!\n");
 
+  // Top bar sprite (800x40 = 64,000 bytes)
+  topBar.setColorDepth(16);
+  topBar.setPsram(true);
+  bool topBarCreated = topBar.createSprite(800, 40);
+
+  // Content area sprite (800x440 = 704,000 bytes)
+  contentArea.setColorDepth(16);
+  contentArea.setPsram(true);
+  bool contentCreated = contentArea.createSprite(800, 440);
+
+  if (topBarCreated && contentCreated)
+  {
+    Serial.printf("Sprites created successfully!\n");
+    Serial.printf("  Top bar: 800x40 (%d bytes)\n", 800 * 40 * 2);
+    Serial.printf("  Content: 800x440 (%d bytes)\n", 800 * 440 * 2);
+    Serial.printf("Free PSRAM after sprites: %d bytes\n", ESP.getFreePsram());
+
+    // Initialize top bar
+    topBar.fillScreen(TFT_WHITE);
+    topBar.setTextColor(TFT_BLACK, TFT_WHITE);
+    topBar.setTextSize(2);
+    topBar.setCursor(350, 10);
+    topBar.print("12:00:00");
+    topBar.pushSprite(0, 0);
+
+    // Initialize content area
+    contentArea.fillScreen(TFT_BLUE);
+    contentArea.setTextColor(TFT_WHITE, TFT_BLUE);
+    contentArea.setTextSize(3);
+    contentArea.drawString("LovyanGFX Multi-Sprite!", 50, 10);
+    contentArea.pushSprite(0, 40); // Below top bar
+  }
+  else
+  {
+    Serial.println("ERROR: Failed to create sprites!");
+    ESP.restart();
+  }
+
+  Serial.println();
+
   // Initialize I2C (shared by touch screen and capacitive sensor)
-  Wire.begin(); // SDA=21, SCL=22 (default ESP32 pins)
+  Wire.begin(); // SDA=21, SCL=22
 
   // Initialize touch screen (uses I2C)
   touchsetup();
@@ -156,7 +180,7 @@ void setup(void)
   Serial.println("Touch interrupt enabled on pin 34");
 
   // Initialize capacitive sensor (uses same I2C bus)
-  // Try a few times
+  // Try a few times sometimes it fails
   for (int i = 0; i < 3; i++)
   {
     if (!capSensorSetup())
@@ -185,16 +209,28 @@ void setup(void)
     "YOUR_WIFI_SSID",                       // WiFi SSID
     "YOUR_WIFI_PASSWORD",                   // WiFi password
     "http://embedded-smarthome.fly.dev",   // Backend URL
-    "hub_001",                              // Hub device ID
+    "hb_001",                              // Hub device ID
     "hub",                                  // Device type
-    "YOUR_HUB_TOKEN_HERE",                 // Hub API token (from registration)
+    "f59ac83960ac8d7cd4fdc2915af85ed30ce562b410cfc0217b88b6fd2f7c4739", // Hub API token
     "db_001"                                // Doorbell device ID to monitor
   );
 
+  // Initialize MQTT client (WiFi already initialized)
+  initMQTT("hub_hb_001", onDoorbellRing, onFaceDetection);
+  connectMQTT(); // Initial connection attempt
+
+  Serial.println("[MQTT] Hub will receive doorbell rings and face detection via MQTT!");
+
+  // Initialize Mesh UART communication (pins 25, 26)
+  initMeshUART(25, 26, 115200);  // RX=25, TX=26, Baud=115200
+  Serial.println("[MeshUART] Hub will communicate with Mesh module via UART");
+
   // Setup scheduler tasks
-  scheduler.addTask(taskDisplayUpdate);
+  scheduler.addTask(taskUpdateTopBar);
+  scheduler.addTask(taskUpdateContent);
   scheduler.addTask(taskTouchUpdate);
   scheduler.addTask(taskCapSensorUpdate);
+  scheduler.addTask(taskPushSprites);
   scheduler.addTask(taskSendHeartbeat);
   scheduler.addTask(taskCheckDoorbell);
   scheduler.addTask(taskCheckMeshUART);
@@ -207,6 +243,7 @@ void setup(void)
   taskDisplayUpdate.enable();
   taskTouchUpdate.enable();
   taskCapSensorUpdate.enable();
+  taskPushSprites.enable();
   taskSendHeartbeat.enable();
   taskCheckDoorbell.enable();
   taskCheckMeshUART.enable();
@@ -224,39 +261,82 @@ void loop(void)
   scheduler.execute();
 }
 
-// This function renders the display and handles touch
-void DisplayUpdate()
+void updateTopBar()
 {
-  static int num = 1;
-  switch (num)
-  {
-  case 1:
-    lcd.fillScreen(TFT_GREEN);
-    num++;
-    break;
-  case 2:
-    lcd.fillScreen(TFT_RED);
-    num++;
-    break;
-  case 3:
-    lcd.fillScreen(TFT_BLUE);
-    num++;
-    break;
-  }
+  static uint32_t secondCounter = 0;
 
-  if (num > 3)
-  {
-    num = 1;
-  }
+  // Clear top bar
+  topBar.fillScreen(TFT_WHITE);
+  topBar.setTextColor(TFT_BLACK, TFT_WHITE);
+  topBar.setTextSize(2);
 
   // Display hub info
-  lcd.drawString("ESP32 Hub - Control Center", 50, 50);
+  topBar.drawString("ESP32 Hub - Control Center", 50, 10);
 
-  // Display WiFi status
-  if (isWiFiConnected()) {
-    lcd.drawString("WiFi: Connected", 50, 100);
+  // Display doorbell status - show brief status in top bar
+  if (doorbellStatus.data_valid) {
+    if (doorbellOnline) {
+      topBar.setTextColor(TFT_GREEN, TFT_WHITE);
+      topBar.drawString("DB: ON", 600, 10);
+      topBar.setTextColor(TFT_BLACK, TFT_WHITE);
+    } else {
+      topBar.setTextColor(TFT_RED, TFT_WHITE);
+      topBar.drawString("DB: OFF", 600, 10);
+      topBar.setTextColor(TFT_BLACK, TFT_WHITE);
+    }
   } else {
-    lcd.drawString("WiFi: Disconnected", 50, 100);
+    topBar.setTextColor(TFT_YELLOW, TFT_WHITE);
+    topBar.drawString("DB: ...", 600, 10);
+    topBar.setTextColor(TFT_BLACK, TFT_WHITE);
+  }
+
+  // WiFi indicator: Calculate strength based on RSSI
+  int wifiStrength = 0;
+  if (WiFi.status() == WL_CONNECTED)
+  {
+    int32_t rssi = WiFi.RSSI();
+    // RSSI to bars conversion:
+    // > -50 dBm = Excellent (3 bars)
+    // -50 to -60 dBm = Good (3 bars)
+    // -60 to -70 dBm = Fair (2 bars)
+    // -70 to -80 dBm = Weak (1 bar)
+    // < -80 dBm = Very weak (0 bars)
+    if (rssi > -60)
+    {
+      wifiStrength = 3;
+    }
+    else if (rssi > -70)
+    {
+      wifiStrength = 2;
+    }
+    else if (rssi > -80)
+    {
+      wifiStrength = 1;
+    }
+    else
+    {
+      wifiStrength = 0;
+    }
+  }
+  drawWifiSymbol(780, 20, wifiStrength);
+
+  // Mark that top bar needs update
+  topBarNeedsUpdate = true;
+}
+
+void updateContent()
+{
+  bool needsUpdate = false;
+  char buffer[100];
+
+  // Initialize content area on first run (draw static elements once)
+  if (!contentInitialized) {
+    contentArea.fillScreen(TFT_BLUE);
+    contentArea.setTextColor(TFT_WHITE, TFT_BLUE);
+    contentArea.setTextSize(3);
+    contentArea.drawString("LovyanGFX Multi-Sprite!", 50, 10);
+    contentInitialized = true;
+    needsUpdate = true;
   }
 
   // Display Main Mesh status
@@ -294,7 +374,6 @@ void DisplayUpdate()
       lcd.setTextColor(TFT_RED);
       lcd.drawString("Doorbell: OFFLINE", 50, 250);
     }
-    lcd.setTextColor(TFT_WHITE);
 
     // Show additional info if available
     if (doorbellOnline) {
@@ -331,34 +410,25 @@ void updateTouch()
     currentTouch.isPressed = false;
   }
 
-  if (ts_event.fingers == 1)
+  // Draw touch points DIRECTLY to LCD for immediate, responsive feedback
+  if (ts_event.fingers >= 1)
   {
     lcd.fillCircle(ts_event.x1 & 0x0FFF, ts_event.y1 & 0x0FFF, 5, TFT_RED);
   }
-  if (ts_event.fingers == 2)
+  if (ts_event.fingers >= 2)
   {
-    lcd.fillCircle(ts_event.x1 & 0x0FFF, ts_event.y1 & 0x0FFF, 5, TFT_RED);
     lcd.fillCircle(ts_event.x2 & 0x0FFF, ts_event.y2 & 0x0FFF, 5, TFT_GREEN);
   }
-  if (ts_event.fingers == 3)
+  if (ts_event.fingers >= 3)
   {
-    lcd.fillCircle(ts_event.x1 & 0x0FFF, ts_event.y1 & 0x0FFF, 5, TFT_RED);
-    lcd.fillCircle(ts_event.x2 & 0x0FFF, ts_event.y2 & 0x0FFF, 5, TFT_GREEN);
     lcd.fillCircle(ts_event.x3 & 0x0FFF, ts_event.y3 & 0x0FFF, 5, TFT_BLUE);
   }
-  if (ts_event.fingers == 4)
+  if (ts_event.fingers >= 4)
   {
-    lcd.fillCircle(ts_event.x1 & 0x0FFF, ts_event.y1 & 0x0FFF, 5, TFT_RED);
-    lcd.fillCircle(ts_event.x2 & 0x0FFF, ts_event.y2 & 0x0FFF, 5, TFT_GREEN);
-    lcd.fillCircle(ts_event.x3 & 0x0FFF, ts_event.y3 & 0x0FFF, 5, TFT_BLUE);
     lcd.fillCircle(ts_event.x4 & 0x0FFF, ts_event.y4 & 0x0FFF, 5, TFT_CYAN);
   }
-  if (ts_event.fingers == 5)
+  if (ts_event.fingers >= 5)
   {
-    lcd.fillCircle(ts_event.x1 & 0x0FFF, ts_event.y1 & 0x0FFF, 5, TFT_RED);
-    lcd.fillCircle(ts_event.x2 & 0x0FFF, ts_event.y2 & 0x0FFF, 5, TFT_GREEN);
-    lcd.fillCircle(ts_event.x3 & 0x0FFF, ts_event.y3 & 0x0FFF, 5, TFT_BLUE);
-    lcd.fillCircle(ts_event.x4 & 0x0FFF, ts_event.y4 & 0x0FFF, 5, TFT_CYAN);
     lcd.fillCircle(ts_event.x5 & 0x0FFF, ts_event.y5 & 0x0FFF, 5, TFT_MAGENTA);
   }
 }
@@ -373,6 +443,24 @@ void updateCapSensor()
   //   Serial.println("Button 0 pressed!");
   //   lcd.fillCircle(100, 100, 20, TFT_YELLOW);
   // }
+}
+
+// Push sprites to display at controlled rate (50ms = 20 FPS max)
+void pushSpritesToDisplay()
+{
+  // Push top bar if updated (small: 800x40 = 64KB, ~8ms transfer)
+  if (topBarNeedsUpdate)
+  {
+    topBar.pushSprite(0, 0);
+    topBarNeedsUpdate = false;
+  }
+
+  // Push content if updated (larger: 800x440 = 704KB, ~88ms transfer)
+  if (contentNeedsUpdate)
+  {
+    contentArea.pushSprite(0, 40); // Position below top bar
+    contentNeedsUpdate = false;
+  }
 }
 
 // Task: Send hub's heartbeat to backend

@@ -4,56 +4,31 @@
 #include <ArduinoJson.h>
 
 // Configuration variables
-const char* WIFI_SSID = "";
-const char* WIFI_PASSWORD = "";
-const char* BACKEND_SERVER_URL = "";
-const char* HUB_DEVICE_ID = "";
-const char* HUB_DEVICE_TYPE = "";
-const char* HUB_API_TOKEN = "";
-const char* DOORBELL_DEVICE_ID = "";
+static const char* BACKEND_SERVER_URL = "";
+static const char* HUB_DEVICE_ID = "";
+static const char* HUB_DEVICE_TYPE = "";
+static const char* HUB_API_TOKEN = "";
+static const char* DOORBELL_DEVICE_ID = "";
 
 // Status tracking
 static bool lastHeartbeatSuccess = false;
 static unsigned long lastHeartbeatTime = 0;
 
+// Doorbell ring tracking removed - now using MQTT instead of polling
+
 // ============================================================================
-// Initialize network and configure heartbeat
+// Initialize heartbeat module (WiFi must already be connected)
 // ============================================================================
-void initNetwork(const char* ssid, const char* password, const char* serverUrl,
-                 const char* deviceId, const char* deviceType, const char* apiToken,
-                 const char* doorbellId) {
-  WIFI_SSID = ssid;
-  WIFI_PASSWORD = password;
+void initHeartbeat(const char* serverUrl, const char* deviceId,
+                   const char* deviceType, const char* apiToken,
+                   const char* doorbellId) {
   BACKEND_SERVER_URL = serverUrl;
   HUB_DEVICE_ID = deviceId;
   HUB_DEVICE_TYPE = deviceType;
   HUB_API_TOKEN = apiToken;
   DOORBELL_DEVICE_ID = doorbellId;
 
-  // Connect to WiFi
-  Serial.println("\n[Network] Connecting to WiFi...");
-  Serial.printf("  SSID: %s\n", ssid);
-
-  WiFi.mode(WIFI_STA);
-  WiFi.setAutoReconnect(true);
-  WiFi.begin(ssid, password);
-
-  int timeout = 20; // 20 seconds
-  while (WiFi.status() != WL_CONNECTED && timeout > 0) {
-    delay(500);
-    Serial.print(".");
-    timeout--;
-  }
-
-  if (WiFi.status() == WL_CONNECTED) {
-    Serial.println("\n[Network] ✓ WiFi Connected!");
-    Serial.printf("  IP: %s\n", WiFi.localIP().toString().c_str());
-    Serial.printf("  RSSI: %d dBm\n", WiFi.RSSI());
-  } else {
-    Serial.println("\n[Network] ✗ WiFi Connection Failed!");
-  }
-
-  Serial.println("[Network] Heartbeat initialized");
+  Serial.println("[Heartbeat] Initialized");
   Serial.printf("  Server: %s\n", serverUrl);
   Serial.printf("  Hub ID: %s (%s)\n", deviceId, deviceType);
   Serial.printf("  Token: %s\n", apiToken && strlen(apiToken) > 0 ? "***configured***" : "NOT SET");
@@ -179,12 +154,53 @@ DeviceStatus checkDoorbellStatus() {
 }
 
 // ============================================================================
+// Doorbell ring polling removed - now using MQTT for real-time notifications
+// See mqtt_client.cpp for MQTT implementation
+// ============================================================================
+
+// ============================================================================
 // Helper functions
 // ============================================================================
-bool isWiFiConnected() {
-  return WiFi.status() == WL_CONNECTED;
-}
-
 bool getLastHeartbeatSuccess() {
   return lastHeartbeatSuccess;
+}
+
+// ============================================================================
+// Send log/error to backend for Firebase storage
+// ============================================================================
+void sendLogToBackend(const char* level, const char* message, const char* data) {
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("[HubLog] WiFi not connected - can't send log");
+    return;
+  }
+
+  HTTPClient http;
+  String url = String(BACKEND_SERVER_URL) + "/api/v1/devices/hub/log";
+
+  http.begin(url);
+  http.addHeader("Content-Type", "application/json");
+  http.addHeader("X-Device-Token", HUB_API_TOKEN);
+
+  // Create JSON payload
+  JsonDocument doc;
+  doc["device_id"] = HUB_DEVICE_ID;
+  doc["level"] = level;  // "error", "warning", "info", "debug"
+  doc["message"] = message;
+  if (data != nullptr) {
+    doc["data"] = data;
+  }
+  doc["timestamp"] = millis();
+
+  String jsonString;
+  serializeJson(doc, jsonString);
+
+  int httpResponseCode = http.POST(jsonString);
+
+  if (httpResponseCode == 200) {
+    Serial.printf("[HubLog] ✓ Log sent to backend: [%s] %s\n", level, message);
+  } else {
+    Serial.printf("[HubLog] ✗ Failed to send log (code %d)\n", httpResponseCode);
+  }
+
+  http.end();
 }
