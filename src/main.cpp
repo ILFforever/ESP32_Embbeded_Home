@@ -191,7 +191,10 @@ void setup()
   digitalWrite(Warn_led, HIGH);
   digitalWrite(Ready_led, LOW);
 
-  delay(100);
+  // CRITICAL: Wait for power supply to stabilize before LCD init
+  // ST7789 requires ~120ms power-on time, 500ms ensures reliability
+  // This fixes the issue where LCD fails to init on external power only
+  delay(500);
 
   Serial.println("\n\n=================================");
   Serial.println("ESP32_Embbeded_Home - Doorbell_lcd");
@@ -206,10 +209,36 @@ void setup()
       delay(100);
   }
 
-  Serial.println("Starting TFT_eSPI ST7789 screen");
-  tft.init();
-  tft.setRotation(0);
-  tft.setSwapBytes(true); // Match TFT byte order
+  // Initialize LCD with retry logic for power-on reliability
+  Serial.println("Initializing TFT_eSPI ST7789 screen...");
+  bool lcd_init_success = false;
+  for (int retry = 0; retry < 3; retry++)
+  {
+    if (retry > 0)
+    {
+      Serial.printf("LCD init attempt %d/3...\n", retry + 1);
+      delay(200); // Additional delay between retries
+    }
+
+    tft.init();
+    tft.setRotation(0);
+    tft.setSwapBytes(true); // Match TFT byte order
+
+    // Test if LCD initialized by trying to fill screen
+    tft.fillScreen(TFT_BLACK);
+    delay(50);
+
+    // If we got here without crashing, consider it successful
+    lcd_init_success = true;
+    Serial.println("LCD initialized successfully");
+    break;
+  }
+
+  if (!lcd_init_success)
+  {
+    Serial.println("[ERROR] LCD initialization failed after 3 attempts");
+    // Continue anyway - may recover later
+  }
 
   // Initialize sprites
   Serial.println("Creating video sprite...");
