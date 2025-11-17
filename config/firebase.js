@@ -16,13 +16,15 @@ const initializeFirebase = () => {
           projectId: process.env.FIREBASE_PROJECT_ID,
           privateKey: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
           clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-        })
+        }),
+        storageBucket: process.env.FIREBASE_STORAGE_BUCKET || `${process.env.FIREBASE_PROJECT_ID}.appspot.com`
       });
     } else {
       // Fallback: Use service account key file
       const serviceAccount = require('./serviceAccountKey.json');
       admin.initializeApp({
-        credential: admin.credential.cert(serviceAccount)
+        credential: admin.credential.cert(serviceAccount),
+        storageBucket: process.env.FIREBASE_STORAGE_BUCKET || `${serviceAccount.project_id}.appspot.com`
       });
     }
 

@@ -441,11 +441,14 @@ const handleDoorbellRing = async (req, res) => {
 // ============================================================================
 // @route   POST /api/v1/devices/doorbell/face-detection
 // @desc    Receive face detection event from doorbell camera - save to Firebase
-//          Stores image, name (if recognized), timestamp, etc.
+//          Stores image (uploaded via multipart/form-data), name, timestamp, etc.
 // ============================================================================
 const handleFaceDetection = async (req, res) => {
   try {
-    const { device_id, image, name, confidence, timestamp, recognized } = req.body;
+    // Form fields from multipart/form-data
+    const { device_id, name, confidence, timestamp, recognized } = req.body;
+    // Image file from multer (req.file)
+    const imageFile = req.file;
 
     // Validation
     if (!device_id) {
@@ -457,16 +460,44 @@ const handleFaceDetection = async (req, res) => {
 
     console.log(`[FaceDetection] ${device_id} - Face detection event received`);
     console.log(`  Recognized: ${recognized}, Name: ${name || 'Unknown'}, Confidence: ${confidence || 0}`);
+    console.log(`  Image: ${imageFile ? `${imageFile.size} bytes (${imageFile.mimetype})` : 'None'}`);
 
     const db = getFirestore();
     const deviceRef = db.collection('devices').doc(device_id);
 
+    let imageUrl = null;
+
+    // Upload image to Firebase Storage if provided
+    if (imageFile && imageFile.buffer) {
+      try {
+        const bucket = admin.storage().bucket();
+        const fileName = `face_detections/${device_id}/${Date.now()}.jpg`;
+        const file = bucket.file(fileName);
+
+        // Upload the image buffer
+        await file.save(imageFile.buffer, {
+          metadata: {
+            contentType: imageFile.mimetype || 'image/jpeg',
+          },
+          public: true, // Make publicly accessible
+        });
+
+        // Get public URL
+        imageUrl = `https://storage.googleapis.com/${bucket.name}/${fileName}`;
+
+        console.log(`[FaceDetection] Image uploaded to Firebase Storage: ${imageUrl}`);
+      } catch (uploadError) {
+        console.error('[FaceDetection] Failed to upload image to Firebase Storage:', uploadError);
+        // Continue without image URL - non-blocking error
+      }
+    }
+
     // Create face detection event data
     const faceDetectionEvent = {
-      recognized: recognized !== undefined ? recognized : false,  // Boolean field
+      recognized: recognized === 'true' || recognized === true,  // Parse boolean from form data
       name: name || 'Unknown',
-      confidence: confidence || null,
-      image: image || null, // Base64 encoded image or URL
+      confidence: confidence ? parseFloat(confidence) : null,
+      image: imageUrl, // Firebase Storage URL
       timestamp: timestamp || admin.firestore.FieldValue.serverTimestamp(),
       detected_at: admin.firestore.FieldValue.serverTimestamp()
     };
@@ -481,7 +512,7 @@ const handleFaceDetection = async (req, res) => {
       device_id,
       recognized: faceDetectionEvent.recognized,
       name: name || 'Unknown',
-      confidence: confidence || 0,
+      confidence: confidence ? parseFloat(confidence) : 0,
       event_id: eventRef.id
     });
 
@@ -490,6 +521,7 @@ const handleFaceDetection = async (req, res) => {
       status: 'ok',
       message: 'Face detection event saved and published to hub',
       event_id: eventRef.id,
+      image_url: imageUrl,
       timestamp: Date.now()
     });
 
