@@ -24,6 +24,9 @@ void sendDisconnectWarning(const char* module_name, bool isDisconnected);
 // Send doorbell ring event to backend (notify hub to play audio)
 void sendDoorbellRing();
 
+// Send face detection event to backend (saves to Firebase, publishes to Hub via MQTT)
+void sendFaceDetection(bool recognized, const char* name, float confidence, const uint8_t* imageData = nullptr, size_t imageSize = 0);
+
 // Get last heartbeat status
 bool getLastHeartbeatSuccess();
 unsigned long getLastHeartbeatTime();

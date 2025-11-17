@@ -1,6 +1,11 @@
 #include "uart_commands.h"
 #include "lcd_helper.h"
 #include "slave_state_manager.h"
+#include "heartbeat.h"
+#include "SPIMaster.h"
+
+// External references
+extern SPIMaster spiMaster;
 
 // Send command to Slave (with automatic mode tracking)
 void sendUARTCommand(const char *cmd, const char *param, int value)
@@ -194,6 +199,7 @@ void handleUARTResponse(String line)
       int id = data["id"] | -1;
       const char *name = data["name"] | "Unknown";
       float confidence = data["confidence"] | 0.0;
+      bool recognized = (id >= 0);
 
       Serial.printf("Face Recognized: ID=%d, Name=%s, Confidence=%.2f\n",
                     id, name, confidence);
@@ -201,8 +207,27 @@ void handleUARTResponse(String line)
       // Clear face recognition timeout (face was recognized)
       face_recognition_active = false;
 
+      // Capture last frame (raw JPEG - no Base64 encoding needed!)
+      uint8_t* frameData = nullptr;
+      uint32_t frameSize = 0;
+
+      if (spiMaster.isFrameReady())
+      {
+        frameData = spiMaster.getFrameData();
+        frameSize = spiMaster.getFrameSize();
+
+        if (frameData != nullptr && frameSize > 0)
+        {
+          Serial.printf("[FaceDetection] Captured frame: %u bytes (raw JPEG)\n", frameSize);
+        }
+      }
+
+      // Send face detection event to backend (saves to Firebase + publishes to Hub via MQTT)
+      // Sends raw JPEG binary - much more efficient than Base64!
+      sendFaceDetection(recognized, name, confidence, frameData, frameSize);
+
       // Update LCD status with recognition result
-      if (id >= 0)
+      if (recognized)
       {
         sendUART2Command("play", "success");
         char msg[64];

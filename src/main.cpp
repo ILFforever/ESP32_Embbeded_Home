@@ -13,6 +13,7 @@
 #include "slave_state_manager.h"
 #include "weather.h"
 #include "heartbeat.h"
+#include "doorbell_mqtt.h"
 #include <TJpg_Decoder.h>
 #include <cstring>
 #include <esp_system.h>
@@ -179,6 +180,7 @@ Task taskCheckButtons(10, TASK_FOREVER, &checkButtons);                       //
 Task taskCheckSlaveSync(1000, TASK_FOREVER, &checkSlaveSyncTask);             // Check slave mode sync and recovery every 1s
 Task taskUpdateWeather(1800000, TASK_FOREVER, &updateWeather);                // Update weather every 30 minutes (1800000ms)
 Task taskSendServerHeartbeat(60000, TASK_FOREVER, &sendServerHeartbeatTask);  // Send heartbeat to server every 60s
+Task taskProcessDoorbellMQTT(100, TASK_FOREVER, &processDoorbellMQTT);        // Process MQTT connection every 100ms
 
 void setup()
 {
@@ -314,6 +316,11 @@ void setup()
   );
   Serial.println("[MAIN] Heartbeat module initialized");
 
+  // Initialize MQTT client (WiFi already initialized by heartbeat module)
+  initDoorbellMQTT("db_001");  // Same device ID as heartbeat
+  connectDoorbellMQTT();
+  Serial.println("[MAIN] MQTT client initialized - will publish doorbell rings");
+
   // Configure TJpg_Decoder
   TJpgDec.setCallback(tft_jpg_render_callback); // Set the callback
   TJpgDec.setJpgScale(1);                       // Full resolution
@@ -343,6 +350,7 @@ void setup()
   myscheduler.addTask(taskUpdateWeather);
   myscheduler.addTask(taskSendServerHeartbeat);
   myscheduler.addTask(taskCheckTimers);
+  myscheduler.addTask(taskProcessDoorbellMQTT);
   taskCheckUART.enable();
   taskCheckUART2.enable();
   taskCheckMeshUART.enable();
@@ -362,6 +370,7 @@ void setup()
   taskUpdateWeather.enable();
   taskSendServerHeartbeat.enable();
   taskCheckTimers.enable();
+  taskProcessDoorbellMQTT.enable();
 
   last_pong_time = millis();
   last_amp_pong_time = millis();
@@ -1344,8 +1353,11 @@ void updateButtonState(ButtonState &btn, int pin, const char *buttonName)
           updateStatusMsg("Ringing...", true, oldStatus.c_str());
           sendUART2Command("play", "doorbell");
 
-          // Send doorbell ring event to backend (hub will be notified)
+          // Send doorbell ring event to backend (for logging to Firebase)
           sendDoorbellRing();
+
+          // Publish to MQTT for instant hub notification
+          publishDoorbellRing();
         }
         else if (strcmp(buttonName, "Call") == 0)
         {
