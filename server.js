@@ -5,7 +5,6 @@ const connectDB = require('./config/db');
 const { initializeFirebase } = require('./config/firebase');
 const { initMQTT } = require('./config/mqtt');
 const enforceHttpsExceptIoT = require('./middleware/httpsEnforcement');
-const statusCleanupService = require('./services/statusCleanup');
 const cors = require('cors');
 
 // Load env vars
@@ -19,9 +18,6 @@ initializeFirebase();
 
 // Initialize MQTT client (publish-only)
 initMQTT();
-
-// Start status cleanup service
-statusCleanupService.start();
 
 const app = express();
 
@@ -51,15 +47,6 @@ app.get('/info', (req, res) => {
   res.send('Arduino-888-SmartHome is running!');
 });
 
-// Status cleanup service endpoint (for monitoring)
-app.get('/api/v1/status-cleanup/stats', (req, res) => {
-  const stats = statusCleanupService.getStats();
-  res.json({
-    status: 'ok',
-    cleanup_service: stats
-  });
-});
-
 const PORT = process.env.PORT || 5000;
 
 const server = app.listen(PORT, () => {
@@ -70,14 +57,12 @@ const server = app.listen(PORT, () => {
 process.on('unhandledRejection', (err, promise) => {
   console.log(`Error: ${err.message}`);
   // Close server & exit process
-  statusCleanupService.stop();
   server.close(() => process.exit(1));
 });
 
 // Graceful shutdown
 process.on('SIGTERM', () => {
   console.log('SIGTERM received, shutting down gracefully...');
-  statusCleanupService.stop();
   server.close(() => {
     console.log('Server closed');
     process.exit(0);
@@ -86,7 +71,6 @@ process.on('SIGTERM', () => {
 
 process.on('SIGINT', () => {
   console.log('SIGINT received, shutting down gracefully...');
-  statusCleanupService.stop();
   server.close(() => {
     console.log('Server closed');
     process.exit(0);
