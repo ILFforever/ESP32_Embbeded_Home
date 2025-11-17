@@ -1,5 +1,6 @@
 #include "mqtt_client.h"
 #include <WiFi.h>
+#include <ArduinoJson.h>
 
 // MQTT Configuration (HiveMQ Public Broker)
 const char* MQTT_SERVER = "broker.hivemq.com";
@@ -8,6 +9,7 @@ const int MQTT_PORT = 1883;
 // MQTT Topics
 const char* TOPIC_DOORBELL_RING = "smarthome/doorbell/ring";
 const char* TOPIC_HUB_COMMAND = "smarthome/hub/command";
+const char* TOPIC_FACE_DETECTION = "smarthome/face/detection";
 
 // Global MQTT objects
 WiFiClient wifiClient;
@@ -15,6 +17,7 @@ PubSubClient mqttClient(wifiClient);
 
 // Callback storage
 static MqttDoorbellCallback doorbellCallback = nullptr;
+static MqttFaceDetectionCallback faceDetectionCallback = nullptr;
 static String clientId = "";
 
 // ============================================================================
@@ -36,6 +39,27 @@ void mqttMessageCallback(char* topic, byte* payload, unsigned int length) {
       doorbellCallback();
     }
   }
+  // Handle face detection
+  else if (strcmp(topic, TOPIC_FACE_DETECTION) == 0) {
+    Serial.printf("[MQTT] 👤 Face detection event: %s\n", message.c_str());
+
+    // Parse JSON payload
+    JsonDocument doc;
+    DeserializationError error = deserializeJson(doc, message);
+
+    if (!error && faceDetectionCallback != nullptr) {
+      bool recognized = doc["recognized"] | false;
+      const char* name = doc["name"] | "Unknown";
+      float confidence = doc["confidence"] | 0.0f;
+
+      Serial.printf("[MQTT] Name: %s, Recognized: %s, Confidence: %.2f\n",
+                    name, recognized ? "Yes" : "No", confidence);
+
+      faceDetectionCallback(recognized, name, confidence);
+    } else if (error) {
+      Serial.printf("[MQTT] ✗ Failed to parse face detection JSON: %s\n", error.c_str());
+    }
+  }
   // Handle hub commands
   else if (strcmp(topic, TOPIC_HUB_COMMAND) == 0) {
     Serial.printf("[MQTT] Hub command received: %s\n", message.c_str());
@@ -46,9 +70,10 @@ void mqttMessageCallback(char* topic, byte* payload, unsigned int length) {
 // ============================================================================
 // Initialize MQTT Client
 // ============================================================================
-void initMQTT(const char* clientIdParam, MqttDoorbellCallback callback) {
+void initMQTT(const char* clientIdParam, MqttDoorbellCallback callback, MqttFaceDetectionCallback faceCallback) {
   clientId = String(clientIdParam);
   doorbellCallback = callback;
+  faceDetectionCallback = faceCallback;
 
   mqttClient.setServer(MQTT_SERVER, MQTT_PORT);
   mqttClient.setCallback(mqttMessageCallback);
@@ -83,6 +108,9 @@ bool connectMQTT() {
 
     mqttClient.subscribe(TOPIC_HUB_COMMAND);
     Serial.printf("[MQTT] Subscribed to: %s\n", TOPIC_HUB_COMMAND);
+
+    mqttClient.subscribe(TOPIC_FACE_DETECTION);
+    Serial.printf("[MQTT] Subscribed to: %s\n", TOPIC_FACE_DETECTION);
 
     return true;
   } else {

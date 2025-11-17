@@ -30,4 +30,7 @@ DeviceStatus checkDoorbellStatus();
 // Get last heartbeat status
 bool getLastHeartbeatSuccess();
 
+// Send log/error to backend
+void sendLogToBackend(const char* level, const char* message, const char* data = nullptr);
+
 #endif
