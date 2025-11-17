@@ -30,12 +30,12 @@
 #define DHT_TYPE          DHT11
 
 // PMS5003 Sensor (Hardware Serial 1)
-#define PMS_RX_PIN        16     // GPIO16 - Connect to PMS5003 TX
-#define PMS_TX_PIN        17     // GPIO17 - Connect to PMS5003 RX
+#define PMS_RX_PIN        17     // GPIO16 - Connect to PMS5003 TX
+#define PMS_TX_PIN        -1     // GPIO17 - Connect to PMS5003 RX
 
 // UART to Main LCD (Hardware Serial 2)
-#define LCD_RX_PIN        18     // GPIO18 - Connect to Main LCD TX
-#define LCD_TX_PIN        19     // GPIO19 - Connect to Main LCD RX
+#define LCD_RX_PIN        16     // GPIO18 - Connect to Main LCD TX
+#define LCD_TX_PIN        18     // GPIO19 - Connect to Main LCD RX
 
 // Status LED
 #define LED_PIN           48     // GPIO48 - Built-in RGB LED (ESP32-S3)
@@ -99,8 +99,10 @@ struct MeshNodeData {
   uint32_t nodeId;
   String deviceId;
   String deviceType;
-  JsonDocument data;
+  DynamicJsonDocument data;
   unsigned long lastUpdate;
+
+  MeshNodeData() : data(512) {}  // Initialize with 512 bytes
 };
 
 // Store data from up to 10 mesh nodes
@@ -124,10 +126,11 @@ void newConnectionCallback(uint32_t nodeId);
 void changedConnectionCallback();
 void nodeTimeAdjustedCallback(int32_t offset);
 void cleanupOldMeshData();
-void storeMeshNodeData(uint32_t nodeId, JsonDocument &doc);
+void storeMeshNodeData(uint32_t nodeId, StaticJsonDocument<512> &doc);
 void blinkLED(int times, int delayMs);
 void printLocalSensorData();
 void printMeshStatus();
+void handleLcdUartMessages();
 
 // Task declarations
 Task taskReadDHT(DHT_INTERVAL, TASK_FOREVER, &readDHT11);
@@ -177,6 +180,7 @@ void setup() {
 void loop() {
   mesh.update();
   userScheduler.execute();
+  handleLcdUartMessages();  // Check for incoming UART messages from Main LCD
 }
 
 // ============================================================================
@@ -393,7 +397,7 @@ void nodeTimeAdjustedCallback(int32_t offset) {
 // MESH DATA MANAGEMENT
 // ============================================================================
 
-void storeMeshNodeData(uint32_t nodeId, JsonDocument &doc) {
+void storeMeshNodeData(uint32_t nodeId, StaticJsonDocument<512> &doc) {
   // Check if node already exists
   int existingIndex = -1;
   for (int i = 0; i < meshNodeCount; i++) {
@@ -497,4 +501,117 @@ void printLocalSensorData() {
     Serial.println("[SENSORS] PMS5003: No valid data");
   }
   Serial.println("[SENSORS] ═══════════════════════════════\n");
+}
+
+// ============================================================================
+// UART MESSAGE HANDLING (PING/PONG WITH MAIN LCD)
+// ============================================================================
+
+void handleLcdUartMessages() {
+  // Check if data available from Main LCD
+  if (LcdSerial.available()) {
+    String receivedMsg = LcdSerial.readStringUntil('\n');
+    receivedMsg.trim();
+
+    if (receivedMsg.length() == 0) {
+      return;
+    }
+
+    Serial.printf("\n[UART] ← Received from Main LCD: %s\n", receivedMsg.c_str());
+
+    // Parse JSON command
+    StaticJsonDocument<256> cmdDoc;
+    DeserializationError error = deserializeJson(cmdDoc, receivedMsg);
+
+    if (error) {
+      Serial.printf("[UART] ✗ JSON parse error: %s\n", error.c_str());
+
+      // Send error response
+      StaticJsonDocument<128> response;
+      response["type"] = "error";
+      response["message"] = "Invalid JSON";
+      String respStr;
+      serializeJson(response, respStr);
+      LcdSerial.println(respStr);
+      return;
+    }
+
+    const char* msgType = cmdDoc["type"] | "unknown";
+    Serial.printf("[UART]   Message type: %s\n", msgType);
+
+    // Handle different message types
+    if (strcmp(msgType, "ping") == 0) {
+      // Respond with pong
+      StaticJsonDocument<256> pongDoc;
+      pongDoc["type"] = "pong";
+      pongDoc["device_id"] = DEVICE_ID;
+      pongDoc["device_type"] = DEVICE_TYPE;
+      pongDoc["mesh_node_id"] = mesh.getNodeId();
+      pongDoc["uptime_ms"] = millis();
+      pongDoc["mesh_nodes_connected"] = mesh.getNodeList().size();
+      pongDoc["mesh_data_stored"] = meshNodeCount;
+
+      String pongStr;
+      serializeJson(pongDoc, pongStr);
+      LcdSerial.println(pongStr);
+
+      Serial.println("[UART] → Sent PONG response");
+      blinkLED(2, 50);
+
+    } else if (strcmp(msgType, "status") == 0) {
+      // Respond with detailed status
+      StaticJsonDocument<512> statusDoc;
+      statusDoc["type"] = "status_response";
+      statusDoc["device_id"] = DEVICE_ID;
+      statusDoc["uptime_ms"] = millis();
+
+      JsonObject sensors = statusDoc.createNestedObject("sensors");
+      sensors["dht_valid"] = localSensors.dhtValid;
+      sensors["pms_valid"] = localSensors.pmsValid;
+      if (localSensors.dhtValid) {
+        sensors["temperature"] = localSensors.temperature;
+        sensors["humidity"] = localSensors.humidity;
+      }
+      if (localSensors.pmsValid) {
+        sensors["pm2_5"] = localSensors.pm2_5;
+      }
+
+      JsonObject meshInfo = statusDoc.createNestedObject("mesh");
+      meshInfo["node_id"] = mesh.getNodeId();
+      meshInfo["connections"] = mesh.getNodeList().size();
+      meshInfo["stored_nodes"] = meshNodeCount;
+
+      String statusStr;
+      serializeJson(statusDoc, statusStr);
+      LcdSerial.println(statusStr);
+
+      Serial.println("[UART] → Sent STATUS response");
+
+    } else if (strcmp(msgType, "reset_stats") == 0) {
+      // Reset/clear mesh node data
+      meshNodeCount = 0;
+
+      StaticJsonDocument<128> ackDoc;
+      ackDoc["type"] = "ack";
+      ackDoc["message"] = "Stats reset";
+
+      String ackStr;
+      serializeJson(ackDoc, ackStr);
+      LcdSerial.println(ackStr);
+
+      Serial.println("[UART] → Stats reset, ACK sent");
+
+    } else {
+      // Unknown command
+      StaticJsonDocument<128> response;
+      response["type"] = "error";
+      response["message"] = "Unknown command type";
+
+      String respStr;
+      serializeJson(response, respStr);
+      LcdSerial.println(respStr);
+
+      Serial.printf("[UART] ✗ Unknown command: %s\n", msgType);
+    }
+  }
 }
