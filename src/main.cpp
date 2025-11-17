@@ -13,12 +13,18 @@
 #include "TaskScheduler.h"
 #include "DisplayConfig.h"
 #include "hub_network.h"
-#include "mqtt_client.h"
-#include "mesh_uart.h"
-#include "TaskFunctions.h"
-#include "wifi_functions.h"
-#include "microphone.h"
-#include "WiFi.h"
+#include "uart_slaves.h"
+
+// ============================================================================
+// UART Pin Configuration
+// ============================================================================
+#define MESH_RX 26  // Main Mesh UART RX
+#define MESH_TX 25  // Main Mesh UART TX
+#define AMP_RX 4    // Main Amp UART RX
+#define AMP_TX 33   // Main Amp UART TX
+#define UART_BAUD 115200
+
+#define PONG_TIMEOUT 10000  // 10 seconds timeout for ping-pong
 
 // ============================================================================
 // Global Objects
@@ -73,26 +79,24 @@ void updateCapSensor();
 void pushSpritesToDisplay();
 void sendHeartbeatTask();
 void checkDoorbellTask();
-void processMQTTTask();
-void checkMeshUARTTask();
+void checkMeshUARTData();
+void checkAmpUARTData();
 void sendMeshPingTask();
-void checkMeshTimeoutTask();
-void onDoorbellRing();
-void onFaceDetection(bool recognized, const char* name, float confidence);
-void drawWifiSymbol(int x, int y, int strength);
+void sendAmpPingTask();
+void checkMeshTimeout();
+void checkAmpTimeout();
 
-Task taskUpdateTopBar(1000, TASK_FOREVER, &updateTopBar);
-Task taskUpdateContent(100, TASK_FOREVER, &updateContent);         // Every 100ms - check for updates
+Task taskDisplayUpdate(TASK_SECOND * 5, TASK_FOREVER, &DisplayUpdate);
 Task taskTouchUpdate(20, TASK_FOREVER, &updateTouch);
 Task taskCapSensorUpdate(100, TASK_FOREVER, &updateCapSensor);
-Task taskPushSprites(50, TASK_FOREVER, &pushSpritesToDisplay);     // Every 50ms = 20 FPS max
-Task taskSendHeartbeat(TASK_SECOND * 60, TASK_FOREVER, &sendHeartbeatTask);   // Every 60s
-Task taskCheckDoorbell(TASK_SECOND * 60, TASK_FOREVER, &checkDoorbellTask);   // Every 60s
-Task taskProcessMQTT(100, TASK_FOREVER, &processMQTTTask);          // Every 100ms - Process MQTT messages
-Task taskCheckMeshUART(20, TASK_FOREVER, &checkMeshUARTTask);       // Every 20ms - Check Mesh UART
-Task taskSendMeshPing(1000, TASK_FOREVER, &sendMeshPingTask);       // Every 1s - Send ping to Mesh
-Task taskCheckMeshTimeout(1000, TASK_FOREVER, &checkMeshTimeoutTask); // Every 1s - Check Mesh timeout
-Task taskMicrophoneLoudness(100, TASK_FOREVER, &updateMicrophoneLoudness); // Every 100ms
+Task taskSendHeartbeat(60000, TASK_FOREVER, &sendHeartbeatTask);        // Every 60s
+Task taskCheckDoorbell(60000, TASK_FOREVER, &checkDoorbellTask);        // Every 60s
+Task taskCheckMeshUART(20, TASK_FOREVER, &checkMeshUARTData);           // Check Mesh UART every 20ms
+Task taskCheckAmpUART(20, TASK_FOREVER, &checkAmpUARTData);             // Check Amp UART every 20ms
+Task taskSendMeshPing(1000, TASK_FOREVER, &sendMeshPingTask);           // Send ping every 1s
+Task taskSendAmpPing(1000, TASK_FOREVER, &sendAmpPingTask);             // Send ping every 1s
+Task taskCheckMeshTimeout(1000, TASK_FOREVER, &checkMeshTimeout);       // Check timeout every 1s
+Task taskCheckAmpTimeout(1000, TASK_FOREVER, &checkAmpTimeout);         // Check timeout every 1s
 // ============================================================================
 // Setup and Main Loop
 // ============================================================================
@@ -185,8 +189,25 @@ void setup(void)
       break;
   }
 
-  // Initialize heartbeat module (WiFi already initialized by wifi_init())
-  initHeartbeat(
+  // Initialize UART for Main Mesh (UART1: RX=26, TX=25)
+  MeshSerial.begin(UART_BAUD, SERIAL_8N1, MESH_RX, MESH_TX);
+  Serial.printf("Main Mesh UART initialized: RX=GPIO%d, TX=GPIO%d, Baud=%d\n", MESH_RX, MESH_TX, UART_BAUD);
+  delay(100);
+
+  // Initialize UART for Main Amp (UART2: RX=4, TX=33)
+  AmpSerial.begin(UART_BAUD, SERIAL_8N1, AMP_RX, AMP_TX);
+  Serial.printf("Main Amp UART initialized: RX=GPIO%d, TX=GPIO%d, Baud=%d\n", AMP_RX, AMP_TX, UART_BAUD);
+  delay(100);
+
+  // Initialize ping-pong timestamps
+  last_mesh_pong_time = millis();
+  last_amp_pong_time = millis();
+
+  // Initialize network and heartbeat
+  // TODO: Update WiFi credentials and device tokens
+  initNetwork(
+    "YOUR_WIFI_SSID",                       // WiFi SSID
+    "YOUR_WIFI_PASSWORD",                   // WiFi password
     "http://embedded-smarthome.fly.dev",   // Backend URL
     "hb_001",                              // Hub device ID
     "hub",                                  // Device type
@@ -212,24 +233,27 @@ void setup(void)
   scheduler.addTask(taskPushSprites);
   scheduler.addTask(taskSendHeartbeat);
   scheduler.addTask(taskCheckDoorbell);
-  scheduler.addTask(taskProcessMQTT);  // MQTT instead of polling!
   scheduler.addTask(taskCheckMeshUART);
+  scheduler.addTask(taskCheckAmpUART);
   scheduler.addTask(taskSendMeshPing);
+  scheduler.addTask(taskSendAmpPing);
   scheduler.addTask(taskCheckMeshTimeout);
-  scheduler.addTask(taskMicrophoneLoudness);
+  scheduler.addTask(taskCheckAmpTimeout);
 
-  taskUpdateTopBar.enable();
-  taskUpdateContent.enable();
+  taskDisplayUpdate.enable();
   taskTouchUpdate.enable();
   taskCapSensorUpdate.enable();
   taskPushSprites.enable();
   taskSendHeartbeat.enable();
   taskCheckDoorbell.enable();
-  taskProcessMQTT.enable();  // Enable MQTT processing
   taskCheckMeshUART.enable();
+  taskCheckAmpUART.enable();
   taskSendMeshPing.enable();
+  taskSendAmpPing.enable();
   taskCheckMeshTimeout.enable();
-  taskMicrophoneLoudness.enable();
+  taskCheckAmpTimeout.enable();
+
+  Serial.println("\n✅ All systems initialized - Ready!");
 }
 
 void loop(void)
@@ -315,84 +339,52 @@ void updateContent()
     needsUpdate = true;
   }
 
-  // Get current values
-  int currentFreeHeap = ESP.getFreeHeap();
-  int currentFreePsram = ESP.getFreePsram();
-  bool currentDoorbellRinging = doorbellJustRang && (millis() - doorbellRingTime < RING_NOTIFICATION_DURATION);
-
-  // Update heap info only if changed (update every ~100 checks to avoid minor fluctuations)
-  static int heapUpdateCounter = 0;
-  heapUpdateCounter++;
-  if (heapUpdateCounter >= 10 || !prevFreeHeap) { // Update every 1 second (100ms * 10)
-    if (abs(currentFreeHeap - prevFreeHeap) > 1000 || !prevFreeHeap) { // Only if changed by >1KB
-      contentArea.setTextSize(2);
-      contentArea.setTextColor(TFT_WHITE, TFT_BLUE);
-      // Clear previous text area
-      contentArea.fillRect(50, 100, 400, 20, TFT_BLUE);
-      sprintf(buffer, "Free Heap: %d bytes", currentFreeHeap);
-      contentArea.drawString(buffer, 50, 100);
-      prevFreeHeap = currentFreeHeap;
-      needsUpdate = true;
-    }
-
-    if (abs(currentFreePsram - prevFreePsram) > 1000 || !prevFreePsram) { // Only if changed by >1KB
-      contentArea.setTextSize(2);
-      contentArea.setTextColor(TFT_WHITE, TFT_BLUE);
-      // Clear previous text area
-      contentArea.fillRect(50, 130, 400, 20, TFT_BLUE);
-      sprintf(buffer, "Free PSRAM: %d bytes", currentFreePsram);
-      contentArea.drawString(buffer, 50, 130);
-      prevFreePsram = currentFreePsram;
-      needsUpdate = true;
-    }
-    heapUpdateCounter = 0;
+  // Display Main Mesh status
+  if (mesh_status == -1) {
+    lcd.setTextColor(TFT_RED);
+    lcd.drawString("Main Mesh: OFFLINE", 50, 150);
+  } else if (mesh_status == 0) {
+    lcd.setTextColor(TFT_YELLOW);
+    lcd.drawString("Main Mesh: STANDBY", 50, 150);
+  } else {
+    lcd.setTextColor(TFT_GREEN);
+    lcd.drawString("Main Mesh: RUNNING", 50, 150);
   }
+  lcd.setTextColor(TFT_WHITE);
 
-  // Update doorbell info only if status changed
-  if (doorbellStatus.data_valid != prevDoorbellDataValid ||
-      doorbellOnline != prevDoorbellOnline ||
-      doorbellStatus.wifi_rssi != prevDoorbellRssi) {
-
-    // Clear the doorbell info area
-    contentArea.fillRect(50, 160, 400, 20, TFT_BLUE);
-
-    if (doorbellStatus.data_valid && doorbellOnline) {
-      contentArea.setTextSize(2);
-      contentArea.setTextColor(TFT_WHITE, TFT_BLUE);
-      sprintf(buffer, "Doorbell RSSI: %d dBm", doorbellStatus.wifi_rssi);
-      contentArea.drawString(buffer, 50, 160);
-      prevDoorbellRssi = doorbellStatus.wifi_rssi;
-    }
-
-    prevDoorbellDataValid = doorbellStatus.data_valid;
-    prevDoorbellOnline = doorbellOnline;
-    needsUpdate = true;
+  // Display Main Amp status
+  if (amp_status == -1) {
+    lcd.setTextColor(TFT_RED);
+    lcd.drawString("Main Amp: OFFLINE", 50, 200);
+  } else if (amp_status == 0) {
+    lcd.setTextColor(TFT_YELLOW);
+    lcd.drawString("Main Amp: STANDBY", 50, 200);
+  } else {
+    lcd.setTextColor(TFT_GREEN);
+    lcd.drawString("Main Amp: PLAYING", 50, 200);
   }
+  lcd.setTextColor(TFT_WHITE);
 
-  // Handle doorbell ring notification (time-sensitive, update immediately)
-  if (currentDoorbellRinging != prevDoorbellRinging) {
-    if (currentDoorbellRinging) {
-      // Draw large notification
-      contentArea.fillRect(100, 200, 600, 100, TFT_RED);
-      contentArea.setTextColor(TFT_WHITE, TFT_RED);
-      contentArea.setTextSize(5);
-      contentArea.drawString("DOORBELL RINGING!", 150, 220);
-
-      contentArea.setTextSize(3);
-      contentArea.setTextColor(TFT_YELLOW, TFT_RED);
-      contentArea.drawString("Someone is at the door", 200, 270);
+  // Display doorbell status
+  if (doorbellStatus.data_valid) {
+    if (doorbellOnline) {
+      lcd.setTextColor(TFT_GREEN);
+      lcd.drawString("Doorbell: ONLINE", 50, 250);
     } else {
-      // Clear notification area
-      contentArea.fillRect(100, 200, 600, 100, TFT_BLUE);
-      doorbellJustRang = false; // Reset flag
+      lcd.setTextColor(TFT_RED);
+      lcd.drawString("Doorbell: OFFLINE", 50, 250);
     }
-    prevDoorbellRinging = currentDoorbellRinging;
-    needsUpdate = true;
-  }
 
-  // Only mark for update if something actually changed
-  if (needsUpdate) {
-    contentNeedsUpdate = true;
+    // Show additional info if available
+    if (doorbellOnline) {
+      char buffer[50];
+      sprintf(buffer, "RSSI: %d dBm", doorbellStatus.wifi_rssi);
+      lcd.drawString(buffer, 50, 300);
+    }
+  } else {
+    lcd.setTextColor(TFT_YELLOW);
+    lcd.drawString("Doorbell: Checking...", 50, 250);
+    lcd.setTextColor(TFT_WHITE);
   }
 }
 
@@ -484,83 +476,86 @@ void checkDoorbellTask()
   doorbellOnline = doorbellStatus.online;
 }
 
-// Task: Process MQTT messages (replaces polling!)
-void processMQTTTask()
-{
-  processMQTT();
-}
-
-// Callback: Called when doorbell rings (triggered by MQTT)
-void onDoorbellRing()
-{
-  Serial.println("[Hub] 🔔 DOORBELL RANG via MQTT! Playing notification...");
-
-  // Set flag for visual notification
-  doorbellJustRang = true;
-  doorbellRingTime = millis();
-  contentNeedsUpdate = true; // Trigger content area update
-
-  // TODO: Add audio playback here when audio hardware is connected
-  // Example: playDoorbellSound();
-  // or send command to audio module via UART/I2C
-}
-
-// Callback: Called when face detection event received (triggered by MQTT)
-void onFaceDetection(bool recognized, const char* name, float confidence)
-{
-  Serial.printf("[Hub] 👤 Face Detection via MQTT!\n");
-  Serial.printf("  Name: %s\n", name);
-  Serial.printf("  Recognized: %s\n", recognized ? "Yes" : "No");
-  Serial.printf("  Confidence: %.2f\n", confidence);
-
-  // TODO: Display face detection on screen
-  // TODO: Log to Firebase via backend
-  // TODO: Show notification based on recognized status
-
-  contentNeedsUpdate = true; // Trigger content area update
-}
-
-// Draw WiFi symbol with signal strength indicator
-void drawWifiSymbol(int x, int y, int strength)
-{
-  // strength: 0=very weak/off, 1=weak, 2=medium, 3=strong
-  uint16_t color = (strength > 0) ? TFT_GREEN : TFT_RED;
-
-  // Draw dot at center
-  topBar.fillCircle(x, y, 2, color);
-
-  // Draw arcs based on strength using drawArc(x, y, r0, r1, angle0, angle1, color)
-  if (strength >= 1)
-  {
-    topBar.drawArc(x, y, 5, 6, 225, 315, color); // Smallest arc
-  }
-  if (strength >= 2)
-  {
-    topBar.drawArc(x, y, 9, 10, 225, 315, color); // Middle arc
-  }
-  if (strength >= 3)
-  {
-    topBar.drawArc(x, y, 13, 14, 225, 315, color); // Largest arc
-  }
-}
 // ============================================================================
-// Mesh UART Task Functions
+// UART Task Functions
 // ============================================================================
 
-// Task: Check Mesh UART for incoming data
-void checkMeshUARTTask()
+// Task: Check for incoming UART data from Main Mesh
+void checkMeshUARTData()
 {
-  checkMeshUART();
+  while (MeshSerial.available())
+  {
+    String line = MeshSerial.readStringUntil('\n');
+    if (line.length() > 0)
+    {
+      handleMeshResponse(line);
+    }
+  }
 }
 
-// Task: Send ping to Mesh module
+// Task: Check for incoming UART data from Main Amp
+void checkAmpUARTData()
+{
+  while (AmpSerial.available())
+  {
+    String line = AmpSerial.readStringUntil('\n');
+    if (line.length() > 0)
+    {
+      handleAmpResponse(line);
+    }
+  }
+}
+
+// Task: Send periodic ping to Main Mesh
 void sendMeshPingTask()
 {
   sendMeshPing();
 }
 
-// Task: Check Mesh timeout and connection status
-void checkMeshTimeoutTask()
+// Task: Send periodic ping to Main Amp
+void sendAmpPingTask()
 {
-  checkMeshTimeout();
+  sendAmpPing();
+}
+
+// Task: Check for Main Mesh ping timeout
+void checkMeshTimeout()
+{
+  if (mesh_ping_counter > 0 && (millis() - last_mesh_pong_time > PONG_TIMEOUT))
+  {
+    if (mesh_status != -1)
+    {
+      Serial.println("[MESH] ⚠️ WARNING: No pong response for 10 seconds");
+      Serial.println("[MESH] Connection to Main Mesh may be lost");
+      mesh_status = -1; // mark as disconnected
+    }
+    // Keep checking - stay in disconnected state
+  }
+  else if (mesh_status == -1 && mesh_ping_counter > 0 && (millis() - last_mesh_pong_time < PONG_TIMEOUT))
+  {
+    // Recover from disconnected state if we're receiving pongs again
+    Serial.println("[MESH] ✓ Connection restored!");
+    mesh_status = 0; // back to standby
+  }
+}
+
+// Task: Check for Main Amp ping timeout
+void checkAmpTimeout()
+{
+  if (amp_ping_counter > 0 && (millis() - last_amp_pong_time > PONG_TIMEOUT))
+  {
+    if (amp_status != -1)
+    {
+      Serial.println("[AMP] ⚠️ WARNING: No pong response for 10 seconds");
+      Serial.println("[AMP] Connection to Main Amp may be lost");
+      amp_status = -1; // mark as disconnected
+    }
+    // Keep checking - stay in disconnected state
+  }
+  else if (amp_status == -1 && amp_ping_counter > 0 && (millis() - last_amp_pong_time < PONG_TIMEOUT))
+  {
+    // Recover from disconnected state if we're receiving pongs again
+    Serial.println("[AMP] ✓ Connection restored!");
+    amp_status = 0; // back to standby
+  }
 }
