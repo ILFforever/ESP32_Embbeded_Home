@@ -406,12 +406,12 @@ const getDeviceHistory = async (req, res) => {
 
 // ============================================================================
 // @route   POST /api/v1/devices/doorbell/ring
-// @desc    Receive doorbell ring event - immediately write to Firebase (no throttling)
-//          Hub can listen to these events to play audio
+// @desc    Receive doorbell ring event - notify hub to play audio (no Firebase save)
+//          Hub can poll or use real-time listeners for notifications
 // ============================================================================
 const handleDoorbellRing = async (req, res) => {
   try {
-    const { device_id, visitor_name, image_url, face_detected } = req.body;
+    const { device_id } = req.body;
 
     // Validation
     if (!device_id) {
@@ -421,40 +421,68 @@ const handleDoorbellRing = async (req, res) => {
       });
     }
 
-    console.log(`[Doorbell] ${device_id} - Ring event received`);
+    console.log(`[Doorbell] ${device_id} - Ring event received (not saving to Firebase)`);
 
-    const db = getFirestore();
-    const deviceRef = db.collection('devices').doc(device_id);
-
-    // Create doorbell event data
-    const doorbellEvent = {
-      timestamp: admin.firestore.FieldValue.serverTimestamp(),
-      visitor_name: visitor_name || 'Unknown',
-      face_detected: face_detected || false,
-      image_url: image_url || null,
-      acknowledged: false // Hub can set this to true after playing audio
-    };
-
-    // Write event to Firebase (no throttling - doorbell rings are important!)
-    const eventRef = await deviceRef.collection('doorbell_events').add(doorbellEvent);
-
-    // Update device's last doorbell ring
-    await deviceRef.set({
-      type: 'doorbell',
-      last_ring: admin.firestore.FieldValue.serverTimestamp(),
-      last_ring_id: eventRef.id
-    }, { merge: true });
-
-    // Respond to doorbell device
+    // Just acknowledge the ring - hub will play audio via other mechanism
+    // No Firebase write to save space
     res.json({
       status: 'ok',
       message: 'Doorbell ring received',
-      event_id: eventRef.id,
       timestamp: Date.now()
     });
 
   } catch (error) {
     console.error('[Doorbell] Error:', error);
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+};
+
+// ============================================================================
+// @route   POST /api/v1/devices/doorbell/face-detection
+// @desc    Receive face detection event from doorbell camera - save to Firebase
+//          Stores image, name (if recognized), timestamp, etc.
+// ============================================================================
+const handleFaceDetection = async (req, res) => {
+  try {
+    const { device_id, image, name, confidence, timestamp } = req.body;
+
+    // Validation
+    if (!device_id) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'device_id is required'
+      });
+    }
+
+    console.log(`[FaceDetection] ${device_id} - Face detection event received`);
+
+    const db = getFirestore();
+    const deviceRef = db.collection('devices').doc(device_id);
+
+    // Create face detection event data
+    const faceDetectionEvent = {
+      timestamp: timestamp || admin.firestore.FieldValue.serverTimestamp(),
+      name: name || 'Unknown',
+      confidence: confidence || null,
+      image: image || null, // Base64 encoded image or URL
+      detected_at: admin.firestore.FieldValue.serverTimestamp()
+    };
+
+    // Write event to Firebase
+    const eventRef = await deviceRef.collection('face_detections').add(faceDetectionEvent);
+
+    console.log(`[FaceDetection] ${device_id} - Saved to Firebase with ID: ${eventRef.id}`);
+
+    // Respond to doorbell device
+    res.json({
+      status: 'ok',
+      message: 'Face detection event saved',
+      event_id: eventRef.id,
+      timestamp: Date.now()
+    });
+
+  } catch (error) {
+    console.error('[FaceDetection] Error:', error);
     res.status(500).json({ status: 'error', message: error.message });
   }
 };
@@ -466,5 +494,6 @@ module.exports = {
   getAllDevicesStatus,
   handleSensorData,
   getDeviceHistory,
-  handleDoorbellRing
+  handleDoorbellRing,
+  handleFaceDetection
 };

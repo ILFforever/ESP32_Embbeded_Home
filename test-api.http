@@ -115,33 +115,44 @@ X-Device-Token: {{deviceToken}}
   }
 }
 
-### 14. Doorbell ring event (NEW!) - Known visitor
+### 14. Doorbell ring event (notify hub, no Firebase save)
 POST {{deviceBaseUrl}}/doorbell/ring
 Content-Type: application/json
 X-Device-Token: {{deviceToken}}
 
 {
-  "device_id": "doorbell_001",
-  "visitor_name": "John Smith",
-  "face_detected": true,
-  "image_url": "https://example.com/doorbell/capture/12345.jpg"
+  "device_id": "doorbell_001"
 }
 
-### 15. Doorbell ring event - Unknown visitor
-POST {{deviceBaseUrl}}/doorbell/ring
+### 15. Face detection event (saves to Firebase with image & name)
+POST {{deviceBaseUrl}}/doorbell/face-detection
 Content-Type: application/json
 X-Device-Token: {{deviceToken}}
 
 {
   "device_id": "doorbell_001",
-  "face_detected": false
+  "name": "John Smith",
+  "confidence": 0.95,
+  "image": "data:image/jpeg;base64,/9j/4AAQSkZJRg...",
+  "timestamp": 1699999999000
 }
 
-### 16. Get all devices status (for frontend)
+### 16. Face detection event - Unknown person
+POST {{deviceBaseUrl}}/doorbell/face-detection
+Content-Type: application/json
+X-Device-Token: {{deviceToken}}
+
+{
+  "device_id": "doorbell_001",
+  "confidence": 0.45,
+  "image": "data:image/jpeg;base64,/9j/4AAQSkZJRg..."
+}
+
+### 17. Get all devices status (for frontend)
 GET {{deviceBaseUrl}}/status/all
 
-### 17. Get specific device status
+### 18. Get specific device status
 GET {{deviceBaseUrl}}/doorbell_001/status
 
-### 18. Get device history
+### 19. Get device history
 GET {{deviceBaseUrl}}/doorbell_001/history?limit=10
