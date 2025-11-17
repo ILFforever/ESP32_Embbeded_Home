@@ -22,6 +22,8 @@
 #define TX2 17
 #define RX3 32
 #define TX3 33
+#define RX_MESH 25
+#define TX_MESH 26
 
 #define Doorbell_bt 34 // Analog pin
 #define Call_bt 35     // Analog pin
@@ -50,6 +52,7 @@ unsigned long status_msg_last_update = 0; // Timestamp of last status message up
 Scheduler myscheduler;
 HardwareSerial MasterSerial(1); // Use UART1
 HardwareSerial AmpSerial(2);    // Use UART2
+HardwareSerial MeshSerial(0);   // Use UART0 (reassigned to pins 25, 26)
 
 extern TFT_eSPI tft;          // Your initialized display object
 extern uint8_t *g_spiFrame;   // Pointer to SPI-received JPEG frame
@@ -68,12 +71,20 @@ unsigned long last_amp_pong_time = 0;
 #define AMP_PONG_TIMEOUT 10000
 int amp_status = 0; // 0 = standby, -1 = disconnected, 1 = playing
 
+// Ping-Pong (Mesh Module)
+uint32_t mesh_ping_counter = 0;
+unsigned long last_mesh_pong_time = 0;
+#define MESH_PONG_TIMEOUT 10000
+int mesh_status = 0; // 0 = standby, -1 = disconnected, 1 = active
+
 // Disconnect Warning Timer (30 seconds)
 #define DISCONNECT_WARNING_INTERVAL 30000 // 30 seconds
 unsigned long slave_disconnect_start = 0;
 unsigned long amp_disconnect_start = 0;
+unsigned long mesh_disconnect_start = 0;
 bool slave_disconnect_warning_sent = false;
 bool amp_disconnect_warning_sent = false;
+bool mesh_disconnect_warning_sent = false;
 
 // Ready LED timer
 unsigned long Ready_led_on_time = 0;
@@ -127,10 +138,13 @@ ButtonState callButton = {false, false, false, 0, 0, false, false};
 
 void checkUARTData();
 void checkUART2Data();
+void checkMeshData();
 void sendPingTask();
 void sendAmpPingTask();
+void sendMeshPingTask();
 void checkPingTimeout();
 void checkAmpPingTimeout();
+void checkMeshPingTimeout();
 void checkDisconnectWarning();
 void ProcessFrame();
 void drawUIOverlay();
@@ -149,10 +163,13 @@ String getCurrentDateAsString();
 
 Task taskCheckUART(20, TASK_FOREVER, &checkUARTData);                         // Check UART buffer every 20ms
 Task taskCheckUART2(20, TASK_FOREVER, &checkUART2Data);                       // Check UART2 (Amp) buffer every 20ms
+Task taskCheckMeshUART(20, TASK_FOREVER, &checkMeshData);                     // Check Mesh UART buffer every 20ms
 Task taskSendPing(1000, TASK_FOREVER, &sendPingTask);                         // Send ping every 1s
 Task taskSendAmpPing(1000, TASK_FOREVER, &sendAmpPingTask);                   // Send ping to Amp every 1s
+Task taskSendMeshPing(1000, TASK_FOREVER, &sendMeshPingTask);                 // Send ping to Mesh every 1s
 Task taskCheckTimeout(1000, TASK_FOREVER, &checkPingTimeout);                 // Check timeout every 1s
 Task taskCheckAmpTimeout(1000, TASK_FOREVER, &checkAmpPingTimeout);           // Check Amp timeout every 1s
+Task taskCheckMeshTimeout(1000, TASK_FOREVER, &checkMeshPingTimeout);         // Check Mesh timeout every 1s
 Task taskCheckDisconnectWarning(1000, TASK_FOREVER, &checkDisconnectWarning); // Check for 30s disconnects
 Task taskWiFiWatchdog(30000, TASK_FOREVER, &wifiWatchdogTask);                // Check WiFi connection every 30s
 Task taskProcessFrame(5, TASK_FOREVER, &ProcessFrame);                        // Check for frames every 5ms
@@ -176,7 +193,10 @@ void setup()
   digitalWrite(Warn_led, HIGH);
   digitalWrite(Ready_led, LOW);
 
-  delay(100);
+  // CRITICAL: Wait for power supply to stabilize before LCD init
+  // ST7789 requires ~120ms power-on time, 500ms ensures reliability
+  // This fixes the issue where LCD fails to init on external power only
+  delay(500);
 
   Serial.println("\n\n=================================");
   Serial.println("ESP32_Embbeded_Home - Doorbell_lcd");
@@ -191,10 +211,36 @@ void setup()
       delay(100);
   }
 
-  Serial.println("Starting TFT_eSPI ST7789 screen");
-  tft.init();
-  tft.setRotation(0);
-  tft.setSwapBytes(true); // Match TFT byte order
+  // Initialize LCD with retry logic for power-on reliability
+  Serial.println("Initializing TFT_eSPI ST7789 screen...");
+  bool lcd_init_success = false;
+  for (int retry = 0; retry < 3; retry++)
+  {
+    if (retry > 0)
+    {
+      Serial.printf("LCD init attempt %d/3...\n", retry + 1);
+      delay(200); // Additional delay between retries
+    }
+
+    tft.init();
+    tft.setRotation(0);
+    tft.setSwapBytes(true); // Match TFT byte order
+
+    // Test if LCD initialized by trying to fill screen
+    tft.fillScreen(TFT_BLACK);
+    delay(50);
+
+    // If we got here without crashing, consider it successful
+    lcd_init_success = true;
+    Serial.println("LCD initialized successfully");
+    break;
+  }
+
+  if (!lcd_init_success)
+  {
+    Serial.println("[ERROR] LCD initialization failed after 3 attempts");
+    // Continue anyway - may recover later
+  }
 
   // Initialize sprites
   Serial.println("Creating video sprite...");
@@ -220,8 +266,11 @@ void setup()
 
   MasterSerial.begin(UART_BAUD, SERIAL_8N1, RX2, TX2);
   AmpSerial.begin(UART_BAUD, SERIAL_8N1, RX3, TX3);
+  MeshSerial.begin(UART_BAUD, SERIAL_8N1, RX_MESH, TX_MESH);
 
   Serial.printf("UART initialized: RX=GPIO%d, TX=GPIO%d, Baud=%d\n", RX2, TX2, UART_BAUD);
+  Serial.printf("UART2 (Amp) initialized: RX=GPIO%d, TX=GPIO%d, Baud=%d\n", RX3, TX3, UART_BAUD);
+  Serial.printf("UART3 (Mesh) initialized: RX=GPIO%d, TX=GPIO%d, Baud=%d\n", RX_MESH, TX_MESH, UART_BAUD);
   delay(100);
 
   if (!spiMaster.begin())
@@ -279,14 +328,18 @@ void setup()
 
   last_pong_time = millis();
   last_amp_pong_time = millis();
+  last_mesh_pong_time = millis();
 
   // Add tasks to scheduler
   myscheduler.addTask(taskCheckUART);
   myscheduler.addTask(taskCheckUART2);
+  myscheduler.addTask(taskCheckMeshUART);
   myscheduler.addTask(taskSendPing);
   myscheduler.addTask(taskSendAmpPing);
+  myscheduler.addTask(taskSendMeshPing);
   myscheduler.addTask(taskCheckTimeout);
   myscheduler.addTask(taskCheckAmpTimeout);
+  myscheduler.addTask(taskCheckMeshTimeout);
   myscheduler.addTask(taskCheckDisconnectWarning);
   myscheduler.addTask(taskWiFiWatchdog);
   myscheduler.addTask(taskProcessFrame);
@@ -300,10 +353,13 @@ void setup()
   myscheduler.addTask(taskProcessDoorbellMQTT);
   taskCheckUART.enable();
   taskCheckUART2.enable();
+  taskCheckMeshUART.enable();
   taskSendPing.enable();
   taskSendAmpPing.enable();
+  taskSendMeshPing.enable();
   taskCheckTimeout.enable();
   taskCheckAmpTimeout.enable();
+  taskCheckMeshTimeout.enable();
   taskCheckDisconnectWarning.enable();
   taskWiFiWatchdog.enable();
   taskProcessFrame.enable();
@@ -318,6 +374,7 @@ void setup()
 
   last_pong_time = millis();
   last_amp_pong_time = millis();
+  last_mesh_pong_time = millis();
   sendUARTCommand("get_status");
 
   // Clear screen and show startup message
@@ -1033,6 +1090,46 @@ void checkAmpPingTimeout()
   }
 }
 
+// Task: Check for incoming Mesh UART data
+void checkMeshData()
+{
+  while (MeshSerial.available())
+  {
+    String line = MeshSerial.readStringUntil('\n');
+    if (line.length() > 0)
+    {
+      handleMeshResponse(line);
+    }
+  }
+}
+
+// Task: Send periodic ping to Mesh
+void sendMeshPingTask()
+{
+  sendMeshPing();
+}
+
+// Task: Check for Mesh ping timeout
+void checkMeshPingTimeout()
+{
+  if (mesh_ping_counter > 0 && (millis() - last_mesh_pong_time > MESH_PONG_TIMEOUT))
+  {
+    if (mesh_status != -1)
+    {
+      Serial.println("!!! WARNING: No pong response from Mesh for 10 seconds !!!");
+      Serial.println("Connection to Mesh may be lost.\n");
+      mesh_status = -1; // mark as disconnected
+    }
+    // Keep checking - stay in disconnected state
+  }
+  else if (mesh_status == -1 && mesh_ping_counter > 0 && (millis() - last_mesh_pong_time < MESH_PONG_TIMEOUT))
+  {
+    // Recover from disconnected state if we're receiving pongs again
+    Serial.println("Mesh connection restored!");
+    mesh_status = 0; // back to standby
+  }
+}
+
 // Task: Check for 30-second disconnections and log warnings
 void checkDisconnectWarning()
 {
@@ -1082,6 +1179,28 @@ void checkDisconnectWarning()
   {
     amp_disconnect_start = 0;
     amp_disconnect_warning_sent = false;
+  }
+
+  if (mesh_status == -1)
+  {
+    if (mesh_disconnect_start == 0)
+    {
+      mesh_disconnect_start = currentTime;
+      mesh_disconnect_warning_sent = false;
+    }
+    else if (!mesh_disconnect_warning_sent && (currentTime - mesh_disconnect_start >= DISCONNECT_WARNING_INTERVAL))
+    {
+      Serial.println("========================================");
+      Serial.println("!!! MESH MODULE DISCONNECTED FOR 30+ SECONDS !!!");
+      Serial.println("========================================");
+      sendDisconnectWarning("mesh", true); // Send warning to server
+      mesh_disconnect_warning_sent = true;
+    }
+  }
+  else
+  {
+    mesh_disconnect_start = 0;
+    mesh_disconnect_warning_sent = false;
   }
 }
 
