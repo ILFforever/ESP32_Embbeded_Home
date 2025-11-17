@@ -24,14 +24,8 @@ void sendHubHeartbeat();
 // Check if doorbell is online
 DeviceStatus checkDoorbellStatus();
 
-// Check for new doorbell ring events (returns true if new ring detected)
-bool checkDoorbellRing();
-
-// Callback function type for doorbell ring
-typedef void (*DoorbellRingCallback)();
-
-// Set callback for when doorbell rings
-void setDoorbellRingCallback(DoorbellRingCallback callback);
+// Note: Doorbell ring detection now uses MQTT (see mqtt_client.h)
+// Polling functions removed to avoid API rate limits
 
 // Get last heartbeat status
 bool getLastHeartbeatSuccess();
