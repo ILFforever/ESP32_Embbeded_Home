@@ -37,6 +37,11 @@ volatile bool touchDataReady = false;
 DeviceStatus doorbellStatus;
 bool doorbellOnline = false;
 
+// Doorbell ring notification
+volatile bool doorbellJustRang = false;
+unsigned long doorbellRingTime = 0;
+#define RING_NOTIFICATION_DURATION 3000 // Show notification for 3 seconds
+
 // Sprite update tracking
 volatile bool topBarNeedsUpdate = false;
 volatile bool contentNeedsUpdate = false;
@@ -57,6 +62,8 @@ void updateCapSensor();
 void pushSpritesToDisplay();
 void sendHeartbeatTask();
 void checkDoorbellTask();
+void checkDoorbellRingTask();
+void onDoorbellRing();
 void drawWifiSymbol(int x, int y, int strength);
 
 Task taskUpdateTopBar(1000, TASK_FOREVER, &updateTopBar);
@@ -66,6 +73,7 @@ Task taskCapSensorUpdate(100, TASK_FOREVER, &updateCapSensor);
 Task taskPushSprites(50, TASK_FOREVER, &pushSpritesToDisplay);          // Every 50ms = 20 FPS max
 Task taskSendHeartbeat(60000, TASK_FOREVER, &sendHeartbeatTask);        // Every 60s
 Task taskCheckDoorbell(60000, TASK_FOREVER, &checkDoorbellTask);        // Every 60s
+Task taskCheckDoorbellRing(1000, TASK_FOREVER, &checkDoorbellRingTask); // Every 1s - Poll for doorbell rings
 Task taskMicrophoneLoudness(100, TASK_FOREVER, &updateMicrophoneLoudness); // Every 100ms
 // ============================================================================
 // Setup and Main Loop
@@ -168,6 +176,8 @@ void setup(void)
     "db_001"                                // Doorbell device ID to monitor
   );
 
+  // Register doorbell ring callback
+  setDoorbellRingCallback(onDoorbellRing);
   // Initialize microphone
   if (!initMicrophone())
   {
@@ -182,6 +192,7 @@ void setup(void)
   scheduler.addTask(taskPushSprites);
   scheduler.addTask(taskSendHeartbeat);
   scheduler.addTask(taskCheckDoorbell);
+  scheduler.addTask(taskCheckDoorbellRing);
   scheduler.addTask(taskMicrophoneLoudness);
 
   taskUpdateTopBar.enable();
@@ -191,6 +202,7 @@ void setup(void)
   taskPushSprites.enable();
   taskSendHeartbeat.enable();
   taskCheckDoorbell.enable();
+  taskCheckDoorbellRing.enable();
   taskMicrophoneLoudness.enable();
 }
 
@@ -285,6 +297,22 @@ void updateContent()
     contentArea.drawString(buffer, 50, 160);
   }
 
+  // Display doorbell ring notification (large, centered)
+  if (doorbellJustRang && (millis() - doorbellRingTime < RING_NOTIFICATION_DURATION)) {
+    // Draw large notification
+    contentArea.fillRect(100, 200, 600, 100, TFT_RED);
+    contentArea.setTextColor(TFT_WHITE, TFT_RED);
+    contentArea.setTextSize(5);
+    contentArea.drawString("DOORBELL RINGING!", 150, 220);
+
+    contentArea.setTextSize(3);
+    contentArea.setTextColor(TFT_YELLOW, TFT_RED);
+    contentArea.drawString("Someone is at the door", 200, 270);
+  } else if (doorbellJustRang) {
+    // Clear notification after duration
+    doorbellJustRang = false;
+  }
+
   // Mark that content needs update
   contentNeedsUpdate = true;
 }
@@ -375,6 +403,27 @@ void checkDoorbellTask()
 {
   doorbellStatus = checkDoorbellStatus();
   doorbellOnline = doorbellStatus.online;
+}
+
+// Task: Check for doorbell ring events (polls every 1 second)
+void checkDoorbellRingTask()
+{
+  checkDoorbellRing();
+}
+
+// Callback: Called when doorbell rings
+void onDoorbellRing()
+{
+  Serial.println("[Hub] 🔔 DOORBELL RANG! Playing notification...");
+
+  // Set flag for visual notification
+  doorbellJustRang = true;
+  doorbellRingTime = millis();
+  contentNeedsUpdate = true; // Trigger content area update
+
+  // TODO: Add audio playback here when audio hardware is connected
+  // Example: playDoorbellSound();
+  // or send command to audio module via UART/I2C
 }
 
 // Draw WiFi symbol with signal strength indicator
