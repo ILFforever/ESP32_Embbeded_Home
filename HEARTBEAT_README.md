@@ -3,6 +3,192 @@
 ## Overview
 This implementation provides a **smart throttling** heartbeat system that reduces Firebase writes by **95%** while maintaining responsive device monitoring.
 
+## Automatic Data Cleanup with Firestore TTL
+
+### Why TTL Instead of Cloud Functions?
+
+Firestore Time-To-Live (TTL) is the most efficient way to automatically delete old data:
+
+| Feature | Firestore TTL | Cloud Functions |
+|---------|---------------|-----------------|
+| **Cost** | Free (built into Firestore) | $0 (within free tier limits) |
+| **Resources** | Zero - handled by Firestore | Function invocations + execution time |
+| **Complexity** | Simple field + policy | Custom code + scheduling |
+| **Reliability** | Built-in, guaranteed | Depends on function health |
+| **Maintenance** | None | Need to monitor logs |
+
+### TTL Implementation
+
+**Step 1: Update Backend to Add Expiration Timestamps**
+
+In your backend (Node.js on Fly.io), modify Firestore writes to include `expireAt`:
+
+```javascript
+const admin = require('firebase-admin');
+const db = admin.firestore();
+
+// Retention period in days
+const RETENTION_DAYS = 30;
+
+// Helper to calculate expiration timestamp
+function getExpirationTimestamp(days) {
+  const expirationDate = new Date();
+  expirationDate.setDate(expirationDate.getDate() + days);
+  return admin.firestore.Timestamp.fromDate(expirationDate);
+}
+
+// POST /api/v1/devices/heartbeat
+router.post('/heartbeat', async (req, res) => {
+  const { device_id, device_type, uptime_ms, free_heap, wifi_rssi, ip_address } = req.body;
+  const now = admin.firestore.Timestamp.now();
+  const expireAt = getExpirationTimestamp(RETENTION_DAYS);
+
+  // Update current status (NO TTL - keep forever)
+  await db.collection('devices').doc(device_id).set({
+    device_type,
+    last_seen: now,
+    online: true
+  }, { merge: true });
+
+  await db.collection('devices').doc(device_id)
+    .collection('status').doc('current').set({
+      online: true,
+      last_heartbeat: now,
+      ip_address,
+      uptime_ms,
+      free_heap,
+      wifi_rssi,
+      updated_at: now
+      // No expireAt - we keep current status
+    }, { merge: true });
+
+  // Add to history with TTL (auto-delete after 30 days)
+  await db.collection('devices').doc(device_id)
+    .collection('heartbeat_history').add({
+      timestamp: now,
+      ip_address,
+      uptime_ms,
+      free_heap,
+      wifi_rssi,
+      expireAt  // ← TTL field - Firestore auto-deletes
+    });
+
+  res.json({ status: 'ok', message: 'Heartbeat received', written: true });
+});
+
+// POST /api/v1/devices/sensor
+router.post('/sensor', async (req, res) => {
+  const { device_id, sensors } = req.body;
+  const now = admin.firestore.Timestamp.now();
+  const expireAt = getExpirationTimestamp(RETENTION_DAYS);
+
+  // Update current readings (NO TTL)
+  await db.collection('devices').doc(device_id)
+    .collection('sensors').doc('current').set({
+      ...sensors,
+      last_updated: now
+    }, { merge: true });
+
+  // Add to history with TTL (auto-delete after 30 days)
+  await db.collection('devices').doc(device_id)
+    .collection('sensor_history').add({
+      timestamp: now,
+      ...sensors,
+      expireAt  // ← TTL field
+    });
+
+  res.json({ status: 'ok', message: 'Sensor data received' });
+});
+```
+
+**Step 2: Configure TTL Policies in Firebase**
+
+Using Firebase CLI:
+
+```bash
+# Install Firebase CLI
+npm install -g firebase-tools
+
+# Login
+firebase login
+
+# Create TTL policy for heartbeat history
+firebase firestore:ttl-policies:create \
+  --collection-group=heartbeat_history \
+  --field=expireAt
+
+# Create TTL policy for sensor history
+firebase firestore:ttl-policies:create \
+  --collection-group=sensor_history \
+  --field=expireAt
+```
+
+**Step 3: Verify TTL is Working**
+
+After 24-48 hours, old documents should be automatically deleted:
+
+```javascript
+// Query for expired documents (should be empty)
+const now = admin.firestore.Timestamp.now();
+const expiredDocs = await db
+  .collection('devices')
+  .doc('doorbell_001')
+  .collection('heartbeat_history')
+  .where('expireAt', '<', now)
+  .get();
+
+console.log('Expired docs remaining:', expiredDocs.size); // Should be 0
+```
+
+### Adjusting Retention Period
+
+Change retention based on your needs:
+
+```javascript
+// Keep 7 days
+const RETENTION_DAYS = 7;
+
+// Keep 90 days
+const RETENTION_DAYS = 90;
+
+// Keep 6 hours (for testing)
+const expirationDate = new Date();
+expirationDate.setHours(expirationDate.getHours() + 6);
+```
+
+### Data Structure with TTL
+
+```
+firestore/
+├── devices/
+│   ├── doorbell_001/
+│   │   ├── type: "doorbell"
+│   │   ├── last_seen: timestamp
+│   │   ├── online: true
+│   │   ├── status/
+│   │   │   └── current/              ← NO TTL (always keep latest)
+│   │   │       ├── online: true
+│   │   │       ├── last_heartbeat: timestamp
+│   │   │       ├── ip_address: "192.168.1.100"
+│   │   │       ├── uptime_ms: 123456789
+│   │   │       ├── free_heap: 45000
+│   │   │       └── wifi_rssi: -65
+│   │   ├── heartbeat_history/        ← WITH TTL (auto-delete old)
+│   │   │   └── {auto-id}/
+│   │   │       ├── timestamp: timestamp
+│   │   │       ├── ip_address: "192.168.1.100"
+│   │   │       ├── uptime_ms: 123456789
+│   │   │       ├── free_heap: 45000
+│   │   │       ├── wifi_rssi: -65
+│   │   │       └── expireAt: timestamp (30 days from now)
+│   │   └── sensor_history/           ← WITH TTL (auto-delete old)
+│   │       └── {auto-id}/
+│   │           ├── timestamp: timestamp
+│   │           ├── temperature: 25.5
+│   │           ├── humidity: 60.2
+│   │           └── expireAt: timestamp (30 days from now)
+```
+
 ## Security - Device Authentication
 
 **⚠️ IMPORTANT**: All device endpoints are protected with API token authentication.
@@ -185,29 +371,6 @@ ESP32 → POST every 60s → Backend (always responds OK)
   "free_heap": 45000,
   "wifi_rssi": -65
 }
-```
-
-## Firestore Data Structure
-
-```
-firestore/
-├── devices/
-│   ├── doorbell_001/
-│   │   ├── type: "doorbell"
-│   │   ├── last_seen: timestamp
-│   │   ├── status/
-│   │   │   └── current/
-│   │   │       ├── online: true
-│   │   │       ├── last_heartbeat: timestamp
-│   │   │       ├── ip_address: "192.168.1.100"
-│   │   │       ├── uptime_ms: 123456789
-│   │   │       ├── free_heap: 45000
-│   │   │       └── wifi_rssi: -65
-│   │   └── sensors/
-│   │       └── current/
-│   │           ├── temperature: 25.5
-│   │           ├── humidity: 60.2
-│   │           └── last_updated: timestamp
 ```
 
 ## ESP32 Implementation
