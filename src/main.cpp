@@ -74,6 +74,7 @@ void sendHeartbeatTask();
 void checkDoorbellTask();
 void processMQTTTask();
 void onDoorbellRing();
+void onFaceDetection(bool recognized, const char* name, float confidence);
 void drawWifiSymbol(int x, int y, int strength);
 
 Task taskUpdateTopBar(1000, TASK_FOREVER, &updateTopBar);
@@ -187,10 +188,10 @@ void setup(void)
   );
 
   // Initialize MQTT client (WiFi already initialized)
-  initMQTT("hub_hb_001", onDoorbellRing);
+  initMQTT("hub_hb_001", onDoorbellRing, onFaceDetection);
   connectMQTT(); // Initial connection attempt
 
-  Serial.println("[MQTT] Hub will receive doorbell rings via MQTT (no polling!)");
+  Serial.println("[MQTT] Hub will receive doorbell rings and face detection via MQTT!");
 
   // Setup scheduler tasks
   scheduler.addTask(taskUpdateTopBar);
@@ -485,6 +486,21 @@ void onDoorbellRing()
   // TODO: Add audio playback here when audio hardware is connected
   // Example: playDoorbellSound();
   // or send command to audio module via UART/I2C
+}
+
+// Callback: Called when face detection event received (triggered by MQTT)
+void onFaceDetection(bool recognized, const char* name, float confidence)
+{
+  Serial.printf("[Hub] 👤 Face Detection via MQTT!\n");
+  Serial.printf("  Name: %s\n", name);
+  Serial.printf("  Recognized: %s\n", recognized ? "Yes" : "No");
+  Serial.printf("  Confidence: %.2f\n", confidence);
+
+  // TODO: Display face detection on screen
+  // TODO: Log to Firebase via backend
+  // TODO: Show notification based on recognized status
+
+  contentNeedsUpdate = true; // Trigger content area update
 }
 
 // Draw WiFi symbol with signal strength indicator

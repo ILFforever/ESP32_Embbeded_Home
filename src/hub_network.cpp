@@ -164,3 +164,43 @@ DeviceStatus checkDoorbellStatus() {
 bool getLastHeartbeatSuccess() {
   return lastHeartbeatSuccess;
 }
+
+// ============================================================================
+// Send log/error to backend for Firebase storage
+// ============================================================================
+void sendLogToBackend(const char* level, const char* message, const char* data) {
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("[HubLog] WiFi not connected - can't send log");
+    return;
+  }
+
+  HTTPClient http;
+  String url = String(BACKEND_SERVER_URL) + "/api/v1/devices/hub/log";
+
+  http.begin(url);
+  http.addHeader("Content-Type", "application/json");
+  http.addHeader("X-Device-Token", HUB_API_TOKEN);
+
+  // Create JSON payload
+  JsonDocument doc;
+  doc["device_id"] = HUB_DEVICE_ID;
+  doc["level"] = level;  // "error", "warning", "info", "debug"
+  doc["message"] = message;
+  if (data != nullptr) {
+    doc["data"] = data;
+  }
+  doc["timestamp"] = millis();
+
+  String jsonString;
+  serializeJson(doc, jsonString);
+
+  int httpResponseCode = http.POST(jsonString);
+
+  if (httpResponseCode == 200) {
+    Serial.printf("[HubLog] ✓ Log sent to backend: [%s] %s\n", level, message);
+  } else {
+    Serial.printf("[HubLog] ✗ Failed to send log (code %d)\n", httpResponseCode);
+  }
+
+  http.end();
+}
