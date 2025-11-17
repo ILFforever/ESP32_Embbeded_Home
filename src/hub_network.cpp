@@ -14,6 +14,10 @@ static const char* DOORBELL_DEVICE_ID = "";
 static bool lastHeartbeatSuccess = false;
 static unsigned long lastHeartbeatTime = 0;
 
+// Doorbell ring tracking
+static unsigned long lastKnownRingMs = 0;
+static DoorbellRingCallback doorbellRingCallback = nullptr;
+
 // ============================================================================
 // Initialize heartbeat module (WiFi must already be connected)
 // ============================================================================
@@ -149,6 +153,70 @@ DeviceStatus checkDoorbellStatus() {
 
   http.end();
   return status;
+}
+
+// ============================================================================
+// Check for new doorbell ring events by polling Firebase
+// Returns true if a new ring was detected
+// ============================================================================
+bool checkDoorbellRing() {
+  if (WiFi.status() != WL_CONNECTED) {
+    return false;
+  }
+
+  HTTPClient http;
+  String url = String(BACKEND_SERVER_URL) + "/api/v1/devices/" + String(DOORBELL_DEVICE_ID) + "/status";
+
+  http.begin(url);  // Plain HTTP
+  http.setTimeout(3000); // Shorter timeout for frequent polling
+
+  int httpResponseCode = http.GET();
+
+  if (httpResponseCode == 200) {
+    String response = http.getString();
+
+    JsonDocument doc;
+    DeserializationError error = deserializeJson(doc, response);
+
+    if (!error) {
+      // Check if last_ring_ms field exists and has changed
+      if (doc.containsKey("last_ring_ms")) {
+        unsigned long ringMs = doc["last_ring_ms"] | 0;
+
+        // First time or value changed
+        if (lastKnownRingMs == 0) {
+          // Initialize on first run - don't trigger
+          lastKnownRingMs = ringMs;
+          Serial.printf("[Doorbell] Initialized ring tracking (last_ring_ms: %lu)\n", ringMs);
+          http.end();
+          return false;
+        } else if (ringMs > lastKnownRingMs) {
+          // New ring detected!
+          Serial.printf("[Doorbell] 🔔 NEW RING DETECTED! (old: %lu, new: %lu)\n", lastKnownRingMs, ringMs);
+          lastKnownRingMs = ringMs;
+
+          // Call callback if set
+          if (doorbellRingCallback != nullptr) {
+            doorbellRingCallback();
+          }
+
+          http.end();
+          return true;
+        }
+      }
+    }
+  }
+
+  http.end();
+  return false;
+}
+
+// ============================================================================
+// Set callback function for doorbell ring events
+// ============================================================================
+void setDoorbellRingCallback(DoorbellRingCallback callback) {
+  doorbellRingCallback = callback;
+  Serial.println("[Doorbell] Ring callback registered");
 }
 
 // ============================================================================
