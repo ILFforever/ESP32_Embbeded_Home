@@ -273,6 +273,7 @@ void sendFaceDetection(bool recognized, const char* name, float confidence, cons
   // Build JSON payload
   JsonDocument doc;
   doc["device_id"] = DEVICE_ID;
+  doc["recognized"] = recognized;  // Boolean field
   doc["name"] = name;
   doc["confidence"] = confidence;
   if (imageData != nullptr) {
