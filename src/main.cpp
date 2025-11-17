@@ -14,6 +14,7 @@
 #include "DisplayConfig.h"
 #include "hub_network.h"
 #include "mqtt_client.h"
+#include "mesh_uart.h"
 #include "TaskFunctions.h"
 #include "wifi_functions.h"
 #include "microphone.h"
@@ -73,6 +74,9 @@ void pushSpritesToDisplay();
 void sendHeartbeatTask();
 void checkDoorbellTask();
 void processMQTTTask();
+void checkMeshUARTTask();
+void sendMeshPingTask();
+void checkMeshTimeoutTask();
 void onDoorbellRing();
 void onFaceDetection(bool recognized, const char* name, float confidence);
 void drawWifiSymbol(int x, int y, int strength);
@@ -85,6 +89,9 @@ Task taskPushSprites(50, TASK_FOREVER, &pushSpritesToDisplay);     // Every 50ms
 Task taskSendHeartbeat(TASK_SECOND * 60, TASK_FOREVER, &sendHeartbeatTask);   // Every 60s
 Task taskCheckDoorbell(TASK_SECOND * 60, TASK_FOREVER, &checkDoorbellTask);   // Every 60s
 Task taskProcessMQTT(100, TASK_FOREVER, &processMQTTTask);          // Every 100ms - Process MQTT messages
+Task taskCheckMeshUART(20, TASK_FOREVER, &checkMeshUARTTask);       // Every 20ms - Check Mesh UART
+Task taskSendMeshPing(1000, TASK_FOREVER, &sendMeshPingTask);       // Every 1s - Send ping to Mesh
+Task taskCheckMeshTimeout(1000, TASK_FOREVER, &checkMeshTimeoutTask); // Every 1s - Check Mesh timeout
 Task taskMicrophoneLoudness(100, TASK_FOREVER, &updateMicrophoneLoudness); // Every 100ms
 // ============================================================================
 // Setup and Main Loop
@@ -193,6 +200,10 @@ void setup(void)
 
   Serial.println("[MQTT] Hub will receive doorbell rings and face detection via MQTT!");
 
+  // Initialize Mesh UART communication (pins 25, 26)
+  initMeshUART(25, 26, 115200);  // RX=25, TX=26, Baud=115200
+  Serial.println("[MeshUART] Hub will communicate with Mesh module via UART");
+
   // Setup scheduler tasks
   scheduler.addTask(taskUpdateTopBar);
   scheduler.addTask(taskUpdateContent);
@@ -202,6 +213,9 @@ void setup(void)
   scheduler.addTask(taskSendHeartbeat);
   scheduler.addTask(taskCheckDoorbell);
   scheduler.addTask(taskProcessMQTT);  // MQTT instead of polling!
+  scheduler.addTask(taskCheckMeshUART);
+  scheduler.addTask(taskSendMeshPing);
+  scheduler.addTask(taskCheckMeshTimeout);
   scheduler.addTask(taskMicrophoneLoudness);
 
   taskUpdateTopBar.enable();
@@ -212,6 +226,9 @@ void setup(void)
   taskSendHeartbeat.enable();
   taskCheckDoorbell.enable();
   taskProcessMQTT.enable();  // Enable MQTT processing
+  taskCheckMeshUART.enable();
+  taskSendMeshPing.enable();
+  taskCheckMeshTimeout.enable();
   taskMicrophoneLoudness.enable();
 }
 
@@ -525,4 +542,25 @@ void drawWifiSymbol(int x, int y, int strength)
   {
     topBar.drawArc(x, y, 13, 14, 225, 315, color); // Largest arc
   }
+}
+// ============================================================================
+// Mesh UART Task Functions
+// ============================================================================
+
+// Task: Check Mesh UART for incoming data
+void checkMeshUARTTask()
+{
+  checkMeshUART();
+}
+
+// Task: Send ping to Mesh module
+void sendMeshPingTask()
+{
+  sendMeshPing();
+}
+
+// Task: Check Mesh timeout and connection status
+void checkMeshTimeoutTask()
+{
+  checkMeshTimeout();
 }
