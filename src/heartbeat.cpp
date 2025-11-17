@@ -248,6 +248,7 @@ void sendDoorbellRing() {
 
 // ============================================================================
 // Send face detection event to backend (saves to Firebase, publishes to Hub)
+// Uses chunked sending to avoid socket buffer overflow with large images
 // ============================================================================
 void sendFaceDetection(bool recognized, const char* name, float confidence, const uint8_t* imageData, size_t imageSize) {
   if (WiFi.status() != WL_CONNECTED) {
@@ -255,117 +256,164 @@ void sendFaceDetection(bool recognized, const char* name, float confidence, cons
     return;
   }
 
-  HTTPClient http;
-  String url = String(BACKEND_SERVER_URL) + "/api/v1/devices/doorbell/face-detection";
+  // Parse backend URL to extract host and port
+  String serverUrl = String(BACKEND_SERVER_URL);
+  serverUrl.replace("http://", "");
+  serverUrl.replace("https://", "");
 
-  http.begin(url);
+  int colonIdx = serverUrl.indexOf(':');
+  int slashIdx = serverUrl.indexOf('/');
 
-  // Add X-Device-Token header for authentication
-  if (DEVICE_API_TOKEN && strlen(DEVICE_API_TOKEN) > 0) {
-    http.addHeader("X-Device-Token", DEVICE_API_TOKEN);
+  String host = (colonIdx > 0) ? serverUrl.substring(0, colonIdx) :
+                (slashIdx > 0) ? serverUrl.substring(0, slashIdx) : serverUrl;
+  int port = (colonIdx > 0) ? serverUrl.substring(colonIdx + 1, (slashIdx > 0) ? slashIdx : serverUrl.length()).toInt() : 80;
+  String path = (slashIdx > 0) ? serverUrl.substring(slashIdx) : "/";
+  path += "/api/v1/devices/doorbell/face-detection";
+
+  Serial.printf("[FaceDetection] Connecting to %s:%d%s\n", host.c_str(), port, path.c_str());
+
+  WiFiClient client;
+  if (!client.connect(host.c_str(), port)) {
+    Serial.println("[FaceDetection] ✗ Connection failed");
+    return;
   }
-
-  http.setTimeout(15000); // Longer timeout for image uploads
 
   String boundary = "----ESP32Boundary" + String(millis());
 
-  // Build multipart/form-data payload
-  String payload = "";
+  // Build form fields (metadata)
+  String formData = "";
+  formData += "--" + boundary + "\r\n";
+  formData += "Content-Disposition: form-data; name=\"device_id\"\r\n\r\n";
+  formData += String(DEVICE_ID) + "\r\n";
 
-  // Add metadata fields
-  payload += "--" + boundary + "\r\n";
-  payload += "Content-Disposition: form-data; name=\"device_id\"\r\n\r\n";
-  payload += String(DEVICE_ID) + "\r\n";
+  formData += "--" + boundary + "\r\n";
+  formData += "Content-Disposition: form-data; name=\"recognized\"\r\n\r\n";
+  formData += String(recognized ? "true" : "false") + "\r\n";
 
-  payload += "--" + boundary + "\r\n";
-  payload += "Content-Disposition: form-data; name=\"recognized\"\r\n\r\n";
-  payload += String(recognized ? "true" : "false") + "\r\n";
+  formData += "--" + boundary + "\r\n";
+  formData += "Content-Disposition: form-data; name=\"name\"\r\n\r\n";
+  formData += String(name) + "\r\n";
 
-  payload += "--" + boundary + "\r\n";
-  payload += "Content-Disposition: form-data; name=\"name\"\r\n\r\n";
-  payload += String(name) + "\r\n";
+  formData += "--" + boundary + "\r\n";
+  formData += "Content-Disposition: form-data; name=\"confidence\"\r\n\r\n";
+  formData += String(confidence, 2) + "\r\n";
 
-  payload += "--" + boundary + "\r\n";
-  payload += "Content-Disposition: form-data; name=\"confidence\"\r\n\r\n";
-  payload += String(confidence, 2) + "\r\n";
+  formData += "--" + boundary + "\r\n";
+  formData += "Content-Disposition: form-data; name=\"timestamp\"\r\n\r\n";
+  formData += String(millis()) + "\r\n";
 
-  payload += "--" + boundary + "\r\n";
-  payload += "Content-Disposition: form-data; name=\"timestamp\"\r\n\r\n";
-  payload += String(millis()) + "\r\n";
-
-  // Calculate total length
-  size_t totalLength = payload.length();
+  // Image header (if image provided)
+  String imageHeader = "";
   if (imageData != nullptr && imageSize > 0) {
-    String imageHeader = "--" + boundary + "\r\n";
+    imageHeader += "--" + boundary + "\r\n";
     imageHeader += "Content-Disposition: form-data; name=\"image\"; filename=\"face.jpg\"\r\n";
     imageHeader += "Content-Type: image/jpeg\r\n\r\n";
-    totalLength += imageHeader.length() + imageSize + 2; // +2 for \r\n
   }
+
   String footer = "--" + boundary + "--\r\n";
-  totalLength += footer.length();
 
-  // Set headers
-  http.addHeader("Content-Type", "multipart/form-data; boundary=" + boundary);
-  http.addHeader("Content-Length", String(totalLength));
+  // Calculate total content length
+  size_t contentLength = formData.length() + imageHeader.length() + imageSize + 2 + footer.length(); // +2 for \r\n after image
 
-  // Build complete payload
-  uint8_t* fullPayload = new uint8_t[totalLength];
-  size_t offset = 0;
+  // Send HTTP headers
+  client.print("POST " + path + " HTTP/1.1\r\n");
+  client.print("Host: " + host + "\r\n");
+  client.print("Content-Type: multipart/form-data; boundary=" + boundary + "\r\n");
+  client.print("Content-Length: " + String(contentLength) + "\r\n");
+  if (DEVICE_API_TOKEN && strlen(DEVICE_API_TOKEN) > 0) {
+    client.print("X-Device-Token: " + String(DEVICE_API_TOKEN) + "\r\n");
+  }
+  client.print("Connection: close\r\n\r\n");
 
-  // Copy metadata
-  memcpy(fullPayload + offset, payload.c_str(), payload.length());
-  offset += payload.length();
+  // Send form data (metadata fields)
+  client.print(formData);
 
-  // Copy image if provided
+  // Send image in chunks if provided
   if (imageData != nullptr && imageSize > 0) {
-    String imageHeader = "--" + boundary + "\r\n";
-    imageHeader += "Content-Disposition: form-data; name=\"image\"; filename=\"face.jpg\"\r\n";
-    imageHeader += "Content-Type: image/jpeg\r\n\r\n";
+    client.print(imageHeader);
 
-    memcpy(fullPayload + offset, imageHeader.c_str(), imageHeader.length());
-    offset += imageHeader.length();
+    const size_t CHUNK_SIZE = 1024; // Send 1KB at a time
+    size_t sent = 0;
 
-    memcpy(fullPayload + offset, imageData, imageSize);
-    offset += imageSize;
+    Serial.printf("[FaceDetection] Sending image in chunks (%u bytes total)\n", imageSize);
 
-    fullPayload[offset++] = '\r';
-    fullPayload[offset++] = '\n';
+    while (sent < imageSize) {
+      size_t toSend = min(CHUNK_SIZE, imageSize - sent);
+      size_t written = client.write(imageData + sent, toSend);
 
-    Serial.printf("[FaceDetection] Including image: %u bytes\n", imageSize);
+      if (written != toSend) {
+        Serial.printf("[FaceDetection] ✗ Write failed at %u/%u bytes\n", sent, imageSize);
+        client.stop();
+        return;
+      }
+
+      sent += written;
+
+      // Small delay to let socket buffer drain
+      if (sent < imageSize) {
+        delay(10);
+      }
+    }
+
+    client.print("\r\n"); // End of image part
+    Serial.printf("[FaceDetection] ✓ Image sent (%u bytes)\n", sent);
   }
 
-  // Copy footer
-  memcpy(fullPayload + offset, footer.c_str(), footer.length());
+  // Send footer
+  client.print(footer);
+  client.flush();
 
-  // Send POST request
-  int httpResponseCode = http.POST(fullPayload, totalLength);
+  // Wait for response
+  unsigned long timeout = millis();
+  while (client.available() == 0) {
+    if (millis() - timeout > 15000) {
+      Serial.println("[FaceDetection] ✗ Timeout waiting for response");
+      client.stop();
+      return;
+    }
+    delay(10);
+  }
 
-  delete[] fullPayload;
+  // Read response
+  String responseHeaders = "";
+  int httpCode = 0;
+  bool headersEnd = false;
 
-  if (httpResponseCode > 0) {
-    String response = http.getString();
-
-    if (httpResponseCode == 200) {
-      Serial.printf("[FaceDetection] ✓ Sent to backend (recognized: %s, name: %s, conf: %.2f)\n",
-                    recognized ? "Yes" : "No", name, confidence);
-
-      // Parse response
-      JsonDocument responseDoc;
-      DeserializationError error = deserializeJson(responseDoc, response);
-      if (!error && responseDoc.containsKey("event_id")) {
-        const char* eventId = responseDoc["event_id"];
-        Serial.printf("[FaceDetection] → Event ID: %s\n", eventId);
+  while (client.available() && !headersEnd) {
+    String line = client.readStringUntil('\n');
+    if (line.startsWith("HTTP/1.")) {
+      int spaceIdx = line.indexOf(' ');
+      if (spaceIdx > 0) {
+        httpCode = line.substring(spaceIdx + 1, spaceIdx + 4).toInt();
       }
-    } else {
-      Serial.printf("[FaceDetection] ✗ Failed (code: %d)\n", httpResponseCode);
-      Serial.printf("[FaceDetection] Response: %s\n", response.c_str());
+    }
+    if (line == "\r" || line.length() == 0) {
+      headersEnd = true;
+    }
+  }
+
+  String responseBody = "";
+  while (client.available()) {
+    responseBody += client.readString();
+  }
+
+  client.stop();
+
+  if (httpCode == 200) {
+    Serial.printf("[FaceDetection] ✓ Sent to backend (recognized: %s, name: %s, conf: %.2f)\n",
+                  recognized ? "Yes" : "No", name, confidence);
+
+    // Parse response
+    JsonDocument responseDoc;
+    DeserializationError error = deserializeJson(responseDoc, responseBody);
+    if (!error && responseDoc.containsKey("event_id")) {
+      const char* eventId = responseDoc["event_id"];
+      Serial.printf("[FaceDetection] → Event ID: %s\n", eventId);
     }
   } else {
-    Serial.printf("[FaceDetection] ✗ Connection failed: %s\n",
-                  http.errorToString(httpResponseCode).c_str());
+    Serial.printf("[FaceDetection] ✗ Failed (code: %d)\n", httpCode);
+    Serial.printf("[FaceDetection] Response: %s\n", responseBody.c_str());
   }
-
-  http.end();
 }
 
 // ============================================================================
