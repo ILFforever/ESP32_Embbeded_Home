@@ -248,6 +248,70 @@ void sendDoorbellRing() {
 }
 
 // ============================================================================
+// Send face detection event to backend (saves to Firebase, publishes to Hub)
+// ============================================================================
+void sendFaceDetection(bool recognized, const char* name, float confidence, const char* imageData) {
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("[FaceDetection] WiFi not connected - skipping");
+    return;
+  }
+
+  HTTPClient http;
+  String url = String(BACKEND_SERVER_URL) + "/api/v1/devices/doorbell/face-detection";
+
+  http.begin(url);
+  http.addHeader("Content-Type", "application/json");
+
+  // Add X-Device-Token header for authentication
+  if (DEVICE_API_TOKEN && strlen(DEVICE_API_TOKEN) > 0) {
+    http.addHeader("X-Device-Token", DEVICE_API_TOKEN);
+  }
+
+  http.setTimeout(10000); // Longer timeout for image uploads
+
+  // Build JSON payload
+  JsonDocument doc;
+  doc["device_id"] = DEVICE_ID;
+  doc["name"] = name;
+  doc["confidence"] = confidence;
+  if (imageData != nullptr) {
+    doc["image"] = imageData; // Base64 encoded image or URL
+  }
+  doc["timestamp"] = millis();
+
+  String jsonString;
+  serializeJson(doc, jsonString);
+
+  // Send POST request
+  int httpResponseCode = http.POST(jsonString);
+
+  if (httpResponseCode > 0) {
+    String response = http.getString();
+
+    if (httpResponseCode == 200) {
+      Serial.printf("[FaceDetection] ✓ Sent to backend (recognized: %s, name: %s, conf: %.2f)\n",
+                    recognized ? "Yes" : "No", name, confidence);
+
+      // Parse response
+      JsonDocument responseDoc;
+      DeserializationError error = deserializeJson(responseDoc, response);
+      if (!error && responseDoc.containsKey("event_id")) {
+        const char* eventId = responseDoc["event_id"];
+        Serial.printf("[FaceDetection] → Event ID: %s\n", eventId);
+      }
+    } else {
+      Serial.printf("[FaceDetection] ✗ Failed (code: %d)\n", httpResponseCode);
+      Serial.printf("[FaceDetection] Response: %s\n", response.c_str());
+    }
+  } else {
+    Serial.printf("[FaceDetection] ✗ Connection failed: %s\n",
+                  http.errorToString(httpResponseCode).c_str());
+  }
+
+  http.end();
+}
+
+// ============================================================================
 // Status getters
 // ============================================================================
 bool getLastHeartbeatSuccess() {
