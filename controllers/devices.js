@@ -406,8 +406,8 @@ const getDeviceHistory = async (req, res) => {
 
 // ============================================================================
 // @route   POST /api/v1/devices/doorbell/ring
-// @desc    Receive doorbell ring event - write to Firebase for real-time listener
-//          Hub listens to Firebase changes and plays audio immediately
+// @desc    Receive doorbell ring event - notify hub to play audio (no Firebase save)
+//          Hub can poll or use real-time listeners for notifications
 // ============================================================================
 const handleDoorbellRing = async (req, res) => {
   try {
@@ -421,31 +421,68 @@ const handleDoorbellRing = async (req, res) => {
       });
     }
 
-    console.log(`[Doorbell] ${device_id} - Ring event received`);
+    console.log(`[Doorbell] ${device_id} - Ring event received (not saving to Firebase)`);
 
-    const db = getFirestore();
-    const deviceRef = db.collection('devices').doc(device_id);
-
-    // Write to Firebase - this triggers real-time listener on Hub
-    const ringTimestamp = admin.firestore.FieldValue.serverTimestamp();
-
-    await deviceRef.set({
-      type: 'doorbell',
-      last_ring: ringTimestamp,
-      last_ring_ms: Date.now() // Client timestamp for Hub to detect changes
-    }, { merge: true });
-
-    console.log(`[Doorbell] ${device_id} - Written to Firebase (Hub will be notified)`);
-
-    // Respond to doorbell device
+    // Just acknowledge the ring - hub will play audio via other mechanism
+    // No Firebase write to save space
     res.json({
       status: 'ok',
-      message: 'Doorbell ring received and written to Firebase',
+      message: 'Doorbell ring received',
       timestamp: Date.now()
     });
 
   } catch (error) {
     console.error('[Doorbell] Error:', error);
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+};
+
+// ============================================================================
+// @route   POST /api/v1/devices/doorbell/face-detection
+// @desc    Receive face detection event from doorbell camera - save to Firebase
+//          Stores image, name (if recognized), timestamp, etc.
+// ============================================================================
+const handleFaceDetection = async (req, res) => {
+  try {
+    const { device_id, image, name, confidence, timestamp } = req.body;
+
+    // Validation
+    if (!device_id) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'device_id is required'
+      });
+    }
+
+    console.log(`[FaceDetection] ${device_id} - Face detection event received`);
+
+    const db = getFirestore();
+    const deviceRef = db.collection('devices').doc(device_id);
+
+    // Create face detection event data
+    const faceDetectionEvent = {
+      timestamp: timestamp || admin.firestore.FieldValue.serverTimestamp(),
+      name: name || 'Unknown',
+      confidence: confidence || null,
+      image: image || null, // Base64 encoded image or URL
+      detected_at: admin.firestore.FieldValue.serverTimestamp()
+    };
+
+    // Write event to Firebase
+    const eventRef = await deviceRef.collection('face_detections').add(faceDetectionEvent);
+
+    console.log(`[FaceDetection] ${device_id} - Saved to Firebase with ID: ${eventRef.id}`);
+
+    // Respond to doorbell device
+    res.json({
+      status: 'ok',
+      message: 'Face detection event saved',
+      event_id: eventRef.id,
+      timestamp: Date.now()
+    });
+
+  } catch (error) {
+    console.error('[FaceDetection] Error:', error);
     res.status(500).json({ status: 'error', message: error.message });
   }
 };
@@ -457,5 +494,6 @@ module.exports = {
   getAllDevicesStatus,
   handleSensorData,
   getDeviceHistory,
-  handleDoorbellRing
+  handleDoorbellRing,
+  handleFaceDetection
 };

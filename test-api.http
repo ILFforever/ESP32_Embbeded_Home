@@ -69,3 +69,90 @@ Authorization: Bearer {{token}}
 ### 10. Logout
 GET {{baseUrl}}/logout
 Authorization: Bearer {{token}}
+
+###############################################################################
+### Device Endpoints
+###############################################################################
+
+@deviceBaseUrl = http://localhost:5000/api/v1/devices
+@deviceToken = YOUR_DEVICE_TOKEN_HERE
+
+### 11. Register a new device (get API token)
+POST {{deviceBaseUrl}}/register
+Content-Type: application/json
+
+{
+  "device_id": "doorbell_001",
+  "device_type": "doorbell",
+  "name": "Front Door Doorbell"
+}
+
+### 12. Send device heartbeat
+POST {{deviceBaseUrl}}/heartbeat
+Content-Type: application/json
+X-Device-Token: {{deviceToken}}
+
+{
+  "device_id": "doorbell_001",
+  "device_type": "doorbell",
+  "uptime_ms": 3600000,
+  "free_heap": 102400,
+  "wifi_rssi": -45,
+  "ip_address": "192.168.1.100"
+}
+
+### 13. Send sensor data
+POST {{deviceBaseUrl}}/sensor
+Content-Type: application/json
+X-Device-Token: {{deviceToken}}
+
+{
+  "device_id": "room_sensor_001",
+  "sensors": {
+    "temperature": 23.5,
+    "humidity": 45.2,
+    "motion": true
+  }
+}
+
+### 14. Doorbell ring event (notify hub, no Firebase save)
+POST {{deviceBaseUrl}}/doorbell/ring
+Content-Type: application/json
+X-Device-Token: {{deviceToken}}
+
+{
+  "device_id": "doorbell_001"
+}
+
+### 15. Face detection event (saves to Firebase with image & name)
+POST {{deviceBaseUrl}}/doorbell/face-detection
+Content-Type: application/json
+X-Device-Token: {{deviceToken}}
+
+{
+  "device_id": "doorbell_001",
+  "name": "John Smith",
+  "confidence": 0.95,
+  "image": "data:image/jpeg;base64,/9j/4AAQSkZJRg...",
+  "timestamp": 1699999999000
+}
+
+### 16. Face detection event - Unknown person
+POST {{deviceBaseUrl}}/doorbell/face-detection
+Content-Type: application/json
+X-Device-Token: {{deviceToken}}
+
+{
+  "device_id": "doorbell_001",
+  "confidence": 0.45,
+  "image": "data:image/jpeg;base64,/9j/4AAQSkZJRg..."
+}
+
+### 17. Get all devices status (for frontend)
+GET {{deviceBaseUrl}}/status/all
+
+### 18. Get specific device status
+GET {{deviceBaseUrl}}/doorbell_001/status
+
+### 19. Get device history
+GET {{deviceBaseUrl}}/doorbell_001/history?limit=10
