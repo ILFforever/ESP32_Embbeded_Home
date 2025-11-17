@@ -445,7 +445,7 @@ const handleDoorbellRing = async (req, res) => {
 // ============================================================================
 const handleFaceDetection = async (req, res) => {
   try {
-    const { device_id, image, name, confidence, timestamp } = req.body;
+    const { device_id, image, name, confidence, timestamp, recognized } = req.body;
 
     // Validation
     if (!device_id) {
@@ -456,16 +456,18 @@ const handleFaceDetection = async (req, res) => {
     }
 
     console.log(`[FaceDetection] ${device_id} - Face detection event received`);
+    console.log(`  Recognized: ${recognized}, Name: ${name || 'Unknown'}, Confidence: ${confidence || 0}`);
 
     const db = getFirestore();
     const deviceRef = db.collection('devices').doc(device_id);
 
     // Create face detection event data
     const faceDetectionEvent = {
-      timestamp: timestamp || admin.firestore.FieldValue.serverTimestamp(),
+      recognized: recognized !== undefined ? recognized : false,  // Boolean field
       name: name || 'Unknown',
       confidence: confidence || null,
       image: image || null, // Base64 encoded image or URL
+      timestamp: timestamp || admin.firestore.FieldValue.serverTimestamp(),
       detected_at: admin.firestore.FieldValue.serverTimestamp()
     };
 
@@ -475,10 +477,9 @@ const handleFaceDetection = async (req, res) => {
     console.log(`[FaceDetection] ${device_id} - Saved to Firebase with ID: ${eventRef.id}`);
 
     // Publish to MQTT for instant hub notification
-    const recognized = name && name !== 'Unknown';
     await publishFaceDetection({
       device_id,
-      recognized,
+      recognized: faceDetectionEvent.recognized,
       name: name || 'Unknown',
       confidence: confidence || 0,
       event_id: eventRef.id
