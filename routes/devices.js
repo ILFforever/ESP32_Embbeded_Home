@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const multer = require('multer');
 const {
   handleHeartbeat,
   getDeviceStatus,
@@ -12,6 +13,14 @@ const {
   handleHubLog
 } = require('../controllers/devices');
 const { authenticateDevice } = require('../middleware/deviceAuth');
+
+// Configure multer for in-memory file storage (for face detection images)
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 500 * 1024, // 500KB max file size
+  }
+});
 
 // @route   POST /api/v1/devices/register
 // @desc    Register a new device (admin only - call manually or via secure endpoint)
@@ -36,7 +45,7 @@ router.post('/doorbell/ring', authenticateDevice, handleDoorbellRing);
 // @route   POST /api/v1/devices/doorbell/face-detection
 // @desc    Receive face detection event from doorbell camera (saves to Firebase)
 // @access  Private (requires device token)
-router.post('/doorbell/face-detection', authenticateDevice, handleFaceDetection);
+router.post('/doorbell/face-detection', authenticateDevice, upload.single('image'), handleFaceDetection);
 
 // @route   POST /api/v1/devices/hub/log
 // @desc    Receive logs and errors from Hub (saves to Firebase for frontend)
