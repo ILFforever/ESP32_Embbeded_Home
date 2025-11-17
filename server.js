@@ -13,6 +13,9 @@ dotenv.config();
 // Connect to database
 connectDB();
 
+// Initialize Firebase
+initializeFirebase();
+
 // Initialize MQTT client (publish-only)
 initMQTT();
 
@@ -55,4 +58,21 @@ process.on('unhandledRejection', (err, promise) => {
   console.log(`Error: ${err.message}`);
   // Close server & exit process
   server.close(() => process.exit(1));
+});
+
+// Graceful shutdown
+process.on('SIGTERM', () => {
+  console.log('SIGTERM received, shutting down gracefully...');
+  server.close(() => {
+    console.log('Server closed');
+    process.exit(0);
+  });
+});
+
+process.on('SIGINT', () => {
+  console.log('SIGINT received, shutting down gracefully...');
+  server.close(() => {
+    console.log('Server closed');
+    process.exit(0);
+  });
 });
