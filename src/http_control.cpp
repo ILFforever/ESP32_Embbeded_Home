@@ -174,6 +174,9 @@ void initHTTPServer()
 
   server.on("/info", HTTP_GET, [](AsyncWebServerRequest *request)
             {
+    extern int mesh_status;
+    extern uint32_t mesh_ping_counter;
+
     digitalWrite(Ready_led, HIGH);
     Ready_led_on_time = millis();
     StaticJsonDocument<512> doc;
@@ -181,8 +184,10 @@ void initHTTPServer()
     doc["uptime"] = millis();
     doc["slave_status"] = slave_status;
     doc["amp_status"] = amp_status;
+    doc["mesh_status"] = mesh_status;
     doc["free_heap"] = ESP.getFreeHeap();
     doc["ping_count"] = ping_counter;
+    doc["mesh_ping_count"] = mesh_ping_counter;
 
     String output;
     serializeJson(doc, output);
