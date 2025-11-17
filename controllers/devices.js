@@ -1,4 +1,5 @@
 const { getFirestore, admin } = require('../config/firebase');
+const { publishFaceDetection } = require('../config/mqtt');
 const crypto = require('crypto');
 
 // ============================================================================
@@ -473,16 +474,79 @@ const handleFaceDetection = async (req, res) => {
 
     console.log(`[FaceDetection] ${device_id} - Saved to Firebase with ID: ${eventRef.id}`);
 
+    // Publish to MQTT for instant hub notification
+    const recognized = name && name !== 'Unknown';
+    await publishFaceDetection({
+      device_id,
+      recognized,
+      name: name || 'Unknown',
+      confidence: confidence || 0,
+      event_id: eventRef.id
+    });
+
     // Respond to doorbell device
     res.json({
       status: 'ok',
-      message: 'Face detection event saved',
+      message: 'Face detection event saved and published to hub',
       event_id: eventRef.id,
       timestamp: Date.now()
     });
 
   } catch (error) {
     console.error('[FaceDetection] Error:', error);
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+};
+
+// ============================================================================
+// @route   POST /api/v1/devices/hub/log
+// @desc    Receive logs and errors from Hub - save to Firebase for frontend display
+// ============================================================================
+const handleHubLog = async (req, res) => {
+  try {
+    const { device_id, level, message, data, timestamp } = req.body;
+
+    // Validation
+    if (!device_id || !level || !message) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'device_id, level, and message are required'
+      });
+    }
+
+    console.log(`[HubLog] ${device_id} [${level}] - ${message}`);
+
+    const db = getFirestore();
+    const deviceRef = db.collection('devices').doc(device_id);
+
+    // Create log entry
+    const logEntry = {
+      level,  // 'error', 'warning', 'info', 'debug'
+      message,
+      data: data || null,
+      timestamp: timestamp || admin.firestore.FieldValue.serverTimestamp(),
+      created_at: admin.firestore.FieldValue.serverTimestamp()
+    };
+
+    // Write log to Firebase (in device_logs collection)
+    await deviceRef.collection('device_logs').add(logEntry);
+
+    // If it's an error, also update device status
+    if (level === 'error') {
+      await deviceRef.collection('status').doc('current').set({
+        last_error: message,
+        last_error_time: admin.firestore.FieldValue.serverTimestamp()
+      }, { merge: true });
+    }
+
+    // Respond to hub
+    res.json({
+      status: 'ok',
+      message: 'Log saved successfully'
+    });
+
+  } catch (error) {
+    console.error('[HubLog] Error:', error);
     res.status(500).json({ status: 'error', message: error.message });
   }
 };
@@ -495,5 +559,6 @@ module.exports = {
   handleSensorData,
   getDeviceHistory,
   handleDoorbellRing,
-  handleFaceDetection
+  handleFaceDetection,
+  handleHubLog
 };
