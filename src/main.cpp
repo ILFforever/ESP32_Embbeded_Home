@@ -13,6 +13,7 @@
 #include "TaskScheduler.h"
 #include "DisplayConfig.h"
 #include "hub_network.h"
+#include "mqtt_client.h"
 #include "TaskFunctions.h"
 #include "wifi_functions.h"
 #include "WiFi.h"
@@ -61,7 +62,7 @@ void updateCapSensor();
 void pushSpritesToDisplay();
 void sendHeartbeatTask();
 void checkDoorbellTask();
-void checkDoorbellRingTask();
+void processMQTTTask();
 void onDoorbellRing();
 void drawWifiSymbol(int x, int y, int strength);
 
@@ -69,10 +70,10 @@ Task taskUpdateTopBar(1000, TASK_FOREVER, &updateTopBar);
 Task taskUpdateContent(TASK_SECOND * 10, TASK_FOREVER, &updateContent);
 Task taskTouchUpdate(20, TASK_FOREVER, &updateTouch);
 Task taskCapSensorUpdate(100, TASK_FOREVER, &updateCapSensor);
-Task taskPushSprites(50, TASK_FOREVER, &pushSpritesToDisplay);          // Every 50ms = 20 FPS max
-Task taskSendHeartbeat(60000, TASK_FOREVER, &sendHeartbeatTask);        // Every 60s
-Task taskCheckDoorbell(60000, TASK_FOREVER, &checkDoorbellTask);        // Every 60s
-Task taskCheckDoorbellRing(1000, TASK_FOREVER, &checkDoorbellRingTask); // Every 1s - Poll for doorbell rings
+Task taskPushSprites(50, TASK_FOREVER, &pushSpritesToDisplay);     // Every 50ms = 20 FPS max
+Task taskSendHeartbeat(60000, TASK_FOREVER, &sendHeartbeatTask);   // Every 60s
+Task taskCheckDoorbell(60000, TASK_FOREVER, &checkDoorbellTask);   // Every 60s
+Task taskProcessMQTT(100, TASK_FOREVER, &processMQTTTask);          // Every 100ms - Process MQTT messages
 // ============================================================================
 // Setup and Main Loop
 // ============================================================================
@@ -174,8 +175,11 @@ void setup(void)
     "db_001"                                // Doorbell device ID to monitor
   );
 
-  // Register doorbell ring callback
-  setDoorbellRingCallback(onDoorbellRing);
+  // Initialize MQTT client (WiFi already initialized)
+  initMQTT("hub_hb_001", onDoorbellRing);
+  connectMQTT(); // Initial connection attempt
+
+  Serial.println("[MQTT] Hub will receive doorbell rings via MQTT (no polling!)");
 
   // Setup scheduler tasks
   scheduler.addTask(taskUpdateTopBar);
@@ -185,7 +189,7 @@ void setup(void)
   scheduler.addTask(taskPushSprites);
   scheduler.addTask(taskSendHeartbeat);
   scheduler.addTask(taskCheckDoorbell);
-  scheduler.addTask(taskCheckDoorbellRing);
+  scheduler.addTask(taskProcessMQTT);  // MQTT instead of polling!
 
   taskUpdateTopBar.enable();
   taskUpdateContent.enable();
@@ -194,7 +198,7 @@ void setup(void)
   taskPushSprites.enable();
   taskSendHeartbeat.enable();
   taskCheckDoorbell.enable();
-  taskCheckDoorbellRing.enable();
+  taskProcessMQTT.enable();  // Enable MQTT processing
 }
 
 void loop(void)
@@ -396,16 +400,16 @@ void checkDoorbellTask()
   doorbellOnline = doorbellStatus.online;
 }
 
-// Task: Check for doorbell ring events (polls every 1 second)
-void checkDoorbellRingTask()
+// Task: Process MQTT messages (replaces polling!)
+void processMQTTTask()
 {
-  checkDoorbellRing();
+  processMQTT();
 }
 
-// Callback: Called when doorbell rings
+// Callback: Called when doorbell rings (triggered by MQTT)
 void onDoorbellRing()
 {
-  Serial.println("[Hub] 🔔 DOORBELL RANG! Playing notification...");
+  Serial.println("[Hub] 🔔 DOORBELL RANG via MQTT! Playing notification...");
 
   // Set flag for visual notification
   doorbellJustRang = true;
