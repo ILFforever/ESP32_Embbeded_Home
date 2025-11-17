@@ -15,6 +15,7 @@
 #include "hub_network.h"
 #include "TaskFunctions.h"
 #include "wifi_functions.h"
+#include "microphone.h"
 #include "WiFi.h"
 
 // ============================================================================
@@ -73,6 +74,7 @@ Task taskPushSprites(50, TASK_FOREVER, &pushSpritesToDisplay);          // Every
 Task taskSendHeartbeat(60000, TASK_FOREVER, &sendHeartbeatTask);        // Every 60s
 Task taskCheckDoorbell(60000, TASK_FOREVER, &checkDoorbellTask);        // Every 60s
 Task taskCheckDoorbellRing(1000, TASK_FOREVER, &checkDoorbellRingTask); // Every 1s - Poll for doorbell rings
+Task taskMicrophoneLoudness(100, TASK_FOREVER, &updateMicrophoneLoudness); // Every 100ms
 // ============================================================================
 // Setup and Main Loop
 // ============================================================================
@@ -176,6 +178,11 @@ void setup(void)
 
   // Register doorbell ring callback
   setDoorbellRingCallback(onDoorbellRing);
+  // Initialize microphone
+  if (!initMicrophone())
+  {
+    Serial.println("Warning: Microphone initialization failed!");
+  }
 
   // Setup scheduler tasks
   scheduler.addTask(taskUpdateTopBar);
@@ -186,6 +193,7 @@ void setup(void)
   scheduler.addTask(taskSendHeartbeat);
   scheduler.addTask(taskCheckDoorbell);
   scheduler.addTask(taskCheckDoorbellRing);
+  scheduler.addTask(taskMicrophoneLoudness);
 
   taskUpdateTopBar.enable();
   taskUpdateContent.enable();
@@ -195,6 +203,7 @@ void setup(void)
   taskSendHeartbeat.enable();
   taskCheckDoorbell.enable();
   taskCheckDoorbellRing.enable();
+  taskMicrophoneLoudness.enable();
 }
 
 void loop(void)
