@@ -1,6 +1,7 @@
 #include "uart_commands.h"
 #include "lcd_helper.h"
 #include "slave_state_manager.h"
+#include "heartbeat.h"
 
 // Send command to Slave (with automatic mode tracking)
 void sendUARTCommand(const char *cmd, const char *param, int value)
@@ -184,6 +185,10 @@ void handleUARTResponse(String line)
 
       // Clear face recognition timeout (face was recognized)
       face_recognition_active = false;
+
+      // Send face detection event to backend
+      bool recognized = (id >= 0);
+      sendFaceDetection(recognized, name, confidence);
 
       // Update LCD status with recognition result
       if (id >= 0)
