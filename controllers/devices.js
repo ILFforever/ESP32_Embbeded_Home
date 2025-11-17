@@ -404,11 +404,58 @@ const getDeviceHistory = async (req, res) => {
   }
 };
 
+// ============================================================================
+// @route   POST /api/v1/devices/doorbell/ring
+// @desc    Receive doorbell ring event - write to Firebase for real-time listener
+//          Hub listens to Firebase changes and plays audio immediately
+// ============================================================================
+const handleDoorbellRing = async (req, res) => {
+  try {
+    const { device_id } = req.body;
+
+    // Validation
+    if (!device_id) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'device_id is required'
+      });
+    }
+
+    console.log(`[Doorbell] ${device_id} - Ring event received`);
+
+    const db = getFirestore();
+    const deviceRef = db.collection('devices').doc(device_id);
+
+    // Write to Firebase - this triggers real-time listener on Hub
+    const ringTimestamp = admin.firestore.FieldValue.serverTimestamp();
+
+    await deviceRef.set({
+      type: 'doorbell',
+      last_ring: ringTimestamp,
+      last_ring_ms: Date.now() // Client timestamp for Hub to detect changes
+    }, { merge: true });
+
+    console.log(`[Doorbell] ${device_id} - Written to Firebase (Hub will be notified)`);
+
+    // Respond to doorbell device
+    res.json({
+      status: 'ok',
+      message: 'Doorbell ring received and written to Firebase',
+      timestamp: Date.now()
+    });
+
+  } catch (error) {
+    console.error('[Doorbell] Error:', error);
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+};
+
 module.exports = {
   registerDevice,
   handleHeartbeat,
   getDeviceStatus,
   getAllDevicesStatus,
   handleSensorData,
-  getDeviceHistory
+  getDeviceHistory,
+  handleDoorbellRing
 };

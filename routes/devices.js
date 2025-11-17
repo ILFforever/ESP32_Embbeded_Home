@@ -6,7 +6,8 @@ const {
   getAllDevicesStatus,
   handleSensorData,
   getDeviceHistory,
-  registerDevice
+  registerDevice,
+  handleDoorbellRing
 } = require('../controllers/devices');
 const { authenticateDevice } = require('../middleware/deviceAuth');
 
@@ -24,6 +25,11 @@ router.post('/heartbeat', authenticateDevice, handleHeartbeat);
 // @desc    Receive sensor data (throttled writes)
 // @access  Private (requires device token)
 router.post('/sensor', authenticateDevice, handleSensorData);
+
+// @route   POST /api/v1/devices/doorbell/ring
+// @desc    Receive doorbell ring event (writes to Firebase for Hub listener)
+// @access  Private (requires device token)
+router.post('/doorbell/ring', authenticateDevice, handleDoorbellRing);
 
 // @route   GET /api/v1/devices/status/all
 // @desc    Get all devices status (for frontend dashboard)
