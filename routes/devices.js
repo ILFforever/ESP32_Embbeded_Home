@@ -45,7 +45,8 @@ router.post('/doorbell/ring', authenticateDevice, handleDoorbellRing);
 // @route   POST /api/v1/devices/doorbell/face-detection
 // @desc    Receive face detection event from doorbell camera (saves to Firebase)
 // @access  Private (requires device token)
-router.post('/doorbell/face-detection', authenticateDevice, upload.single('image'), handleFaceDetection);
+// NOTE: upload.single('image') MUST come before authenticateDevice to parse req.body
+router.post('/doorbell/face-detection', upload.single('image'), authenticateDevice, handleFaceDetection);
 
 // @route   POST /api/v1/devices/hub/log
 // @desc    Receive logs and errors from Hub (saves to Firebase for frontend)
