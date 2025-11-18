@@ -276,15 +276,21 @@ void setup()
     Serial.println("[MAIN] NFC initialized");
   }
 
-  // Initialize HTTP server
+  // Initialize HTTP server (includes WiFi connection)
   initHTTPServer();
-  delay(50);
+
+  // CRITICAL: Wait for ESP32 WiFi stack to fully initialize DNS resolver
+  // WiFi.begin() returns WL_CONNECTED when Layer 2 is up, but DNS needs more time
+  // Without this delay, DNS lookups for MQTT/Weather will fail at startup
+  Serial.println("[MAIN] Waiting for WiFi network stack to fully initialize...");
+  delay(2000);  // 2 second delay for DNS resolver to be ready
+  Serial.println("[MAIN] WiFi network stack ready");
 
   // Initialize weather module
   initWeather();
   Serial.println("[MAIN] Weather module initialized");
 
-  // Fetch weather immediately on startup (instead of waiting 10 minutes)
+  // Fetch weather immediately on startup (instead of waiting 30 minutes)
   fetchWeatherTask();
 
   // Initialize heartbeat module
