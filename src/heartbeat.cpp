@@ -290,6 +290,9 @@ static void sendFaceDetectionInternal(bool recognized, const char* name, float c
     return;
   }
 
+  // Wait for TCP connection to be fully established
+  delay(100);
+
   String boundary = "----ESP32Boundary" + String(millis());
 
   // Build form fields (metadata)
@@ -344,7 +347,7 @@ static void sendFaceDetectionInternal(bool recognized, const char* name, float c
   if (imageData != nullptr && imageSize > 0) {
     client.print(imageHeader);
 
-    const size_t CHUNK_SIZE = 512; // Send 512 bytes at a time (reduced from 1KB)
+    const size_t CHUNK_SIZE = 1024; // Send 1KB at a time
     size_t sent = 0;
 
     Serial.printf("[FaceDetection] Sending image in chunks (%u bytes total)\n", imageSize);
@@ -352,47 +355,21 @@ static void sendFaceDetectionInternal(bool recognized, const char* name, float c
     while (sent < imageSize) {
       size_t toSend = min(CHUNK_SIZE, imageSize - sent);
 
-      // Wait for socket buffer to have space available
-      unsigned long waitStart = millis();
-      while (client.availableForWrite() < toSend) {
-        if (millis() - waitStart > 5000) { // 5 second timeout
-          Serial.printf("[FaceDetection] ✗ Timeout waiting for buffer space at %u/%u bytes\n", sent, imageSize);
-          client.stop();
-          return;
-        }
-        delay(10);
-      }
+      // Write chunk - WiFiClient handles buffering internally
+      size_t written = client.write(imageData + sent, toSend);
 
-      // Write chunk with retry logic
-      size_t written = 0;
-      int retries = 0;
-      const int MAX_RETRIES = 3;
-
-      while (written < toSend && retries < MAX_RETRIES) {
-        size_t result = client.write(imageData + sent + written, toSend - written);
-
-        if (result > 0) {
-          written += result;
-        } else {
-          // Write failed, wait and retry
-          retries++;
-          Serial.printf("[FaceDetection] Write stalled, retry %d/%d\n", retries, MAX_RETRIES);
-          delay(50);
-        }
-      }
-
-      if (written != toSend) {
-        Serial.printf("[FaceDetection] ✗ Write failed at %u/%u bytes (wrote %u/%u in chunk)\n",
-                      sent, imageSize, written, toSend);
+      if (written == 0) {
+        // Write failed - connection likely broken
+        Serial.printf("[FaceDetection] ✗ Write failed at %u/%u bytes\n", sent, imageSize);
         client.stop();
         return;
       }
 
       sent += written;
 
-      // Delay to let socket buffer drain (increased from 10ms)
+      // Small delay to let socket buffer drain
       if (sent < imageSize) {
-        delay(20);
+        delay(10);
       }
     }
 
