@@ -25,7 +25,13 @@ void sendDisconnectWarning(const char* module_name, bool isDisconnected);
 void sendDoorbellRing();
 
 // Send face detection event to backend (saves to Firebase, publishes to Hub via MQTT)
+// BLOCKING VERSION - Use sendFaceDetectionAsync() instead for non-blocking operation
 void sendFaceDetection(bool recognized, const char* name, float confidence, const uint8_t* imageData = nullptr, size_t imageSize = 0);
+
+// Send face detection event asynchronously (NON-BLOCKING)
+// Queues the event to be sent by a background task
+// Returns true if queued successfully, false if queue is full
+bool sendFaceDetectionAsync(bool recognized, const char* name, float confidence, const uint8_t* imageData = nullptr, size_t imageSize = 0);
 
 // Get last heartbeat status
 bool getLastHeartbeatSuccess();

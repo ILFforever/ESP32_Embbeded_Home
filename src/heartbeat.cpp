@@ -1,4 +1,5 @@
 #include "heartbeat.h"
+#include "face_detection_sender.h"
 #include <WiFi.h>
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
@@ -446,6 +447,25 @@ void sendFaceDetection(bool recognized, const char* name, float confidence, cons
     Serial.printf("[FaceDetection] ✗ Failed (code: %d)\n", httpCode);
     Serial.printf("[FaceDetection] Response: %s\n", responseBody.c_str());
   }
+}
+
+// ============================================================================
+// Send face detection event asynchronously (NON-BLOCKING)
+// ============================================================================
+bool sendFaceDetectionAsync(bool recognized, const char* name, float confidence,
+                            const uint8_t* imageData, size_t imageSize) {
+  Serial.printf("[Heartbeat] Queueing face detection (async) - recognized: %s, name: %s\n",
+                recognized ? "Yes" : "No", name);
+
+  bool success = queueFaceDetection(recognized, name, confidence, imageData, imageSize);
+
+  if (success) {
+    Serial.println("[Heartbeat] ✓ Face detection queued (non-blocking)");
+  } else {
+    Serial.println("[Heartbeat] ✗ Failed to queue (queue full or error)");
+  }
+
+  return success;
 }
 
 // ============================================================================
