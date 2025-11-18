@@ -97,22 +97,6 @@ void sendUART2Ping()
   AmpSerial.println(output);
 }
 
-// Send ping message to Mesh
-void sendMeshPing()
-{
-  extern uint32_t mesh_ping_counter;
-
-  StaticJsonDocument<128> doc;
-  doc["type"] = "ping";
-  doc["seq"] = mesh_ping_counter++;
-  doc["timestamp"] = millis();
-
-  String output;
-  serializeJson(doc, output);
-
-  MeshSerial.println(output);
-}
-
 // Handle UART response from Slave
 void handleUARTResponse(String line)
 {
@@ -386,41 +370,5 @@ void handleUART2Response(String line)
 
   // Handle other amp responses (for future expansion)
   Serial.print("📥 RX from Amp: ");
-  Serial.println(line);
-}
-
-// Handle UART response from Mesh
-void handleMeshResponse(String line)
-{
-  extern unsigned long last_mesh_pong_time;
-  extern int mesh_status;
-
-  // Skip empty lines
-  if (line.length() == 0)
-  {
-    return;
-  }
-
-  // Parse JSON response
-  StaticJsonDocument<2048> doc;
-  DeserializationError error = deserializeJson(doc, line);
-  if (error)
-  {
-    Serial.print("📥 RX from Mesh: ");
-    Serial.println(line);
-    Serial.print("❌ JSON parse error: ");
-    Serial.println(error.c_str());
-    return;
-  }
-
-  // Handle pong response (silently, no print)
-  if (doc.containsKey("type") && doc["type"] == "pong")
-  {
-    last_mesh_pong_time = millis();
-    return;
-  }
-
-  // Handle other mesh responses (for future expansion)
-  Serial.print("📥 RX from Mesh: ");
   Serial.println(line);
 }

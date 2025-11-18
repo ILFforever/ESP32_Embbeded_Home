@@ -68,8 +68,8 @@ void fetchWeatherTask() {
     if (httpCode == HTTP_CODE_OK) {
         String payload = http.getString();
 
-        // Parse JSON response
-        StaticJsonDocument<512> doc;
+        // Parse JSON response (OpenWeatherMap responses are ~800-1000 bytes)
+        StaticJsonDocument<1536> doc;
         DeserializationError error = deserializeJson(doc, payload);
 
         if (!error) {

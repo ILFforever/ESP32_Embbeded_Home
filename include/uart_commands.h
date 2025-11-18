@@ -7,7 +7,6 @@
 
 extern HardwareSerial MasterSerial;
 extern HardwareSerial AmpSerial;
-extern HardwareSerial MeshSerial;
 
 // Camera/Slave ping-pong
 extern uint32_t ping_counter;
@@ -19,11 +18,6 @@ extern int recognition_state; // 0=none, 1=success, 2=failure
 extern uint32_t amp_ping_counter;
 extern unsigned long last_amp_pong_time;
 extern int amp_status;
-
-// Mesh ping-pong
-extern uint32_t mesh_ping_counter;
-extern unsigned long last_mesh_pong_time;
-extern int mesh_status;
 
 // Face detection bounding box
 extern bool hasFaceDetection;
@@ -49,16 +43,10 @@ void sendUARTPing();
 // Send ping message to Amp
 void sendUART2Ping();
 
-// Send ping message to Mesh
-void sendMeshPing();
-
 // Handle UART response from Slave
 void handleUARTResponse(String line);
 
 // Handle UART response from Amp
 void handleUART2Response(String line);
-
-// Handle UART response from Mesh
-void handleMeshResponse(String line);
 
 #endif

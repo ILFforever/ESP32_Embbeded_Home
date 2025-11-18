@@ -322,7 +322,7 @@ void sendFaceDetection(bool recognized, const char* name, float confidence, cons
   client.print("Content-Type: multipart/form-data; boundary=" + boundary + "\r\n");
   client.print("Content-Length: " + String(contentLength) + "\r\n");
   if (DEVICE_API_TOKEN && strlen(DEVICE_API_TOKEN) > 0) {
-    client.print("X-Device-Token: " + String(DEVICE_API_TOKEN) + "\r\n");
+    client.print("Authorization: Bearer " + String(DEVICE_API_TOKEN) + "\r\n");
   }
   client.print("Connection: close\r\n\r\n");
 
@@ -405,7 +405,7 @@ void sendFaceDetection(bool recognized, const char* name, float confidence, cons
                   recognized ? "Yes" : "No", name, confidence);
 
     // Parse response
-    JsonDocument responseDoc;
+    StaticJsonDocument<1024> responseDoc;
     DeserializationError error = deserializeJson(responseDoc, responseBody);
     if (!error && responseDoc.containsKey("event_id")) {
       const char* eventId = responseDoc["event_id"];
