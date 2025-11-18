@@ -13,25 +13,8 @@ const char* DEVICE_API_TOKEN = "";
 static bool lastHeartbeatSuccess = false;
 static unsigned long lastHeartbeatTime = 0;
 
-// ============================================================================
-// Lightweight async face detection (pointer-based, no copying)
-// ============================================================================
-struct FaceDetectionTask {
-  bool recognized;
-  char name[64];
-  float confidence;
-  const uint8_t* imageDataPtr;  // POINTER - no copy!
-  size_t imageSize;
-  volatile bool pending;  // Flag to indicate task is ready
-};
-
-static FaceDetectionTask faceDetectionTask = {false, "", 0.0f, nullptr, 0, false};
-static SemaphoreHandle_t faceDetectionSemaphore = nullptr;
-static TaskHandle_t wifiTaskHandle = nullptr;
-
-// Forward declarations
+// Forward declaration
 static void sendFaceDetectionInternal(bool recognized, const char* name, float confidence, const uint8_t* imageData, size_t imageSize);
-static void wifiBackgroundTask(void* parameter);
 
 // ============================================================================
 // Initialize heartbeat module with server config
@@ -46,26 +29,6 @@ void initHeartbeat(const char* serverUrl, const char* deviceId, const char* devi
   Serial.printf("  Server: %s\n", serverUrl);
   Serial.printf("  Device: %s (%s)\n", deviceId, deviceType);
   Serial.printf("  Token: %s\n", apiToken && strlen(apiToken) > 0 ? "***configured***" : "NOT SET");
-
-  // Create semaphore for face detection task signaling
-  faceDetectionSemaphore = xSemaphoreCreateBinary();
-  if (faceDetectionSemaphore == nullptr) {
-    Serial.println("[Heartbeat] ✗ Failed to create semaphore");
-    return;
-  }
-
-  // Create background WiFi task on Core 0 (non-blocking)
-  xTaskCreatePinnedToCore(
-    wifiBackgroundTask,
-    "WiFiTask",
-    8192,  // 8KB stack for HTTP operations
-    nullptr,
-    1,     // Low priority (won't block main loop)
-    &wifiTaskHandle,
-    0      // Core 0 (main loop runs on Core 1)
-  );
-
-  Serial.println("[Heartbeat] Background WiFi task started on Core 0");
 }
 
 // ============================================================================
@@ -496,65 +459,14 @@ static void sendFaceDetectionInternal(bool recognized, const char* name, float c
 }
 
 // ============================================================================
-// Public API: Queue face detection event (non-blocking, pointer-based)
+// Public API: Send face detection event immediately
 // ============================================================================
 void sendFaceDetection(bool recognized, const char* name, float confidence, const uint8_t* imageData, size_t imageSize) {
-  // Check if previous task is still pending
-  if (faceDetectionTask.pending) {
-    Serial.println("[FaceDetection] ✗ Previous task still pending - dropping event");
-    return;
-  }
-
-  // Store task data (only metadata + pointer, no image copy!)
-  faceDetectionTask.recognized = recognized;
-  strncpy(faceDetectionTask.name, name, sizeof(faceDetectionTask.name) - 1);
-  faceDetectionTask.name[sizeof(faceDetectionTask.name) - 1] = '\0';
-  faceDetectionTask.confidence = confidence;
-  faceDetectionTask.imageDataPtr = imageData;  // POINTER - no copy!
-  faceDetectionTask.imageSize = imageSize;
-  faceDetectionTask.pending = true;
-
-  Serial.printf("[FaceDetection] Queued event: %s (%.2f confidence, %u bytes image)\n",
+  Serial.printf("[FaceDetection] Sending event: %s (%.2f confidence, %u bytes image)\n",
                 name, confidence, imageSize);
 
-  // Signal background task (non-blocking)
-  xSemaphoreGive(faceDetectionSemaphore);
-}
-
-// ============================================================================
-// Background WiFi Task (runs on Core 0)
-// Processes face detection events without blocking main loop
-// ============================================================================
-static void wifiBackgroundTask(void* parameter) {
-  Serial.println("[WiFiTask] Started on Core 0");
-
-  while (true) {
-    // Wait for semaphore signal (blocks until event available)
-    if (xSemaphoreTake(faceDetectionSemaphore, portMAX_DELAY) == pdTRUE) {
-      if (faceDetectionTask.pending) {
-        Serial.printf("[WiFiTask] Processing: %s (%.2f confidence, %u bytes)\n",
-                      faceDetectionTask.name,
-                      faceDetectionTask.confidence,
-                      faceDetectionTask.imageSize);
-
-        // Send to backend (pointer-based, no copy!)
-        sendFaceDetectionInternal(
-          faceDetectionTask.recognized,
-          faceDetectionTask.name,
-          faceDetectionTask.confidence,
-          faceDetectionTask.imageDataPtr,  // Pointer to camera buffer
-          faceDetectionTask.imageSize
-        );
-
-        // Mark task complete
-        faceDetectionTask.pending = false;
-        Serial.println("[WiFiTask] Event processing complete");
-      }
-    }
-
-    // Small delay to prevent task from hogging CPU
-    vTaskDelay(10 / portTICK_PERIOD_MS);
-  }
+  // Send immediately - face detection is rare so blocking is acceptable
+  sendFaceDetectionInternal(recognized, name, confidence, imageData, imageSize);
 }
 
 // ============================================================================
