@@ -14,6 +14,25 @@ static bool lastHeartbeatSuccess = false;
 static unsigned long lastHeartbeatTime = 0;
 
 // ============================================================================
+// Face Detection Event Queue (for non-blocking WiFi operations)
+// ============================================================================
+#define MAX_IMAGE_SIZE 10240  // 10KB max image size in queue
+
+struct FaceDetectionEvent {
+  bool recognized;
+  char name[64];
+  float confidence;
+  uint8_t imageData[MAX_IMAGE_SIZE];  // Embedded image data in the queue item
+  size_t imageSize;
+};
+
+static QueueHandle_t faceDetectionQueue = nullptr;
+static TaskHandle_t wifiTaskHandle = nullptr;
+
+// Forward declaration
+static void wifiBackgroundTask(void* parameter);
+
+// ============================================================================
 // Initialize heartbeat module with server config
 // ============================================================================
 void initHeartbeat(const char* serverUrl, const char* deviceId, const char* deviceType, const char* apiToken) {
@@ -26,6 +45,26 @@ void initHeartbeat(const char* serverUrl, const char* deviceId, const char* devi
   Serial.printf("  Server: %s\n", serverUrl);
   Serial.printf("  Device: %s (%s)\n", deviceId, deviceType);
   Serial.printf("  Token: %s\n", apiToken && strlen(apiToken) > 0 ? "***configured***" : "NOT SET");
+
+  // Create queue for face detection events (only 1 slot needed - face recognition events are sequential)
+  faceDetectionQueue = xQueueCreate(1, sizeof(FaceDetectionEvent));
+  if (faceDetectionQueue == nullptr) {
+    Serial.println("[Heartbeat] ✗ Failed to create face detection queue");
+    return;
+  }
+
+  // Create background WiFi task (runs on Core 0 to avoid blocking UI)
+  xTaskCreatePinnedToCore(
+    wifiBackgroundTask,
+    "WiFiTask",
+    8192,  // Stack size (8KB for HTTP operations)
+    nullptr,
+    1,     // Priority (low priority)
+    &wifiTaskHandle,
+    0      // Core 0 (opposite from main loop on Core 1)
+  );
+
+  Serial.println("[Heartbeat] Background WiFi task started on Core 0");
 }
 
 // ============================================================================
@@ -248,10 +287,10 @@ void sendDoorbellRing() {
 }
 
 // ============================================================================
-// Send face detection event to backend (saves to Firebase, publishes to Hub)
+// Internal function: Actually send face detection to backend (called by background task)
 // Uses chunked sending to avoid socket buffer overflow with large images
 // ============================================================================
-void sendFaceDetection(bool recognized, const char* name, float confidence, const uint8_t* imageData, size_t imageSize) {
+static void sendFaceDetectionInternal(bool recognized, const char* name, float confidence, const uint8_t* imageData, size_t imageSize) {
   if (WiFi.status() != WL_CONNECTED) {
     Serial.println("[FaceDetection] WiFi not connected - skipping");
     return;
@@ -341,26 +380,55 @@ void sendFaceDetection(bool recognized, const char* name, float confidence, cons
   if (imageData != nullptr && imageSize > 0) {
     client.print(imageHeader);
 
-    const size_t CHUNK_SIZE = 1024; // Send 1KB at a time
+    const size_t CHUNK_SIZE = 512; // Send 512 bytes at a time (reduced from 1KB)
     size_t sent = 0;
 
     Serial.printf("[FaceDetection] Sending image in chunks (%u bytes total)\n", imageSize);
 
     while (sent < imageSize) {
       size_t toSend = min(CHUNK_SIZE, imageSize - sent);
-      size_t written = client.write(imageData + sent, toSend);
+
+      // Wait for socket buffer to have space available
+      unsigned long waitStart = millis();
+      while (client.availableForWrite() < toSend) {
+        if (millis() - waitStart > 5000) { // 5 second timeout
+          Serial.printf("[FaceDetection] ✗ Timeout waiting for buffer space at %u/%u bytes\n", sent, imageSize);
+          client.stop();
+          return;
+        }
+        delay(10);
+      }
+
+      // Write chunk with retry logic
+      size_t written = 0;
+      int retries = 0;
+      const int MAX_RETRIES = 3;
+
+      while (written < toSend && retries < MAX_RETRIES) {
+        size_t result = client.write(imageData + sent + written, toSend - written);
+
+        if (result > 0) {
+          written += result;
+        } else {
+          // Write failed, wait and retry
+          retries++;
+          Serial.printf("[FaceDetection] Write stalled, retry %d/%d\n", retries, MAX_RETRIES);
+          delay(50);
+        }
+      }
 
       if (written != toSend) {
-        Serial.printf("[FaceDetection] ✗ Write failed at %u/%u bytes\n", sent, imageSize);
+        Serial.printf("[FaceDetection] ✗ Write failed at %u/%u bytes (wrote %u/%u in chunk)\n",
+                      sent, imageSize, written, toSend);
         client.stop();
         return;
       }
 
       sent += written;
 
-      // Small delay to let socket buffer drain
+      // Delay to let socket buffer drain (increased from 10ms)
       if (sent < imageSize) {
-        delay(10);
+        delay(20);
       }
     }
 
@@ -422,6 +490,76 @@ void sendFaceDetection(bool recognized, const char* name, float confidence, cons
   } else {
     Serial.printf("[FaceDetection] ✗ Failed (code: %d)\n", httpCode);
     Serial.printf("[FaceDetection] Response: %s\n", responseBody.c_str());
+  }
+}
+
+// ============================================================================
+// Public API: Send face detection event (NON-BLOCKING - queues for background task)
+// Copies image data directly into the queue item (stack allocation, no malloc)
+// ============================================================================
+void sendFaceDetection(bool recognized, const char* name, float confidence, const uint8_t* imageData, size_t imageSize) {
+  if (faceDetectionQueue == nullptr) {
+    Serial.println("[FaceDetection] ✗ Queue not initialized - call initHeartbeat() first");
+    return;
+  }
+
+  // Allocate event structure on stack
+  FaceDetectionEvent event;
+  event.recognized = recognized;
+  strncpy(event.name, name, sizeof(event.name) - 1);
+  event.name[sizeof(event.name) - 1] = '\0';
+  event.confidence = confidence;
+
+  // Copy image data directly into queue item (no heap allocation)
+  if (imageData != nullptr && imageSize > 0) {
+    if (imageSize > MAX_IMAGE_SIZE) {
+      Serial.printf("[FaceDetection] ✗ Image too large (%u bytes, max %u), sending without image\n",
+                    imageSize, MAX_IMAGE_SIZE);
+      event.imageSize = 0;
+    } else {
+      memcpy(event.imageData, imageData, imageSize);
+      event.imageSize = imageSize;
+    }
+  } else {
+    event.imageSize = 0;
+  }
+
+  // Queue event (non-blocking - fails if queue is full)
+  // FreeRTOS will copy the entire struct into the queue
+  if (xQueueSend(faceDetectionQueue, &event, 0) != pdTRUE) {
+    Serial.println("[FaceDetection] ✗ Queue full - dropping event");
+    return;
+  }
+
+  Serial.printf("[FaceDetection] ✓ Event queued (%u bytes image)\n", event.imageSize);
+}
+
+// ============================================================================
+// Background WiFi Task (runs on Core 0)
+// Processes face detection events from queue without blocking main loop
+// ============================================================================
+static void wifiBackgroundTask(void* parameter) {
+  FaceDetectionEvent event;
+
+  Serial.println("[WiFiTask] Started on Core 0");
+
+  while (true) {
+    // Wait for event from queue (blocks until event available)
+    if (xQueueReceive(faceDetectionQueue, &event, portMAX_DELAY) == pdTRUE) {
+      Serial.printf("[WiFiTask] Processing event: %s (%.2f confidence, %u bytes image)\n",
+                    event.name, event.confidence, event.imageSize);
+
+      // Send to backend (blocking, but runs on separate core so UI isn't affected)
+      // Image data is embedded in the event struct, no need to free
+      sendFaceDetectionInternal(event.recognized, event.name, event.confidence,
+                                event.imageSize > 0 ? event.imageData : nullptr,
+                                event.imageSize);
+
+      Serial.println("[WiFiTask] Event processing complete");
+    }
+
+    // Small delay to prevent task from hogging CPU
+    vTaskDelay(10 / portTICK_PERIOD_MS);
   }
 }
 
