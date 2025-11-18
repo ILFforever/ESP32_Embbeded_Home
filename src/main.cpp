@@ -16,10 +16,10 @@
  */
 
 #include <Arduino.h>
-#include <painlessMesh.h>
 #include <ArduinoJson.h>
 #include <DHT.h>
 #include <PMS.h>
+#include "mesh_handler.h"
 
 // ============================================================================
 // PIN CONFIGURATION
@@ -39,14 +39,6 @@
 
 // Status LED
 #define LED_PIN           48     // GPIO48 - Built-in RGB LED (ESP32-S3)
-
-// ============================================================================
-// MESH NETWORK CONFIGURATION
-// ============================================================================
-
-#define MESH_PREFIX       "ESP32_SmartHome_Mesh"
-#define MESH_PASSWORD     "smarthome2024"
-#define MESH_PORT         5555
 
 // ============================================================================
 // TIMING CONFIGURATION
@@ -69,7 +61,7 @@ const char* DEVICE_TYPE = "mesh_hub";
 // ============================================================================
 
 Scheduler userScheduler;
-painlessMesh mesh;
+MeshHandler meshHandler(DEVICE_ID, DEVICE_TYPE);
 
 DHT dht(DHT_PIN, DHT_TYPE);
 PMS pms(Serial1);
@@ -94,49 +86,30 @@ struct LocalSensorData {
   unsigned long lastPmsRead = 0;
 } localSensors;
 
-// Mesh sensor data from other nodes
-struct MeshNodeData {
-  uint32_t nodeId;
-  String deviceId;
-  String deviceType;
-  DynamicJsonDocument data;
-  unsigned long lastUpdate;
-
-  MeshNodeData() : data(512) {}  // Initialize with 512 bytes
-};
-
-// Store data from up to 10 mesh nodes
-const int MAX_MESH_NODES = 10;
-MeshNodeData meshNodes[MAX_MESH_NODES];
-int meshNodeCount = 0;
-
 // ============================================================================
 // FUNCTION PROTOTYPES
 // ============================================================================
 
 void setupPins();
 void setupSensors();
-void setupMesh();
 void setupUART();
 void readDHT11();
 void readPMS5003();
 void sendAggregatedDataToLCD();
-void receivedCallback(uint32_t from, String &msg);
-void newConnectionCallback(uint32_t nodeId);
-void changedConnectionCallback();
-void nodeTimeAdjustedCallback(int32_t offset);
-void cleanupOldMeshData();
-void storeMeshNodeData(uint32_t nodeId, StaticJsonDocument<512> &doc);
 void blinkLED(int times, int delayMs);
 void printLocalSensorData();
-void printMeshStatus();
 void handleLcdUartMessages();
 
 // Task declarations
 Task taskReadDHT(DHT_INTERVAL, TASK_FOREVER, &readDHT11);
 Task taskReadPMS(PMS_INTERVAL, TASK_FOREVER, &readPMS5003);
 Task taskSendData(SEND_INTERVAL, TASK_FOREVER, &sendAggregatedDataToLCD);
-Task taskCleanup(MESH_CLEANUP, TASK_FOREVER, &cleanupOldMeshData);
+
+// Wrapper function for mesh cleanup task
+void cleanupMeshData() {
+  meshHandler.cleanupOldData();
+}
+Task taskCleanup(MESH_CLEANUP, TASK_FOREVER, &cleanupMeshData);
 
 // ============================================================================
 // SETUP
@@ -154,7 +127,9 @@ void setup() {
   setupPins();
   setupSensors();
   setupUART();
-  setupMesh();
+
+  // Initialize mesh handler
+  meshHandler.begin(&userScheduler);
 
   // Add tasks to scheduler
   userScheduler.addTask(taskReadDHT);
@@ -178,7 +153,7 @@ void setup() {
 // ============================================================================
 
 void loop() {
-  mesh.update();
+  meshHandler.update();
   userScheduler.execute();
   handleLcdUartMessages();  // Check for incoming UART messages from Main LCD
 }
@@ -213,27 +188,8 @@ void setupUART() {
   Serial.println("[SETUP] Initializing UART to Main LCD...");
   LcdSerial.begin(115200, SERIAL_8N1, LCD_RX_PIN, LCD_TX_PIN);
   delay(100);
-  Serial.println("[SETUP] ✓ UART2 initialized on GPIO18/19");
+  Serial.println("[SETUP] ✓ UART2 initialized on GPIO16/18");
   Serial.println("[SETUP] ✓ Main LCD communication ready");
-}
-
-void setupMesh() {
-  Serial.println("[SETUP] Initializing Painless Mesh...");
-
-  // Set callbacks
-  mesh.setDebugMsgTypes(ERROR | STARTUP | CONNECTION);
-  mesh.onReceive(&receivedCallback);
-  mesh.onNewConnection(&newConnectionCallback);
-  mesh.onChangedConnections(&changedConnectionCallback);
-  mesh.onNodeTimeAdjusted(&nodeTimeAdjustedCallback);
-
-  // Initialize mesh
-  mesh.init(MESH_PREFIX, MESH_PASSWORD, &userScheduler, MESH_PORT);
-
-  Serial.printf("[SETUP] ✓ Mesh initialized\n");
-  Serial.printf("[SETUP]   - Network: %s\n", MESH_PREFIX);
-  Serial.printf("[SETUP]   - Node ID: %u\n", mesh.getNodeId());
-  Serial.printf("[SETUP]   - Port: %d\n", MESH_PORT);
 }
 
 // ============================================================================
@@ -302,8 +258,8 @@ void sendAggregatedDataToLCD() {
   doc["device_id"] = DEVICE_ID;
   doc["device_type"] = DEVICE_TYPE;
   doc["timestamp"] = millis();
-  doc["mesh_node_id"] = mesh.getNodeId();
-  doc["mesh_node_count"] = meshNodeCount;
+  doc["mesh_node_id"] = meshHandler.getNodeId();
+  doc["mesh_node_count"] = meshHandler.getStoredNodeCount();
 
   // Add local sensor data
   JsonObject local = doc.createNestedObject("local_sensors");
@@ -323,6 +279,9 @@ void sendAggregatedDataToLCD() {
 
   // Add mesh network sensor data
   JsonArray meshData = doc.createNestedArray("mesh_sensors");
+  MeshNodeData* meshNodes = meshHandler.getMeshNodes();
+  int meshNodeCount = meshHandler.getMeshNodeCount();
+
   for (int i = 0; i < meshNodeCount; i++) {
     JsonObject node = meshData.createNestedObject();
     node["node_id"] = meshNodes[i].nodeId;
@@ -351,111 +310,6 @@ void sendAggregatedDataToLCD() {
 }
 
 // ============================================================================
-// MESH NETWORK CALLBACKS
-// ============================================================================
-
-void receivedCallback(uint32_t from, String &msg) {
-  Serial.printf("\n[MESH] ← Received message from node %u\n", from);
-  Serial.printf("[MESH]   Length: %d bytes\n", msg.length());
-
-  // Parse JSON message
-  StaticJsonDocument<512> doc;
-  DeserializationError error = deserializeJson(doc, msg);
-
-  if (error) {
-    Serial.printf("[MESH] ✗ JSON parse error: %s\n", error.c_str());
-    return;
-  }
-
-  // Extract device info
-  const char* deviceId = doc["device_id"] | "unknown";
-  const char* deviceType = doc["device_type"] | "sensor";
-
-  Serial.printf("[MESH]   Device: %s (%s)\n", deviceId, deviceType);
-
-  // Store the mesh node data
-  storeMeshNodeData(from, doc);
-
-  Serial.println("[MESH] ✓ Data stored");
-}
-
-void newConnectionCallback(uint32_t nodeId) {
-  Serial.printf("\n[MESH] ✓ New connection: Node %u\n", nodeId);
-  printMeshStatus();
-}
-
-void changedConnectionCallback() {
-  Serial.println("\n[MESH] ⚠ Network topology changed");
-  printMeshStatus();
-}
-
-void nodeTimeAdjustedCallback(int32_t offset) {
-  Serial.printf("[MESH] ⏱ Time adjusted by %d µs\n", offset);
-}
-
-// ============================================================================
-// MESH DATA MANAGEMENT
-// ============================================================================
-
-void storeMeshNodeData(uint32_t nodeId, StaticJsonDocument<512> &doc) {
-  // Check if node already exists
-  int existingIndex = -1;
-  for (int i = 0; i < meshNodeCount; i++) {
-    if (meshNodes[i].nodeId == nodeId) {
-      existingIndex = i;
-      break;
-    }
-  }
-
-  // Update existing or add new
-  if (existingIndex >= 0) {
-    // Update existing node
-    meshNodes[existingIndex].deviceId = doc["device_id"] | "unknown";
-    meshNodes[existingIndex].deviceType = doc["device_type"] | "sensor";
-    meshNodes[existingIndex].data = doc;
-    meshNodes[existingIndex].lastUpdate = millis();
-  } else if (meshNodeCount < MAX_MESH_NODES) {
-    // Add new node
-    meshNodes[meshNodeCount].nodeId = nodeId;
-    meshNodes[meshNodeCount].deviceId = doc["device_id"] | "unknown";
-    meshNodes[meshNodeCount].deviceType = doc["device_type"] | "sensor";
-    meshNodes[meshNodeCount].data = doc;
-    meshNodes[meshNodeCount].lastUpdate = millis();
-    meshNodeCount++;
-  } else {
-    Serial.println("[MESH] ✗ Max mesh nodes reached, oldest will be replaced");
-    // Replace oldest entry (simple FIFO)
-    meshNodes[0].nodeId = nodeId;
-    meshNodes[0].deviceId = doc["device_id"] | "unknown";
-    meshNodes[0].deviceType = doc["device_type"] | "sensor";
-    meshNodes[0].data = doc;
-    meshNodes[0].lastUpdate = millis();
-  }
-}
-
-void cleanupOldMeshData() {
-  const unsigned long MAX_AGE = 120000; // 2 minutes
-  unsigned long now = millis();
-
-  int removed = 0;
-  for (int i = 0; i < meshNodeCount; i++) {
-    if (now - meshNodes[i].lastUpdate > MAX_AGE) {
-      // Remove stale data by shifting array
-      for (int j = i; j < meshNodeCount - 1; j++) {
-        meshNodes[j] = meshNodes[j + 1];
-      }
-      meshNodeCount--;
-      removed++;
-      i--; // Check this index again
-    }
-  }
-
-  if (removed > 0) {
-    Serial.printf("[MESH] Cleaned up %d stale node(s)\n", removed);
-  }
-}
-
-// ============================================================================
 // UTILITY FUNCTIONS
 // ============================================================================
 
@@ -466,22 +320,6 @@ void blinkLED(int times, int delayMs) {
     digitalWrite(LED_PIN, LOW);
     delay(delayMs);
   }
-}
-
-void printMeshStatus() {
-  Serial.println("[MESH] ─────────────────────────────────");
-  Serial.printf("[MESH] Node ID: %u\n", mesh.getNodeId());
-  Serial.printf("[MESH] Connected nodes: %d\n", mesh.getNodeList().size());
-  Serial.printf("[MESH] Stored sensor data: %d nodes\n", meshNodeCount);
-
-  auto nodes = mesh.getNodeList();
-  if (nodes.size() > 0) {
-    Serial.println("[MESH] Connected:");
-    for (auto &&id : nodes) {
-      Serial.printf("[MESH]   - Node %u\n", id);
-    }
-  }
-  Serial.println("[MESH] ─────────────────────────────────");
 }
 
 void printLocalSensorData() {
@@ -546,10 +384,10 @@ void handleLcdUartMessages() {
       pongDoc["type"] = "pong";
       pongDoc["device_id"] = DEVICE_ID;
       pongDoc["device_type"] = DEVICE_TYPE;
-      pongDoc["mesh_node_id"] = mesh.getNodeId();
+      pongDoc["mesh_node_id"] = meshHandler.getNodeId();
       pongDoc["uptime_ms"] = millis();
-      pongDoc["mesh_nodes_connected"] = mesh.getNodeList().size();
-      pongDoc["mesh_data_stored"] = meshNodeCount;
+      pongDoc["mesh_nodes_connected"] = meshHandler.getConnectedNodeCount();
+      pongDoc["mesh_data_stored"] = meshHandler.getStoredNodeCount();
 
       String pongStr;
       serializeJson(pongDoc, pongStr);
@@ -577,9 +415,9 @@ void handleLcdUartMessages() {
       }
 
       JsonObject meshInfo = statusDoc.createNestedObject("mesh");
-      meshInfo["node_id"] = mesh.getNodeId();
-      meshInfo["connections"] = mesh.getNodeList().size();
-      meshInfo["stored_nodes"] = meshNodeCount;
+      meshInfo["node_id"] = meshHandler.getNodeId();
+      meshInfo["connections"] = meshHandler.getConnectedNodeCount();
+      meshInfo["stored_nodes"] = meshHandler.getStoredNodeCount();
 
       String statusStr;
       serializeJson(statusDoc, statusStr);
@@ -589,7 +427,7 @@ void handleLcdUartMessages() {
 
     } else if (strcmp(msgType, "reset_stats") == 0) {
       // Reset/clear mesh node data
-      meshNodeCount = 0;
+      meshHandler.clearAllData();
 
       StaticJsonDocument<128> ackDoc;
       ackDoc["type"] = "ack";
