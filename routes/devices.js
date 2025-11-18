@@ -18,7 +18,17 @@ const { authenticateDevice } = require('../middleware/deviceAuth');
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
-    fileSize: 500 * 1024, // 500KB max file size
+    fileSize: 1 * 1024 * 1024, // 1MB max file size (increased from 500KB for reliability)
+    fieldSize: 10 * 1024 * 1024, // 10MB for form fields
+  },
+  // Increase timeout for slow ESP32 uploads
+  fileFilter: (req, file, cb) => {
+    // Accept only images
+    if (file.mimetype.startsWith('image/')) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only image files are allowed'));
+    }
   }
 });
 
