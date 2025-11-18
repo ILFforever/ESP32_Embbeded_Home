@@ -24,9 +24,9 @@ void sendDisconnectWarning(const char* module_name, bool isDisconnected);
 // Send doorbell ring event to backend (blocking)
 void sendDoorbellRing();
 
-// Send face detection event to backend (NON-BLOCKING - queues event for background task)
-// Copies image data into queue item (max 10KB), returns immediately
-// Image data can be safely reused after this function returns
+// Send face detection event to backend (ON-DEMAND TASK)
+// Creates a background task to send image without blocking MQTT/Weather
+// Task automatically cleans itself up after completion
 void sendFaceDetection(bool recognized, const char* name, float confidence, const uint8_t* imageData = nullptr, size_t imageSize = 0);
 
 // Get last heartbeat status

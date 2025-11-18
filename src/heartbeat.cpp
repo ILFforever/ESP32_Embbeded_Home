@@ -13,8 +13,18 @@ const char* DEVICE_API_TOKEN = "";
 static bool lastHeartbeatSuccess = false;
 static unsigned long lastHeartbeatTime = 0;
 
-// Forward declaration
+// On-demand task management for face detection
+struct FaceDetectionTaskParams {
+  bool recognized;
+  char name[64];
+  float confidence;
+  uint8_t* imageData;  // Dynamically allocated
+  size_t imageSize;
+};
+
+// Forward declarations
 static void sendFaceDetectionInternal(bool recognized, const char* name, float confidence, const uint8_t* imageData, size_t imageSize);
+static void faceDetectionTaskWrapper(void* pvParameters);
 
 // ============================================================================
 // Initialize heartbeat module with server config
@@ -459,14 +469,86 @@ static void sendFaceDetectionInternal(bool recognized, const char* name, float c
 }
 
 // ============================================================================
-// Public API: Send face detection event immediately
+// Task wrapper: Sends face detection then cleans up task
+// ============================================================================
+static void faceDetectionTaskWrapper(void* pvParameters) {
+  FaceDetectionTaskParams* params = (FaceDetectionTaskParams*)pvParameters;
+
+  Serial.printf("[FaceDetectionTask] Started on Core %d\n", xPortGetCoreID());
+
+  // Send face detection (blocking call, but in background task)
+  sendFaceDetectionInternal(params->recognized, params->name, params->confidence,
+                           params->imageData, params->imageSize);
+
+  // Clean up allocated image data
+  if (params->imageData != nullptr) {
+    delete[] params->imageData;
+  }
+
+  // Clean up params
+  delete params;
+
+  Serial.println("[FaceDetectionTask] Completed - task deleting itself");
+
+  // Task deletes itself
+  vTaskDelete(NULL);
+}
+
+// ============================================================================
+// Public API: Send face detection event via on-demand background task
 // ============================================================================
 void sendFaceDetection(bool recognized, const char* name, float confidence, const uint8_t* imageData, size_t imageSize) {
-  Serial.printf("[FaceDetection] Sending event: %s (%.2f confidence, %u bytes image)\n",
+  Serial.printf("[FaceDetection] Queuing event: %s (%.2f confidence, %u bytes image)\n",
                 name, confidence, imageSize);
 
-  // Send immediately - face detection is rare so blocking is acceptable
-  sendFaceDetectionInternal(recognized, name, confidence, imageData, imageSize);
+  // Allocate params structure
+  FaceDetectionTaskParams* params = new (std::nothrow) FaceDetectionTaskParams();
+  if (params == nullptr) {
+    Serial.println("[FaceDetection] ✗ Failed to allocate task params");
+    return;
+  }
+
+  // Copy parameters
+  params->recognized = recognized;
+  strncpy(params->name, name, sizeof(params->name) - 1);
+  params->name[sizeof(params->name) - 1] = '\0';
+  params->confidence = confidence;
+  params->imageSize = imageSize;
+
+  // Allocate and copy image data
+  if (imageData != nullptr && imageSize > 0) {
+    params->imageData = new (std::nothrow) uint8_t[imageSize];
+    if (params->imageData == nullptr) {
+      Serial.println("[FaceDetection] ✗ Failed to allocate image buffer");
+      delete params;
+      return;
+    }
+    memcpy(params->imageData, imageData, imageSize);
+  } else {
+    params->imageData = nullptr;
+  }
+
+  // Create task on Core 0 (WiFi core) - task will delete itself after completion
+  BaseType_t result = xTaskCreatePinnedToCore(
+    faceDetectionTaskWrapper,
+    "FaceDetectTask",
+    8192,              // Stack size
+    params,            // Parameters
+    1,                 // Priority
+    NULL,              // No handle needed - task deletes itself
+    0                  // Core 0 (WiFi)
+  );
+
+  if (result != pdPASS) {
+    Serial.println("[FaceDetection] ✗ Failed to create background task");
+    if (params->imageData != nullptr) {
+      delete[] params->imageData;
+    }
+    delete params;
+    return;
+  }
+
+  Serial.println("[FaceDetection] ✓ Background task created successfully");
 }
 
 // ============================================================================
