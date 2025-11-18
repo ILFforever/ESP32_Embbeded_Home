@@ -1259,16 +1259,29 @@ void updateButtonState(ButtonState &btn, int pin, const char *buttonName)
         // Handle button press action (short press)
         if (strcmp(buttonName, "Doorbell") == 0)
         {
-          // Doorbell button pressed - play audio and send to backend
-          String oldStatus = status_msg;
-          updateStatusMsg("Ringing...", true, oldStatus.c_str());
-          sendUART2Command("play", "doorbell");
+          // Debounce doorbell ring events (prevent rapid HTTP requests)
+          static unsigned long lastRingTime = 0;
+          const unsigned long RING_DEBOUNCE_MS = 2000;  // 2 second debounce
 
-          // Send doorbell ring event to backend (for logging to Firebase)
-          sendDoorbellRing();
+          if (currentTime - lastRingTime < RING_DEBOUNCE_MS)
+          {
+            Serial.printf("[BTN] Doorbell ring ignored (debounce: %lu ms since last)\n",
+                          currentTime - lastRingTime);
+          }
+          else
+          {
+            // Doorbell button pressed - play audio and send to backend
+            lastRingTime = currentTime;
+            String oldStatus = status_msg;
+            updateStatusMsg("Ringing...", true, oldStatus.c_str());
+            sendUART2Command("play", "doorbell");
 
-          // Publish to MQTT for instant hub notification
-          publishDoorbellRing();
+            // Send doorbell ring event to backend (for logging to Firebase)
+            sendDoorbellRing();
+
+            // Publish to MQTT for instant hub notification
+            publishDoorbellRing();
+          }
         }
         else if (strcmp(buttonName, "Call") == 0)
         {
