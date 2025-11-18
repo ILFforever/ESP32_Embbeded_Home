@@ -268,8 +268,16 @@ void sendFaceDetection(bool recognized, const char* name, float confidence, cons
   String host = (colonIdx > 0) ? serverUrl.substring(0, colonIdx) :
                 (slashIdx > 0) ? serverUrl.substring(0, slashIdx) : serverUrl;
   int port = (colonIdx > 0) ? serverUrl.substring(colonIdx + 1, (slashIdx > 0) ? slashIdx : serverUrl.length()).toInt() : 80;
-  String path = (slashIdx > 0) ? serverUrl.substring(slashIdx) : "/";
-  path += "/api/v1/devices/doorbell/face-detection";
+  String path = (slashIdx > 0) ? serverUrl.substring(slashIdx) : "";
+
+  // Ensure path starts with / but avoid double slashes
+  if (path.length() == 0 || path == "/") {
+    path = "/api/v1/devices/doorbell/face-detection";
+  } else if (path.endsWith("/")) {
+    path += "api/v1/devices/doorbell/face-detection";
+  } else {
+    path += "/api/v1/devices/doorbell/face-detection";
+  }
 
   Serial.printf("[FaceDetection] Connecting to %s:%d%s\n", host.c_str(), port, path.c_str());
 
