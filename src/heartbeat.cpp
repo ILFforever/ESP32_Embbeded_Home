@@ -384,7 +384,7 @@ static void sendFaceDetectionInternal(bool recognized, const char* name, float c
   if (imageData != nullptr && imageSize > 0) {
     client.print(imageHeader);
 
-    const size_t CHUNK_SIZE = 1024; // Send 1KB at a time
+    const size_t CHUNK_SIZE = 512; // Smaller chunks to avoid buffer overflow
     size_t sent = 0;
 
     Serial.printf("[FaceDetection] Sending image in chunks (%u bytes total)\n", imageSize);
@@ -392,11 +392,27 @@ static void sendFaceDetectionInternal(bool recognized, const char* name, float c
     while (sent < imageSize) {
       size_t toSend = min(CHUNK_SIZE, imageSize - sent);
 
-      // Write chunk - WiFiClient handles buffering internally
+      // Wait for socket buffer space (handles errno 11)
+      unsigned long waitStart = millis();
+      while (client.availableForWrite() < toSend) {
+        if (!client.connected()) {
+          Serial.println("[FaceDetection] ✗ Connection lost");
+          client.stop();
+          return;
+        }
+        if (millis() - waitStart > 10000) {  // 10 second timeout
+          Serial.printf("[FaceDetection] ✗ Timeout waiting for buffer at %u/%u bytes\n", sent, imageSize);
+          client.stop();
+          return;
+        }
+        delay(50);  // Wait for buffer to drain
+      }
+
+      // Write chunk
       size_t written = client.write(imageData + sent, toSend);
 
       if (written == 0) {
-        // Write failed - connection likely broken
+        // Write failed - connection broken
         Serial.printf("[FaceDetection] ✗ Write failed at %u/%u bytes\n", sent, imageSize);
         client.stop();
         return;
@@ -404,9 +420,9 @@ static void sendFaceDetectionInternal(bool recognized, const char* name, float c
 
       sent += written;
 
-      // Small delay to let socket buffer drain
+      // Longer delay to let socket buffer drain
       if (sent < imageSize) {
-        delay(10);
+        delay(50);
       }
     }
 
