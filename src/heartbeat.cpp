@@ -332,6 +332,14 @@ static void sendFaceDetectionInternal(bool recognized, const char* name, float c
 
   String boundary = "----ESP32Boundary" + String(millis());
 
+  // Debug: Check DEVICE_ID
+  if (!DEVICE_ID || strlen(DEVICE_ID) == 0) {
+    Serial.println("[FaceDetection] ✗ ERROR: DEVICE_ID is empty!");
+    client.stop();
+    return;
+  }
+  Serial.printf("[FaceDetection] Using device_id: %s\n", DEVICE_ID);
+
   // Build form fields (metadata)
   String formData = "";
   formData += "--" + boundary + "\r\n";
