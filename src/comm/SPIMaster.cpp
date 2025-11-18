@@ -28,6 +28,17 @@ bool SPIMaster::begin()
     // Initialize SPI bus
     _spi.begin(SPI_SCK, SPI_MISO, SPI_MOSI, SPI_CS);
 
+    // Pre-allocate frame buffer to prevent heap fragmentation
+    _frameBuffer = new (std::nothrow) uint8_t[MAX_FRAME_SIZE];
+    if (_frameBuffer == nullptr)
+    {
+        Serial.printf("[SPI] ✗ FATAL: Failed to allocate %u bytes for frame buffer (free: %u, largest: %u)\n",
+                     MAX_FRAME_SIZE, ESP.getFreeHeap(), ESP.getMaxAllocHeap());
+        return false;
+    }
+    Serial.printf("[SPI] ✓ Pre-allocated %u bytes for frame buffer (free heap: %u)\n",
+                 MAX_FRAME_SIZE, ESP.getFreeHeap());
+
     Serial.println("[SPI] Master initialized");
     return true;
 }
@@ -123,29 +134,18 @@ bool SPIMaster::_receiveHeader()
     _frameSize = _parseBE32((uint8_t *)&header.frame_size);
     _frameTimestamp = _parseBE32((uint8_t *)&header.timestamp);
 
-    // Validate frame size (allow up to 200KB for RGB frames)
-    if (_frameSize == 0 || _frameSize > 200000)
+    // Validate frame size (pre-allocated buffer is MAX_FRAME_SIZE)
+    if (_frameSize == 0 || _frameSize > MAX_FRAME_SIZE)
     {
-        Serial.print("[SPI] ERROR: Invalid frame size: ");
-        Serial.println(_frameSize);
+        Serial.printf("[SPI] ERROR: Invalid frame size: %u (max: %u)\n", _frameSize, MAX_FRAME_SIZE);
         _state = SPI_ERROR;
         return false;
     }
 
-    // Allocate buffer - use nothrow to prevent exception
-    if (_frameBuffer != nullptr)
-    {
-        Serial.println("[SPI] WARNING: Dropping previous frame");
-        delete[] _frameBuffer;
-        _frameBuffer = nullptr;
-        _framesDropped++;
-    }
-
-    _frameBuffer = new (std::nothrow) uint8_t[_frameSize];
+    // Reuse pre-allocated buffer (no delete/new = no fragmentation!)
     if (_frameBuffer == nullptr)
     {
-        Serial.printf("[SPI] ERROR: Failed to allocate %u bytes (free heap: %u, largest block: %u)\n",
-                     _frameSize, ESP.getFreeHeap(), ESP.getMaxAllocHeap());
+        Serial.println("[SPI] ERROR: Frame buffer not allocated!");
         _state = SPI_ERROR;
         return false;
     }

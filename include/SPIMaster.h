@@ -12,6 +12,7 @@
 #define SPI_CS   14
 
 #define SPI_SPEED 20000000  // 20 MHz
+#define MAX_FRAME_SIZE 15360  // 15KB max JPEG frame (pre-allocated to avoid fragmentation)
 
 // Transfer states
 enum SPITransferState {
