@@ -1,0 +1,23 @@
+#include "cap_sensor_manager.h"
+#include <CapSensor.h>
+#include "uart_slaves.h"
+
+void updateCapSensor()
+{
+  capSensorUpdate();
+
+  // Example: Check specific pads
+  if (isPadPressed(0))
+  {
+    sendAmpCommand("play", "click");
+    Serial.println("Button 0 pressed!");
+    if (cur_Screen == 0)
+    {
+      cur_Screen = 1;
+    }
+    else
+    {
+      cur_Screen = 0;
+    }
+  }
+}

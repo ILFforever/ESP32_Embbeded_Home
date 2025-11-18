@@ -16,6 +16,8 @@
 #include "uart_slaves.h"
 #include "wifi_functions.h"
 #include "mqtt_client.h"
+#include "managers/screen_manager.h"
+#include "managers/cap_sensor_manager.h"
 
 // ============================================================================
 // UART Pin Configuration
@@ -70,14 +72,13 @@ void IRAM_ATTR touchISR()
   touchDataReady = true;
 }
 
+// Track screens
+int cur_Screen = 0;
+int Last_Screen = 0;
 // ============================================================================
 // Task Definitions
 // ============================================================================
-void updateTopBar();
-void updateContent();
-void updateTouch();
-void updateCapSensor();
-void pushSpritesToDisplay();
+// Screen and cap sensor functions are now in screen_manager.h and cap_sensor_manager.h
 void sendHeartbeatTask();
 void checkDoorbellTask();
 void checkMeshUARTData();
@@ -89,13 +90,11 @@ void checkAmpTimeout();
 void processMQTTTask();
 void onDoorbellRing();
 void onFaceDetection(bool recognized, const char *name, float confidence);
-void drawWifiSymbol(int x, int y, int strength);
 
 Task taskUpdateTopBar(1000, TASK_FOREVER, &updateTopBar);
 Task taskUpdateContent(100, TASK_FOREVER, &updateContent);
 Task taskTouchUpdate(20, TASK_FOREVER, &updateTouch);
 Task taskCapSensorUpdate(100, TASK_FOREVER, &updateCapSensor);
-Task taskPushSprites(50, TASK_FOREVER, &pushSpritesToDisplay);
 Task taskSendHeartbeat(60000, TASK_FOREVER, &sendHeartbeatTask);  // Every 60s
 Task taskCheckDoorbell(60000, TASK_FOREVER, &checkDoorbellTask);  // Every 60s
 Task taskProcessMQTT(100, TASK_FOREVER, &processMQTTTask);        // Every 100ms
@@ -231,7 +230,6 @@ void setup(void)
   scheduler.addTask(taskUpdateContent);
   scheduler.addTask(taskTouchUpdate);
   scheduler.addTask(taskCapSensorUpdate);
-  scheduler.addTask(taskPushSprites);
   scheduler.addTask(taskSendHeartbeat);
   scheduler.addTask(taskCheckDoorbell);
   scheduler.addTask(taskProcessMQTT);
@@ -246,7 +244,6 @@ void setup(void)
   taskUpdateContent.enable();
   taskTouchUpdate.enable();
   taskCapSensorUpdate.enable();
-  taskPushSprites.enable();
   taskSendHeartbeat.enable();
   taskCheckDoorbell.enable();
   taskProcessMQTT.enable();
@@ -265,231 +262,12 @@ void loop(void)
   scheduler.execute();
 }
 
-void updateTopBar()
-{
-  static uint32_t secondCounter = 0;
-
-  // Clear top bar
-  topBar.fillScreen(TFT_WHITE);
-  topBar.setTextColor(TFT_BLACK, TFT_WHITE);
-  topBar.setTextSize(2);
-
-  // Display hub info
-  topBar.drawString("ESP32 Hub - Control Center", 50, 10);
-
-  // Display doorbell status - show brief status in top bar
-  if (doorbellStatus.data_valid)
-  {
-    if (doorbellOnline)
-    {
-      topBar.setTextColor(TFT_GREEN, TFT_WHITE);
-      topBar.drawString("DB: ON", 600, 10);
-      topBar.setTextColor(TFT_BLACK, TFT_WHITE);
-    }
-    else
-    {
-      topBar.setTextColor(TFT_RED, TFT_WHITE);
-      topBar.drawString("DB: OFF", 600, 10);
-      topBar.setTextColor(TFT_BLACK, TFT_WHITE);
-    }
-  }
-  else
-  {
-    topBar.setTextColor(TFT_YELLOW, TFT_WHITE);
-    topBar.drawString("DB: ...", 600, 10);
-    topBar.setTextColor(TFT_BLACK, TFT_WHITE);
-  }
-
-  // WiFi indicator: Calculate strength based on RSSI
-  int wifiStrength = 0;
-  if (WiFi.status() == WL_CONNECTED)
-  {
-    int32_t rssi = WiFi.RSSI();
-    // RSSI to bars conversion:
-    // > -50 dBm = Excellent (3 bars)
-    // -50 to -60 dBm = Good (3 bars)
-    // -60 to -70 dBm = Fair (2 bars)
-    // -70 to -80 dBm = Weak (1 bar)
-    // < -80 dBm = Very weak (0 bars)
-    if (rssi > -60)
-    {
-      wifiStrength = 3;
-    }
-    else if (rssi > -70)
-    {
-      wifiStrength = 2;
-    }
-    else if (rssi > -80)
-    {
-      wifiStrength = 1;
-    }
-    else
-    {
-      wifiStrength = 0;
-    }
-  }
-  drawWifiSymbol(780, 20, wifiStrength);
-
-  // Mark that top bar needs update
-  topBarNeedsUpdate = true;
-}
-
-void updateContent()
-{
-  bool needsUpdate = false;
-  char buffer[100];
-
-  // Initialize content area on first run (draw static elements once)
-  if (!contentInitialized)
-  {
-    contentArea.fillScreen(TFT_BLUE);
-    contentArea.setTextColor(TFT_WHITE, TFT_BLUE);
-    contentArea.setTextSize(3);
-    contentArea.drawString("LovyanGFX Multi-Sprite!", 50, 10);
-    contentInitialized = true;
-    needsUpdate = true;
-  }
-
-  // Display Main Mesh status
-  if (mesh_status == -1)
-  {
-    lcd.setTextColor(TFT_RED);
-    lcd.drawString("Main Mesh: OFFLINE", 50, 150);
-  }
-  else if (mesh_status == 0)
-  {
-    lcd.setTextColor(TFT_YELLOW);
-    lcd.drawString("Main Mesh: STANDBY", 50, 150);
-  }
-  else
-  {
-    lcd.setTextColor(TFT_GREEN);
-    lcd.drawString("Main Mesh: RUNNING", 50, 150);
-  }
-  lcd.setTextColor(TFT_WHITE);
-
-  // Display Main Amp status
-  if (amp_status == -1)
-  {
-    lcd.setTextColor(TFT_RED);
-    lcd.drawString("Main Amp: OFFLINE", 50, 200);
-  }
-  else if (amp_status == 0)
-  {
-    lcd.setTextColor(TFT_YELLOW);
-    lcd.drawString("Main Amp: STANDBY", 50, 200);
-  }
-  else
-  {
-    lcd.setTextColor(TFT_GREEN);
-    lcd.drawString("Main Amp: PLAYING", 50, 200);
-  }
-  lcd.setTextColor(TFT_WHITE);
-
-  // Display doorbell status
-  if (doorbellStatus.data_valid)
-  {
-    if (doorbellOnline)
-    {
-      lcd.setTextColor(TFT_GREEN);
-      lcd.drawString("Doorbell: ONLINE", 50, 250);
-    }
-    else
-    {
-      lcd.setTextColor(TFT_RED);
-      lcd.drawString("Doorbell: OFFLINE", 50, 250);
-    }
-
-    // Show additional info if available
-    if (doorbellOnline)
-    {
-      char buffer[50];
-      sprintf(buffer, "RSSI: %d dBm", doorbellStatus.wifi_rssi);
-      lcd.drawString(buffer, 50, 300);
-    }
-  }
-  else
-  {
-    lcd.setTextColor(TFT_YELLOW);
-    lcd.drawString("Doorbell: Checking...", 50, 250);
-    lcd.setTextColor(TFT_WHITE);
-  }
-}
-
-void updateTouch()
-{
-  // Only read if interrupt fired
-  if (!touchDataReady)
-    return;
-  touchDataReady = false;
-
-  GSLX680_read_data();
-
-  // Update currentTouch struct
-  if (ts_event.fingers > 0)
-  {
-    currentTouch.x = ts_event.x1 & 0x0FFF;
-    currentTouch.y = ts_event.y1 & 0x0FFF;
-    currentTouch.isPressed = true;
-    currentTouch.timestamp = millis();
-  }
-  else
-  {
-    currentTouch.isPressed = false;
-  }
-
-  // Draw touch points DIRECTLY to LCD for immediate, responsive feedback
-  if (ts_event.fingers >= 1)
-  {
-    lcd.fillCircle(ts_event.x1 & 0x0FFF, ts_event.y1 & 0x0FFF, 5, TFT_RED);
-  }
-  if (ts_event.fingers >= 2)
-  {
-    lcd.fillCircle(ts_event.x2 & 0x0FFF, ts_event.y2 & 0x0FFF, 5, TFT_GREEN);
-  }
-  if (ts_event.fingers >= 3)
-  {
-    lcd.fillCircle(ts_event.x3 & 0x0FFF, ts_event.y3 & 0x0FFF, 5, TFT_BLUE);
-  }
-  if (ts_event.fingers >= 4)
-  {
-    lcd.fillCircle(ts_event.x4 & 0x0FFF, ts_event.y4 & 0x0FFF, 5, TFT_CYAN);
-  }
-  if (ts_event.fingers >= 5)
-  {
-    lcd.fillCircle(ts_event.x5 & 0x0FFF, ts_event.y5 & 0x0FFF, 5, TFT_MAGENTA);
-  }
-}
-
-void updateCapSensor()
-{
-  capSensorUpdate();
-
-  // Example: Check specific pads
-  // if (isPadPressed(0))
-  // {
-  //   Serial.println("Button 0 pressed!");
-  //   lcd.fillCircle(100, 100, 20, TFT_YELLOW);
-  // }
-}
-
-// Push sprites to display at controlled rate (50ms = 20 FPS max)
-void pushSpritesToDisplay()
-{
-  // Push top bar if updated (small: 800x40 = 64KB, ~8ms transfer)
-  if (topBarNeedsUpdate)
-  {
-    topBar.pushSprite(0, 0);
-    topBarNeedsUpdate = false;
-  }
-
-  // Push content if updated (larger: 800x440 = 704KB, ~88ms transfer)
-  if (contentNeedsUpdate)
-  {
-    contentArea.pushSprite(0, 40); // Position below top bar
-    contentNeedsUpdate = false;
-  }
-}
+// ============================================================================
+// Screen and capacitive sensor functions are now in separate files:
+// - screen_manager.cpp: updateTopBar(), updateContent(), updateTouch(),
+//                        pushSpritesToDisplay(), drawWifiSymbol()
+// - cap_sensor_manager.cpp: updateCapSensor()
+// ============================================================================
 
 // Task: Send hub's heartbeat to backend
 void sendHeartbeatTask()
@@ -535,30 +313,6 @@ void onFaceDetection(bool recognized, const char *name, float confidence)
   // TODO: Show notification based on recognized status
 
   contentNeedsUpdate = true; // Trigger content area update
-}
-
-// Draw WiFi symbol with signal strength indicator
-void drawWifiSymbol(int x, int y, int strength)
-{
-  // strength: 0=very weak/off, 1=weak, 2=medium, 3=strong
-  uint16_t color = (strength > 0) ? TFT_GREEN : TFT_RED;
-
-  // Draw dot at center
-  topBar.fillCircle(x, y, 2, color);
-
-  // Draw arcs based on strength using drawArc(x, y, r0, r1, angle0, angle1, color)
-  if (strength >= 1)
-  {
-    topBar.drawArc(x, y, 5, 6, 225, 315, color); // Smallest arc
-  }
-  if (strength >= 2)
-  {
-    topBar.drawArc(x, y, 9, 10, 225, 315, color); // Middle arc
-  }
-  if (strength >= 3)
-  {
-    topBar.drawArc(x, y, 13, 14, 225, 315, color); // Largest arc
-  }
 }
 
 // ============================================================================
