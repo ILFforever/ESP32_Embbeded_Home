@@ -1,5 +1,7 @@
 # UART Command Reference - Main Amp Module
 
+This repo is based on the Doorbell_Amp code
+
 All commands are JSON formatted and sent via UART (115200 baud).
 
 This module receives commands from the Main LCD hub and responds with status updates.
