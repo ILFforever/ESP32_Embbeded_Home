@@ -268,16 +268,30 @@ void sendFaceDetection(bool recognized, const char* name, float confidence, cons
   String host = (colonIdx > 0) ? serverUrl.substring(0, colonIdx) :
                 (slashIdx > 0) ? serverUrl.substring(0, slashIdx) : serverUrl;
   int port = (colonIdx > 0) ? serverUrl.substring(colonIdx + 1, (slashIdx > 0) ? slashIdx : serverUrl.length()).toInt() : 80;
-  String path = (slashIdx > 0) ? serverUrl.substring(slashIdx) : "/";
-  path += "/api/v1/devices/doorbell/face-detection";
+  String path = (slashIdx > 0) ? serverUrl.substring(slashIdx) : "";
+
+  // Ensure path construction avoids double slashes
+  if (path.length() == 0 || path == "/") {
+    path = "/api/v1/devices/doorbell/face-detection";
+  } else if (path.endsWith("/")) {
+    path += "api/v1/devices/doorbell/face-detection";
+  } else {
+    path += "/api/v1/devices/doorbell/face-detection";
+  }
 
   Serial.printf("[FaceDetection] Connecting to %s:%d%s\n", host.c_str(), port, path.c_str());
 
   WiFiClient client;
+
+  // Disable Nagle's algorithm for faster transmission
+  client.setNoDelay(true);
+
   if (!client.connect(host.c_str(), port)) {
     Serial.println("[FaceDetection] ✗ Connection failed");
     return;
   }
+
+  Serial.println("[FaceDetection] ✓ Connected to server");
 
   String boundary = "----ESP32Boundary" + String(millis());
 
@@ -333,26 +347,43 @@ void sendFaceDetection(bool recognized, const char* name, float confidence, cons
   if (imageData != nullptr && imageSize > 0) {
     client.print(imageHeader);
 
-    const size_t CHUNK_SIZE = 1024; // Send 1KB at a time
+    const size_t CHUNK_SIZE = 512; // Send 512 bytes at a time (reduced from 1KB for reliability)
     size_t sent = 0;
 
     Serial.printf("[FaceDetection] Sending image in chunks (%u bytes total)\n", imageSize);
 
     while (sent < imageSize) {
+      // Check if connection is still alive before writing
+      if (!client.connected()) {
+        Serial.printf("[FaceDetection] ✗ Connection lost at %u/%u bytes\n", sent, imageSize);
+        client.stop();
+        return;
+      }
+
       size_t toSend = min(CHUNK_SIZE, imageSize - sent);
       size_t written = client.write(imageData + sent, toSend);
 
       if (written != toSend) {
-        Serial.printf("[FaceDetection] ✗ Write failed at %u/%u bytes\n", sent, imageSize);
+        Serial.printf("[FaceDetection] ✗ Write failed at %u/%u bytes (expected %u, wrote %u)\n",
+                      sent, imageSize, toSend, written);
         client.stop();
         return;
       }
 
       sent += written;
 
-      // Small delay to let socket buffer drain
+      // Flush to ensure data is sent immediately
+      client.flush();
+
+      // Delay to let socket buffer drain and server process data
       if (sent < imageSize) {
-        delay(10);
+        delay(50); // Increased from 10ms to 50ms for better reliability
+      }
+
+      // Progress indicator every 2KB
+      if (sent % 2048 == 0) {
+        Serial.printf("[FaceDetection] Progress: %u/%u bytes (%.1f%%)\n",
+                      sent, imageSize, (sent * 100.0) / imageSize);
       }
     }
 
