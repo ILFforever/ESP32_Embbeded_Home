@@ -31,12 +31,13 @@ interface BackendDevice {
   device_id: string;
   type: string;
   name: string;
+  online: boolean; // Computed by backend from expireAt
   last_seen: string | null;
   uptime_ms: number;
   free_heap: number;
   wifi_rssi: number;
   ip_address: string | null;
-  expireAt: any; // Firebase Timestamp - device is online if expireAt is in the future
+  expireAt: any; // Firebase Timestamp - used by backend to compute online status
 }
 
 interface BackendDevicesResponse {
@@ -356,21 +357,10 @@ export function findHubDevice(devices: BackendDevice[]): BackendDevice | null {
   return devices.find(device => device.type === 'hub' || device.type === 'main_lcd') || null;
 }
 
-// Helper function to check if a device is online based on expireAt timestamp
-export function isDeviceOnline(expireAt: any): boolean {
-  if (!expireAt) return false;
-
-  // Handle Firebase Timestamp object
-  const expireTime = expireAt._seconds ? expireAt._seconds * 1000 : new Date(expireAt).getTime();
-  const now = Date.now();
-
-  return expireTime > now;
-}
-
 // Helper function to get device status class for styling
-export function getDeviceStatusClass(expireAt: any, lastSeen: string | null): string {
-  // Check if device is online based on expireAt
-  if (isDeviceOnline(expireAt)) return 'status-online';
+export function getDeviceStatusClass(online: boolean, lastSeen: string | null): string {
+  // Backend provides online boolean
+  if (online) return 'status-online';
 
   // If offline, check how long ago it was last seen
   if (!lastSeen) return 'status-offline';
@@ -384,9 +374,9 @@ export function getDeviceStatusClass(expireAt: any, lastSeen: string | null): st
 }
 
 // Helper function to get human-readable device status text
-export function getDeviceStatusText(expireAt: any, lastSeen: string | null): string {
-  // Check if device is online based on expireAt
-  if (isDeviceOnline(expireAt)) return 'ONLINE';
+export function getDeviceStatusText(online: boolean, lastSeen: string | null): string {
+  // Backend provides online boolean
+  if (online) return 'ONLINE';
 
   // If offline, show how long ago it was last seen
   if (!lastSeen) return 'OFFLINE';
