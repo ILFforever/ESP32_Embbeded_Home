@@ -16,7 +16,7 @@ import {
   generateMockTemperatureData,
   generateMockGasReadings,
   generateMockDoorsWindows,
-  generateMockDoorbellControl,
+  getDoorbellControlStatus,
   generateMockSecurityDevices
 } from '@/services/devices.service';
 import type { DevicesStatus } from '@/types/dashboard';
@@ -24,6 +24,7 @@ import type { DevicesStatus } from '@/types/dashboard';
 export default function DashboardPage() {
   const router = useRouter();
   const [devicesStatus, setDevicesStatus] = useState<DevicesStatus | null>(null);
+  const [doorbellControl, setDoorbellControl] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [theme, setTheme] = useState<'purple' | 'green'>('purple');
   const [expandedCard, setExpandedCard] = useState<string | null>(null);
@@ -32,8 +33,13 @@ export default function DashboardPage() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const devices = await getAllDevices();
+        // Fetch both devices status and doorbell control status
+        const [devices, doorbell] = await Promise.all([
+          getAllDevices(),
+          getDoorbellControlStatus()
+        ]);
         setDevicesStatus(devices);
+        setDoorbellControl(doorbell);
       } catch (error) {
         console.error('Error loading devices:', error);
       } finally {
@@ -42,7 +48,8 @@ export default function DashboardPage() {
     };
 
     fetchData();
-    const interval = setInterval(fetchData, 30000);
+    // Refresh every 5 seconds for more real-time updates
+    const interval = setInterval(fetchData, 5000);
     return () => clearInterval(interval);
   }, []);
 
@@ -72,13 +79,21 @@ export default function DashboardPage() {
     setExpandedCard(null);
   };
 
-  // Generate mock data
+  // Generate mock data for features not yet implemented
   const alerts = generateMockAlerts();
   const temperatureData = generateMockTemperatureData();
   const gasReadings = generateMockGasReadings();
   const doorsWindows = generateMockDoorsWindows();
-  const doorbellControl = generateMockDoorbellControl();
   const securityDevices = generateMockSecurityDevices();
+
+  // Use real doorbell control data (fetched from state)
+  const doorbellControlData = doorbellControl || {
+    camera_active: false,
+    mic_active: false,
+    face_recognition: false,
+    last_activity: new Date().toISOString(),
+    visitor_count_today: 0
+  };
 
   if (loading) {
     return (
@@ -111,7 +126,7 @@ export default function DashboardPage() {
         content = <DoorsWindowsCard doorsWindows={doorsWindows} isExpanded={true} />;
         break;
       case 'doorbell':
-        content = <DoorbellControlCard doorbellControl={doorbellControl} isExpanded={true} />;
+        content = <DoorbellControlCard doorbellControl={doorbellControlData} isExpanded={true} />;
         break;
       case 'security':
         content = <SecurityCard securityDevices={securityDevices} isExpanded={true} />;
@@ -309,7 +324,7 @@ export default function DashboardPage() {
                   <circle cx="12" cy="12" r="3"></circle>
                 </svg>
               </button>
-              <DoorbellControlCard doorbellControl={doorbellControl} />
+              <DoorbellControlCard doorbellControl={doorbellControlData} />
             </div>
 
             <div
