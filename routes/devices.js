@@ -12,7 +12,10 @@ const {
   handleFaceDetection,
   handleHubLog,
   handleDoorbellStatus,
-  getDoorbellStatus
+  getDoorbellStatus,
+  sendDeviceCommand,
+  fetchPendingCommands,
+  acknowledgeCommand
 } = require('../controllers/devices');
 const { authenticateDevice } = require('../middleware/deviceAuth');
 
@@ -91,5 +94,24 @@ router.get('/:device_id/history', getDeviceHistory);
 // @desc    Get doorbell status from Firebase (data pushed by doorbell, not proxy)
 // @access  Public
 router.get('/doorbell/:device_id/status', getDoorbellStatus);
+
+// ============================================================================
+// Command Queue Routes (Ping-Pong Command System - replaces MQTT)
+// ============================================================================
+
+// @route   POST /api/v1/devices/:device_id/command
+// @desc    Send command to device (queued in Firebase, device fetches on heartbeat)
+// @access  Public (TODO: Add user auth)
+router.post('/:device_id/command', sendDeviceCommand);
+
+// @route   POST /api/v1/devices/commands/pending
+// @desc    Device fetches pending commands (called when has_pending_commands=true)
+// @access  Private (requires device token)
+router.post('/commands/pending', authenticateDevice, fetchPendingCommands);
+
+// @route   POST /api/v1/devices/commands/ack
+// @desc    Device acknowledges command execution
+// @access  Private (requires device token)
+router.post('/commands/ack', authenticateDevice, acknowledgeCommand);
 
 module.exports = router;

@@ -149,6 +149,7 @@ const registerDevice = async (req, res) => {
 // ============================================================================
 // @route   POST /api/v1/devices/heartbeat
 // @desc    Receive device heartbeat - ALWAYS respond OK, throttle Firebase writes
+//          Also notify device if there are pending commands to fetch
 // ============================================================================
 const handleHeartbeat = async (req, res) => {
   try {
@@ -173,12 +174,12 @@ const handleHeartbeat = async (req, res) => {
 
     // Check if we should write to Firebase (throttling logic)
     const shouldWrite = shouldWriteToFirebase(device_id, heartbeatData, 'heartbeat');
+    const db = getFirestore();
+    const deviceRef = db.collection('devices').doc(device_id);
 
     if (shouldWrite) {
       console.log(`[Heartbeat] ${device_id} - Writing to Firebase`);
 
-      const db = getFirestore();
-      const deviceRef = db.collection('devices').doc(device_id);
       const now = admin.firestore.FieldValue.serverTimestamp();
       const statusExpireAt = getStatusExpiration();
       const historyExpireAt = getHistoryExpiration();
@@ -213,11 +214,31 @@ const handleHeartbeat = async (req, res) => {
       console.log(`[Heartbeat] ${device_id} - Throttled (no Firebase write)`);
     }
 
+    // Check for pending commands (lightweight query)
+    let hasPendingCommands = false;
+    try {
+      const pendingCommandsSnapshot = await deviceRef
+        .collection('commands')
+        .where('status', '==', 'pending')
+        .limit(1)
+        .get();
+
+      hasPendingCommands = !pendingCommandsSnapshot.empty;
+
+      if (hasPendingCommands) {
+        console.log(`[Heartbeat] ${device_id} - Has pending commands, notifying device`);
+      }
+    } catch (cmdError) {
+      console.error('[Heartbeat] Error checking commands:', cmdError);
+      // Non-blocking - continue with heartbeat response
+    }
+
     // ALWAYS respond OK to ESP32 (so it knows backend is alive)
     res.json({
       status: 'ok',
       message: 'Heartbeat received',
       written: shouldWrite, // For debugging
+      has_pending_commands: hasPendingCommands, // NEW: Tell device to fetch commands
       next_write_in: shouldWrite ? WRITE_INTERVAL_MS : Math.max(0, WRITE_INTERVAL_MS - (Date.now() - (deviceCache.get(device_id)?.lastWriteTime || 0)))
     });
 
@@ -711,6 +732,168 @@ const getDoorbellStatus = async (req, res) => {
   }
 };
 
+// ============================================================================
+// @route   POST /api/v1/devices/:device_id/command
+// @desc    Send command to device (queued, device fetches on next heartbeat)
+// ============================================================================
+const sendDeviceCommand = async (req, res) => {
+  try {
+    const { device_id } = req.params;
+    const { action, params } = req.body;
+
+    // Validate action
+    const validActions = [
+      'camera_start', 'camera_stop',
+      'mic_start', 'mic_stop',
+      'recording_start', 'recording_stop',
+      'reboot', 'update_config'
+    ];
+
+    if (!action || !validActions.includes(action)) {
+      return res.status(400).json({
+        status: 'error',
+        message: `Invalid action. Must be one of: ${validActions.join(', ')}`
+      });
+    }
+
+    const db = getFirestore();
+    const deviceRef = db.collection('devices').doc(device_id);
+
+    // Verify device exists
+    const deviceDoc = await deviceRef.get();
+    if (!deviceDoc.exists) {
+      return res.status(404).json({
+        status: 'error',
+        message: 'Device not found'
+      });
+    }
+
+    // Create command document
+    const commandRef = await deviceRef.collection('commands').add({
+      action,
+      params: params || {},
+      status: 'pending',
+      created_at: admin.firestore.FieldValue.serverTimestamp(),
+      executed_at: null,
+      result: null
+    });
+
+    console.log(`[SendCommand] ${device_id} - Queued command: ${action} (ID: ${commandRef.id})`);
+
+    res.json({
+      status: 'ok',
+      message: 'Command queued. Device will fetch on next heartbeat.',
+      command_id: commandRef.id,
+      action
+    });
+
+  } catch (error) {
+    console.error('[SendCommand] Error:', error);
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+};
+
+// ============================================================================
+// @route   GET /api/v1/devices/commands/pending
+// @desc    Device fetches pending commands (called when heartbeat says has_pending_commands=true)
+// ============================================================================
+const fetchPendingCommands = async (req, res) => {
+  try {
+    const { device_id } = req.body;
+
+    if (!device_id) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'device_id is required'
+      });
+    }
+
+    const db = getFirestore();
+    const deviceRef = db.collection('devices').doc(device_id);
+
+    // Get all pending commands
+    const pendingCommandsSnapshot = await deviceRef
+      .collection('commands')
+      .where('status', '==', 'pending')
+      .orderBy('created_at', 'asc')
+      .get();
+
+    const commands = [];
+    pendingCommandsSnapshot.forEach(doc => {
+      commands.push({
+        id: doc.id,
+        action: doc.data().action,
+        params: doc.data().params || {},
+        created_at: doc.data().created_at
+      });
+    });
+
+    console.log(`[FetchCommands] ${device_id} - Returning ${commands.length} pending command(s)`);
+
+    res.json({
+      status: 'ok',
+      count: commands.length,
+      commands
+    });
+
+  } catch (error) {
+    console.error('[FetchCommands] Error:', error);
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+};
+
+// ============================================================================
+// @route   POST /api/v1/devices/commands/ack
+// @desc    Device acknowledges command execution (success or failure)
+// ============================================================================
+const acknowledgeCommand = async (req, res) => {
+  try {
+    const { device_id, command_id, success, result, error } = req.body;
+
+    if (!device_id || !command_id) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'device_id and command_id are required'
+      });
+    }
+
+    const db = getFirestore();
+    const commandRef = db
+      .collection('devices')
+      .doc(device_id)
+      .collection('commands')
+      .doc(command_id);
+
+    // Verify command exists
+    const commandDoc = await commandRef.get();
+    if (!commandDoc.exists) {
+      return res.status(404).json({
+        status: 'error',
+        message: 'Command not found'
+      });
+    }
+
+    // Update command status
+    await commandRef.update({
+      status: success ? 'completed' : 'failed',
+      executed_at: admin.firestore.FieldValue.serverTimestamp(),
+      result: result || null,
+      error: error || null
+    });
+
+    console.log(`[AckCommand] ${device_id} - Command ${command_id} ${success ? 'completed' : 'failed'}`);
+
+    res.json({
+      status: 'ok',
+      message: 'Command acknowledgment received'
+    });
+
+  } catch (error) {
+    console.error('[AckCommand] Error:', error);
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+};
+
 module.exports = {
   registerDevice,
   handleHeartbeat,
@@ -722,5 +905,8 @@ module.exports = {
   handleFaceDetection,
   handleHubLog,
   handleDoorbellStatus,
-  getDoorbellStatus
+  getDoorbellStatus,
+  sendDeviceCommand,
+  fetchPendingCommands,
+  acknowledgeCommand
 };
