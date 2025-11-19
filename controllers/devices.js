@@ -185,7 +185,7 @@ const handleHeartbeat = async (req, res) => {
       const historyExpireAt = getHistoryExpiration();
 
       // Write current status WITH TTL - auto-deletes if device goes offline
-      await deviceRef.collection('status').doc('current').set({
+      await deviceRef.collection('live_status').doc('heartbeat').set({
         ...heartbeatData,
         last_heartbeat: now,
         updated_at: now,
@@ -317,8 +317,8 @@ const getDeviceStatus = async (req, res) => {
 
     const statusDoc = await db.collection('devices')
       .doc(device_id)
-      .collection('status')
-      .doc('current')
+      .collection('live_status')
+      .doc('heartbeat')
       .get();
 
     if (statusDoc.exists) {
@@ -374,7 +374,7 @@ const getAllDevicesStatus = async (req, res) => {
       const deviceData = deviceDoc.data();
 
       // Get status subcollection
-      const statusDoc = await deviceDoc.ref.collection('status').doc('current').get();
+      const statusDoc = await deviceDoc.ref.collection('live_status').doc('heartbeat').get();
 
       if (statusDoc.exists) {
         // Document exists - calculate online status from expireAt
@@ -666,7 +666,7 @@ const handleHubLog = async (req, res) => {
 
     // If it's an error, also update device status
     if (level === 'error') {
-      await deviceRef.collection('status').doc('current').set({
+      await deviceRef.collection('live_status').doc('heartbeat').set({
         last_error: message,
         last_error_time: admin.firestore.FieldValue.serverTimestamp()
       }, { merge: true });
@@ -729,7 +729,7 @@ const handleDoorbellStatus = async (req, res) => {
     if (free_heap !== undefined) doorbellStatus.free_heap = free_heap;
     if (wifi_rssi !== undefined) doorbellStatus.wifi_rssi = wifi_rssi;
 
-    await deviceRef.collection('status').doc('doorbell').set(doorbellStatus, { merge: true });
+    await deviceRef.collection('live_status').doc('device_state').set(doorbellStatus, { merge: true });
 
     // ALSO update the main status document to reset TTL (acts as heartbeat)
     const heartbeatData = {
@@ -745,7 +745,7 @@ const handleDoorbellStatus = async (req, res) => {
     if (free_heap !== undefined) heartbeatData.free_heap = free_heap;
     if (wifi_rssi !== undefined) heartbeatData.wifi_rssi = wifi_rssi;
 
-    await deviceRef.collection('status').doc('current').set(heartbeatData, { merge: true });
+    await deviceRef.collection('live_status').doc('heartbeat').set(heartbeatData, { merge: true });
 
     // Update device metadata
     await deviceRef.set({
@@ -778,8 +778,8 @@ const getDoorbellStatus = async (req, res) => {
     // Get doorbell status from Firebase
     const statusDoc = await db.collection('devices')
       .doc(device_id)
-      .collection('status')
-      .doc('doorbell')
+      .collection('live_status')
+      .doc('device_state')
       .get();
 
     if (!statusDoc.exists) {
