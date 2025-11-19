@@ -1,7 +1,6 @@
 const { getFirestore, admin } = require('../config/firebase');
 const { publishFaceDetection } = require('../config/mqtt');
 const crypto = require('crypto');
-const axios = require('axios');
 
 // ============================================================================
 // In-Memory Cache for Throttling (reduces Firebase writes by 95%)
@@ -495,6 +494,7 @@ const handleFaceDetection = async (req, res) => {
     console.log(`[FaceDetection] ${device_id} - Face detection event received`);
     console.log(`  Recognized: ${recognized}, Name: ${name || 'Unknown'}, Confidence: ${confidence || 0}`);
     console.log(`  Image: ${imageFile ? `${imageFile.size} bytes (${imageFile.mimetype})` : 'None'}`);
+    console.log(`  Buffer available: ${imageFile && imageFile.buffer ? 'Yes' : 'No'}`);
 
     const db = getFirestore();
     const deviceRef = db.collection('devices').doc(device_id);
@@ -502,28 +502,34 @@ const handleFaceDetection = async (req, res) => {
     let imageUrl = null;
 
     // Upload image to Firebase Storage if provided
-    if (imageFile && imageFile.buffer) {
+    if (imageFile && imageFile.buffer && imageFile.buffer.length > 0) {
       try {
         const bucket = admin.storage().bucket();
         const fileName = `face_detections/${device_id}/${Date.now()}.jpg`;
         const file = bucket.file(fileName);
 
-        // Upload the image buffer
+        console.log(`[FaceDetection] Uploading ${imageFile.buffer.length} bytes to ${fileName}`);
+
+        // Upload the image buffer with timeout
         await file.save(imageFile.buffer, {
           metadata: {
             contentType: imageFile.mimetype || 'image/jpeg',
           },
           public: true, // Make publicly accessible
+          timeout: 30000 // 30 second timeout for upload
         });
 
         // Get public URL
         imageUrl = `https://storage.googleapis.com/${bucket.name}/${fileName}`;
 
-        console.log(`[FaceDetection] Image uploaded to Firebase Storage: ${imageUrl}`);
+        console.log(`[FaceDetection] Image uploaded successfully: ${imageUrl}`);
       } catch (uploadError) {
         console.error('[FaceDetection] Failed to upload image to Firebase Storage:', uploadError);
+        console.error('[FaceDetection] Upload error details:', uploadError.message);
         // Continue without image URL - non-blocking error
       }
+    } else {
+      console.warn('[FaceDetection] No valid image buffer received');
     }
 
     // Create face detection event data
@@ -542,18 +548,24 @@ const handleFaceDetection = async (req, res) => {
     console.log(`[FaceDetection] ${device_id} - Saved to Firebase with ID: ${eventRef.id}`);
 
     // Publish to MQTT for instant hub notification
-    await publishFaceDetection({
-      device_id,
-      recognized: faceDetectionEvent.recognized,
-      name: name || 'Unknown',
-      confidence: confidence ? parseFloat(confidence) : 0,
-      event_id: eventRef.id
-    });
+    try {
+      await publishFaceDetection({
+        device_id,
+        recognized: faceDetectionEvent.recognized,
+        name: name || 'Unknown',
+        confidence: confidence ? parseFloat(confidence) : 0,
+        event_id: eventRef.id,
+        image_url: imageUrl
+      });
+    } catch (mqttError) {
+      console.error('[FaceDetection] MQTT publish failed:', mqttError);
+      // Non-blocking - event still saved to Firebase
+    }
 
     // Respond to doorbell device
     res.json({
       status: 'ok',
-      message: 'Face detection event saved and published to hub',
+      message: 'Face detection event saved' + (imageUrl ? ' with image' : ' (no image)'),
       event_id: eventRef.id,
       image_url: imageUrl,
       timestamp: Date.now()
@@ -561,7 +573,12 @@ const handleFaceDetection = async (req, res) => {
 
   } catch (error) {
     console.error('[FaceDetection] Error:', error);
-    res.status(500).json({ status: 'error', message: error.message });
+    console.error('[FaceDetection] Error stack:', error.stack);
+    res.status(500).json({
+      status: 'error',
+      message: error.message,
+      details: process.env.NODE_ENV === 'development' ? error.stack : undefined
+    });
   }
 };
 
@@ -619,149 +636,78 @@ const handleHubLog = async (req, res) => {
 };
 
 // ============================================================================
-// @route   GET /api/v1/devices/doorbell/:device_id/info
-// @desc    Get doorbell device info (proxies request to ESP32)
+// @route   POST /api/v1/devices/doorbell/status
+// @desc    Doorbell pushes its status/info to server (camera state, etc.)
 // ============================================================================
-const getDoorbellInfo = async (req, res) => {
+const handleDoorbellStatus = async (req, res) => {
   try {
-    const { device_id } = req.params;
+    const { device_id, camera_active, mic_active, recording, motion_detected, battery_level } = req.body;
+
+    if (!device_id) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'device_id is required'
+      });
+    }
+
+    console.log(`[DoorbellStatus] ${device_id} - Received status update`);
+
     const db = getFirestore();
+    const deviceRef = db.collection('devices').doc(device_id);
 
-    // Get device from Firebase to find its IP address
-    const deviceDoc = await db.collection('devices').doc(device_id).get();
+    // Update doorbell-specific status in Firebase
+    await deviceRef.collection('status').doc('doorbell').set({
+      camera_active: camera_active || false,
+      mic_active: mic_active || false,
+      recording: recording || false,
+      motion_detected: motion_detected || false,
+      battery_level: battery_level || null,
+      last_updated: admin.firestore.FieldValue.serverTimestamp()
+    }, { merge: true });
 
-    if (!deviceDoc.exists) {
-      return res.status(404).json({
-        status: 'error',
-        message: 'Device not found'
-      });
-    }
-
-    // Get current status which contains IP address
-    const statusDoc = await deviceDoc.ref.collection('status').doc('current').get();
-
-    if (!statusDoc.exists || !statusDoc.data().ip_address) {
-      return res.status(503).json({
-        status: 'error',
-        message: 'Device is offline or IP address not available'
-      });
-    }
-
-    const deviceIP = statusDoc.data().ip_address;
-
-    // Proxy request to ESP32 device
-    console.log(`[DoorbellInfo] Proxying request to http://${deviceIP}/info`);
-
-    const response = await axios.get(`http://${deviceIP}/info`, {
-      timeout: 5000  // 5 second timeout
-    });
-
-    // Return ESP32 response data
     res.json({
       status: 'ok',
-      device_id,
-      data: response.data
+      message: 'Doorbell status updated'
     });
 
   } catch (error) {
-    console.error('[DoorbellInfo] Error:', error.message);
-
-    if (error.code === 'ECONNREFUSED' || error.code === 'ETIMEDOUT') {
-      res.status(503).json({
-        status: 'error',
-        message: 'Failed to connect to doorbell device'
-      });
-    } else {
-      res.status(500).json({
-        status: 'error',
-        message: error.message
-      });
-    }
+    console.error('[DoorbellStatus] Error:', error);
+    res.status(500).json({ status: 'error', message: error.message });
   }
 };
 
 // ============================================================================
-// @route   POST /api/v1/devices/doorbell/:device_id/control
-// @desc    Control doorbell device (proxies commands to ESP32)
+// @route   GET /api/v1/devices/doorbell/:device_id/status
+// @desc    Get doorbell status from Firebase (not proxy - data pushed by doorbell)
 // ============================================================================
-const controlDoorbell = async (req, res) => {
+const getDoorbellStatus = async (req, res) => {
   try {
     const { device_id } = req.params;
-    const { action } = req.body;
-
-    // Validate action
-    const validActions = ['camera_start', 'camera_stop', 'mic_start', 'mic_stop', 'ping'];
-    if (!action || !validActions.includes(action)) {
-      return res.status(400).json({
-        status: 'error',
-        message: `Invalid action. Must be one of: ${validActions.join(', ')}`
-      });
-    }
-
     const db = getFirestore();
 
-    // Get device from Firebase to find its IP address
-    const deviceDoc = await db.collection('devices').doc(device_id).get();
+    // Get doorbell status from Firebase
+    const statusDoc = await db.collection('devices')
+      .doc(device_id)
+      .collection('status')
+      .doc('doorbell')
+      .get();
 
-    if (!deviceDoc.exists) {
+    if (!statusDoc.exists) {
       return res.status(404).json({
         status: 'error',
-        message: 'Device not found'
+        message: 'No doorbell status found. Device may not have sent status yet.'
       });
     }
 
-    // Get current status which contains IP address
-    const statusDoc = await deviceDoc.ref.collection('status').doc('current').get();
-
-    if (!statusDoc.exists || !statusDoc.data().ip_address) {
-      return res.status(503).json({
-        status: 'error',
-        message: 'Device is offline or IP address not available'
-      });
-    }
-
-    const deviceIP = statusDoc.data().ip_address;
-
-    // Map actions to ESP32 endpoints
-    const endpoints = {
-      camera_start: '/camera/start',
-      camera_stop: '/camera/stop',
-      mic_start: '/mic/start',
-      mic_stop: '/mic/stop',
-      ping: '/ping'
-    };
-
-    const endpoint = endpoints[action];
-
-    // Proxy request to ESP32 device
-    console.log(`[DoorbellControl] Proxying ${action} to http://${deviceIP}${endpoint}`);
-
-    const response = await axios.get(`http://${deviceIP}${endpoint}`, {
-      timeout: 10000  // 10 second timeout for commands
-    });
-
-    // Return ESP32 response
     res.json({
       status: 'ok',
       device_id,
-      action,
-      result: response.data
+      data: statusDoc.data()
     });
 
   } catch (error) {
-    console.error('[DoorbellControl] Error:', error.message);
-
-    if (error.code === 'ECONNREFUSED' || error.code === 'ETIMEDOUT') {
-      res.status(503).json({
-        status: 'error',
-        message: 'Failed to connect to doorbell device'
-      });
-    } else {
-      res.status(500).json({
-        status: 'error',
-        message: error.message
-      });
-    }
+    console.error('[GetDoorbellStatus] Error:', error);
+    res.status(500).json({ status: 'error', message: error.message });
   }
 };
 
@@ -775,6 +721,6 @@ module.exports = {
   handleDoorbellRing,
   handleFaceDetection,
   handleHubLog,
-  getDoorbellInfo,
-  controlDoorbell
+  handleDoorbellStatus,
+  getDoorbellStatus
 };
