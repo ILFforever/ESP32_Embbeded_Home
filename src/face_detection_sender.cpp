@@ -53,7 +53,6 @@ static void sendFaceDetectionBlocking(FaceDetectionEvent* event) {
     Serial.printf("[FaceDetectionSender] Connecting to %s:%d%s\n", host.c_str(), port, path.c_str());
 
     WiFiClient client;
-    client.setNoDelay(true);
 
     if (!client.connect(host.c_str(), port)) {
         Serial.println("[FaceDetectionSender] ✗ Connection failed");
@@ -62,6 +61,9 @@ static void sendFaceDetectionBlocking(FaceDetectionEvent* event) {
     }
 
     Serial.println("[FaceDetectionSender] ✓ Connected");
+
+    // Disable Nagle's algorithm for faster transmission (must be after connect)
+    client.setNoDelay(true);
 
     String boundary = "----ESP32Boundary" + String(millis());
 

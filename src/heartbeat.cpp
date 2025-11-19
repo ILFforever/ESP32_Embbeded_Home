@@ -299,15 +299,15 @@ void sendFaceDetection(bool recognized, const char* name, float confidence, cons
 
   WiFiClient client;
 
-  // Disable Nagle's algorithm for faster transmission
-  client.setNoDelay(true);
-
   if (!client.connect(host.c_str(), port)) {
     Serial.println("[FaceDetection] ✗ Connection failed");
     return;
   }
 
   Serial.println("[FaceDetection] ✓ Connected to server");
+
+  // Disable Nagle's algorithm for faster transmission (must be after connect)
+  client.setNoDelay(true);
 
   String boundary = "----ESP32Boundary" + String(millis());
 
