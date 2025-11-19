@@ -37,4 +37,10 @@ bool sendFaceDetectionAsync(bool recognized, const char* name, float confidence,
 bool getLastHeartbeatSuccess();
 unsigned long getLastHeartbeatTime();
 
+// Ping-Pong Command Queue (NEW)
+// These functions are called automatically by sendHeartbeat() when server indicates pending commands
+void fetchAndExecuteCommands();
+bool executeCommand(String action, JsonObject params);
+void acknowledgeCommand(String commandId, bool success, String action);
+
 #endif

@@ -31,6 +31,7 @@ void initHeartbeat(const char* serverUrl, const char* deviceId, const char* devi
 
 // ============================================================================
 // Send heartbeat to backend server
+// Now checks for pending commands and fetches them automatically
 // ============================================================================
 void sendHeartbeat() {
   // Check WiFi connection
@@ -77,15 +78,28 @@ void sendHeartbeat() {
       lastHeartbeatSuccess = true;
       lastHeartbeatTime = millis();
 
-      // Optional: Parse response to see if data was written to Firebase
+      // Parse response to check for pending commands
       StaticJsonDocument<1024> responseDoc;
       DeserializationError error = deserializeJson(responseDoc, response);
-      if (!error && responseDoc.containsKey("written")) {
-        bool written = responseDoc["written"];
-        if (written) {
-          Serial.println("[Heartbeat] → Written to Firebase");
-        } else {
-          Serial.println("[Heartbeat] → Throttled (cached)");
+      if (!error) {
+        // Check if data was written to Firebase
+        if (responseDoc.containsKey("written")) {
+          bool written = responseDoc["written"];
+          if (written) {
+            Serial.println("[Heartbeat] → Written to Firebase");
+          } else {
+            Serial.println("[Heartbeat] → Throttled (cached)");
+          }
+        }
+
+        // NEW: Check for pending commands
+        if (responseDoc.containsKey("has_pending_commands")) {
+          bool hasPendingCommands = responseDoc["has_pending_commands"];
+          if (hasPendingCommands) {
+            Serial.println("[Heartbeat] → Server says we have pending commands!");
+            // Immediately fetch and execute commands
+            fetchAndExecuteCommands();
+          }
         }
       }
     } else {
@@ -466,6 +480,177 @@ bool sendFaceDetectionAsync(bool recognized, const char* name, float confidence,
   }
 
   return success;
+}
+
+// ============================================================================
+// Fetch and execute pending commands from backend
+// ============================================================================
+void fetchAndExecuteCommands() {
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("[Commands] WiFi not connected - cannot fetch commands");
+    return;
+  }
+
+  HTTPClient http;
+  String url = String(BACKEND_SERVER_URL) + "/api/v1/devices/commands/pending";
+
+  http.begin(url);
+  http.addHeader("Content-Type", "application/json");
+
+  // Add Authorization header with Bearer token
+  if (DEVICE_API_TOKEN && strlen(DEVICE_API_TOKEN) > 0) {
+    String authHeader = String("Bearer ") + DEVICE_API_TOKEN;
+    http.addHeader("Authorization", authHeader.c_str());
+  }
+
+  http.setTimeout(5000);
+
+  // Build JSON payload
+  StaticJsonDocument<256> doc;
+  doc["device_id"] = DEVICE_ID;
+
+  String jsonString;
+  serializeJson(doc, jsonString);
+
+  // Send POST request
+  int httpResponseCode = http.POST(jsonString);
+
+  if (httpResponseCode == 200) {
+    String response = http.getString();
+
+    // Parse response
+    StaticJsonDocument<2048> responseDoc;
+    DeserializationError error = deserializeJson(responseDoc, response);
+
+    if (!error && responseDoc.containsKey("commands")) {
+      JsonArray commands = responseDoc["commands"];
+      int commandCount = commands.size();
+
+      Serial.printf("[Commands] Fetched %d pending command(s)\n", commandCount);
+
+      for (JsonObject cmd : commands) {
+        String commandId = cmd["id"].as<String>();
+        String action = cmd["action"].as<String>();
+        JsonObject params = cmd["params"];
+
+        Serial.printf("[Commands] Executing: %s (ID: %s)\n", action.c_str(), commandId.c_str());
+
+        // Execute command
+        bool success = executeCommand(action, params);
+
+        // Acknowledge execution
+        acknowledgeCommand(commandId, success, action);
+      }
+    }
+  } else {
+    Serial.printf("[Commands] Failed to fetch (code: %d)\n", httpResponseCode);
+  }
+
+  http.end();
+}
+
+// ============================================================================
+// Execute a command received from backend
+// ============================================================================
+bool executeCommand(String action, JsonObject params) {
+  Serial.printf("[Commands] Executing action: %s\n", action.c_str());
+
+  // Import uart_commands.h functions
+  extern void sendUARTCommand(const char* command);
+  extern void sendUARTCommand(const char* command, const char* param);
+
+  if (action == "camera_start") {
+    sendUARTCommand("camera_control", "camera_start");
+    return true;
+  }
+  else if (action == "camera_stop") {
+    sendUARTCommand("camera_control", "camera_stop");
+    return true;
+  }
+  else if (action == "mic_start") {
+    // Mic control not implemented yet
+    Serial.println("[Commands] Mic control not implemented");
+    return false;
+  }
+  else if (action == "mic_stop") {
+    // Mic control not implemented yet
+    Serial.println("[Commands] Mic control not implemented");
+    return false;
+  }
+  else if (action == "recording_start") {
+    // Start face detection/recognition
+    sendUARTCommand("resume_detection");
+    return true;
+  }
+  else if (action == "recording_stop") {
+    sendUARTCommand("stop_detection");
+    return true;
+  }
+  else if (action == "reboot") {
+    Serial.println("[Commands] Rebooting in 3 seconds...");
+    delay(3000);
+    ESP.restart();
+    return true; // Won't reach here but for completeness
+  }
+  else if (action == "update_config") {
+    // Config update not implemented yet
+    Serial.println("[Commands] Config update not implemented");
+    return false;
+  }
+  else {
+    Serial.printf("[Commands] Unknown action: %s\n", action.c_str());
+    return false;
+  }
+}
+
+// ============================================================================
+// Acknowledge command execution to backend
+// ============================================================================
+void acknowledgeCommand(String commandId, bool success, String action) {
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("[Commands] WiFi not connected - cannot acknowledge");
+    return;
+  }
+
+  HTTPClient http;
+  String url = String(BACKEND_SERVER_URL) + "/api/v1/devices/commands/ack";
+
+  http.begin(url);
+  http.addHeader("Content-Type", "application/json");
+
+  // Add Authorization header with Bearer token
+  if (DEVICE_API_TOKEN && strlen(DEVICE_API_TOKEN) > 0) {
+    String authHeader = String("Bearer ") + DEVICE_API_TOKEN;
+    http.addHeader("Authorization", authHeader.c_str());
+  }
+
+  http.setTimeout(5000);
+
+  // Build JSON payload
+  StaticJsonDocument<512> doc;
+  doc["device_id"] = DEVICE_ID;
+  doc["command_id"] = commandId;
+  doc["success"] = success;
+  if (success) {
+    doc["result"] = "Command executed: " + action;
+  } else {
+    doc["error"] = "Failed to execute: " + action;
+  }
+
+  String jsonString;
+  serializeJson(doc, jsonString);
+
+  // Send POST request
+  int httpResponseCode = http.POST(jsonString);
+
+  if (httpResponseCode == 200) {
+    Serial.printf("[Commands] ✓ Acknowledged command %s (%s)\n",
+                  commandId.c_str(), success ? "success" : "failed");
+  } else {
+    Serial.printf("[Commands] ✗ Failed to acknowledge (code: %d)\n", httpResponseCode);
+  }
+
+  http.end();
 }
 
 // ============================================================================
