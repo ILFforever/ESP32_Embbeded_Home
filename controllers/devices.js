@@ -1,5 +1,5 @@
 const { getFirestore, admin } = require('../config/firebase');
-const { publishFaceDetection } = require('../config/mqtt');
+const { publishFaceDetection, publishDeviceCommand } = require('../config/mqtt');
 const crypto = require('crypto');
 
 // ============================================================================
@@ -858,9 +858,12 @@ const sendDeviceCommand = async (req, res) => {
 
     console.log(`[SendCommand] ${device_id} - Queued command: ${action} (ID: ${commandRef.id})`);
 
+    // Notify device via MQTT to fetch commands immediately (faster than waiting for heartbeat)
+    await publishDeviceCommand(device_id, commandRef.id, action);
+
     res.json({
       status: 'ok',
-      message: 'Command queued. Device will fetch on next heartbeat.',
+      message: 'Command queued and device notified via MQTT.',
       command_id: commandRef.id,
       action
     });
@@ -1005,9 +1008,12 @@ const startCamera = async (req, res) => {
 
     console.log(`[CameraControl] ${device_id} - Start camera command queued (ID: ${commandRef.id})`);
 
+    // Notify device via MQTT
+    await publishDeviceCommand(device_id, commandRef.id, 'camera_start');
+
     res.json({
       status: 'ok',
-      message: 'Camera start command queued',
+      message: 'Camera start command queued and device notified',
       command_id: commandRef.id
     });
   } catch (error) {
@@ -1035,9 +1041,12 @@ const stopCamera = async (req, res) => {
 
     console.log(`[CameraControl] ${device_id} - Stop camera command queued (ID: ${commandRef.id})`);
 
+    // Notify device via MQTT
+    await publishDeviceCommand(device_id, commandRef.id, 'camera_stop');
+
     res.json({
       status: 'ok',
-      message: 'Camera stop command queued',
+      message: 'Camera stop command queued and device notified',
       command_id: commandRef.id
     });
   } catch (error) {
@@ -1065,9 +1074,12 @@ const restartCamera = async (req, res) => {
 
     console.log(`[CameraControl] ${device_id} - Restart camera command queued (ID: ${commandRef.id})`);
 
+    // Notify device via MQTT
+    await publishDeviceCommand(device_id, commandRef.id, 'camera_restart');
+
     res.json({
       status: 'ok',
-      message: 'Camera restart command queued',
+      message: 'Camera restart command queued and device notified',
       command_id: commandRef.id
     });
   } catch (error) {
@@ -1099,9 +1111,12 @@ const startMicrophone = async (req, res) => {
 
     console.log(`[MicControl] ${device_id} - Start microphone command queued (ID: ${commandRef.id})`);
 
+    // Notify device via MQTT
+    await publishDeviceCommand(device_id, commandRef.id, 'mic_start');
+
     res.json({
       status: 'ok',
-      message: 'Microphone start command queued',
+      message: 'Microphone start command queued and device notified',
       command_id: commandRef.id
     });
   } catch (error) {
@@ -1129,9 +1144,12 @@ const stopMicrophone = async (req, res) => {
 
     console.log(`[MicControl] ${device_id} - Stop microphone command queued (ID: ${commandRef.id})`);
 
+    // Notify device via MQTT
+    await publishDeviceCommand(device_id, commandRef.id, 'mic_stop');
+
     res.json({
       status: 'ok',
-      message: 'Microphone stop command queued',
+      message: 'Microphone stop command queued and device notified',
       command_id: commandRef.id
     });
   } catch (error) {
@@ -1159,9 +1177,12 @@ const getMicrophoneStatus = async (req, res) => {
 
     console.log(`[MicControl] ${device_id} - Get microphone status command queued (ID: ${commandRef.id})`);
 
+    // Notify device via MQTT
+    await publishDeviceCommand(device_id, commandRef.id, 'mic_status');
+
     res.json({
       status: 'ok',
-      message: 'Microphone status command queued',
+      message: 'Microphone status command queued and device notified',
       command_id: commandRef.id
     });
   } catch (error) {
@@ -1201,9 +1222,12 @@ const playAmplifier = async (req, res) => {
 
     console.log(`[AmpControl] ${device_id} - Play amplifier command queued (ID: ${commandRef.id}, URL: ${url})`);
 
+    // Notify device via MQTT
+    await publishDeviceCommand(device_id, commandRef.id, 'amp_play');
+
     res.json({
       status: 'ok',
-      message: 'Amplifier play command queued',
+      message: 'Amplifier play command queued and device notified',
       command_id: commandRef.id
     });
   } catch (error) {
@@ -1231,9 +1255,12 @@ const stopAmplifier = async (req, res) => {
 
     console.log(`[AmpControl] ${device_id} - Stop amplifier command queued (ID: ${commandRef.id})`);
 
+    // Notify device via MQTT
+    await publishDeviceCommand(device_id, commandRef.id, 'amp_stop');
+
     res.json({
       status: 'ok',
-      message: 'Amplifier stop command queued',
+      message: 'Amplifier stop command queued and device notified',
       command_id: commandRef.id
     });
   } catch (error) {
@@ -1261,9 +1288,12 @@ const restartAmplifier = async (req, res) => {
 
     console.log(`[AmpControl] ${device_id} - Restart amplifier command queued (ID: ${commandRef.id})`);
 
+    // Notify device via MQTT
+    await publishDeviceCommand(device_id, commandRef.id, 'amp_restart');
+
     res.json({
       status: 'ok',
-      message: 'Amplifier restart command queued',
+      message: 'Amplifier restart command queued and device notified',
       command_id: commandRef.id
     });
   } catch (error) {
@@ -1295,9 +1325,12 @@ const getFaceCount = async (req, res) => {
 
     console.log(`[FaceManagement] ${device_id} - Get face count command queued (ID: ${commandRef.id})`);
 
+    // Notify device via MQTT
+    await publishDeviceCommand(device_id, commandRef.id, 'face_count');
+
     res.json({
       status: 'ok',
-      message: 'Face count command queued',
+      message: 'Face count command queued and device notified',
       command_id: commandRef.id
     });
   } catch (error) {
@@ -1325,9 +1358,12 @@ const listFaces = async (req, res) => {
 
     console.log(`[FaceManagement] ${device_id} - List faces command queued (ID: ${commandRef.id})`);
 
+    // Notify device via MQTT
+    await publishDeviceCommand(device_id, commandRef.id, 'face_list');
+
     res.json({
       status: 'ok',
-      message: 'Face list command queued (output will be in serial)',
+      message: 'Face list command queued and device notified (output will be in serial)',
       command_id: commandRef.id
     });
   } catch (error) {
@@ -1355,9 +1391,12 @@ const checkFaceDatabase = async (req, res) => {
 
     console.log(`[FaceManagement] ${device_id} - Check face database command queued (ID: ${commandRef.id})`);
 
+    // Notify device via MQTT
+    await publishDeviceCommand(device_id, commandRef.id, 'face_check');
+
     res.json({
       status: 'ok',
-      message: 'Face database check command queued',
+      message: 'Face database check command queued and device notified',
       command_id: commandRef.id
     });
   } catch (error) {
@@ -1389,9 +1428,12 @@ const restartSystem = async (req, res) => {
 
     console.log(`[SystemControl] ${device_id} - System restart command queued (ID: ${commandRef.id})`);
 
+    // Notify device via MQTT
+    await publishDeviceCommand(device_id, commandRef.id, 'system_restart');
+
     res.json({
       status: 'ok',
-      message: 'System restart command queued',
+      message: 'System restart command queued and device notified',
       command_id: commandRef.id
     });
   } catch (error) {

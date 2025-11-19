@@ -7,6 +7,7 @@ const MQTT_TOPICS = {
   HUB_COMMAND: 'smarthome/hub/command',
   FACE_DETECTION: 'smarthome/face/detection',
   HUB_STATUS: 'smarthome/hub/status',
+  DEVICE_COMMAND: 'smarthome/device/{device_id}/command', // Template for device-specific commands
 };
 
 let mqttClient = null;
@@ -135,11 +136,34 @@ const publishDoorbellRing = async (deviceId) => {
   return await publishMQTT(MQTT_TOPICS.DOORBELL_RING, payload);
 };
 
+/**
+ * Publish device command notification (tells device to fetch pending commands)
+ * @param {string} deviceId - Device ID
+ * @param {string} commandId - Command ID that was queued
+ * @param {string} action - Command action (e.g., 'camera_start')
+ */
+const publishDeviceCommand = async (deviceId, commandId, action) => {
+  // Replace {device_id} in topic template with actual device ID
+  const topic = MQTT_TOPICS.DEVICE_COMMAND.replace('{device_id}', deviceId);
+
+  const payload = {
+    device_id: deviceId,
+    command_id: commandId,
+    action: action,
+    fetch_commands: true, // Signal to device to fetch pending commands immediately
+    timestamp: Date.now(),
+  };
+
+  console.log(`[MQTT] Notifying device ${deviceId} to fetch command ${commandId} (${action})`);
+  return await publishMQTT(topic, payload);
+};
+
 module.exports = {
   initMQTT,
   publishMQTT,
   publishFaceDetection,
   publishHubCommand,
   publishDoorbellRing,
+  publishDeviceCommand,
   MQTT_TOPICS,
 };
