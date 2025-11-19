@@ -36,7 +36,7 @@
       ]
     },
     {
-      "collectionGroup": "status",
+      "collectionGroup": "live_status",
       "fieldPath": "expireAt",
       "ttl": true,
       "indexes": [
