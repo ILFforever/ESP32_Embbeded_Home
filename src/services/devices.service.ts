@@ -60,6 +60,7 @@ export async function getAllDevices(): Promise<DevicesStatus> {
 
     // Transform backend data to match frontend DevicesStatus interface
     return {
+      status: response.data.status,
       timestamp: response.data.timestamp,
       summary: response.data.summary,
       devices: response.data.devices
@@ -68,6 +69,7 @@ export async function getAllDevices(): Promise<DevicesStatus> {
     console.error('Error fetching devices:', error);
     // Return empty structure on error to prevent frontend crashes
     return {
+      status: 'error',
       timestamp: new Date().toISOString(),
       summary: { total: 0, online: 0, offline: 0 },
       devices: []
@@ -251,19 +253,17 @@ export function generateMockSecurityDevices(): SecurityDevice[] {
   ];
 }
 
-// Doorbell info interface from ESP32 (via backend proxy)
+// Doorbell status interface from Firebase (pushed by doorbell device)
 interface DoorbellInfo {
-  ip: string;
-  uptime: number;
-  slave_status: number;  // -1=disconnected, 0=standby, 1=active
-  amp_status: number;
-  free_heap: number;
-  ping_count: number;
-  wifi_rssi: number;
-  wifi_connected: boolean;
+  camera_active: boolean;
+  mic_active: boolean;
+  recording: boolean;
+  motion_detected: boolean;
+  battery_level: number | null;
+  last_updated: any; // Firebase Timestamp
 }
 
-// Backend response wrapper for doorbell info
+// Backend response wrapper for doorbell status
 interface BackendDoorbellInfoResponse {
   status: string;
   device_id: string;
@@ -278,11 +278,11 @@ interface BackendDoorbellControlResponse {
   result: any;
 }
 
-// Get doorbell device info via backend proxy
+// Get doorbell device status from Firebase (data pushed by doorbell device)
 export async function getDoorbellInfo(deviceId: string): Promise<DoorbellInfo | null> {
   try {
     const response = await axios.get<BackendDoorbellInfoResponse>(
-      `${API_URL}/api/v1/devices/doorbell/${deviceId}/info`,
+      `${API_URL}/api/v1/devices/doorbell/${deviceId}/status`,
       {
         timeout: 10000,  // 10 second timeout
         headers: getAuthHeaders()
@@ -295,21 +295,21 @@ export async function getDoorbellInfo(deviceId: string): Promise<DoorbellInfo | 
   }
 }
 
-// Doorbell control actions via backend proxy
+// Doorbell control actions via backend command queue
 export async function controlDoorbell(
   deviceId: string,
   action: 'camera_start' | 'camera_stop' | 'mic_start' | 'mic_stop' | 'ping'
 ) {
   try {
     const response = await axios.post<BackendDoorbellControlResponse>(
-      `${API_URL}/api/v1/devices/doorbell/${deviceId}/control`,
+      `${API_URL}/api/v1/devices/${deviceId}/command`,
       { action },
       {
         timeout: 15000,  // 15 second timeout for commands
         headers: getAuthHeaders()
       }
     );
-    return response.data.result;
+    return response.data;
   } catch (error) {
     console.error(`Error controlling doorbell (${action}):`, error);
     throw error;
@@ -332,12 +332,12 @@ export async function getDoorbellControlStatus(deviceId: string): Promise<Doorbe
       };
     }
 
-    // Transform ESP32 status to DoorbellControl format
+    // Transform doorbell status to DoorbellControl format
     return {
-      camera_active: info.slave_status === 1,  // 1 = active
-      mic_active: false,  // Would need to query mic status
-      face_recognition: info.slave_status >= 0,  // >= 0 = connected
-      last_activity: new Date().toISOString(),
+      camera_active: info.camera_active,
+      mic_active: info.mic_active,
+      face_recognition: true,  // Assume face recognition is available if device is online
+      last_activity: info.last_updated ? new Date(info.last_updated._seconds * 1000).toISOString() : new Date().toISOString(),
       visitor_count_today: 0  // Would need to track this in backend
     };
   } catch (error) {
