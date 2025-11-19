@@ -5,20 +5,26 @@ import { controlDoorbell } from '@/services/devices.service';
 
 interface DoorbellControlCardProps {
   doorbellControl: DoorbellControl;
+  deviceId?: string;
   isExpanded?: boolean;
 }
 
-export function DoorbellControlCard({ doorbellControl, isExpanded = false }: DoorbellControlCardProps) {
+export function DoorbellControlCard({ doorbellControl, deviceId, isExpanded = false }: DoorbellControlCardProps) {
   const [cameraActive, setCameraActive] = useState(doorbellControl.camera_active);
   const [micActive, setMicActive] = useState(doorbellControl.mic_active);
   const [faceRecognition, setFaceRecognition] = useState(doorbellControl.face_recognition);
   const [loading, setLoading] = useState<string | null>(null);
 
   const handleCameraToggle = async () => {
+    if (!deviceId) {
+      console.error('No doorbell device ID available');
+      return;
+    }
+
     setLoading('camera');
     try {
       const action = cameraActive ? 'camera_stop' : 'camera_start';
-      await controlDoorbell(action);
+      await controlDoorbell(deviceId, action);
       setCameraActive(!cameraActive);
     } catch (error) {
       console.error('Error toggling camera:', error);
@@ -28,10 +34,15 @@ export function DoorbellControlCard({ doorbellControl, isExpanded = false }: Doo
   };
 
   const handleMicToggle = async () => {
+    if (!deviceId) {
+      console.error('No doorbell device ID available');
+      return;
+    }
+
     setLoading('mic');
     try {
       const action = micActive ? 'mic_stop' : 'mic_start';
-      await controlDoorbell(action);
+      await controlDoorbell(deviceId, action);
       setMicActive(!micActive);
     } catch (error) {
       console.error('Error toggling mic:', error);
