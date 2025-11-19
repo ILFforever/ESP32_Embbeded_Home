@@ -1,6 +1,7 @@
 const { getFirestore, admin } = require('../config/firebase');
 const { publishFaceDetection } = require('../config/mqtt');
 const crypto = require('crypto');
+const axios = require('axios');
 
 // ============================================================================
 // In-Memory Cache for Throttling (reduces Firebase writes by 95%)
@@ -617,6 +618,153 @@ const handleHubLog = async (req, res) => {
   }
 };
 
+// ============================================================================
+// @route   GET /api/v1/devices/doorbell/:device_id/info
+// @desc    Get doorbell device info (proxies request to ESP32)
+// ============================================================================
+const getDoorbellInfo = async (req, res) => {
+  try {
+    const { device_id } = req.params;
+    const db = getFirestore();
+
+    // Get device from Firebase to find its IP address
+    const deviceDoc = await db.collection('devices').doc(device_id).get();
+
+    if (!deviceDoc.exists) {
+      return res.status(404).json({
+        status: 'error',
+        message: 'Device not found'
+      });
+    }
+
+    // Get current status which contains IP address
+    const statusDoc = await deviceDoc.ref.collection('status').doc('current').get();
+
+    if (!statusDoc.exists || !statusDoc.data().ip_address) {
+      return res.status(503).json({
+        status: 'error',
+        message: 'Device is offline or IP address not available'
+      });
+    }
+
+    const deviceIP = statusDoc.data().ip_address;
+
+    // Proxy request to ESP32 device
+    console.log(`[DoorbellInfo] Proxying request to http://${deviceIP}/info`);
+
+    const response = await axios.get(`http://${deviceIP}/info`, {
+      timeout: 5000  // 5 second timeout
+    });
+
+    // Return ESP32 response data
+    res.json({
+      status: 'ok',
+      device_id,
+      data: response.data
+    });
+
+  } catch (error) {
+    console.error('[DoorbellInfo] Error:', error.message);
+
+    if (error.code === 'ECONNREFUSED' || error.code === 'ETIMEDOUT') {
+      res.status(503).json({
+        status: 'error',
+        message: 'Failed to connect to doorbell device'
+      });
+    } else {
+      res.status(500).json({
+        status: 'error',
+        message: error.message
+      });
+    }
+  }
+};
+
+// ============================================================================
+// @route   POST /api/v1/devices/doorbell/:device_id/control
+// @desc    Control doorbell device (proxies commands to ESP32)
+// ============================================================================
+const controlDoorbell = async (req, res) => {
+  try {
+    const { device_id } = req.params;
+    const { action } = req.body;
+
+    // Validate action
+    const validActions = ['camera_start', 'camera_stop', 'mic_start', 'mic_stop', 'ping'];
+    if (!action || !validActions.includes(action)) {
+      return res.status(400).json({
+        status: 'error',
+        message: `Invalid action. Must be one of: ${validActions.join(', ')}`
+      });
+    }
+
+    const db = getFirestore();
+
+    // Get device from Firebase to find its IP address
+    const deviceDoc = await db.collection('devices').doc(device_id).get();
+
+    if (!deviceDoc.exists) {
+      return res.status(404).json({
+        status: 'error',
+        message: 'Device not found'
+      });
+    }
+
+    // Get current status which contains IP address
+    const statusDoc = await deviceDoc.ref.collection('status').doc('current').get();
+
+    if (!statusDoc.exists || !statusDoc.data().ip_address) {
+      return res.status(503).json({
+        status: 'error',
+        message: 'Device is offline or IP address not available'
+      });
+    }
+
+    const deviceIP = statusDoc.data().ip_address;
+
+    // Map actions to ESP32 endpoints
+    const endpoints = {
+      camera_start: '/camera/start',
+      camera_stop: '/camera/stop',
+      mic_start: '/mic/start',
+      mic_stop: '/mic/stop',
+      ping: '/ping'
+    };
+
+    const endpoint = endpoints[action];
+
+    // Proxy request to ESP32 device
+    console.log(`[DoorbellControl] Proxying ${action} to http://${deviceIP}${endpoint}`);
+
+    const response = await axios.get(`http://${deviceIP}${endpoint}`, {
+      timeout: 10000  // 10 second timeout for commands
+    });
+
+    // Return ESP32 response
+    res.json({
+      status: 'ok',
+      device_id,
+      action,
+      result: response.data
+    });
+
+  } catch (error) {
+    console.error('[DoorbellControl] Error:', error.message);
+
+    if (error.code === 'ECONNREFUSED' || error.code === 'ETIMEDOUT') {
+      res.status(503).json({
+        status: 'error',
+        message: 'Failed to connect to doorbell device'
+      });
+    } else {
+      res.status(500).json({
+        status: 'error',
+        message: error.message
+      });
+    }
+  }
+};
+
 module.exports = {
   registerDevice,
   handleHeartbeat,
@@ -626,5 +774,7 @@ module.exports = {
   getDeviceHistory,
   handleDoorbellRing,
   handleFaceDetection,
-  handleHubLog
+  handleHubLog,
+  getDoorbellInfo,
+  controlDoorbell
 };
