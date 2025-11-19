@@ -102,8 +102,8 @@ router.get('/doorbell/:device_id/status', getDoorbellStatus);
 
 // @route   POST /api/v1/devices/:device_id/command
 // @desc    Send command to device (queued in Firebase, device fetches on heartbeat)
-// @access  Public (TODO: Add user auth)
-router.post('/:device_id/command', sendDeviceCommand);
+// @access  Private (requires user token)
+router.post('/:device_id/command', protect, sendDeviceCommand);
 
 // @route   POST /api/v1/devices/commands/pending
 // @desc    Device fetches pending commands (called when has_pending_commands=true)
