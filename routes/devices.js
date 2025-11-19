@@ -10,7 +10,9 @@ const {
   registerDevice,
   handleDoorbellRing,
   handleFaceDetection,
-  handleHubLog
+  handleHubLog,
+  getDoorbellInfo,
+  controlDoorbell
 } = require('../controllers/devices');
 const { authenticateDevice } = require('../middleware/deviceAuth');
 
@@ -77,5 +79,15 @@ router.get('/:device_id/status', getDeviceStatus);
 // @desc    Get device history (optional)
 // @access  Public
 router.get('/:device_id/history', getDeviceHistory);
+
+// @route   GET /api/v1/devices/doorbell/:device_id/info
+// @desc    Get doorbell device info (proxies to ESP32)
+// @access  Public
+router.get('/doorbell/:device_id/info', getDoorbellInfo);
+
+// @route   POST /api/v1/devices/doorbell/:device_id/control
+// @desc    Control doorbell device (camera, mic, ping)
+// @access  Public
+router.post('/doorbell/:device_id/control', controlDoorbell);
 
 module.exports = router;
