@@ -18,6 +18,7 @@ const {
   acknowledgeCommand
 } = require('../controllers/devices');
 const { authenticateDevice } = require('../middleware/deviceAuth');
+const { protect } = require('../middleware/auth');
 
 // Configure multer for in-memory file storage (for face detection images)
 // Increased limits for ESP32 reliability
@@ -77,18 +78,18 @@ router.post('/doorbell/status', authenticateDevice, handleDoorbellStatus);
 
 // @route   GET /api/v1/devices/status/all
 // @desc    Get all devices status (for frontend dashboard)
-// @access  Private (requires device token)
-router.get('/status/all', authenticateDevice, getAllDevicesStatus);
+// @access  Private (requires user token)
+router.get('/status/all', protect, getAllDevicesStatus);
 
 // @route   GET /api/v1/devices/:device_id/status
 // @desc    Get current device status
-// @access  Private (requires device token)
-router.get('/:device_id/status', authenticateDevice, getDeviceStatus);
+// @access  Private (requires user token)
+router.get('/:device_id/status', protect, getDeviceStatus);
 
 // @route   GET /api/v1/devices/:device_id/history
 // @desc    Get device history with optional type filtering
-// @access  Private (requires device token)
-router.get('/:device_id/history', authenticateDevice, getDeviceHistory);
+// @access  Private (requires user token)
+router.get('/:device_id/history', protect, getDeviceHistory);
 
 // @route   GET /api/v1/devices/doorbell/:device_id/status
 // @desc    Get doorbell status from Firebase (data pushed by doorbell, not proxy)
