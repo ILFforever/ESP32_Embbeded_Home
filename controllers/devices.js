@@ -856,6 +856,16 @@ const fetchPendingCommands = async (req, res) => {
 
   } catch (error) {
     console.error('[FetchCommands] Error:', error);
+
+    // Check if error is due to missing Firestore index
+    if (error.message && error.message.includes('index')) {
+      return res.status(500).json({
+        status: 'error',
+        message: 'Firestore index required. Run: firebase deploy --only firestore:indexes',
+        details: error.message
+      });
+    }
+
     res.status(500).json({ status: 'error', message: error.message });
   }
 };
