@@ -4,12 +4,12 @@ export interface Device {
   device_id: string;
   type: string;
   name: string;
-  online: boolean;
   last_seen: string | null;
   uptime_ms: number;
   free_heap: number;
   wifi_rssi: number;
   ip_address: string | null;
+  expireAt: any; // Firebase Timestamp - device is online if expireAt is in the future
 }
 
 export interface DevicesStatus {

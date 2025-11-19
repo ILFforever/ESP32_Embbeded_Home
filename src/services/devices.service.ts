@@ -17,12 +17,12 @@ interface BackendDevice {
   device_id: string;
   type: string;
   name: string;
-  online: boolean;
   last_seen: string | null;
   uptime_ms: number;
   free_heap: number;
   wifi_rssi: number;
   ip_address: string | null;
+  expireAt: any; // Firebase Timestamp - device is online if expireAt is in the future
 }
 
 interface BackendDevicesResponse {
@@ -333,39 +333,45 @@ export function findHubDevice(devices: BackendDevice[]): BackendDevice | null {
   return devices.find(device => device.type === 'hub' || device.type === 'main_lcd') || null;
 }
 
-// Helper function to check if a device is online based on last_seen timestamp
-export function isDeviceOnline(lastSeen: string | null, thresholdMinutes: number = 2): boolean {
-  if (!lastSeen) return false;
+// Helper function to check if a device is online based on expireAt timestamp
+export function isDeviceOnline(expireAt: any): boolean {
+  if (!expireAt) return false;
 
-  const lastSeenDate = new Date(lastSeen);
-  const now = new Date();
-  const diffMinutes = (now.getTime() - lastSeenDate.getTime()) / 60000;
+  // Handle Firebase Timestamp object
+  const expireTime = expireAt._seconds ? expireAt._seconds * 1000 : new Date(expireAt).getTime();
+  const now = Date.now();
 
-  return diffMinutes < thresholdMinutes;
+  return expireTime > now;
 }
 
 // Helper function to get device status class for styling
-export function getDeviceStatusClass(lastSeen: string | null): string {
+export function getDeviceStatusClass(expireAt: any, lastSeen: string | null): string {
+  // Check if device is online based on expireAt
+  if (isDeviceOnline(expireAt)) return 'status-online';
+
+  // If offline, check how long ago it was last seen
   if (!lastSeen) return 'status-offline';
 
   const lastSeenDate = new Date(lastSeen);
   const now = new Date();
   const diffMinutes = (now.getTime() - lastSeenDate.getTime()) / 60000;
 
-  if (diffMinutes < 2) return 'status-online';
   if (diffMinutes < 5) return 'status-warning';
   return 'status-offline';
 }
 
 // Helper function to get human-readable device status text
-export function getDeviceStatusText(lastSeen: string | null): string {
+export function getDeviceStatusText(expireAt: any, lastSeen: string | null): string {
+  // Check if device is online based on expireAt
+  if (isDeviceOnline(expireAt)) return 'ONLINE';
+
+  // If offline, show how long ago it was last seen
   if (!lastSeen) return 'OFFLINE';
 
   const lastSeenDate = new Date(lastSeen);
   const now = new Date();
   const diffMinutes = Math.floor((now.getTime() - lastSeenDate.getTime()) / 60000);
 
-  if (diffMinutes < 2) return 'ONLINE';
   if (diffMinutes < 5) return `LAST SEEN ${diffMinutes}M AGO`;
   return 'OFFLINE';
 }
