@@ -84,11 +84,12 @@ void updateTopBar()
 // Remember to -40 from height to account for top bar
 void updateContent()
 {
-  if ((Last_Screen != cur_Screen) || contentNeedsUpdate)
+  if ((Last_Screen != cur_Screen) || contentNeedsUpdate || forcePageUpdate)
   {
     updateBotBar();
     Last_Screen = cur_Screen;
     contentNeedsUpdate = true;
+    forcePageUpdate = false;
 
     if (cur_Screen == 0)
     {
@@ -100,12 +101,12 @@ void updateContent()
       contentArea.fillSmoothRoundRect(520, 10, 270, 250, 10, TFT_WHITE);
       contentArea.fillSmoothRoundRect(520, 270, 270, 140, 10, TFT_WHITE);
 
-      //home name
+      // home name
       contentArea.setFont(&fonts::Orbitron_Light_24);
       contentArea.setTextSize(2);
       contentArea.drawCenterString("Hammy home", 260, 40);
 
-      //status
+      // status
       contentArea.setFont(&fonts::Orbitron_Light_24);
       contentArea.setTextSize(2);
       contentArea.drawCenterString("status", 260, 110);
@@ -134,9 +135,6 @@ void updateContent()
       contentArea.fillSmoothRoundRect(530, 320, 75, 75, 5, TFT_BLACK);
       contentArea.fillSmoothRoundRect(530 + 87, 320, 75, 75, 5, TFT_BLACK);
       contentArea.fillSmoothRoundRect(530 + 174, 320, 75, 75, 5, TFT_BLACK);
-
-
-
     }
     else if (cur_Screen == 1)
     {
@@ -294,19 +292,31 @@ void updateContent()
       contentArea.drawString("Light", 530, 150);
       contentArea.drawString("P.M. 2.5", 530, 290);
       contentArea.fillSmoothRoundRect(530, 50, 250, 80, 5, TFT_LIGHTGRAY);
-      contentArea.fillSmoothRoundRect(530, 50+140, 250, 80, 5, TFT_LIGHTGRAY);
-      contentArea.fillSmoothRoundRect(530, 50+270, 250, 80, 5, TFT_LIGHTGRAY);
+      contentArea.fillSmoothRoundRect(530, 50 + 140, 250, 80, 5, TFT_LIGHTGRAY);
+      contentArea.fillSmoothRoundRect(530, 50 + 270, 250, 80, 5, TFT_LIGHTGRAY);
       contentArea.setTextSize(2);
-      contentArea.drawString("My room", 60,30);
 
-      
+      contentArea.drawString("My room", 60, 30);
 
+      contentArea.fillSmoothRoundRect(50, 130, 250, 110, 0, TFT_PINK);
+      contentArea.fillSmoothRoundRect(50, 240, 250, 120, 0, TFT_GREEN);
+      contentArea.fillSmoothRoundRect(300, 240, 150, 120, 0, TFT_LIGHTGRAY);
 
-
-
-
+      contentArea.drawWideLine(50, 130, 300, 130, 3, TFT_BLACK);
+      contentArea.drawWideLine(50, 130, 50, 360, 3, TFT_BLACK);
+      contentArea.drawWideLine(450, 360, 50, 360, 3, TFT_BLACK);
+      contentArea.drawWideLine(300, 240, 300, 130, 3, TFT_BLACK);
+      contentArea.drawWideLine(300, 240, 100, 240, 3, TFT_BLACK);
+      contentArea.drawWideLine(50, 240, 70, 240, 3, TFT_BLACK);
+      contentArea.drawWideLine(70, 240, 95, 215, 3, TFT_BLACK);
+      contentArea.drawWideLine(300, 240, 300, 270, 3, TFT_BLACK);
+      contentArea.drawWideLine(300, 360, 300, 300, 3, TFT_BLACK);
+      contentArea.drawWideLine(300, 300, 260, 320, 3, TFT_BLACK);
+      contentArea.drawWideLine(450, 240, 340, 240, 3, TFT_BLACK);
+      contentArea.drawWideLine(450, 360, 450, 240, 3, TFT_BLACK);
+      contentArea.drawWideLine(450, 240, 320, 240, 3, TFT_BLACK);
+      contentArea.drawWideLine(345, 265, 320, 240, 3, TFT_BLACK);
     }
-
   }
 
   static bool prevDoorbellRinging = false;
@@ -335,7 +345,7 @@ void updateContent()
       doorbellJustRang = false; // Reset flag
     }
     prevDoorbellRinging = currentDoorbellRinging;
-    contentNeedsUpdate = true;
+    forcePageUpdate = true;
     botBarNeedsUpdate = true;
   }
 

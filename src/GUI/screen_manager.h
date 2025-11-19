@@ -18,6 +18,8 @@ extern volatile bool topBarNeedsUpdate;
 extern volatile bool botBarNeedsUpdate;
 extern volatile bool contentNeedsUpdate;
 extern volatile bool touchAreaNeedsUpdate;
+extern volatile bool forcePageUpdate;
+
 extern volatile bool doorbellJustRang;
 extern unsigned long doorbellRingTime;
 extern DeviceStatus doorbellStatus;

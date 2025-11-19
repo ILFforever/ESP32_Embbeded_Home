@@ -61,7 +61,7 @@ volatile bool topBarNeedsUpdate = false;
 volatile bool botBarNeedsUpdate = false;
 volatile bool contentNeedsUpdate = false;
 volatile bool touchAreaNeedsUpdate = false;
-
+volatile bool forcePageUpdate = false;
 // Track previous values to detect changes
 static int prevFreeHeap = 0;
 static int prevFreePsram = 0;
