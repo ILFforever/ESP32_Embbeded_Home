@@ -92,12 +92,30 @@ void updateContent()
 
     if (cur_Screen == 0)
     {
+
       contentArea.fillScreen(TFT_BLACK);
       contentArea.setTextColor(TFT_BLACK);
       contentArea.setTextSize(3);
       contentArea.fillSmoothRoundRect(10, 10, 500, 400, 10, TFT_WHITE);
       contentArea.fillSmoothRoundRect(520, 10, 270, 250, 10, TFT_WHITE);
       contentArea.fillSmoothRoundRect(520, 270, 270, 140, 10, TFT_WHITE);
+
+      //home name
+      contentArea.setFont(&fonts::Orbitron_Light_24);
+      contentArea.setTextSize(2);
+      contentArea.drawCenterString("Hammy home", 260, 40);
+
+      //status
+      contentArea.setFont(&fonts::Orbitron_Light_24);
+      contentArea.setTextSize(2);
+      contentArea.drawCenterString("status", 260, 110);
+
+      contentArea.setFont(&fonts::Orbitron_Light_24);
+      contentArea.setTextSize(3);
+      contentArea.drawCenterString("6", 260, 220);
+      contentArea.setFont(&fonts::Orbitron_Light_24);
+      contentArea.setTextSize(2);
+      contentArea.drawCenterString("rooms", 260, 310);
 
       // Alerts section (Top right)
       contentArea.setFont(&fonts::Orbitron_Light_24);
@@ -113,9 +131,12 @@ void updateContent()
       contentArea.setFont(&fonts::Orbitron_Light_24);
       contentArea.setTextSize(1);
       contentArea.drawString("Quick Actions", 530, 280);
-      contentArea.fillSmoothRoundRect(530, 322, 75, 75, 5, TFT_BLACK);
+      contentArea.fillSmoothRoundRect(530, 320, 75, 75, 5, TFT_BLACK);
       contentArea.fillSmoothRoundRect(530 + 87, 320, 75, 75, 5, TFT_BLACK);
       contentArea.fillSmoothRoundRect(530 + 174, 320, 75, 75, 5, TFT_BLACK);
+
+
+
     }
     else if (cur_Screen == 1)
     {
@@ -256,6 +277,36 @@ void updateContent()
       contentArea.setFont(&fonts::Font0);
       contentArea.setTextSize(1);
     }
+    else if (cur_Screen == 3) // button example
+    {
+
+      contentArea.fillScreen(TFT_BLACK);
+      contentArea.setTextColor(TFT_BLACK);
+      contentArea.setTextSize(3);
+      contentArea.fillSmoothRoundRect(10, 10, 500, 400, 10, TFT_WHITE);
+      contentArea.fillSmoothRoundRect(520, 10, 270, 130, 10, TFT_WHITE);
+      contentArea.fillSmoothRoundRect(520, 150, 270, 130, 10, TFT_WHITE);
+      contentArea.fillSmoothRoundRect(520, 290, 270, 120, 10, TFT_WHITE);
+
+      contentArea.setFont(&fonts::Orbitron_Light_24);
+      contentArea.setTextSize(1);
+      contentArea.drawString("Temp", 530, 10);
+      contentArea.drawString("Light", 530, 150);
+      contentArea.drawString("P.M. 2.5", 530, 290);
+      contentArea.fillSmoothRoundRect(530, 50, 250, 80, 5, TFT_LIGHTGRAY);
+      contentArea.fillSmoothRoundRect(530, 50+140, 250, 80, 5, TFT_LIGHTGRAY);
+      contentArea.fillSmoothRoundRect(530, 50+270, 250, 80, 5, TFT_LIGHTGRAY);
+      contentArea.setTextSize(2);
+      contentArea.drawString("My room", 60,30);
+
+      
+
+
+
+
+
+    }
+
   }
 
   static bool prevDoorbellRinging = false;
