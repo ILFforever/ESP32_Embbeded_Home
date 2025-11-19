@@ -28,18 +28,25 @@ exports.handleHeartbeat = async (req, res) => {
 
 /**
  * Get status of a specific device
+ * Uses expireAt instead of online flag - client determines online status
+ * by checking if current time < expireAt
  */
 exports.getDeviceStatus = async (req, res) => {
   try {
     const { deviceId } = req.params;
 
     // TODO: Query database for device status
+    const lastSeen = new Date();
+
+    // Set expireAt to 5 minutes from lastSeen
+    // If device hasn't sent heartbeat in 5 minutes, it's considered offline
+    const expireAt = new Date(lastSeen.getTime() + 5 * 60 * 1000);
 
     res.status(200).json({
       success: true,
       deviceId,
-      status: 'online',
-      lastSeen: new Date().toISOString(),
+      lastSeen: lastSeen.toISOString(),
+      expireAt: expireAt.toISOString(),
       uptime: 3600,
       rssi: -45
     });
@@ -53,18 +60,22 @@ exports.getDeviceStatus = async (req, res) => {
 
 /**
  * Get status of all devices
+ * Uses expireAt instead of online flag - client determines online status
+ * by checking if current time < expireAt
  */
 exports.getAllDevicesStatus = async (req, res) => {
   try {
     // TODO: Query database for all devices
+    const lastSeen = new Date();
+    const expireAt = new Date(lastSeen.getTime() + 5 * 60 * 1000);
 
     res.status(200).json({
       success: true,
       devices: [
         {
           deviceId: 'ESP32_MAIN_LCD_001',
-          status: 'online',
-          lastSeen: new Date().toISOString()
+          lastSeen: lastSeen.toISOString(),
+          expireAt: expireAt.toISOString()
         }
       ],
       total: 1

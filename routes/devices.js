@@ -1,15 +1,16 @@
 const express = require('express');
 const router = express.Router();
 const deviceController = require('../controllers/deviceController');
+const { authenticate } = require('../middleware/auth');
 
 // Device heartbeat - receive periodic status updates from devices
 router.post('/heartbeat', deviceController.handleHeartbeat);
 
-// Get status of a specific device
-router.get('/status/:deviceId', deviceController.getDeviceStatus);
+// Get status of a specific device - PROTECTED
+router.get('/status/:deviceId', authenticate, deviceController.getDeviceStatus);
 
-// Get status of all devices
-router.get('/status', deviceController.getAllDevicesStatus);
+// Get status of all devices - PROTECTED
+router.get('/status', authenticate, deviceController.getAllDevicesStatus);
 
 // Receive sensor data from devices
 router.post('/sensor-data', deviceController.handleSensorData);
