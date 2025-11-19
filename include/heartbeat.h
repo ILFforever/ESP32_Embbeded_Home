@@ -25,6 +25,10 @@ void sendDisconnectWarning(const char* module_name, bool isDisconnected);
 // Send doorbell ring event to backend (notify hub to play audio)
 void sendDoorbellRing();
 
+// Send doorbell status to backend (camera_active, mic_active)
+// ALSO acts as heartbeat - resets TTL timer
+void sendDoorbellStatus(bool camera_active, bool mic_active);
+
 // Send face detection event to backend (saves to Firebase, publishes to Hub via MQTT)
 // BLOCKING VERSION - Use sendFaceDetectionAsync() instead for non-blocking operation
 void sendFaceDetection(bool recognized, const char* name, float confidence, const uint8_t* imageData = nullptr, size_t imageSize = 0);

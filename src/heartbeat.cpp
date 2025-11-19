@@ -264,6 +264,64 @@ void sendDoorbellRing() {
 }
 
 // ============================================================================
+// Send doorbell status to backend (camera_active, mic_active)
+// ALSO acts as heartbeat - resets TTL timer
+// ============================================================================
+void sendDoorbellStatus(bool camera_active, bool mic_active) {
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("[DoorbellStatus] WiFi not connected - skipping");
+    return;
+  }
+
+  HTTPClient http;
+  String url = String(BACKEND_SERVER_URL) + "/api/v1/devices/doorbell/status";
+
+  http.begin(url);
+  http.addHeader("Content-Type", "application/json");
+
+  // Add Authorization header with Bearer token
+  if (DEVICE_API_TOKEN && strlen(DEVICE_API_TOKEN) > 0) {
+    String authHeader = String("Bearer ") + DEVICE_API_TOKEN;
+    http.addHeader("Authorization", authHeader.c_str());
+  }
+
+  http.setTimeout(5000);
+
+  // Build JSON payload
+  StaticJsonDocument<512> doc;
+  doc["device_id"] = DEVICE_ID;
+  doc["camera_active"] = camera_active;
+  doc["mic_active"] = mic_active;
+
+  // Include heartbeat info
+  doc["uptime_ms"] = millis();
+  doc["free_heap"] = ESP.getFreeHeap();
+  doc["wifi_rssi"] = WiFi.RSSI();
+  doc["ip_address"] = WiFi.localIP().toString();
+
+  String jsonString;
+  serializeJson(doc, jsonString);
+
+  // Send POST request
+  int httpResponseCode = http.POST(jsonString);
+
+  if (httpResponseCode > 0) {
+    String response = http.getString();
+
+    if (httpResponseCode == 200) {
+      Serial.printf("[DoorbellStatus] ✓ Sent (code: %d, also acts as heartbeat)\n", httpResponseCode);
+    } else {
+      Serial.printf("[DoorbellStatus] ✗ Failed (code: %d)\n", httpResponseCode);
+    }
+  } else {
+    Serial.printf("[DoorbellStatus] ✗ Connection failed: %s\n",
+                  http.errorToString(httpResponseCode).c_str());
+  }
+
+  http.end();
+}
+
+// ============================================================================
 // Send face detection event to backend (saves to Firebase, publishes to Hub)
 // Uses chunked sending to avoid socket buffer overflow with large images
 // ============================================================================
@@ -351,9 +409,16 @@ void sendFaceDetection(bool recognized, const char* name, float confidence, cons
   client.print("Host: " + host + "\r\n");
   client.print("Content-Type: multipart/form-data; boundary=" + boundary + "\r\n");
   client.print("Content-Length: " + String(contentLength) + "\r\n");
+
+  // Add Authorization header with debug logging
   if (DEVICE_API_TOKEN && strlen(DEVICE_API_TOKEN) > 0) {
-    client.print("Authorization: Bearer " + String(DEVICE_API_TOKEN) + "\r\n");
+    String authHeader = "Authorization: Bearer " + String(DEVICE_API_TOKEN) + "\r\n";
+    client.print(authHeader);
+    Serial.printf("[FaceDetection] Sending auth header (token length: %d)\n", strlen(DEVICE_API_TOKEN));
+  } else {
+    Serial.println("[FaceDetection] ⚠️  WARNING: No API token configured!");
   }
+
   client.print("Connection: close\r\n\r\n");
 
   // Send form data (metadata fields)

@@ -1020,6 +1020,7 @@ void checkPingTimeout()
     slave_status = 0; // back to standby
     updateActualMode(0);
     updateStatusMsg("Connection restored", true, "On Stand By");
+    sendDoorbellStatus(false, false); // Camera inactive (standby)
   }
 }
 

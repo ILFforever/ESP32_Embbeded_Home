@@ -280,6 +280,7 @@ void handleUARTResponse(String line)
           slave_status = 0;
           updateActualMode(0); // Sync actual mode
           updateStatusMsg("Doorbell Off", true, "Standing by");
+          sendDoorbellStatus(false, false); // Camera inactive
         }
         Serial.printf("❌ Cam Slave Error: %s\n", msg);
         sendUART2Command("play", "error"); // Play error sound
@@ -295,6 +296,7 @@ void handleUARTResponse(String line)
           slave_status = 1;
           updateActualMode(1);
           Serial.print(" [Camera started - status set to 1]");
+          sendDoorbellStatus(true, false); // Camera active
         }
       }
       else if (strcmp(msg, "Camera and SPI sender stopped") == 0)
@@ -305,6 +307,7 @@ void handleUARTResponse(String line)
           slave_status = 0;
           updateActualMode(0);
           Serial.print(" [Camera stopped - status set to 0]");
+          sendDoorbellStatus(false, false); // Camera inactive
         }
         // Clear face recognition timeout when camera stops
         face_recognition_active = false;
