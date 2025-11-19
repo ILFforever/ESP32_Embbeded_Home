@@ -308,7 +308,7 @@ const handleSensorData = async (req, res) => {
 
 // ============================================================================
 // @route   GET /api/v1/devices/:device_id/status
-// @desc    Get current device status (TTL-based: document exists = online, missing = offline)
+// @desc    Get current device status (use expireAt to determine online status)
 // ============================================================================
 const getDeviceStatus = async (req, res) => {
   try {
@@ -322,24 +322,23 @@ const getDeviceStatus = async (req, res) => {
       .get();
 
     if (statusDoc.exists) {
-      // Document exists = device is online (TTL hasn't deleted it)
+      // Document exists - return data with expireAt
       const data = statusDoc.data();
       res.json({
         status: 'ok',
         device_id,
-        online: true,
         last_heartbeat: data.last_heartbeat,
         uptime_ms: data.uptime_ms,
         free_heap: data.free_heap,
         wifi_rssi: data.wifi_rssi,
-        ip_address: data.ip_address
+        ip_address: data.ip_address,
+        expireAt: data.expireAt
       });
     } else {
       // Document doesn't exist = device went offline and TTL deleted it
       res.json({
         status: 'ok',
         device_id,
-        online: false,
         message: 'Device offline (no heartbeat in 2+ minutes)'
       });
     }
@@ -352,7 +351,7 @@ const getDeviceStatus = async (req, res) => {
 
 // ============================================================================
 // @route   GET /api/v1/devices/status/all
-// @desc    Get status of all devices (TTL-based: document exists = online)
+// @desc    Get status of all devices (use expireAt to determine online status)
 // ============================================================================
 const getAllDevicesStatus = async (req, res) => {
   try {
@@ -360,6 +359,7 @@ const getAllDevicesStatus = async (req, res) => {
     const devicesSnapshot = await db.collection('devices').get();
 
     const devices = [];
+    let onlineCount = 0;
 
     for (const deviceDoc of devicesSnapshot.docs) {
       const deviceId = deviceDoc.id;
@@ -369,20 +369,25 @@ const getAllDevicesStatus = async (req, res) => {
       const statusDoc = await deviceDoc.ref.collection('status').doc('current').get();
 
       if (statusDoc.exists) {
-        // Document exists = device is online (TTL hasn't deleted it)
+        // Document exists - return data with expireAt
         const statusData = statusDoc.data();
         const lastHeartbeat = statusData.last_heartbeat?.toMillis() || 0;
+        const expireAt = statusData.expireAt;
+
+        // Count as online if expireAt is in the future
+        const isOnline = expireAt && expireAt.toMillis() > Date.now();
+        if (isOnline) onlineCount++;
 
         devices.push({
           device_id: deviceId,
           type: deviceData.type || 'unknown',
           name: deviceData.name || deviceId,
-          online: true,  // Document exists = online
           last_seen: lastHeartbeat ? new Date(lastHeartbeat).toISOString() : null,
           uptime_ms: statusData.uptime_ms || 0,
           free_heap: statusData.free_heap || 0,
           wifi_rssi: statusData.wifi_rssi || 0,
-          ip_address: statusData.ip_address || null
+          ip_address: statusData.ip_address || null,
+          expireAt: expireAt
         });
       } else {
         // Document doesn't exist = device offline (TTL deleted it or never sent heartbeat)
@@ -390,18 +395,17 @@ const getAllDevicesStatus = async (req, res) => {
           device_id: deviceId,
           type: deviceData.type || 'unknown',
           name: deviceData.name || deviceId,
-          online: false,  // Document missing = offline
           last_seen: null,
           uptime_ms: 0,
           free_heap: 0,
           wifi_rssi: 0,
-          ip_address: null
+          ip_address: null,
+          expireAt: null
         });
       }
     }
 
     // Summary stats
-    const onlineCount = devices.filter(d => d.online).length;
     const offlineCount = devices.length - onlineCount;
 
     res.json({
@@ -423,17 +427,29 @@ const getAllDevicesStatus = async (req, res) => {
 
 // ============================================================================
 // @route   GET /api/v1/devices/:device_id/history
-// @desc    Get device history (last 24 hours)
+// @desc    Get device history with optional filtering by type
+// @query   limit - number of records to return (default: 100)
+// @query   type - filter by collection type: 'heartbeat' (default), 'sensor', 'face_detections', 'device_logs'
 // ============================================================================
 const getDeviceHistory = async (req, res) => {
   try {
     const { device_id } = req.params;
-    const { limit = 100 } = req.query;
+    const { limit = 100, type = 'heartbeat' } = req.query;
     const db = getFirestore();
+
+    // Map type to collection name
+    const collectionMap = {
+      'heartbeat': 'heartbeat_history',
+      'sensor': 'sensor_history',
+      'face_detections': 'face_detections',
+      'logs': 'device_logs'
+    };
+
+    const collectionName = collectionMap[type] || 'heartbeat_history';
 
     const historySnapshot = await db.collection('devices')
       .doc(device_id)
-      .collection('heartbeat_history')
+      .collection(collectionName)
       .orderBy('timestamp', 'desc')
       .limit(parseInt(limit))
       .get();
@@ -449,6 +465,8 @@ const getDeviceHistory = async (req, res) => {
     res.json({
       status: 'ok',
       device_id,
+      type: type,
+      collection: collectionName,
       count: history.length,
       history
     });
