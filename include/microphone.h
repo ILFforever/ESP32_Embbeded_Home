@@ -11,8 +11,8 @@
 
 // INMP441 Pin Configuration
 #define I2S_WS_PIN        32     // Word Select (LRCK)
-#define I2S_SCK_PIN       12      // Serial Clock (BCLK)
 #define I2S_SD_PIN        13     // Serial Data (DOUT)
+#define I2S_SCK_PIN       12      // Serial Clock (BCLK)
 
 // Microphone settings
 #define MIC_GAIN          1.0f   // Gain multiplier

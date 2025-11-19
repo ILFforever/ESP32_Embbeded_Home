@@ -16,8 +16,8 @@
 #include "uart_slaves.h"
 #include "wifi_functions.h"
 #include "mqtt_client.h"
-#include "managers/screen_manager.h"
-#include "managers/cap_sensor_manager.h"
+#include "GUI/screen_manager.h"
+#include "Capacitive/cap_sensor_manager.h"
 
 // ============================================================================
 // UART Pin Configuration
@@ -34,12 +34,13 @@
 // Global Objects
 // ============================================================================
 
-static LGFX lcd;
+LGFX lcd; // Removed 'static' to match 'extern' declaration in screen_manager.h
 Scheduler scheduler;
 
 // Sprites
 LGFX_Sprite topBar(&lcd);      // Top status bar (800x40)
 LGFX_Sprite contentArea(&lcd); // Main content area (800x440)
+LGFX_Sprite botBar(&lcd);      // Main content area (800x440)
 
 // Touch state
 TouchPosition currentTouch = {0, 0, false, 0};
@@ -56,6 +57,7 @@ unsigned long doorbellRingTime = 0;
 
 // Sprite update tracking
 volatile bool topBarNeedsUpdate = false;
+volatile bool botBarNeedsUpdate = false;
 volatile bool contentNeedsUpdate = false;
 
 // Track previous values to detect changes
@@ -74,7 +76,7 @@ void IRAM_ATTR touchISR()
 
 // Track screens
 int cur_Screen = 0;
-int Last_Screen = 0;
+int Last_Screen = -1; // so we start with an update
 // ============================================================================
 // Task Definitions
 // ============================================================================
@@ -129,7 +131,6 @@ void setup(void)
     Serial.println("WARNING: PSRAM not found!");
     ESP.restart(); // restart since something is definitely wrong
   }
-  wifi_init();
   Serial.println("Initializing display...");
   lcd.init();
   lcd.setRotation(2); // 180-degree rotation
@@ -140,12 +141,17 @@ void setup(void)
   topBar.setPsram(true);
   bool topBarCreated = topBar.createSprite(800, 40);
 
+  // Bottom bar sprite (800x20 = 32,000 bytes)
+  botBar.setColorDepth(16);
+  botBar.setPsram(true);
+  bool botBarCreated = botBar.createSprite(800, 20);
+
   // Content area sprite (800x440 = 704,000 bytes)
   contentArea.setColorDepth(16);
   contentArea.setPsram(true);
   bool contentCreated = contentArea.createSprite(800, 440);
 
-  if (topBarCreated && contentCreated)
+  if (topBarCreated && contentCreated && botBarCreated)
   {
     Serial.printf("Sprites created successfully!\n");
     Serial.printf("  Top bar: 800x40 (%d bytes)\n", 800 * 40 * 2);
@@ -156,15 +162,15 @@ void setup(void)
     topBar.fillScreen(TFT_WHITE);
     topBar.setTextColor(TFT_BLACK, TFT_WHITE);
     topBar.setTextSize(2);
-    topBar.setCursor(350, 10);
-    topBar.print("12:00:00");
+    topBar.drawCenterString("Initialization Begin", 400, 20);
     topBar.pushSprite(0, 0);
 
     // Initialize content area
     contentArea.fillScreen(TFT_BLUE);
     contentArea.setTextColor(TFT_WHITE, TFT_BLUE);
     contentArea.setTextSize(3);
-    contentArea.drawString("LovyanGFX Multi-Sprite!", 50, 10);
+    contentArea.drawCenterString("Starting... ", 400, 120);
+    drawProgressBar(&contentArea, 180, 220, 440, 70, 0, getProgressColor(0), TFT_BLACK, TFT_WHITE, 5);
     contentArea.pushSprite(0, 40); // Below top bar
   }
   else
@@ -174,12 +180,28 @@ void setup(void)
   }
 
   Serial.println();
+  contentArea.fillScreen(TFT_BLUE);
+  contentArea.drawCenterString("Initializing Wire...", 400, 120);
+  drawProgressBar(&contentArea, 180, 220, 440, 70, 10, getProgressColor(10), TFT_BLACK, TFT_WHITE, 5);
+  contentArea.pushSprite(0, 40); // Below top bar
 
   // Initialize I2C (shared by touch screen and capacitive sensor)
   Wire.begin(); // SDA=21, SCL=22
 
+  // delay(150); //comment for now add back in prod
+  contentArea.fillScreen(TFT_BLUE);
+  contentArea.drawCenterString("Initializing TouchScreen...", 400, 120);
+  drawProgressBar(&contentArea, 180, 220, 440, 70, 25, getProgressColor(25), TFT_BLACK, TFT_WHITE, 5);
+  contentArea.pushSprite(0, 40); // Below top bar
+
   // Initialize touch screen (uses I2C)
   touchsetup();
+
+  // delay(150); //comment for now add back in prod
+  contentArea.fillScreen(TFT_BLUE);
+  contentArea.drawCenterString("Initializing Capacitive Front pads...", 400, 120);
+  drawProgressBar(&contentArea, 180, 220, 440, 70, 40, getProgressColor(40), TFT_BLACK, TFT_WHITE, 5);
+  contentArea.pushSprite(0, 40); // Below top bar
 
   // Setup touch interrupt
   pinMode(GSL1680_INT, INPUT);
@@ -196,10 +218,19 @@ void setup(void)
       break;
   }
 
+  // delay(150); //comment for now add back in prod
+  contentArea.fillScreen(TFT_BLUE);
+  contentArea.drawCenterString("Connecting to secondary modules...", 400, 120);
+  drawProgressBar(&contentArea, 180, 220, 440, 70, 50, getProgressColor(50), TFT_BLACK, TFT_WHITE, 5);
+  contentArea.pushSprite(0, 40); // Below top bar
+
   // Initialize UART for Main Mesh (UART1: RX=26, TX=25)
   MeshSerial.begin(UART_BAUD, SERIAL_8N1, MESH_RX, MESH_TX);
   Serial.printf("Main Mesh UART initialized: RX=GPIO%d, TX=GPIO%d, Baud=%d\n", MESH_RX, MESH_TX, UART_BAUD);
   delay(100);
+
+  drawProgressBar(&contentArea, 180, 220, 440, 70, 60, getProgressColor(60), TFT_BLACK, TFT_WHITE, 5);
+  contentArea.pushSprite(0, 40); // Below top bar
 
   // Initialize UART for Main Amp (UART2: RX=4, TX=33)
   AmpSerial.begin(UART_BAUD, SERIAL_8N1, AMP_RX, AMP_TX);
@@ -210,7 +241,20 @@ void setup(void)
   last_mesh_pong_time = millis();
   last_amp_pong_time = millis();
 
-  // Initialize heartbeat module (WiFi already initialized by wifi_init())
+  // delay(150); //comment for now add back in prod
+  contentArea.fillScreen(TFT_BLUE);
+  contentArea.drawCenterString("Connecting to WIFI", 400, 120);
+  drawProgressBar(&contentArea, 180, 220, 440, 70, 70, getProgressColor(70), TFT_BLACK, TFT_WHITE, 5);
+  contentArea.pushSprite(0, 40); // Below top bar
+
+  wifi_init();
+
+  contentArea.fillScreen(TFT_BLUE);
+  contentArea.drawCenterString("Handshaking with Backend", 400, 120);
+  drawProgressBar(&contentArea, 180, 220, 440, 70, 80, getProgressColor(80), TFT_BLACK, TFT_WHITE, 5);
+  contentArea.pushSprite(0, 40); // Below top bar
+  // Initialize heartbeat module
+
   initHeartbeat(
       "http://embedded-smarthome.fly.dev",                                // Backend URL
       "hb_001",                                                           // Hub device ID
@@ -219,7 +263,13 @@ void setup(void)
       "db_001"                                                            // Doorbell device ID to monitor
   );
 
-  // Initialize MQTT client (WiFi already initialized)
+  // delay(150); //comment for now add back in prod
+  contentArea.fillScreen(TFT_BLUE);
+  contentArea.drawCenterString("Subscribing to MQTT topic", 400, 120);
+  drawProgressBar(&contentArea, 180, 220, 440, 70, 90, getProgressColor(90), TFT_BLACK, TFT_WHITE, 5);
+  contentArea.pushSprite(0, 40); // Below top bar
+
+  // Initialize MQTT client
   initMQTT("hub_hb_001", onDoorbellRing, onFaceDetection);
   connectMQTT(); // Initial connection attempt
 
@@ -253,8 +303,12 @@ void setup(void)
   taskSendAmpPing.enable();
   taskCheckMeshTimeout.enable();
   taskCheckAmpTimeout.enable();
-
   Serial.println("\n✅ All systems initialized - Ready!");
+
+  contentArea.fillScreen(TFT_BLUE);
+  contentArea.drawCenterString("All systems Ready :)", 400, 120);
+  drawProgressBar(&contentArea, 180, 220, 440, 70, 100, getProgressColor(100), TFT_BLACK, TFT_WHITE, 5);
+  contentArea.pushSprite(0, 40); // Below top bar
 }
 
 void loop(void)
