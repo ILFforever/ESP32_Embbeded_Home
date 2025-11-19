@@ -1,7 +1,7 @@
 import React from 'react';
 import { useRouter } from 'next/navigation';
 import type { DevicesStatus } from '@/types/dashboard';
-import { isDeviceOnline, getDeviceStatusClass as getStatusClass, getDeviceStatusText as getStatusText } from '@/services/devices.service';
+import { getDeviceStatusClass as getStatusClass, getDeviceStatusText as getStatusText } from '@/services/devices.service';
 
 interface SystemStatusCardProps {
   devicesStatus: DevicesStatus | null;
@@ -15,13 +15,13 @@ export function SystemStatusCard({ devicesStatus, isExpanded = false }: SystemSt
   const doorbellDevice = devicesStatus?.devices?.find(d => d.type === 'doorbell');
   const hubDevice = devicesStatus?.devices?.find(d => d.type === 'hub' || d.type === 'main_lcd');
 
-  // Helper functions using expireAt
-  const getDeviceStatusClass = (expireAt: any, lastSeen: string | null | undefined) => {
-    return getStatusClass(expireAt, lastSeen || null);
+  // Helper functions using online boolean from backend
+  const getDeviceStatusClass = (online: boolean, lastSeen: string | null | undefined) => {
+    return getStatusClass(online, lastSeen || null);
   };
 
-  const getDeviceStatusText = (expireAt: any, lastSeen: string | null | undefined) => {
-    return getStatusText(expireAt, lastSeen || null);
+  const getDeviceStatusText = (online: boolean, lastSeen: string | null | undefined) => {
+    return getStatusText(online, lastSeen || null);
   };
 
   const handleDoorbellClick = (e: React.MouseEvent) => {
@@ -49,8 +49,8 @@ export function SystemStatusCard({ devicesStatus, isExpanded = false }: SystemSt
           >
             <div className="device-status-header">
               <h3>DOORBELL</h3>
-              <span className={`status-indicator ${getDeviceStatusClass(doorbellDevice?.expireAt, doorbellDevice?.last_seen)}`}>
-                {getDeviceStatusText(doorbellDevice?.expireAt, doorbellDevice?.last_seen)}
+              <span className={`status-indicator ${getDeviceStatusClass(doorbellDevice?.online || false, doorbellDevice?.last_seen)}`}>
+                {getDeviceStatusText(doorbellDevice?.online || false, doorbellDevice?.last_seen)}
               </span>
             </div>
             {doorbellDevice && (
@@ -82,8 +82,8 @@ export function SystemStatusCard({ devicesStatus, isExpanded = false }: SystemSt
           >
             <div className="device-status-header">
               <h3>HUB</h3>
-              <span className={`status-indicator ${getDeviceStatusClass(hubDevice?.expireAt, hubDevice?.last_seen)}`}>
-                {getDeviceStatusText(hubDevice?.expireAt, hubDevice?.last_seen)}
+              <span className={`status-indicator ${getDeviceStatusClass(hubDevice?.online || false, hubDevice?.last_seen)}`}>
+                {getDeviceStatusText(hubDevice?.online || false, hubDevice?.last_seen)}
               </span>
             </div>
             {hubDevice && (
