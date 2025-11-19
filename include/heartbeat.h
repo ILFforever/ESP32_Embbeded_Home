@@ -2,6 +2,7 @@
 #define HEARTBEAT_H
 
 #include <Arduino.h>
+#include <ArduinoJson.h>
 
 // Configuration - Update these for your deployment
 extern const char* BACKEND_SERVER_URL;
