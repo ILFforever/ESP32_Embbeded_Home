@@ -1,9 +1,9 @@
-#include "screen_manager.h"
+#include "GUI/screen_manager.h"
 
 // Check if touch coordinates are within bounds
 bool isTouchInBounds(int touchX, int touchY, int x, int y, int width, int height)
 {
-  return (touchX >= x && touchX <= (x + width) && touchY >= y && touchY <= (y + height));
+  return (touchX >= x && touchX < (x + width) && touchY >= y && touchY < (y + height));
 }
 
 // Update touch button state

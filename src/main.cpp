@@ -41,6 +41,7 @@ Scheduler scheduler;
 LGFX_Sprite topBar(&lcd);      // Top status bar (800x40)
 LGFX_Sprite contentArea(&lcd); // Main content area (800x440)
 LGFX_Sprite botBar(&lcd);      // Main content area (800x440)
+LGFX_Sprite touchArea(&lcd);   // Full screen touch area (800x480)
 
 // Touch state
 TouchPosition currentTouch = {0, 0, false, 0};
@@ -59,6 +60,7 @@ unsigned long doorbellRingTime = 0;
 volatile bool topBarNeedsUpdate = false;
 volatile bool botBarNeedsUpdate = false;
 volatile bool contentNeedsUpdate = false;
+volatile bool touchAreaNeedsUpdate = false;
 
 // Track previous values to detect changes
 static int prevFreeHeap = 0;
@@ -95,7 +97,7 @@ void onFaceDetection(bool recognized, const char *name, float confidence);
 
 Task taskUpdateTopBar(1000, TASK_FOREVER, &updateTopBar);
 Task taskUpdateContent(100, TASK_FOREVER, &updateContent);
-Task taskTouchUpdate(20, TASK_FOREVER, &updateTouch);
+Task taskTouchUpdate(20, TASK_FOREVER, &updateTouchllv);
 Task taskCapSensorUpdate(100, TASK_FOREVER, &updateCapSensor);
 Task taskSendHeartbeat(60000, TASK_FOREVER, &sendHeartbeatTask);  // Every 60s
 Task taskCheckDoorbell(60000, TASK_FOREVER, &checkDoorbellTask);  // Every 60s
@@ -137,25 +139,34 @@ void setup(void)
   Serial.println("Display ready!\n");
 
   // Top bar sprite (800x40 = 64,000 bytes)
-  topBar.setColorDepth(16);
+  topBar.setColorDepth(8);
   topBar.setPsram(true);
   bool topBarCreated = topBar.createSprite(800, 40);
 
   // Bottom bar sprite (800x20 = 32,000 bytes)
-  botBar.setColorDepth(16);
+  botBar.setColorDepth(8);
   botBar.setPsram(true);
   bool botBarCreated = botBar.createSprite(800, 20);
 
   // Content area sprite (800x440 = 704,000 bytes)
-  contentArea.setColorDepth(16);
+  contentArea.setColorDepth(8);
   contentArea.setPsram(true);
   bool contentCreated = contentArea.createSprite(800, 440);
 
-  if (topBarCreated && contentCreated && botBarCreated)
+  // Touch area sprite (800x480) with transparency
+  touchArea.setColorDepth(8);
+  touchArea.setPsram(true);
+  bool touchCreated = touchArea.createSprite(800, 480);
+  touchArea.setPaletteColor(0, TFT_BLACK); // Index 0 = transparent color
+  touchArea.fillSprite(0); // Fill with transparent
+
+  if (topBarCreated && contentCreated && botBarCreated && touchCreated)
   {
     Serial.printf("Sprites created successfully!\n");
     Serial.printf("  Top bar: 800x40 (%d bytes)\n", 800 * 40 * 2);
     Serial.printf("  Content: 800x440 (%d bytes)\n", 800 * 440 * 2);
+    Serial.printf("  Bottom bar: 800x20 (%d bytes)\n", 800 * 20 * 2);
+    Serial.printf("  Touch area: 800x480 (%d bytes)\n", 800 * 480 * 2);
     Serial.printf("Free PSRAM after sprites: %d bytes\n", ESP.getFreePsram());
 
     // Initialize top bar

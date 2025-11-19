@@ -1,0 +1,128 @@
+Recommended Pattern for 30 Buttons Across Multiple Screens
+// In screen_manager.cpp
+
+#define RING_NOTIFICATION_DURATION 3000
+
+// ============================================================================
+// PER-SCREEN BUTTON STORAGE (Organized by namespace)
+// ============================================================================
+// This keeps all 30 buttons organized and their state persistent
+// Total memory: ~20 bytes × 30 buttons = ~600 bytes (negligible on ESP32)
+
+namespace Screen0 {
+  TouchButton buttons[6] = {0};  // Home screen: 3 alerts + 3 quick actions
+  const int buttonCount = 6;
+}
+
+namespace Screen1 {
+  // Font test - no buttons needed
+  const int buttonCount = 0;
+}
+
+namespace Screen2 {
+  TouchButton buttons[3] = {0};  // Example buttons
+  const int buttonCount = 3;
+}
+
+namespace Screen3 {
+  TouchButton buttons[8] = {0};  // Device control grid (example)
+  const int buttonCount = 8;
+}
+
+namespace Screen4 {
+  TouchButton buttons[10] = {0}; // Settings menu (example)
+  const int buttonCount = 10;
+}
+
+// Continue for all your screens...
+// Total: 6 + 3 + 8 + 10 + ... = 30 buttons
+
+// ============================================================================
+// USAGE EXAMPLE
+// ============================================================================
+
+void updateContent() {
+  if (Last_Screen != cur_Screen) {
+    // ... screen transition code
+    
+    if (cur_Screen == 0) {
+      // Initialize Screen 0 buttons
+      static bool initialized = false;
+      if (!initialized) {
+        // Alert buttons
+        Screen0::buttons[0] = {530, 60, 250, 60};   // Green alert
+        Screen0::buttons[1] = {530, 125, 250, 60};  // Yellow alert
+        Screen0::buttons[2] = {530, 190, 250, 60};  // Red alert
+        
+        // Quick action buttons
+        Screen0::buttons[3] = {530, 322, 75, 75};
+        Screen0::buttons[4] = {617, 322, 75, 75};
+        Screen0::buttons[5] = {704, 322, 75, 75};
+        
+        initialized = true;
+      }
+      
+      // Update all buttons for this screen
+      for (int i = 0; i < Screen0::buttonCount; i++) {
+        bool clicked = updateTouchButton(
+          &Screen0::buttons[i], 
+          currentTouch.x, 
+          currentTouch.y - 40, 
+          currentTouch.isPressed
+        );
+        
+        if (clicked) {
+          // Handle button click
+          Serial.printf("Screen 0, Button %d clicked!\n", i);
+        }
+        
+        // Draw button with state-based color
+        uint16_t color = TFT_DARKGREY;
+        if (Screen0::buttons[i].isPressed && !Screen0::buttons[i].isDragging) {
+          color = TFT_LIGHTGREY;
+        }
+        contentArea.fillSmoothRoundRect(
+          Screen0::buttons[i].x, 
+          Screen0::buttons[i].y,
+          Screen0::buttons[i].width, 
+          Screen0::buttons[i].height, 
+          10, 
+          color
+        );
+      }
+    }
+    
+    else if (cur_Screen == 2) {
+      // Similar pattern for Screen 2
+      static bool initialized = false;
+      if (!initialized) {
+        Screen2::buttons[0] = {50, 100, 200, 80};
+        Screen2::buttons[1] = {300, 100, 200, 80};
+        Screen2::buttons[2] = {550, 100, 200, 80};
+        initialized = true;
+      }
+      
+      for (int i = 0; i < Screen2::buttonCount; i++) {
+        bool clicked = updateTouchButton(
+          &Screen2::buttons[i],
+          currentTouch.x,
+          currentTouch.y - 40,
+          currentTouch.isPressed
+        );
+        // ... draw and handle
+      }
+    }
+  }
+}
+Why This Approach?
+Pros:
+Organized: Each screen's buttons are in their own namespace
+Persistent state: Button state survives across frames (required for touch tracking)
+Memory efficient: Total 600 bytes for all 30 buttons
+Scalable: Easy to add new screens
+Clean code: No global pollution with button1, button2, etc.
+Memory breakdown:
+Your sprites: ~768KB (topBar 64KB + contentArea 704KB + botBar 32KB)
+30 buttons: ~0.6KB
+Buttons are 0.08% of sprite memory - completely negligible
+Keep your current global approach for now if you want, or refactor to namespaces when you start adding more screens. Both work fine with 30 buttons on an ESP32-WROVER.

@@ -14,7 +14,7 @@ struct TouchButton {
 };
 
 // Touch button handling functions
-bool isTouchInBounds(int touchX, int touchY, int x, int y, int width, int height);
 bool updateTouchButton(TouchButton* btn, int touchX, int touchY, bool isTouching);
+bool isTouchInBounds(int touchX, int touchY, int x, int y, int width, int height);
 
 #endif // TOUCH_BUTTON_H

@@ -10,7 +10,7 @@
 
 void updateTopBar();
 void updateContent();
-void updateTouch();
+void updateTouchllv();
 void updateCapSensor();
 void pushSpritesToDisplay();
 

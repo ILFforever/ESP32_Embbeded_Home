@@ -1,13 +1,9 @@
 #include "screen_manager.h"
+#include "Touch/touch_handler.h"
 #include <WiFi.h>
 #include <Touch.h>
 
 #define RING_NOTIFICATION_DURATION 3000 // Show notification for 3 seconds
-
-// Define touch button instances
-TouchButton exampleButton1 = {0};
-TouchButton exampleButton2 = {0};
-TouchButton exampleButton3 = {0};
 
 void updateTopBar()
 {
@@ -88,7 +84,7 @@ void updateTopBar()
 // Remember to -40 from height to account for top bar
 void updateContent()
 {
-  if (Last_Screen != cur_Screen)
+  if ((Last_Screen != cur_Screen) || contentNeedsUpdate)
   {
     updateBotBar();
     Last_Screen = cur_Screen;
@@ -123,92 +119,129 @@ void updateContent()
     }
     else if (cur_Screen == 1)
     {
-      // Initialize buttons on first entry
-      static bool buttonsInitialized = false;
-      if (!buttonsInitialized)
-      {
-        exampleButton1.x = 50;
-        exampleButton1.y = 100;
-        exampleButton1.width = 200;
-        exampleButton1.height = 80;
+      contentArea.fillScreen(TFT_BLACK);
+      contentArea.setTextColor(TFT_WHITE);
 
-        exampleButton2.x = 300;
-        exampleButton2.y = 100;
-        exampleButton2.width = 200;
-        exampleButton2.height = 80;
+      // Font test screen - antialiased fonts with better spacing
+      int y = 10;
+      int x = 10;
 
-        exampleButton3.x = 550;
-        exampleButton3.y = 100;
-        exampleButton3.width = 200;
-        exampleButton3.height = 80;
+      // Column 1 - FreeMono family (antialiased)
+      contentArea.setFont(&fonts::FreeMono9pt7b);
+      contentArea.drawString("FreeMono9pt", x, y);
+      y += 25;
 
-        buttonsInitialized = true;
-      }
+      contentArea.setFont(&fonts::FreeMonoBold9pt7b);
+      contentArea.drawString("FreeMonoBold9pt", x, y);
+      y += 25;
+
+      contentArea.setFont(&fonts::FreeMonoOblique9pt7b);
+      contentArea.drawString("FreeMonoObliq9pt", x, y);
+      y += 25;
+
+      contentArea.setFont(&fonts::FreeMonoBoldOblique9pt7b);
+      contentArea.drawString("FreeMonoBoldObl9pt", x, y);
+      y += 35;
+
+      // DejaVu fonts (antialiased)
+      contentArea.setFont(&fonts::DejaVu9);
+      contentArea.drawString("DejaVu9", x, y);
+      y += 22;
+
+      contentArea.setFont(&fonts::DejaVu12);
+      contentArea.drawString("DejaVu12", x, y);
+      y += 25;
+
+      contentArea.setFont(&fonts::DejaVu18);
+      contentArea.drawString("DejaVu18", x, y);
+      y += 32;
+
+      contentArea.setFont(&fonts::DejaVu24);
+      contentArea.drawString("DejaVu24", x, y);
+
+      // Column 2 - FreeSans family (antialiased)
+      y = 10;
+      x = 280;
+
+      contentArea.setFont(&fonts::FreeSans9pt7b);
+      contentArea.drawString("FreeSans9pt", x, y);
+      y += 25;
+
+      contentArea.setFont(&fonts::FreeSansBold9pt7b);
+      contentArea.drawString("FreeSansBold9pt", x, y);
+      y += 25;
+
+      contentArea.setFont(&fonts::FreeSansOblique9pt7b);
+      contentArea.drawString("FreeSansObliq9pt", x, y);
+      y += 25;
+
+      contentArea.setFont(&fonts::FreeSansBoldOblique9pt7b);
+      contentArea.drawString("FreeSansBoldObl9pt", x, y);
+      y += 35;
+
+      // FreeSerif family (antialiased)
+      contentArea.setFont(&fonts::FreeSerif9pt7b);
+      contentArea.drawString("FreeSerif9pt", x, y);
+      y += 25;
+
+      contentArea.setFont(&fonts::FreeSerifBold9pt7b);
+      contentArea.drawString("FreeSerifBold9pt", x, y);
+      y += 25;
+
+      contentArea.setFont(&fonts::FreeSerifItalic9pt7b);
+      contentArea.drawString("FreeSerifItalic9pt", x, y);
+      y += 25;
+
+      contentArea.setFont(&fonts::FreeSerifBoldItalic9pt7b);
+      contentArea.drawString("FreeSerifBoldIt9pt", x, y);
+
+      // Column 3 - Specialty fonts (all antialiased)
+      y = 10;
+      x = 560;
+
+      contentArea.setFont(&fonts::efontCN_10);
+      contentArea.drawString("efontCN_10", x, y);
+      y += 22;
+
+      contentArea.setFont(&fonts::efontCN_12);
+      contentArea.drawString("efontCN_12", x, y);
+      y += 25;
+
+      contentArea.setFont(&fonts::efontCN_14);
+      contentArea.drawString("efontCN_14", x, y);
+      y += 30;
+
+      contentArea.setFont(&fonts::TomThumb);
+      contentArea.drawString("TomThumb", x, y);
+      y += 20;
+
+      contentArea.setFont(&fonts::Orbitron_Light_24);
+      contentArea.drawString("Orbitron24", x, y);
+      y += 38;
+
+      contentArea.setFont(&fonts::Roboto_Thin_24);
+      contentArea.drawString("RobotoThin24", x, y);
+      y += 38;
+
+      contentArea.setFont(&fonts::Satisfy_24);
+      contentArea.drawString("Satisfy24", x, y);
+      y += 38;
+
+      contentArea.setFont(&fonts::Yellowtail_32);
+      contentArea.drawString("Yellowtail32", x, y);
+
+      // Reset to default
+      contentArea.setFont(&fonts::Font0);
+    }
+
+    else if (cur_Screen == 2) // button example
+    {
       contentArea.setTextSize(1);
-
       contentArea.fillScreen(TFT_BLACK);
       contentArea.setTextColor(TFT_WHITE);
       contentArea.setFont(&fonts::Orbitron_Light_24);
       contentArea.drawString("Touch Button Example", 200, 20);
       contentArea.setFont(&fonts::Font0);
-
-      // Update button states
-      bool btn1Clicked = updateTouchButton(&exampleButton1, currentTouch.x, currentTouch.y - 40, currentTouch.isPressed);
-      bool btn2Clicked = updateTouchButton(&exampleButton2, currentTouch.x, currentTouch.y - 40, currentTouch.isPressed);
-      bool btn3Clicked = updateTouchButton(&exampleButton3, currentTouch.x, currentTouch.y - 40, currentTouch.isPressed);
-
-      // Draw Button 1
-      uint16_t btn1Color = TFT_DARKGREY;
-      if (exampleButton1.isPressed && !exampleButton1.isDragging)
-      {
-        btn1Color = TFT_LIGHTGREY;
-      }
-      contentArea.fillSmoothRoundRect(exampleButton1.x, exampleButton1.y, exampleButton1.width, exampleButton1.height, 10, btn1Color);
-      contentArea.setTextColor(TFT_WHITE);
-      contentArea.setTextSize(2);
-      contentArea.drawCenterString("Button 1", exampleButton1.x + exampleButton1.width / 2, exampleButton1.y + exampleButton1.height / 2 - 8);
-
-      // Draw Button 2
-      uint16_t btn2Color = TFT_DARKGREY;
-      if (exampleButton2.isPressed && !exampleButton2.isDragging)
-      {
-        btn2Color = TFT_LIGHTGREY;
-      }
-      contentArea.fillSmoothRoundRect(exampleButton2.x, exampleButton2.y, exampleButton2.width, exampleButton2.height, 10, btn2Color);
-      contentArea.drawCenterString("Button 2", exampleButton2.x + exampleButton2.width / 2, exampleButton2.y + exampleButton2.height / 2 - 8);
-
-      // Draw Button 3
-      uint16_t btn3Color = TFT_DARKGREY;
-      if (exampleButton3.isPressed && !exampleButton3.isDragging)
-      {
-        btn3Color = TFT_LIGHTGREY;
-      }
-      contentArea.fillSmoothRoundRect(exampleButton3.x, exampleButton3.y, exampleButton3.width, exampleButton3.height, 10, btn3Color);
-      contentArea.drawCenterString("Button 3", exampleButton3.x + exampleButton3.width / 2, exampleButton3.y + exampleButton3.height / 2 - 8);
-
-      // Display click feedback
-      contentArea.setTextSize(1);
-      contentArea.setFont(&fonts::DejaVu18);
-      int feedbackY = 250;
-
-      if (btn1Clicked)
-      {
-        contentArea.setTextColor(TFT_GREEN);
-        contentArea.drawString("Button 1 Clicked!", 50, feedbackY);
-        Serial.println("Button 1 clicked!");
-      }
-      if (btn2Clicked)
-      {
-        contentArea.setTextColor(TFT_CYAN);
-        contentArea.drawString("Button 2 Clicked!", 50, feedbackY + 40);
-        Serial.println("Button 2 clicked!");
-      }
-      if (btn3Clicked)
-      {
-        contentArea.setTextColor(TFT_YELLOW);
-        contentArea.drawString("Button 3 Clicked!", 50, feedbackY + 80);
-        Serial.println("Button 3 clicked!");
-      }
 
       // Display instructions
       contentArea.setTextColor(TFT_DARKGREY);
@@ -253,6 +286,9 @@ void updateContent()
     botBarNeedsUpdate = true;
   }
 
+  // Finally draw touch inputs on top for that screen
+  handleTouchInput();
+
   // Push top bar if updated (small: 800x40 = 64KB, ~8ms transfer)
   if (topBarNeedsUpdate)
   {
@@ -273,7 +309,13 @@ void updateContent()
     botBar.pushSprite(0, 460);
     botBarNeedsUpdate = false;
   }
+  if (touchAreaNeedsUpdate)
+  {
+    touchArea.pushSprite(0, 0, 0); // x, y, transparentColor (palette index 0) - positioned below top bar
+    touchAreaNeedsUpdate = false;
+  }
 }
+
 void updateBotBar()
 {
   if (cur_Screen == 0)
@@ -295,7 +337,7 @@ void updateBotBar()
   botBarNeedsUpdate = true;
 }
 
-void updateTouch()
+void updateTouchllv()
 {
   // Only read if interrupt fired
   if (!touchDataReady)

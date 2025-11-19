@@ -59,25 +59,4 @@ struct TouchPosition
   uint32_t timestamp;
 };
 
-// Touch button struct for UI button areas
-struct TouchButton
-{
-  uint16_t x;          // Top-left X coordinate
-  uint16_t y;          // Top-left Y coordinate
-  uint16_t width;      // Button width
-  uint16_t height;     // Button height
-  const char* label;   // Button label text
-  uint16_t fgColor;    // Foreground (text) color
-  uint16_t bgColor;    // Background color
-  bool isPressed;      // Current press state
-  void (*callback)();  // Function to call when pressed
-
-  // Helper function to check if touch is within button bounds
-  bool contains(uint16_t touchX, uint16_t touchY) const
-  {
-    return (touchX >= x && touchX <= (x + width) &&
-            touchY >= y && touchY <= (y + height));
-  }
-};
-
 #endif // DISPLAY_CONFIG_H
