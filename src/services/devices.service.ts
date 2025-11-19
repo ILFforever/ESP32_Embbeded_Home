@@ -12,6 +12,20 @@ import type {
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
 
+// Helper to get auth token from localStorage
+const getAuthToken = (): string | null => {
+  if (typeof window !== 'undefined') {
+    return localStorage.getItem('token');
+  }
+  return null;
+};
+
+// Helper to get auth headers
+const getAuthHeaders = () => {
+  const token = getAuthToken();
+  return token ? { Authorization: `Bearer ${token}` } : {};
+};
+
 // Backend device interface
 interface BackendDevice {
   device_id: string;
@@ -39,7 +53,10 @@ interface BackendDevicesResponse {
 // Get all devices status from backend
 export async function getAllDevices(): Promise<DevicesStatus> {
   try {
-    const response = await axios.get<BackendDevicesResponse>(`${API_URL}/api/v1/devices/status/all`);
+    const response = await axios.get<BackendDevicesResponse>(
+      `${API_URL}/api/v1/devices/status/all`,
+      { headers: getAuthHeaders() }
+    );
 
     // Transform backend data to match frontend DevicesStatus interface
     return {
@@ -266,7 +283,10 @@ export async function getDoorbellInfo(deviceId: string): Promise<DoorbellInfo | 
   try {
     const response = await axios.get<BackendDoorbellInfoResponse>(
       `${API_URL}/api/v1/devices/doorbell/${deviceId}/info`,
-      { timeout: 10000 }  // 10 second timeout
+      {
+        timeout: 10000,  // 10 second timeout
+        headers: getAuthHeaders()
+      }
     );
     return response.data.data;
   } catch (error) {
@@ -284,7 +304,10 @@ export async function controlDoorbell(
     const response = await axios.post<BackendDoorbellControlResponse>(
       `${API_URL}/api/v1/devices/doorbell/${deviceId}/control`,
       { action },
-      { timeout: 15000 }  // 15 second timeout for commands
+      {
+        timeout: 15000,  // 15 second timeout for commands
+        headers: getAuthHeaders()
+      }
     );
     return response.data.result;
   } catch (error) {
