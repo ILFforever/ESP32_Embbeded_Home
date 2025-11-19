@@ -15,7 +15,27 @@ const {
   getDoorbellStatus,
   sendDeviceCommand,
   fetchPendingCommands,
-  acknowledgeCommand
+  acknowledgeCommand,
+  // Camera control
+  startCamera,
+  stopCamera,
+  restartCamera,
+  // Microphone control
+  startMicrophone,
+  stopMicrophone,
+  getMicrophoneStatus,
+  // Amplifier control
+  playAmplifier,
+  stopAmplifier,
+  restartAmplifier,
+  // Face management
+  getFaceCount,
+  listFaces,
+  checkFaceDatabase,
+  // System control
+  restartSystem,
+  // Device info
+  getDeviceInfo
 } = require('../controllers/devices');
 const { authenticateDevice } = require('../middleware/deviceAuth');
 const { protect } = require('../middleware/auth');
@@ -114,5 +134,99 @@ router.post('/commands/pending', authenticateDevice, fetchPendingCommands);
 // @desc    Device acknowledges command execution
 // @access  Private (requires device token)
 router.post('/commands/ack', authenticateDevice, acknowledgeCommand);
+
+// ============================================================================
+// Camera Control Routes
+// ============================================================================
+
+// @route   POST /api/v1/devices/:device_id/camera/start
+// @desc    Queue camera start command
+// @access  Private (requires user token)
+router.post('/:device_id/camera/start', protect, startCamera);
+
+// @route   POST /api/v1/devices/:device_id/camera/stop
+// @desc    Queue camera stop command
+// @access  Private (requires user token)
+router.post('/:device_id/camera/stop', protect, stopCamera);
+
+// @route   POST /api/v1/devices/:device_id/camera/restart
+// @desc    Queue camera restart command
+// @access  Private (requires user token)
+router.post('/:device_id/camera/restart', protect, restartCamera);
+
+// ============================================================================
+// Microphone Control Routes
+// ============================================================================
+
+// @route   POST /api/v1/devices/:device_id/mic/start
+// @desc    Queue microphone start command
+// @access  Private (requires user token)
+router.post('/:device_id/mic/start', protect, startMicrophone);
+
+// @route   POST /api/v1/devices/:device_id/mic/stop
+// @desc    Queue microphone stop command
+// @access  Private (requires user token)
+router.post('/:device_id/mic/stop', protect, stopMicrophone);
+
+// @route   POST /api/v1/devices/:device_id/mic/status
+// @desc    Queue microphone status command
+// @access  Private (requires user token)
+router.post('/:device_id/mic/status', protect, getMicrophoneStatus);
+
+// ============================================================================
+// Audio Amplifier Control Routes
+// ============================================================================
+
+// @route   POST /api/v1/devices/:device_id/amp/play
+// @desc    Queue amplifier play command (requires ?url= parameter)
+// @access  Private (requires user token)
+router.post('/:device_id/amp/play', protect, playAmplifier);
+
+// @route   POST /api/v1/devices/:device_id/amp/stop
+// @desc    Queue amplifier stop command
+// @access  Private (requires user token)
+router.post('/:device_id/amp/stop', protect, stopAmplifier);
+
+// @route   POST /api/v1/devices/:device_id/amp/restart
+// @desc    Queue amplifier restart command
+// @access  Private (requires user token)
+router.post('/:device_id/amp/restart', protect, restartAmplifier);
+
+// ============================================================================
+// Face Management Routes
+// ============================================================================
+
+// @route   POST /api/v1/devices/:device_id/face/count
+// @desc    Queue face count command
+// @access  Private (requires user token)
+router.post('/:device_id/face/count', protect, getFaceCount);
+
+// @route   POST /api/v1/devices/:device_id/face/list
+// @desc    Queue face list command (output to serial)
+// @access  Private (requires user token)
+router.post('/:device_id/face/list', protect, listFaces);
+
+// @route   POST /api/v1/devices/:device_id/face/check
+// @desc    Queue face database check command
+// @access  Private (requires user token)
+router.post('/:device_id/face/check', protect, checkFaceDatabase);
+
+// ============================================================================
+// System Control Routes
+// ============================================================================
+
+// @route   POST /api/v1/devices/:device_id/system/restart
+// @desc    Queue system restart command
+// @access  Private (requires user token)
+router.post('/:device_id/system/restart', protect, restartSystem);
+
+// ============================================================================
+// Device Info Route
+// ============================================================================
+
+// @route   GET /api/v1/devices/:device_id/info
+// @desc    Get device info (similar to HTML controller /info endpoint)
+// @access  Private (requires user token)
+router.get('/:device_id/info', protect, getDeviceInfo);
 
 module.exports = router;
