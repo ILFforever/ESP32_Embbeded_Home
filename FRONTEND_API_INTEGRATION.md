@@ -185,29 +185,51 @@ const doorbellControlData = doorbellControl || {
 }
 ```
 
-### ESP32 Doorbell API
-**Base URL**: `process.env.NEXT_PUBLIC_DOORBELL_URL` (default: `http://doorbell.local`)
+### Doorbell API (via Backend Proxy)
+**Base URL**: Same as Backend API (`process.env.NEXT_PUBLIC_API_URL`)
 
 | Endpoint | Method | Purpose | Returns |
 |----------|--------|---------|---------|
-| `/info` | GET | Get doorbell status | DoorbellInfo |
-| `/camera/start` | GET | Start camera | {status, message} |
-| `/camera/stop` | GET | Stop camera | {status, message} |
-| `/mic/start` | GET | Start microphone | {status, message} |
-| `/mic/stop` | GET | Stop microphone | {status, message} |
-| `/ping` | GET | Ping camera module | {status, message, ping_count} |
+| `/api/v1/devices/doorbell/:device_id/info` | GET | Get doorbell status (proxied to ESP32) | BackendDoorbellInfoResponse |
+| `/api/v1/devices/doorbell/:device_id/control` | POST | Control doorbell (camera, mic, ping) | BackendDoorbellControlResponse |
 
-**Example /info Response**:
+**Example GET /info Response**:
 ```json
 {
-  "ip": "192.168.1.100",
-  "uptime": 3456789,
-  "slave_status": 1,
-  "amp_status": 0,
-  "free_heap": 52000,
-  "ping_count": 42,
-  "wifi_rssi": -52,
-  "wifi_connected": true
+  "status": "ok",
+  "device_id": "doorbell_001",
+  "data": {
+    "ip": "192.168.1.100",
+    "uptime": 3456789,
+    "slave_status": 1,
+    "amp_status": 0,
+    "free_heap": 52000,
+    "ping_count": 42,
+    "wifi_rssi": -52,
+    "wifi_connected": true
+  }
+}
+```
+
+**Example POST /control Request**:
+```json
+{
+  "action": "camera_start"
+}
+```
+
+**Valid Actions**: `camera_start`, `camera_stop`, `mic_start`, `mic_stop`, `ping`
+
+**Example POST /control Response**:
+```json
+{
+  "status": "ok",
+  "device_id": "doorbell_001",
+  "action": "camera_start",
+  "result": {
+    "status": "success",
+    "message": "Camera started"
+  }
 }
 ```
 
@@ -220,9 +242,6 @@ Create `.env.local` in frontend root:
 ```bash
 # Backend API URL (Node.js server)
 NEXT_PUBLIC_API_URL=http://localhost:5000
-
-# Doorbell ESP32 URL (direct device communication)
-NEXT_PUBLIC_DOORBELL_URL=http://doorbell.local
 ```
 
 ### Production Configuration
@@ -232,10 +251,9 @@ For deployed frontend:
 ```bash
 # Backend API URL (deployed backend)
 NEXT_PUBLIC_API_URL=https://embedded-smarthome.fly.dev
-
-# Doorbell ESP32 URL (local network or public IP)
-NEXT_PUBLIC_DOORBELL_URL=http://192.168.1.100
 ```
+
+**Note**: The `NEXT_PUBLIC_DOORBELL_URL` environment variable is no longer needed as all doorbell communication now goes through the backend proxy.
 
 ## Data Flow
 
@@ -245,20 +263,23 @@ NEXT_PUBLIC_DOORBELL_URL=http://192.168.1.100
 │  (Next.js)  │
 └──────┬──────┘
        │
-       ├──────────────┐
-       │              │
-       ▼              ▼
-┌──────────┐   ┌──────────────┐
-│ Backend  │   │ ESP32        │
-│ API      │   │ Doorbell     │
-│(Node.js) │   │ (Direct HTTP)│
-└────┬─────┘   └──────────────┘
-     │
-     ▼
+       │ (All requests via backend)
+       │
+       ▼
 ┌──────────┐
-│Firebase  │
-│Firestore │
-└──────────┘
+│ Backend  │
+│ API      │
+│(Node.js) │
+└────┬─────┘
+     │
+     ├──────────────┐
+     │              │
+     ▼              ▼
+┌──────────┐   ┌──────────────┐
+│Firebase  │   │ ESP32        │
+│Firestore │   │ Doorbell     │
+│          │   │ (Proxied)    │
+└──────────┘   └──────────────┘
 ```
 
 ### Data Sources
@@ -270,10 +291,12 @@ NEXT_PUBLIC_DOORBELL_URL=http://192.168.1.100
    - Shows: All registered devices, online/offline status
 
 2. **Doorbell Control** (DoorbellControl):
-   - Source: ESP32 Doorbell (direct)
-   - Endpoint: `http://doorbell.local/info`
+   - Source: Backend API → ESP32 Doorbell (proxied)
+   - Info Endpoint: `/api/v1/devices/doorbell/:device_id/info`
+   - Control Endpoint: `/api/v1/devices/doorbell/:device_id/control`
    - Frequency: Every 5 seconds
    - Shows: Camera status, mic status, face recognition
+   - Backend retrieves device IP from Firebase, then proxies to ESP32
 
 3. **Mock Data** (Still in Use):
    - Alerts
@@ -403,7 +426,7 @@ try {
 | Feature | Status | Data Source |
 |---------|--------|-------------|
 | System Status | ✅ Real | Backend API |
-| Doorbell Control | ✅ Real | ESP32 Direct |
+| Doorbell Control | ✅ Real | Backend Proxy → ESP32 |
 | Alerts | ⏳ Mock | TODO: Backend |
 | Temperature | ⏳ Mock | TODO: Sensors |
 | Gas Readings | ⏳ Mock | TODO: Sensors |
@@ -431,10 +454,77 @@ try {
    - Display visitor log
    - Show recognition confidence scores
 
+## Architecture Update: Backend-Only Polling
+
+### Overview
+Updated the frontend to eliminate direct ESP32 device communication and route all requests through the backend API. This provides better security, centralized error handling, and easier maintenance.
+
+### Changes Made
+
+#### Backend (Branch: `claude/backend-doorbell-proxy-01DwB6tHwEMBQtmedRmzqpZ9`)
+
+**New Controller Functions** (`controllers/devices.js`):
+- `getDoorbellInfo()` - Proxies GET requests to ESP32 `/info` endpoint
+  - Retrieves device IP from Firebase
+  - Forwards request to ESP32 device
+  - Returns standardized response with device_id and data
+  - Handles offline/unreachable devices with 503 status
+
+- `controlDoorbell()` - Proxies POST requests for doorbell control
+  - Validates action against whitelist
+  - Retrieves device IP from Firebase
+  - Forwards command to appropriate ESP32 endpoint
+  - Returns command execution result
+
+**New Routes** (`routes/devices.js`):
+- `GET /api/v1/devices/doorbell/:device_id/info`
+- `POST /api/v1/devices/doorbell/:device_id/control`
+
+#### Frontend (Branch: `claude/frontend-api-integration-01DwB6tHwEMBQtmedRmzqpZ9`)
+
+**Updated Service Functions** (`src/services/devices.service.ts`):
+- Removed `DOORBELL_URL` environment variable dependency
+- Updated `getDoorbellInfo()` to accept `deviceId` and call backend proxy
+- Updated `controlDoorbell()` to accept `deviceId` and POST to backend proxy
+- Added `findDoorbellDevice()` helper to extract doorbell from devices list
+- Added response wrapper interfaces for type safety
+
+**Updated Dashboard** (`src/app/dashboard/page.tsx`):
+- Added `doorbellDeviceId` state to track the doorbell device
+- Updated data fetching to get doorbell device_id from devices list
+- Pass device_id to `getDoorbellControlStatus()`
+- Pass device_id to DoorbellControlCard component
+
+**Updated Component** (`src/components/dashboard/DoorbellControlCard.tsx`):
+- Added `deviceId` prop to component interface
+- Updated control handlers to pass device_id to `controlDoorbell()`
+- Added validation to prevent actions without device_id
+
+### Benefits
+
+1. **Security**: Frontend no longer needs direct network access to ESP32 devices
+2. **Centralized Communication**: All device requests go through backend
+3. **Better Error Handling**: Backend can log, retry, and handle device errors
+4. **Easier Deployment**: Devices can be on private network, only backend needs access
+5. **Future-Proof**: Easy to add authentication, rate limiting, or caching at backend level
+
+### Migration Notes
+
+- Frontend now only requires `NEXT_PUBLIC_API_URL` environment variable
+- `NEXT_PUBLIC_DOORBELL_URL` is no longer needed and should be removed from `.env.local`
+- All doorbell communication is now routed through backend
+- Backend retrieves device IP addresses from Firebase dynamically
+
 ## Files Modified
 
-1. `src/services/devices.service.ts` - Added real API calls
-2. `src/app/dashboard/page.tsx` - Updated to use real data
+1. **Backend**:
+   - `controllers/devices.js` - Added doorbell proxy controller functions
+   - `routes/devices.js` - Added doorbell proxy routes
+
+2. **Frontend**:
+   - `src/services/devices.service.ts` - Replaced direct ESP32 calls with backend API calls
+   - `src/app/dashboard/page.tsx` - Updated to fetch and use doorbell device_id
+   - `src/components/dashboard/DoorbellControlCard.tsx` - Added device_id prop and validation
 
 ## Compatibility
 
@@ -443,3 +533,4 @@ try {
 - ✅ Backward compatible (falls back to mock on errors)
 - ✅ No breaking changes to components
 - ✅ Maintains UI/UX consistency
+- ✅ Backend retrieves device IPs dynamically from Firebase
