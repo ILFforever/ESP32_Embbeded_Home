@@ -1,5 +1,6 @@
 #include "heartbeat.h"
 #include "face_detection_sender.h"
+#include "uart_commands.h"
 #include <WiFi.h>
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
@@ -554,10 +555,6 @@ void fetchAndExecuteCommands() {
 // ============================================================================
 bool executeCommand(String action, JsonObject params) {
   Serial.printf("[Commands] Executing action: %s\n", action.c_str());
-
-  // Import uart_commands.h functions
-  extern void sendUARTCommand(const char* command);
-  extern void sendUARTCommand(const char* command, const char* param);
 
   if (action == "camera_start") {
     sendUARTCommand("camera_control", "camera_start");
