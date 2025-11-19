@@ -25,13 +25,13 @@ const authenticateDevice = async (req, res, next) => {
       });
     }
 
-    // Get device_id from request body
-    const { device_id } = req.body;
+    // Get device_id from request body, params, or query (supports POST and GET requests)
+    const device_id = req.body?.device_id || req.params?.device_id || req.query?.device_id;
 
     if (!device_id) {
       return res.status(400).json({
         status: 'error',
-        message: 'device_id required in request body'
+        message: 'device_id required in request body, params, or query'
       });
     }
 

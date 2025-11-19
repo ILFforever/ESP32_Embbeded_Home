@@ -77,18 +77,18 @@ router.post('/doorbell/status', authenticateDevice, handleDoorbellStatus);
 
 // @route   GET /api/v1/devices/status/all
 // @desc    Get all devices status (for frontend dashboard)
-// @access  Public
-router.get('/status/all', getAllDevicesStatus);
+// @access  Private (requires device token)
+router.get('/status/all', authenticateDevice, getAllDevicesStatus);
 
 // @route   GET /api/v1/devices/:device_id/status
 // @desc    Get current device status
-// @access  Public
-router.get('/:device_id/status', getDeviceStatus);
+// @access  Private (requires device token)
+router.get('/:device_id/status', authenticateDevice, getDeviceStatus);
 
 // @route   GET /api/v1/devices/:device_id/history
-// @desc    Get device history (optional)
-// @access  Public
-router.get('/:device_id/history', getDeviceHistory);
+// @desc    Get device history with optional type filtering
+// @access  Private (requires device token)
+router.get('/:device_id/history', authenticateDevice, getDeviceHistory);
 
 // @route   GET /api/v1/devices/doorbell/:device_id/status
 // @desc    Get doorbell status from Firebase (data pushed by doorbell, not proxy)
