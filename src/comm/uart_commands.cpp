@@ -206,6 +206,21 @@ void handleUARTResponse(String line)
         }
       }
 
+      // Update LCD status and video area BEFORE sending to show system is working (not frozen)
+      if (recognized)
+      {
+        char msg[64];
+        snprintf(msg, sizeof(msg), "Uploading data...");
+        updateStatusMsg(msg, false);  // Non-temporary message during upload
+      }
+      else
+      {
+        updateStatusMsg("Uploading data...", false);
+      }
+
+      // Fill video area with uploading screen
+      showUploadingScreen();
+
       // Send face detection event to backend (saves to Firebase + publishes to Hub via MQTT)
       // Sends raw JPEG binary - much more efficient than Base64!
       sendFaceDetection(recognized, name, confidence, frameData, frameSize);

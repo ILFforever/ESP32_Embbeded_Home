@@ -1,4 +1,46 @@
 #include "lcd_helper.h"
+#include <TFT_eSPI.h>
+
+extern TFT_eSPI tft;
+extern SemaphoreHandle_t tftMutex;
+
+// Fill video area with uploading message
+void showUploadingScreen()
+{
+  if (xSemaphoreTake(tftMutex, pdMS_TO_TICKS(100)) == pdTRUE)
+  {
+    videoSprite.fillSprite(TFT_BLACK);
+
+    int centerX = videoSprite.width() / 2;
+    int centerY = videoSprite.height() / 2;  // Adjusted for better centering in video area
+
+    // Draw upload icon (cloud with arrow)
+    videoSprite.fillCircle(centerX - 15, centerY - 35, 12, TFT_DARKGREY);
+    videoSprite.fillCircle(centerX + 15, centerY - 35, 12, TFT_DARKGREY);
+    videoSprite.fillCircle(centerX, centerY - 40, 15, TFT_DARKGREY);
+    videoSprite.fillRect(centerX - 25, centerY - 35, 50, 20, TFT_DARKGREY);
+
+    // Draw upload arrow (pointing up)
+    videoSprite.fillTriangle(
+      centerX, centerY - 25,           // top point
+      centerX - 10, centerY - 10,      // bottom left
+      centerX + 10, centerY - 10,      // bottom right
+      TFT_CYAN
+    );
+    videoSprite.fillRect(centerX - 4, centerY - 10, 8, 20, TFT_CYAN);
+
+    // Draw text with appropriate size
+    videoSprite.setTextColor(TFT_WHITE, TFT_BLACK);
+    videoSprite.setTextDatum(MC_DATUM);
+    videoSprite.setTextSize(1);
+    videoSprite.drawString("Uploading to server...", centerX, centerY + 25);
+
+    // Push sprite to screen at video position
+    videoSprite.pushSprite(0, 65);  // VIDEO_Y_OFFSET = 40
+    
+    xSemaphoreGive(tftMutex);
+  }
+}
 
 // Get status message for current slave state
 String getStatusMessageForSlaveState(int state)

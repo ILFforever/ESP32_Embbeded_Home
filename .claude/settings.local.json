@@ -1,7 +1,8 @@
 {
   "permissions": {
     "allow": [
-      "Bash(git push:*)"
+      "Bash(git push:*)",
+      "Bash(\"/c/Users/paeki/.platformio/penv/Scripts/platformio.exe\" run)"
     ],
     "deny": [],
     "ask": []
