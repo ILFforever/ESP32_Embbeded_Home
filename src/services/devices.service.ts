@@ -12,14 +12,49 @@ import type {
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
 
+// Backend device interface
+interface BackendDevice {
+  device_id: string;
+  type: string;
+  name: string;
+  online: boolean;
+  last_seen: string | null;
+  uptime_ms: number;
+  free_heap: number;
+  wifi_rssi: number;
+  ip_address: string | null;
+}
+
+interface BackendDevicesResponse {
+  status: string;
+  timestamp: string;
+  summary: {
+    total: number;
+    online: number;
+    offline: number;
+  };
+  devices: BackendDevice[];
+}
+
 // Get all devices status from backend
 export async function getAllDevices(): Promise<DevicesStatus> {
   try {
-    const response = await axios.get(`${API_URL}/api/v1/devices/status/all`);
-    return response.data;
+    const response = await axios.get<BackendDevicesResponse>(`${API_URL}/api/v1/devices/status/all`);
+
+    // Transform backend data to match frontend DevicesStatus interface
+    return {
+      timestamp: response.data.timestamp,
+      summary: response.data.summary,
+      devices: response.data.devices
+    };
   } catch (error) {
     console.error('Error fetching devices:', error);
-    throw error;
+    // Return empty structure on error to prevent frontend crashes
+    return {
+      timestamp: new Date().toISOString(),
+      summary: { total: 0, online: 0, offline: 0 },
+      devices: []
+    };
   }
 }
 
@@ -199,23 +234,81 @@ export function generateMockSecurityDevices(): SecurityDevice[] {
   ];
 }
 
-// Doorbell control actions
-export async function controlDoorbell(action: 'camera_start' | 'camera_stop' | 'mic_start' | 'mic_stop') {
-  // This would call your doorbell's HTTP endpoints
-  const DOORBELL_URL = 'http://doorbell.local';
+// Doorbell ESP32 direct communication
+const DOORBELL_URL = process.env.NEXT_PUBLIC_DOORBELL_URL || 'http://doorbell.local';
 
+// Doorbell info interface from ESP32
+interface DoorbellInfo {
+  ip: string;
+  uptime: number;
+  slave_status: number;  // -1=disconnected, 0=standby, 1=active
+  amp_status: number;
+  free_heap: number;
+  ping_count: number;
+  wifi_rssi: number;
+  wifi_connected: boolean;
+}
+
+// Get doorbell device info directly from ESP32
+export async function getDoorbellInfo(): Promise<DoorbellInfo | null> {
+  try {
+    const response = await axios.get<DoorbellInfo>(`${DOORBELL_URL}/info`, {
+      timeout: 5000  // 5 second timeout
+    });
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching doorbell info:', error);
+    return null;
+  }
+}
+
+// Doorbell control actions
+export async function controlDoorbell(action: 'camera_start' | 'camera_stop' | 'mic_start' | 'mic_stop' | 'ping') {
   const endpoints = {
     camera_start: '/camera/start',
     camera_stop: '/camera/stop',
     mic_start: '/mic/start',
-    mic_stop: '/mic/stop'
+    mic_stop: '/mic/stop',
+    ping: '/ping'
   };
 
   try {
-    const response = await axios.get(`${DOORBELL_URL}${endpoints[action]}`);
+    const response = await axios.get(`${DOORBELL_URL}${endpoints[action]}`, {
+      timeout: 10000  // 10 second timeout for commands
+    });
     return response.data;
   } catch (error) {
     console.error(`Error controlling doorbell (${action}):`, error);
     throw error;
+  }
+}
+
+// Get real doorbell control status from ESP32
+export async function getDoorbellControlStatus(): Promise<DoorbellControl> {
+  try {
+    const info = await getDoorbellInfo();
+
+    if (!info) {
+      // Return default offline state
+      return {
+        camera_active: false,
+        mic_active: false,
+        face_recognition: false,
+        last_activity: new Date().toISOString(),
+        visitor_count_today: 0
+      };
+    }
+
+    // Transform ESP32 status to DoorbellControl format
+    return {
+      camera_active: info.slave_status === 1,  // 1 = active
+      mic_active: false,  // Would need to query mic status
+      face_recognition: info.slave_status >= 0,  // >= 0 = connected
+      last_activity: new Date().toISOString(),
+      visitor_count_today: 0  // Would need to track this in backend
+    };
+  } catch (error) {
+    console.error('Error getting doorbell control status:', error);
+    return generateMockDoorbellControl();
   }
 }
