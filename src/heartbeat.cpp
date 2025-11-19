@@ -117,53 +117,6 @@ void sendHeartbeat() {
 }
 
 // ============================================================================
-// Send sensor data to backend (with smart throttling on backend side)
-// ============================================================================
-void sendSensorData(float temperature, float humidity, int motion) {
-  if (WiFi.status() != WL_CONNECTED) {
-    Serial.println("[Sensor] WiFi not connected - skipping");
-    return;
-  }
-
-  HTTPClient http;
-  String url = String(BACKEND_SERVER_URL) + "/api/v1/devices/sensor";
-
-  http.begin(url);  // Plain HTTP - no SSL (memory optimization for ESP32)
-  http.addHeader("Content-Type", "application/json");
-
-  // Add Authorization header with Bearer token
-  if (DEVICE_API_TOKEN && strlen(DEVICE_API_TOKEN) > 0) {
-    String authHeader = String("Bearer ") + DEVICE_API_TOKEN;
-    http.addHeader("Authorization", authHeader.c_str());
-  }
-
-  http.setTimeout(5000);
-
-  // Build JSON payload
-  StaticJsonDocument<512> doc;
-  doc["device_id"] = DEVICE_ID;
-
-  JsonObject sensors = doc["sensors"].to<JsonObject>();
-  sensors["temperature"] = temperature;
-  sensors["humidity"] = humidity;
-  sensors["motion"] = motion;
-
-  String jsonString;
-  serializeJson(doc, jsonString);
-
-  // Send POST request
-  int httpResponseCode = http.POST(jsonString);
-
-  if (httpResponseCode == 200) {
-    Serial.println("[Sensor] ✓ Data sent");
-  } else {
-    Serial.printf("[Sensor] ✗ Failed (code: %d)\n", httpResponseCode);
-  }
-
-  http.end();
-}
-
-// ============================================================================
 // Send disconnect warning to backend (for 30+ second disconnects)
 // ============================================================================
 void sendDisconnectWarning(const char* module_name, bool isDisconnected) {

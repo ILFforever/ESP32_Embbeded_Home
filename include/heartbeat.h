@@ -16,9 +16,6 @@ void initHeartbeat(const char* serverUrl, const char* deviceId, const char* devi
 // Send heartbeat to backend server
 void sendHeartbeat();
 
-// Send sensor data to backend server
-void sendSensorData(float temperature, float humidity, int motion);
-
 // Send warning to backend (for 30s disconnect events)
 void sendDisconnectWarning(const char* module_name, bool isDisconnected);
 

@@ -1220,9 +1220,9 @@ void updateButtonState(ButtonState &btn, int pin, const char *buttonName)
           {
             // Start face recognition with preview
             sendUARTCommand("camera_control", "camera_start");
-            delay(100);
+            //delay(100);
             sendUARTCommand("resume_detection");
-            delay(500); // Show face bounding box for half a second
+            //delay(500); // Show face bounding box for half a second
             sendUARTCommand("recognize_face");
 
             // Start face recognition timeout timer
