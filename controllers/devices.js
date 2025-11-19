@@ -322,11 +322,18 @@ const getDeviceStatus = async (req, res) => {
       .get();
 
     if (statusDoc.exists) {
-      // Document exists - return data with expireAt
+      // Document exists - calculate online status from expireAt
       const data = statusDoc.data();
+
+      // Check if device is online based on expireAt timestamp
+      const now = Date.now();
+      const expireAtMillis = data.expireAt ? data.expireAt.toMillis() : 0;
+      const isOnline = expireAtMillis > now;
+
       res.json({
         status: 'ok',
         device_id,
+        online: isOnline,
         last_heartbeat: data.last_heartbeat,
         uptime_ms: data.uptime_ms,
         free_heap: data.free_heap,
@@ -339,6 +346,7 @@ const getDeviceStatus = async (req, res) => {
       res.json({
         status: 'ok',
         device_id,
+        online: false,
         message: 'Device offline (no heartbeat in 2+ minutes)'
       });
     }
@@ -369,7 +377,7 @@ const getAllDevicesStatus = async (req, res) => {
       const statusDoc = await deviceDoc.ref.collection('status').doc('current').get();
 
       if (statusDoc.exists) {
-        // Document exists - return data with expireAt
+        // Document exists - calculate online status from expireAt
         const statusData = statusDoc.data();
         const lastHeartbeat = statusData.last_heartbeat?.toMillis() || 0;
         const expireAt = statusData.expireAt;
@@ -382,6 +390,7 @@ const getAllDevicesStatus = async (req, res) => {
           device_id: deviceId,
           type: deviceData.type || 'unknown',
           name: deviceData.name || deviceId,
+          online: isOnline,
           last_seen: lastHeartbeat ? new Date(lastHeartbeat).toISOString() : null,
           uptime_ms: statusData.uptime_ms || 0,
           free_heap: statusData.free_heap || 0,
@@ -395,6 +404,7 @@ const getAllDevicesStatus = async (req, res) => {
           device_id: deviceId,
           type: deviceData.type || 'unknown',
           name: deviceData.name || deviceId,
+          online: false,
           last_seen: null,
           uptime_ms: 0,
           free_heap: 0,
