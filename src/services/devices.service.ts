@@ -234,10 +234,7 @@ export function generateMockSecurityDevices(): SecurityDevice[] {
   ];
 }
 
-// Doorbell ESP32 direct communication
-const DOORBELL_URL = process.env.NEXT_PUBLIC_DOORBELL_URL || 'http://doorbell.local';
-
-// Doorbell info interface from ESP32
+// Doorbell info interface from ESP32 (via backend proxy)
 interface DoorbellInfo {
   ip: string;
   uptime: number;
@@ -249,44 +246,57 @@ interface DoorbellInfo {
   wifi_connected: boolean;
 }
 
-// Get doorbell device info directly from ESP32
-export async function getDoorbellInfo(): Promise<DoorbellInfo | null> {
+// Backend response wrapper for doorbell info
+interface BackendDoorbellInfoResponse {
+  status: string;
+  device_id: string;
+  data: DoorbellInfo;
+}
+
+// Backend response wrapper for doorbell control
+interface BackendDoorbellControlResponse {
+  status: string;
+  device_id: string;
+  action: string;
+  result: any;
+}
+
+// Get doorbell device info via backend proxy
+export async function getDoorbellInfo(deviceId: string): Promise<DoorbellInfo | null> {
   try {
-    const response = await axios.get<DoorbellInfo>(`${DOORBELL_URL}/info`, {
-      timeout: 5000  // 5 second timeout
-    });
-    return response.data;
+    const response = await axios.get<BackendDoorbellInfoResponse>(
+      `${API_URL}/api/v1/devices/doorbell/${deviceId}/info`,
+      { timeout: 10000 }  // 10 second timeout
+    );
+    return response.data.data;
   } catch (error) {
     console.error('Error fetching doorbell info:', error);
     return null;
   }
 }
 
-// Doorbell control actions
-export async function controlDoorbell(action: 'camera_start' | 'camera_stop' | 'mic_start' | 'mic_stop' | 'ping') {
-  const endpoints = {
-    camera_start: '/camera/start',
-    camera_stop: '/camera/stop',
-    mic_start: '/mic/start',
-    mic_stop: '/mic/stop',
-    ping: '/ping'
-  };
-
+// Doorbell control actions via backend proxy
+export async function controlDoorbell(
+  deviceId: string,
+  action: 'camera_start' | 'camera_stop' | 'mic_start' | 'mic_stop' | 'ping'
+) {
   try {
-    const response = await axios.get(`${DOORBELL_URL}${endpoints[action]}`, {
-      timeout: 10000  // 10 second timeout for commands
-    });
-    return response.data;
+    const response = await axios.post<BackendDoorbellControlResponse>(
+      `${API_URL}/api/v1/devices/doorbell/${deviceId}/control`,
+      { action },
+      { timeout: 15000 }  // 15 second timeout for commands
+    );
+    return response.data.result;
   } catch (error) {
     console.error(`Error controlling doorbell (${action}):`, error);
     throw error;
   }
 }
 
-// Get real doorbell control status from ESP32
-export async function getDoorbellControlStatus(): Promise<DoorbellControl> {
+// Get real doorbell control status via backend
+export async function getDoorbellControlStatus(deviceId: string): Promise<DoorbellControl> {
   try {
-    const info = await getDoorbellInfo();
+    const info = await getDoorbellInfo(deviceId);
 
     if (!info) {
       // Return default offline state
@@ -311,4 +321,9 @@ export async function getDoorbellControlStatus(): Promise<DoorbellControl> {
     console.error('Error getting doorbell control status:', error);
     return generateMockDoorbellControl();
   }
+}
+
+// Helper function to find doorbell device from devices list
+export function findDoorbellDevice(devices: BackendDevice[]): BackendDevice | null {
+  return devices.find(device => device.type === 'doorbell') || null;
 }

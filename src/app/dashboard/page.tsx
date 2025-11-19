@@ -17,7 +17,8 @@ import {
   generateMockGasReadings,
   generateMockDoorsWindows,
   getDoorbellControlStatus,
-  generateMockSecurityDevices
+  generateMockSecurityDevices,
+  findDoorbellDevice
 } from '@/services/devices.service';
 import type { DevicesStatus } from '@/types/dashboard';
 
@@ -25,6 +26,7 @@ export default function DashboardPage() {
   const router = useRouter();
   const [devicesStatus, setDevicesStatus] = useState<DevicesStatus | null>(null);
   const [doorbellControl, setDoorbellControl] = useState<any>(null);
+  const [doorbellDeviceId, setDoorbellDeviceId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [theme, setTheme] = useState<'purple' | 'green'>('purple');
   const [expandedCard, setExpandedCard] = useState<string | null>(null);
@@ -33,13 +35,27 @@ export default function DashboardPage() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        // Fetch both devices status and doorbell control status
-        const [devices, doorbell] = await Promise.all([
-          getAllDevices(),
-          getDoorbellControlStatus()
-        ]);
+        // Fetch devices status first
+        const devices = await getAllDevices();
         setDevicesStatus(devices);
-        setDoorbellControl(doorbell);
+
+        // Find doorbell device and fetch its control status
+        const doorbellDevice = findDoorbellDevice(devices.devices);
+        if (doorbellDevice) {
+          setDoorbellDeviceId(doorbellDevice.device_id);
+          const doorbell = await getDoorbellControlStatus(doorbellDevice.device_id);
+          setDoorbellControl(doorbell);
+        } else {
+          // No doorbell found, set default state
+          setDoorbellDeviceId(null);
+          setDoorbellControl({
+            camera_active: false,
+            mic_active: false,
+            face_recognition: false,
+            last_activity: new Date().toISOString(),
+            visitor_count_today: 0
+          });
+        }
       } catch (error) {
         console.error('Error loading devices:', error);
       } finally {
@@ -126,7 +142,7 @@ export default function DashboardPage() {
         content = <DoorsWindowsCard doorsWindows={doorsWindows} isExpanded={true} />;
         break;
       case 'doorbell':
-        content = <DoorbellControlCard doorbellControl={doorbellControlData} isExpanded={true} />;
+        content = <DoorbellControlCard doorbellControl={doorbellControlData} deviceId={doorbellDeviceId || undefined} isExpanded={true} />;
         break;
       case 'security':
         content = <SecurityCard securityDevices={securityDevices} isExpanded={true} />;
@@ -324,7 +340,7 @@ export default function DashboardPage() {
                   <circle cx="12" cy="12" r="3"></circle>
                 </svg>
               </button>
-              <DoorbellControlCard doorbellControl={doorbellControlData} />
+              <DoorbellControlCard doorbellControl={doorbellControlData} deviceId={doorbellDeviceId || undefined} />
             </div>
 
             <div
