@@ -327,3 +327,45 @@ export async function getDoorbellControlStatus(deviceId: string): Promise<Doorbe
 export function findDoorbellDevice(devices: BackendDevice[]): BackendDevice | null {
   return devices.find(device => device.type === 'doorbell') || null;
 }
+
+// Helper function to find hub device from devices list
+export function findHubDevice(devices: BackendDevice[]): BackendDevice | null {
+  return devices.find(device => device.type === 'hub' || device.type === 'main_lcd') || null;
+}
+
+// Helper function to check if a device is online based on last_seen timestamp
+export function isDeviceOnline(lastSeen: string | null, thresholdMinutes: number = 2): boolean {
+  if (!lastSeen) return false;
+
+  const lastSeenDate = new Date(lastSeen);
+  const now = new Date();
+  const diffMinutes = (now.getTime() - lastSeenDate.getTime()) / 60000;
+
+  return diffMinutes < thresholdMinutes;
+}
+
+// Helper function to get device status class for styling
+export function getDeviceStatusClass(lastSeen: string | null): string {
+  if (!lastSeen) return 'status-offline';
+
+  const lastSeenDate = new Date(lastSeen);
+  const now = new Date();
+  const diffMinutes = (now.getTime() - lastSeenDate.getTime()) / 60000;
+
+  if (diffMinutes < 2) return 'status-online';
+  if (diffMinutes < 5) return 'status-warning';
+  return 'status-offline';
+}
+
+// Helper function to get human-readable device status text
+export function getDeviceStatusText(lastSeen: string | null): string {
+  if (!lastSeen) return 'OFFLINE';
+
+  const lastSeenDate = new Date(lastSeen);
+  const now = new Date();
+  const diffMinutes = Math.floor((now.getTime() - lastSeenDate.getTime()) / 60000);
+
+  if (diffMinutes < 2) return 'ONLINE';
+  if (diffMinutes < 5) return `LAST SEEN ${diffMinutes}M AGO`;
+  return 'OFFLINE';
+}

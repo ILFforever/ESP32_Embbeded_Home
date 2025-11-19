@@ -1,11 +1,16 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import ProtectedRoute from '@/components/auth/ProtectedRoute';
+import { getAllDevices } from '@/services/devices.service';
+import type { Device } from '@/types/dashboard';
 
 export default function DoorbellControlPage() {
   const router = useRouter();
+  const [doorbellDevice, setDoorbellDevice] = useState<Device | null>(null);
+  const [isOnline, setIsOnline] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [settings, setSettings] = useState({
     cameraEnabled: true,
     micEnabled: true,
@@ -19,6 +24,38 @@ export default function DoorbellControlPage() {
     volume: 60,
   });
 
+  useEffect(() => {
+    const fetchDeviceStatus = async () => {
+      try {
+        const devicesStatus = await getAllDevices();
+        const doorbell = devicesStatus.devices.find(d => d.type === 'doorbell');
+
+        if (doorbell) {
+          setDoorbellDevice(doorbell);
+
+          // Determine if device is online (last seen within 2 minutes)
+          if (doorbell.last_seen) {
+            const lastSeenDate = new Date(doorbell.last_seen);
+            const now = new Date();
+            const diffMinutes = (now.getTime() - lastSeenDate.getTime()) / 60000;
+            setIsOnline(diffMinutes < 2);
+          } else {
+            setIsOnline(false);
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching doorbell status:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchDeviceStatus();
+    // Refresh every 5 seconds
+    const interval = setInterval(fetchDeviceStatus, 5000);
+    return () => clearInterval(interval);
+  }, []);
+
   const toggleSetting = (key: keyof typeof settings) => {
     setSettings(prev => ({
       ...prev,
@@ -28,6 +65,30 @@ export default function DoorbellControlPage() {
 
   const updateSlider = (key: keyof typeof settings, value: number) => {
     setSettings(prev => ({ ...prev, [key]: value }));
+  };
+
+  const getStatusClass = () => {
+    if (!doorbellDevice || !doorbellDevice.last_seen) return 'status-offline';
+
+    const lastSeenDate = new Date(doorbellDevice.last_seen);
+    const now = new Date();
+    const diffMinutes = (now.getTime() - lastSeenDate.getTime()) / 60000;
+
+    if (diffMinutes < 2) return 'status-online';
+    if (diffMinutes < 5) return 'status-warning';
+    return 'status-offline';
+  };
+
+  const getStatusText = () => {
+    if (!doorbellDevice || !doorbellDevice.last_seen) return 'OFFLINE';
+
+    const lastSeenDate = new Date(doorbellDevice.last_seen);
+    const now = new Date();
+    const diffMinutes = Math.floor((now.getTime() - lastSeenDate.getTime()) / 60000);
+
+    if (diffMinutes < 2) return 'ONLINE';
+    if (diffMinutes < 5) return `LAST SEEN ${diffMinutes}M AGO`;
+    return 'OFFLINE';
   };
 
   return (
@@ -43,8 +104,8 @@ export default function DoorbellControlPage() {
             </div>
             <div className="dashboard-header-right">
               <div className="header-info">
-                <span className="status-dot status-online"></span>
-                <span>ONLINE</span>
+                <span className={`status-dot ${getStatusClass()}`}></span>
+                <span>{getStatusText()}</span>
               </div>
             </div>
           </header>
@@ -237,27 +298,39 @@ export default function DoorbellControlPage() {
                   <div className="info-grid">
                     <div className="info-item">
                       <span className="info-label">Device ID:</span>
-                      <span className="info-value">doorbell_001</span>
+                      <span className="info-value">{doorbellDevice?.device_id || 'N/A'}</span>
                     </div>
                     <div className="info-item">
-                      <span className="info-label">Firmware:</span>
-                      <span className="info-value">v2.4.1</span>
+                      <span className="info-label">Status:</span>
+                      <span className="info-value">{isOnline ? 'Online' : 'Offline'}</span>
                     </div>
                     <div className="info-item">
                       <span className="info-label">IP Address:</span>
-                      <span className="info-value">192.168.1.100</span>
+                      <span className="info-value">{doorbellDevice?.ip_address || 'N/A'}</span>
                     </div>
                     <div className="info-item">
-                      <span className="info-label">MAC Address:</span>
-                      <span className="info-value">AA:BB:CC:DD:EE:FF</span>
+                      <span className="info-label">Last Seen:</span>
+                      <span className="info-value">
+                        {doorbellDevice?.last_seen ? new Date(doorbellDevice.last_seen).toLocaleString() : 'Never'}
+                      </span>
                     </div>
                     <div className="info-item">
                       <span className="info-label">WiFi Signal:</span>
-                      <span className="info-value">-45 dBm (Excellent)</span>
+                      <span className="info-value">
+                        {doorbellDevice?.wifi_rssi ? `${doorbellDevice.wifi_rssi} dBm` : 'N/A'}
+                      </span>
+                    </div>
+                    <div className="info-item">
+                      <span className="info-label">Free Heap:</span>
+                      <span className="info-value">
+                        {doorbellDevice?.free_heap ? `${(doorbellDevice.free_heap / 1024).toFixed(1)} KB` : 'N/A'}
+                      </span>
                     </div>
                     <div className="info-item">
                       <span className="info-label">Uptime:</span>
-                      <span className="info-value">72h 15m</span>
+                      <span className="info-value">
+                        {doorbellDevice?.uptime_ms ? `${Math.floor(doorbellDevice.uptime_ms / 3600000)}h ${Math.floor((doorbellDevice.uptime_ms % 3600000) / 60000)}m` : 'N/A'}
+                      </span>
                     </div>
                   </div>
                 </div>

@@ -10,6 +10,10 @@ interface SystemStatusCardProps {
 export function SystemStatusCard({ devicesStatus, isExpanded = false }: SystemStatusCardProps) {
   const router = useRouter();
 
+  // Extract doorbell and hub devices from the devices array
+  const doorbellDevice = devicesStatus?.devices?.find(d => d.type === 'doorbell');
+  const hubDevice = devicesStatus?.devices?.find(d => d.type === 'hub' || d.type === 'main_lcd');
+
   const getDeviceStatusClass = (lastSeen: string | null | undefined) => {
     if (!lastSeen) return 'status-offline';
 
@@ -59,21 +63,26 @@ export function SystemStatusCard({ devicesStatus, isExpanded = false }: SystemSt
           >
             <div className="device-status-header">
               <h3>DOORBELL</h3>
-              <span className={`status-indicator ${getDeviceStatusClass(devicesStatus?.doorbell?.last_seen)}`}>
-                {getDeviceStatusText(devicesStatus?.doorbell?.last_seen)}
+              <span className={`status-indicator ${getDeviceStatusClass(doorbellDevice?.last_seen)}`}>
+                {getDeviceStatusText(doorbellDevice?.last_seen)}
               </span>
             </div>
-            {devicesStatus?.doorbell?.last_seen && (
+            {doorbellDevice && (
               <div className="device-info">
-                <p>Last Heartbeat: {new Date(devicesStatus.doorbell.last_seen).toLocaleString()}</p>
-                <p>Device ID: {devicesStatus.doorbell.device_id || 'doorbell_001'}</p>
+                <p>Last Heartbeat: {doorbellDevice.last_seen ? new Date(doorbellDevice.last_seen).toLocaleString() : 'Never'}</p>
+                <p>Device ID: {doorbellDevice.device_id || 'N/A'}</p>
                 {isExpanded && (
                   <>
-                    <p>IP Address: 192.168.1.100</p>
-                    <p>Firmware: v2.4.1</p>
-                    <p>WiFi Signal: -45 dBm</p>
+                    <p>IP Address: {doorbellDevice.ip_address || 'N/A'}</p>
+                    <p>WiFi Signal: {doorbellDevice.wifi_rssi ? `${doorbellDevice.wifi_rssi} dBm` : 'N/A'}</p>
+                    <p>Free Heap: {doorbellDevice.free_heap ? `${(doorbellDevice.free_heap / 1024).toFixed(1)} KB` : 'N/A'}</p>
                   </>
                 )}
+              </div>
+            )}
+            {!doorbellDevice && (
+              <div className="device-info">
+                <p>No doorbell device found</p>
               </div>
             )}
             <p className="device-hint">Click to configure →</p>
@@ -87,21 +96,26 @@ export function SystemStatusCard({ devicesStatus, isExpanded = false }: SystemSt
           >
             <div className="device-status-header">
               <h3>HUB</h3>
-              <span className={`status-indicator ${getDeviceStatusClass(devicesStatus?.hub?.last_seen)}`}>
-                {getDeviceStatusText(devicesStatus?.hub?.last_seen)}
+              <span className={`status-indicator ${getDeviceStatusClass(hubDevice?.last_seen)}`}>
+                {getDeviceStatusText(hubDevice?.last_seen)}
               </span>
             </div>
-            {devicesStatus?.hub?.last_seen && (
+            {hubDevice && (
               <div className="device-info">
-                <p>Last Heartbeat: {new Date(devicesStatus.hub.last_seen).toLocaleString()}</p>
-                <p>Device ID: {devicesStatus?.hub.device_id || 'hub_001'}</p>
+                <p>Last Heartbeat: {hubDevice.last_seen ? new Date(hubDevice.last_seen).toLocaleString() : 'Never'}</p>
+                <p>Device ID: {hubDevice.device_id || 'N/A'}</p>
                 {isExpanded && (
                   <>
-                    <p>IP Address: 192.168.1.50</p>
-                    <p>Firmware: v3.2.0</p>
-                    <p>Connected Devices: 12</p>
+                    <p>IP Address: {hubDevice.ip_address || 'N/A'}</p>
+                    <p>WiFi Signal: {hubDevice.wifi_rssi ? `${hubDevice.wifi_rssi} dBm` : 'N/A'}</p>
+                    <p>Free Heap: {hubDevice.free_heap ? `${(hubDevice.free_heap / 1024).toFixed(1)} KB` : 'N/A'}</p>
                   </>
                 )}
+              </div>
+            )}
+            {!hubDevice && (
+              <div className="device-info">
+                <p>No hub device found</p>
               </div>
             )}
             <p className="device-hint">Click to configure →</p>
@@ -114,14 +128,7 @@ export function SystemStatusCard({ devicesStatus, isExpanded = false }: SystemSt
               <div className="health-metric">
                 <span className="metric-label">DEVICES ONLINE:</span>
                 <span className="metric-value">
-                  {[
-                    devicesStatus?.doorbell?.last_seen,
-                    devicesStatus?.hub?.last_seen
-                  ].filter(lastSeen => {
-                    if (!lastSeen) return false;
-                    const diffMinutes = (new Date().getTime() - new Date(lastSeen).getTime()) / 60000;
-                    return diffMinutes < 2;
-                  }).length} / 2
+                  {devicesStatus?.summary?.online || 0} / {devicesStatus?.summary?.total || 0}
                 </span>
               </div>
               <div className="health-metric">

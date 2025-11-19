@@ -1,11 +1,16 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import ProtectedRoute from '@/components/auth/ProtectedRoute';
+import { getAllDevices } from '@/services/devices.service';
+import type { Device } from '@/types/dashboard';
 
 export default function HubControlPage() {
   const router = useRouter();
+  const [hubDevice, setHubDevice] = useState<Device | null>(null);
+  const [isOnline, setIsOnline] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [settings, setSettings] = useState({
     autoDiscovery: true,
     cloudSync: true,
@@ -17,11 +22,67 @@ export default function HubControlPage() {
     restApiEnabled: true,
   });
 
+  useEffect(() => {
+    const fetchDeviceStatus = async () => {
+      try {
+        const devicesStatus = await getAllDevices();
+        const hub = devicesStatus.devices.find(d => d.type === 'hub' || d.type === 'main_lcd');
+
+        if (hub) {
+          setHubDevice(hub);
+
+          // Determine if device is online (last seen within 2 minutes)
+          if (hub.last_seen) {
+            const lastSeenDate = new Date(hub.last_seen);
+            const now = new Date();
+            const diffMinutes = (now.getTime() - lastSeenDate.getTime()) / 60000;
+            setIsOnline(diffMinutes < 2);
+          } else {
+            setIsOnline(false);
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching hub status:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchDeviceStatus();
+    // Refresh every 5 seconds
+    const interval = setInterval(fetchDeviceStatus, 5000);
+    return () => clearInterval(interval);
+  }, []);
+
   const toggleSetting = (key: keyof typeof settings) => {
     setSettings(prev => ({
       ...prev,
       [key]: !prev[key]
     }));
+  };
+
+  const getStatusClass = () => {
+    if (!hubDevice || !hubDevice.last_seen) return 'status-offline';
+
+    const lastSeenDate = new Date(hubDevice.last_seen);
+    const now = new Date();
+    const diffMinutes = (now.getTime() - lastSeenDate.getTime()) / 60000;
+
+    if (diffMinutes < 2) return 'status-online';
+    if (diffMinutes < 5) return 'status-warning';
+    return 'status-offline';
+  };
+
+  const getStatusText = () => {
+    if (!hubDevice || !hubDevice.last_seen) return 'OFFLINE';
+
+    const lastSeenDate = new Date(hubDevice.last_seen);
+    const now = new Date();
+    const diffMinutes = Math.floor((now.getTime() - lastSeenDate.getTime()) / 60000);
+
+    if (diffMinutes < 2) return 'ONLINE';
+    if (diffMinutes < 5) return `LAST SEEN ${diffMinutes}M AGO`;
+    return 'OFFLINE';
   };
 
   return (
@@ -37,8 +98,8 @@ export default function HubControlPage() {
             </div>
             <div className="dashboard-header-right">
               <div className="header-info">
-                <span className="status-dot status-online"></span>
-                <span>ONLINE</span>
+                <span className={`status-dot ${getStatusClass()}`}></span>
+                <span>{getStatusText()}</span>
               </div>
             </div>
           </header>
@@ -295,35 +356,43 @@ export default function HubControlPage() {
                 <div className="info-grid">
                   <div className="info-item">
                     <span className="info-label">Device ID:</span>
-                    <span className="info-value">hub_001</span>
+                    <span className="info-value">{hubDevice?.device_id || 'N/A'}</span>
                   </div>
                   <div className="info-item">
-                    <span className="info-label">Firmware:</span>
-                    <span className="info-value">v3.2.0</span>
+                    <span className="info-label">Status:</span>
+                    <span className="info-value">{isOnline ? 'Online' : 'Offline'}</span>
                   </div>
                   <div className="info-item">
-                    <span className="info-label">Hardware:</span>
-                    <span className="info-value">ESP32-S3</span>
+                    <span className="info-label">Type:</span>
+                    <span className="info-value">{hubDevice?.type || 'N/A'}</span>
                   </div>
                   <div className="info-item">
                     <span className="info-label">IP Address:</span>
-                    <span className="info-value">192.168.1.50</span>
+                    <span className="info-value">{hubDevice?.ip_address || 'N/A'}</span>
                   </div>
                   <div className="info-item">
-                    <span className="info-label">MAC Address:</span>
-                    <span className="info-value">11:22:33:44:55:66</span>
+                    <span className="info-label">Last Seen:</span>
+                    <span className="info-value">
+                      {hubDevice?.last_seen ? new Date(hubDevice.last_seen).toLocaleString() : 'Never'}
+                    </span>
                   </div>
                   <div className="info-item">
                     <span className="info-label">WiFi Signal:</span>
-                    <span className="info-value">-38 dBm (Excellent)</span>
+                    <span className="info-value">
+                      {hubDevice?.wifi_rssi ? `${hubDevice.wifi_rssi} dBm` : 'N/A'}
+                    </span>
                   </div>
                   <div className="info-item">
                     <span className="info-label">Uptime:</span>
-                    <span className="info-value">168h 42m</span>
+                    <span className="info-value">
+                      {hubDevice?.uptime_ms ? `${Math.floor(hubDevice.uptime_ms / 3600000)}h ${Math.floor((hubDevice.uptime_ms % 3600000) / 60000)}m` : 'N/A'}
+                    </span>
                   </div>
                   <div className="info-item">
-                    <span className="info-label">Temperature:</span>
-                    <span className="info-value">42°C</span>
+                    <span className="info-label">Free Heap:</span>
+                    <span className="info-value">
+                      {hubDevice?.free_heap ? `${(hubDevice.free_heap / 1024).toFixed(1)} KB` : 'N/A'}
+                    </span>
                   </div>
                 </div>
 
