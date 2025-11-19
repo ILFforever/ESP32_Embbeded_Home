@@ -2,27 +2,48 @@
 
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import { Camera, Mic, Volume2, RotateCw, Power, Users } from 'lucide-react';
 import ProtectedRoute from '@/components/auth/ProtectedRoute';
-import { getAllDevices } from '@/services/devices.service';
+import { getAllDevices, getDeviceHistory } from '@/services/devices.service';
+import {
+  startCamera,
+  stopCamera,
+  restartCamera,
+  startMicrophone,
+  stopMicrophone,
+  playAmplifier,
+  stopAmplifier,
+  restartAmplifier,
+  getFaceCount,
+  listFaces,
+  checkFaceDatabase,
+  restartSystem
+} from '@/services/devices.service';
 import type { Device } from '@/types/dashboard';
+
+interface ActivityEvent {
+  timestamp: string;
+  type: string;
+  description: string;
+  recognized?: boolean;
+  name?: string;
+  confidence?: number;
+}
 
 export default function DoorbellControlPage() {
   const router = useRouter();
   const [doorbellDevice, setDoorbellDevice] = useState<Device | null>(null);
-  const [isOnline, setIsOnline] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [settings, setSettings] = useState({
-    cameraEnabled: true,
-    micEnabled: true,
-    speakerEnabled: true,
-    motionDetection: true,
-    nightVision: true,
-    faceRecognition: false,
-    recordingEnabled: true,
-    notificationsEnabled: true,
-    sensitivity: 75,
-    volume: 60,
-  });
+  const [commandLoading, setCommandLoading] = useState<string | null>(null);
+
+  // Control states
+  const [cameraActive, setCameraActive] = useState(false);
+  const [micActive, setMicActive] = useState(false);
+  const [faceRecognition, setFaceRecognition] = useState(false);
+  const [ampUrl, setAmpUrl] = useState('http://stream.radioparadise.com/aac-320');
+
+  // Activity history
+  const [recentActivity, setRecentActivity] = useState<ActivityEvent[]>([]);
 
   useEffect(() => {
     const fetchDeviceStatus = async () => {
@@ -33,14 +54,12 @@ export default function DoorbellControlPage() {
         if (doorbell) {
           setDoorbellDevice(doorbell);
 
-          // Determine if device is online (last seen within 2 minutes)
-          if (doorbell.last_seen) {
-            const lastSeenDate = new Date(doorbell.last_seen);
-            const now = new Date();
-            const diffMinutes = (now.getTime() - lastSeenDate.getTime()) / 60000;
-            setIsOnline(diffMinutes < 2);
-          } else {
-            setIsOnline(false);
+          // Fetch recent activity
+          if (doorbell.device_id) {
+            const history = await getDeviceHistory(doorbell.device_id, 10);
+            if (history.events) {
+              setRecentActivity(history.events);
+            }
           }
         }
       } catch (error) {
@@ -55,17 +74,6 @@ export default function DoorbellControlPage() {
     const interval = setInterval(fetchDeviceStatus, 5000);
     return () => clearInterval(interval);
   }, []);
-
-  const toggleSetting = (key: keyof typeof settings) => {
-    setSettings(prev => ({
-      ...prev,
-      [key]: typeof prev[key] === 'boolean' ? !prev[key] : prev[key]
-    }));
-  };
-
-  const updateSlider = (key: keyof typeof settings, value: number) => {
-    setSettings(prev => ({ ...prev, [key]: value }));
-  };
 
   const getStatusClass = () => {
     if (!doorbellDevice || !doorbellDevice.last_seen) return 'status-offline';
@@ -89,6 +97,208 @@ export default function DoorbellControlPage() {
     if (diffMinutes < 2) return 'ONLINE';
     if (diffMinutes < 5) return `LAST SEEN ${diffMinutes}M AGO`;
     return 'OFFLINE';
+  };
+
+  // Camera control handlers
+  const handleCameraToggle = async () => {
+    if (!doorbellDevice?.device_id) return;
+
+    setCommandLoading('camera');
+    try {
+      if (cameraActive) {
+        await stopCamera(doorbellDevice.device_id);
+      } else {
+        await startCamera(doorbellDevice.device_id);
+      }
+      setCameraActive(!cameraActive);
+    } catch (error) {
+      console.error('Error toggling camera:', error);
+      alert('Failed to toggle camera');
+    } finally {
+      setCommandLoading(null);
+    }
+  };
+
+  const handleCameraRestart = async () => {
+    if (!doorbellDevice?.device_id) return;
+
+    setCommandLoading('camera_restart');
+    try {
+      await restartCamera(doorbellDevice.device_id);
+      alert('Camera restart command sent');
+    } catch (error) {
+      console.error('Error restarting camera:', error);
+      alert('Failed to restart camera');
+    } finally {
+      setCommandLoading(null);
+    }
+  };
+
+  // Microphone control handlers
+  const handleMicToggle = async () => {
+    if (!doorbellDevice?.device_id) return;
+
+    setCommandLoading('mic');
+    try {
+      if (micActive) {
+        await stopMicrophone(doorbellDevice.device_id);
+      } else {
+        await startMicrophone(doorbellDevice.device_id);
+      }
+      setMicActive(!micActive);
+    } catch (error) {
+      console.error('Error toggling mic:', error);
+      alert('Failed to toggle microphone');
+    } finally {
+      setCommandLoading(null);
+    }
+  };
+
+  // Amplifier control handlers
+  const handlePlayAmplifier = async () => {
+    if (!doorbellDevice?.device_id || !ampUrl) return;
+
+    setCommandLoading('amp_play');
+    try {
+      await playAmplifier(doorbellDevice.device_id, ampUrl);
+      alert('Amplifier play command sent');
+    } catch (error) {
+      console.error('Error playing amplifier:', error);
+      alert('Failed to play amplifier');
+    } finally {
+      setCommandLoading(null);
+    }
+  };
+
+  const handleStopAmplifier = async () => {
+    if (!doorbellDevice?.device_id) return;
+
+    setCommandLoading('amp_stop');
+    try {
+      await stopAmplifier(doorbellDevice.device_id);
+      alert('Amplifier stopped');
+    } catch (error) {
+      console.error('Error stopping amplifier:', error);
+      alert('Failed to stop amplifier');
+    } finally {
+      setCommandLoading(null);
+    }
+  };
+
+  const handleRestartAmplifier = async () => {
+    if (!doorbellDevice?.device_id) return;
+
+    setCommandLoading('amp_restart');
+    try {
+      await restartAmplifier(doorbellDevice.device_id);
+      alert('Amplifier restart command sent');
+    } catch (error) {
+      console.error('Error restarting amplifier:', error);
+      alert('Failed to restart amplifier');
+    } finally {
+      setCommandLoading(null);
+    }
+  };
+
+  // Face recognition handlers
+  const handleFaceRecognitionToggle = () => {
+    setFaceRecognition(!faceRecognition);
+  };
+
+  const handleGetFaceCount = async () => {
+    if (!doorbellDevice?.device_id) return;
+
+    setCommandLoading('face_count');
+    try {
+      const result = await getFaceCount(doorbellDevice.device_id);
+      console.log('Face count command queued:', result);
+      alert('Face count command queued. Check device serial output.');
+    } catch (error) {
+      console.error('Error getting face count:', error);
+      alert('Failed to get face count');
+    } finally {
+      setCommandLoading(null);
+    }
+  };
+
+  const handleListFaces = async () => {
+    if (!doorbellDevice?.device_id) return;
+
+    setCommandLoading('face_list');
+    try {
+      const result = await listFaces(doorbellDevice.device_id);
+      console.log('List faces command queued:', result);
+      alert('List faces command queued. Check device serial output.');
+    } catch (error) {
+      console.error('Error listing faces:', error);
+      alert('Failed to list faces');
+    } finally {
+      setCommandLoading(null);
+    }
+  };
+
+  const handleCheckFaceDB = async () => {
+    if (!doorbellDevice?.device_id) return;
+
+    setCommandLoading('face_check');
+    try {
+      const result = await checkFaceDatabase(doorbellDevice.device_id);
+      console.log('Check face DB command queued:', result);
+      alert('Face DB check command queued. Check device serial output.');
+    } catch (error) {
+      console.error('Error checking face database:', error);
+      alert('Failed to check face database');
+    } finally {
+      setCommandLoading(null);
+    }
+  };
+
+  // System control handler
+  const handleSystemRestart = async () => {
+    if (!doorbellDevice?.device_id) return;
+
+    if (!confirm('Are you sure you want to restart the doorbell system? It will be offline for about 30 seconds.')) {
+      return;
+    }
+
+    setCommandLoading('system_restart');
+    try {
+      await restartSystem(doorbellDevice.device_id);
+      alert('System restart command sent. Device will reboot shortly.');
+    } catch (error) {
+      console.error('Error restarting system:', error);
+      alert('Failed to restart system');
+    } finally {
+      setCommandLoading(null);
+    }
+  };
+
+  const formatActivityTime = (timestamp: string) => {
+    const date = new Date(timestamp);
+    return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+  };
+
+  const getActivityDescription = (event: ActivityEvent) => {
+    if (event.type === 'face_detection') {
+      if (event.recognized && event.name) {
+        return `Face recognized: ${event.name} (${(event.confidence || 0).toFixed(0)}%)`;
+      }
+      return 'Unknown face detected';
+    }
+    if (event.type === 'doorbell_ring') {
+      return 'Doorbell pressed';
+    }
+    return event.description || 'Activity detected';
+  };
+
+  const getActivityStatus = (event: ActivityEvent) => {
+    if (event.type === 'face_detection') {
+      return event.recognized ? 'Known' : 'Unknown';
+    }
+    if (event.type === 'doorbell_ring') {
+      return 'Ring';
+    }
+    return 'Event';
   };
 
   return (
@@ -125,176 +335,199 @@ export default function DoorbellControlPage() {
               </div>
             </div>
 
-            {/* Device Settings */}
+            {/* Column 1: Camera & Microphone */}
             <div className="card">
               <div className="card-header">
-                <h3>DEVICE SETTINGS</h3>
+                <h3>CAMERA CONTROL</h3>
               </div>
               <div className="card-content">
-                <div className="settings-list">
-                  <div className="setting-item">
-                    <div className="setting-info">
-                      <span className="setting-label">Camera</span>
-                      <span className="setting-description">Enable video recording</span>
+                <div className="control-panel">
+                  <div className="control-status">
+                    <Camera size={48} className={cameraActive ? 'status-active-large' : 'status-inactive-large'} />
+                    <div className="status-label">
+                      <span className="status-text">{cameraActive ? 'ACTIVE' : 'INACTIVE'}</span>
+                      <span className="status-description">
+                        {cameraActive ? 'Camera is streaming video' : 'Camera is off'}
+                      </span>
                     </div>
-                    <label className="toggle-switch">
-                      <input
-                        type="checkbox"
-                        checked={settings.cameraEnabled}
-                        onChange={() => toggleSetting('cameraEnabled')}
-                      />
-                      <span className="toggle-slider"></span>
-                    </label>
                   </div>
-
-                  <div className="setting-item">
-                    <div className="setting-info">
-                      <span className="setting-label">Microphone</span>
-                      <span className="setting-description">Enable audio recording</span>
-                    </div>
-                    <label className="toggle-switch">
-                      <input
-                        type="checkbox"
-                        checked={settings.micEnabled}
-                        onChange={() => toggleSetting('micEnabled')}
-                      />
-                      <span className="toggle-slider"></span>
-                    </label>
+                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '12px' }}>
+                    <button
+                      className={`btn-control ${cameraActive ? 'btn-stop' : 'btn-start'}`}
+                      onClick={handleCameraToggle}
+                      disabled={commandLoading === 'camera'}
+                    >
+                      {commandLoading === 'camera' ? 'PROCESSING...' : cameraActive ? 'STOP CAMERA' : 'START CAMERA'}
+                    </button>
+                    <button
+                      className="btn-control btn-warning"
+                      onClick={handleCameraRestart}
+                      disabled={commandLoading === 'camera_restart'}
+                      style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+                    >
+                      <RotateCw size={16} />
+                      {commandLoading === 'camera_restart' ? 'RESTARTING...' : 'RESTART'}
+                    </button>
                   </div>
+                </div>
 
-                  <div className="setting-item">
-                    <div className="setting-info">
-                      <span className="setting-label">Speaker</span>
-                      <span className="setting-description">Enable two-way audio</span>
+                <div className="control-divider"></div>
+
+                <div className="card-header" style={{ paddingTop: '8px' }}>
+                  <h3>MICROPHONE</h3>
+                </div>
+                <div className="control-panel">
+                  <div className="control-status">
+                    <Mic size={48} className={micActive ? 'status-active-large' : 'status-inactive-large'} />
+                    <div className="status-label">
+                      <span className="status-text">{micActive ? 'ACTIVE' : 'INACTIVE'}</span>
+                      <span className="status-description">
+                        {micActive ? 'Microphone is listening' : 'Microphone is muted'}
+                      </span>
                     </div>
-                    <label className="toggle-switch">
-                      <input
-                        type="checkbox"
-                        checked={settings.speakerEnabled}
-                        onChange={() => toggleSetting('speakerEnabled')}
-                      />
-                      <span className="toggle-slider"></span>
-                    </label>
                   </div>
+                  <button
+                    className={`btn-control ${micActive ? 'btn-stop' : 'btn-start'}`}
+                    onClick={handleMicToggle}
+                    disabled={commandLoading === 'mic'}
+                    style={{ marginTop: '12px' }}
+                  >
+                    {commandLoading === 'mic' ? 'PROCESSING...' : micActive ? 'STOP MIC' : 'START MIC'}
+                  </button>
+                </div>
+              </div>
+            </div>
 
-                  <div className="setting-item">
-                    <div className="setting-info">
-                      <span className="setting-label">Motion Detection</span>
-                      <span className="setting-description">Detect motion and send alerts</span>
+            {/* Column 2: Amplifier & Face Recognition */}
+            <div className="card">
+              <div className="card-header">
+                <h3>AUDIO AMPLIFIER</h3>
+              </div>
+              <div className="card-content">
+                <div className="control-panel">
+                  <div className="control-status">
+                    <Volume2 size={48} className="status-info-large" />
+                    <div className="status-label">
+                      <span className="status-text">AMPLIFIER</span>
+                      <span className="status-description">Stream audio to amplifier</span>
                     </div>
-                    <label className="toggle-switch">
-                      <input
-                        type="checkbox"
-                        checked={settings.motionDetection}
-                        onChange={() => toggleSetting('motionDetection')}
-                      />
-                      <span className="toggle-slider"></span>
-                    </label>
                   </div>
-
-                  <div className="setting-item">
-                    <div className="setting-info">
-                      <span className="setting-label">Night Vision</span>
-                      <span className="setting-description">Enable infrared night mode</span>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', width: '100%', marginTop: '12px' }}>
+                    <input
+                      type="text"
+                      value={ampUrl}
+                      onChange={(e) => setAmpUrl(e.target.value)}
+                      placeholder="Stream URL"
+                      className="control-input"
+                      style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ddd' }}
+                    />
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <button
+                        className="btn-control btn-start"
+                        onClick={handlePlayAmplifier}
+                        disabled={commandLoading === 'amp_play'}
+                        style={{ flex: 1 }}
+                      >
+                        {commandLoading === 'amp_play' ? 'SENDING...' : 'PLAY'}
+                      </button>
+                      <button
+                        className="btn-control btn-stop"
+                        onClick={handleStopAmplifier}
+                        disabled={commandLoading === 'amp_stop'}
+                        style={{ flex: 1 }}
+                      >
+                        {commandLoading === 'amp_stop' ? 'STOPPING...' : 'STOP'}
+                      </button>
+                      <button
+                        className="btn-control btn-warning"
+                        onClick={handleRestartAmplifier}
+                        disabled={commandLoading === 'amp_restart'}
+                        style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}
+                      >
+                        <RotateCw size={14} />
+                        {commandLoading === 'amp_restart' ? '...' : 'RST'}
+                      </button>
                     </div>
-                    <label className="toggle-switch">
-                      <input
-                        type="checkbox"
-                        checked={settings.nightVision}
-                        onChange={() => toggleSetting('nightVision')}
-                      />
-                      <span className="toggle-slider"></span>
-                    </label>
                   </div>
+                </div>
 
-                  <div className="setting-item">
-                    <div className="setting-info">
-                      <span className="setting-label">Face Recognition</span>
-                      <span className="setting-description">Identify known faces</span>
+                <div className="control-divider"></div>
+
+                <div className="card-header" style={{ paddingTop: '8px' }}>
+                  <h3>FACE RECOGNITION</h3>
+                </div>
+                <div className="control-panel">
+                  <div className="control-status">
+                    <Users size={48} className={faceRecognition ? 'status-active-large' : 'status-inactive-large'} />
+                    <div className="status-label">
+                      <span className="status-text">{faceRecognition ? 'ENABLED' : 'DISABLED'}</span>
+                      <span className="status-description">
+                        {faceRecognition ? 'Identifying visitors' : 'Face recognition off'}
+                      </span>
                     </div>
-                    <label className="toggle-switch">
-                      <input
-                        type="checkbox"
-                        checked={settings.faceRecognition}
-                        onChange={() => toggleSetting('faceRecognition')}
-                      />
-                      <span className="toggle-slider"></span>
-                    </label>
                   </div>
-
-                  <div className="setting-item">
-                    <div className="setting-info">
-                      <span className="setting-label">Recording</span>
-                      <span className="setting-description">Save recordings to cloud</span>
-                    </div>
-                    <label className="toggle-switch">
-                      <input
-                        type="checkbox"
-                        checked={settings.recordingEnabled}
-                        onChange={() => toggleSetting('recordingEnabled')}
-                      />
-                      <span className="toggle-slider"></span>
-                    </label>
-                  </div>
-
-                  <div className="setting-item">
-                    <div className="setting-info">
-                      <span className="setting-label">Notifications</span>
-                      <span className="setting-description">Push alerts to phone</span>
-                    </div>
-                    <label className="toggle-switch">
-                      <input
-                        type="checkbox"
-                        checked={settings.notificationsEnabled}
-                        onChange={() => toggleSetting('notificationsEnabled')}
-                      />
-                      <span className="toggle-slider"></span>
-                    </label>
+                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '12px' }}>
+                    <button
+                      className={`btn-control ${faceRecognition ? 'btn-stop' : 'btn-start'}`}
+                      onClick={handleFaceRecognitionToggle}
+                    >
+                      {faceRecognition ? 'DISABLE' : 'ENABLE'}
+                    </button>
+                    <button
+                      className="btn-control btn-info"
+                      onClick={handleGetFaceCount}
+                      disabled={commandLoading === 'face_count'}
+                    >
+                      {commandLoading === 'face_count' ? 'CHECKING...' : 'COUNT'}
+                    </button>
+                    <button
+                      className="btn-control btn-info"
+                      onClick={handleListFaces}
+                      disabled={commandLoading === 'face_list'}
+                    >
+                      {commandLoading === 'face_list' ? 'LISTING...' : 'LIST'}
+                    </button>
+                    <button
+                      className="btn-control btn-info"
+                      onClick={handleCheckFaceDB}
+                      disabled={commandLoading === 'face_check'}
+                    >
+                      {commandLoading === 'face_check' ? 'CHECKING...' : 'CHECK DB'}
+                    </button>
                   </div>
                 </div>
               </div>
             </div>
 
-            {/* Advanced Settings */}
+            {/* Column 3: System Control & Device Info */}
             <div className="card">
               <div className="card-header">
-                <h3>ADVANCED SETTINGS</h3>
+                <h3>SYSTEM CONTROL</h3>
               </div>
               <div className="card-content">
-                <div className="settings-list">
-                  <div className="setting-item-slider">
-                    <div className="setting-info">
-                      <span className="setting-label">Motion Sensitivity</span>
-                      <span className="setting-value">{settings.sensitivity}%</span>
+                <div className="control-panel">
+                  <div className="control-status">
+                    <Power size={48} className="status-danger-large" />
+                    <div className="status-label">
+                      <span className="status-text">SYSTEM POWER</span>
+                      <span className="status-description">Restart the doorbell device</span>
                     </div>
-                    <input
-                      type="range"
-                      min="0"
-                      max="100"
-                      value={settings.sensitivity}
-                      onChange={(e) => updateSlider('sensitivity', parseInt(e.target.value))}
-                      className="slider"
-                    />
                   </div>
-
-                  <div className="setting-item-slider">
-                    <div className="setting-info">
-                      <span className="setting-label">Speaker Volume</span>
-                      <span className="setting-value">{settings.volume}%</span>
-                    </div>
-                    <input
-                      type="range"
-                      min="0"
-                      max="100"
-                      value={settings.volume}
-                      onChange={(e) => updateSlider('volume', parseInt(e.target.value))}
-                      className="slider"
-                    />
-                  </div>
+                  <button
+                    className="btn-control btn-danger"
+                    onClick={handleSystemRestart}
+                    disabled={commandLoading === 'system_restart'}
+                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', marginTop: '12px' }}
+                  >
+                    <RotateCw size={16} />
+                    {commandLoading === 'system_restart' ? 'RESTARTING...' : 'RESTART SYSTEM'}
+                  </button>
                 </div>
 
+                <div className="control-divider"></div>
+
                 <div className="device-info-section">
-                  <h4>Device Information</h4>
+                  <h4>DEVICE INFORMATION</h4>
                   <div className="info-grid">
                     <div className="info-item">
                       <span className="info-label">Device ID:</span>
@@ -302,7 +535,7 @@ export default function DoorbellControlPage() {
                     </div>
                     <div className="info-item">
                       <span className="info-label">Status:</span>
-                      <span className="info-value">{isOnline ? 'Online' : 'Offline'}</span>
+                      <span className="info-value">{getStatusText()}</span>
                     </div>
                     <div className="info-item">
                       <span className="info-label">IP Address:</span>
@@ -334,41 +567,31 @@ export default function DoorbellControlPage() {
                     </div>
                   </div>
                 </div>
-
-                <div className="action-buttons">
-                  <button className="btn-action">Restart Device</button>
-                  <button className="btn-action btn-stop">Factory Reset</button>
-                </div>
               </div>
             </div>
 
-            {/* Recent Activity */}
-            <div className="card">
+            {/* Recent Activity - Full Width */}
+            <div className="card" style={{ gridColumn: '1 / -1' }}>
               <div className="card-header">
                 <h3>RECENT ACTIVITY</h3>
               </div>
               <div className="card-content">
                 <div className="activity-list">
-                  <div className="activity-item">
-                    <span className="activity-time">2:30 PM</span>
-                    <span className="activity-desc">Motion detected</span>
-                    <span className="activity-status status-safe">Normal</span>
-                  </div>
-                  <div className="activity-item">
-                    <span className="activity-time">11:45 AM</span>
-                    <span className="activity-desc">Doorbell pressed</span>
-                    <span className="activity-status status-safe">Delivered</span>
-                  </div>
-                  <div className="activity-item">
-                    <span className="activity-time">9:20 AM</span>
-                    <span className="activity-desc">Face recognized: John Doe</span>
-                    <span className="activity-status status-safe">Known</span>
-                  </div>
-                  <div className="activity-item">
-                    <span className="activity-time">8:00 AM</span>
-                    <span className="activity-desc">Recording started</span>
-                    <span className="activity-status status-safe">Auto</span>
-                  </div>
+                  {recentActivity.length > 0 ? (
+                    recentActivity.map((event, index) => (
+                      <div key={index} className="activity-item">
+                        <span className="activity-time">{formatActivityTime(event.timestamp)}</span>
+                        <span className="activity-desc">{getActivityDescription(event)}</span>
+                        <span className="activity-status status-safe">{getActivityStatus(event)}</span>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="activity-item">
+                      <span className="activity-desc" style={{ textAlign: 'center', width: '100%', color: '#999' }}>
+                        No recent activity
+                      </span>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
