@@ -13,7 +13,7 @@ function generateDeviceToken() {
 }
 
 // Thresholds
-const WRITE_INTERVAL_MS = 5 * 60 * 1000; // Write every 5 minutes
+const WRITE_INTERVAL_MS = 1 * 60 * 1000; // Write every 1 minute
 const SENSOR_DELTA_THRESHOLD = 5; // Write if sensor changes by 5%
 const OFFLINE_THRESHOLD_MS = 2 * 60 * 1000; // 2 minutes = offline
 
@@ -47,7 +47,7 @@ function shouldWriteToFirebase(deviceId, newData, dataType = 'heartbeat') {
   const now = Date.now();
   const timeSinceLastWrite = now - cached.lastWriteTime;
 
-  // Always write if 5+ minutes elapsed
+  // Always write if 1+ minute elapsed
   if (timeSinceLastWrite >= WRITE_INTERVAL_MS) {
     return true;
   }
@@ -687,10 +687,20 @@ const handleHubLog = async (req, res) => {
 // ============================================================================
 // @route   POST /api/v1/devices/doorbell/status
 // @desc    Doorbell pushes its status/info to server (camera state, etc.)
+//          ALSO acts as heartbeat - resets TTL timer to keep device online
 // ============================================================================
 const handleDoorbellStatus = async (req, res) => {
   try {
-    const { device_id, camera_active, mic_active, recording, motion_detected, battery_level } = req.body;
+    const {
+      device_id,
+      camera_active,
+      mic_active,
+      // Optional heartbeat fields (if doorbell wants to send them)
+      uptime_ms,
+      free_heap,
+      wifi_rssi,
+      ip_address
+    } = req.body;
 
     if (!device_id) {
       return res.status(400).json({
@@ -699,24 +709,55 @@ const handleDoorbellStatus = async (req, res) => {
       });
     }
 
-    console.log(`[DoorbellStatus] ${device_id} - Received status update`);
+    console.log(`[DoorbellStatus] ${device_id} - Received status update (also acts as heartbeat)`);
 
     const db = getFirestore();
     const deviceRef = db.collection('devices').doc(device_id);
+    const now = admin.firestore.FieldValue.serverTimestamp();
+    const statusExpireAt = getStatusExpiration();
 
-    // Update doorbell-specific status in Firebase
-    await deviceRef.collection('status').doc('doorbell').set({
-      camera_active: camera_active || false,
-      mic_active: mic_active || false,
-      recording: recording || false,
-      motion_detected: motion_detected || false,
-      battery_level: battery_level || null,
-      last_updated: admin.firestore.FieldValue.serverTimestamp()
+    // Update doorbell-specific status in Firebase (includes heartbeat fields)
+    const doorbellStatus = {
+      camera_active: camera_active !== undefined ? camera_active : false,
+      mic_active: mic_active !== undefined ? mic_active : false,
+      ip_address: ip_address || req.ip,
+      last_updated: now
+    };
+
+    // Include optional heartbeat fields if provided
+    if (uptime_ms !== undefined) doorbellStatus.uptime_ms = uptime_ms;
+    if (free_heap !== undefined) doorbellStatus.free_heap = free_heap;
+    if (wifi_rssi !== undefined) doorbellStatus.wifi_rssi = wifi_rssi;
+
+    await deviceRef.collection('status').doc('doorbell').set(doorbellStatus, { merge: true });
+
+    // ALSO update the main status document to reset TTL (acts as heartbeat)
+    const heartbeatData = {
+      online: true,
+      last_heartbeat: now,
+      updated_at: now,
+      expireAt: statusExpireAt,  // TTL: Reset expiration timer
+      ip_address: ip_address || req.ip,
+    };
+
+    // Include optional heartbeat fields if provided
+    if (uptime_ms !== undefined) heartbeatData.uptime_ms = uptime_ms;
+    if (free_heap !== undefined) heartbeatData.free_heap = free_heap;
+    if (wifi_rssi !== undefined) heartbeatData.wifi_rssi = wifi_rssi;
+
+    await deviceRef.collection('status').doc('current').set(heartbeatData, { merge: true });
+
+    // Update device metadata
+    await deviceRef.set({
+      type: 'doorbell',
+      last_seen: now,
     }, { merge: true });
+
+    console.log(`[DoorbellStatus] ${device_id} - Status updated and TTL reset`);
 
     res.json({
       status: 'ok',
-      message: 'Doorbell status updated'
+      message: 'Doorbell status updated and heartbeat recorded'
     });
 
   } catch (error) {
