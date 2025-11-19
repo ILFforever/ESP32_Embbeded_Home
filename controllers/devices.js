@@ -1,7 +1,6 @@
 const { getFirestore, admin } = require('../config/firebase');
 const { publishFaceDetection } = require('../config/mqtt');
 const crypto = require('crypto');
-const axios = require('axios');
 
 // ============================================================================
 // In-Memory Cache for Throttling (reduces Firebase writes by 95%)
@@ -150,6 +149,7 @@ const registerDevice = async (req, res) => {
 // ============================================================================
 // @route   POST /api/v1/devices/heartbeat
 // @desc    Receive device heartbeat - ALWAYS respond OK, throttle Firebase writes
+//          Also notify device if there are pending commands to fetch
 // ============================================================================
 const handleHeartbeat = async (req, res) => {
   try {
@@ -174,12 +174,12 @@ const handleHeartbeat = async (req, res) => {
 
     // Check if we should write to Firebase (throttling logic)
     const shouldWrite = shouldWriteToFirebase(device_id, heartbeatData, 'heartbeat');
+    const db = getFirestore();
+    const deviceRef = db.collection('devices').doc(device_id);
 
     if (shouldWrite) {
       console.log(`[Heartbeat] ${device_id} - Writing to Firebase`);
 
-      const db = getFirestore();
-      const deviceRef = db.collection('devices').doc(device_id);
       const now = admin.firestore.FieldValue.serverTimestamp();
       const statusExpireAt = getStatusExpiration();
       const historyExpireAt = getHistoryExpiration();
@@ -214,11 +214,31 @@ const handleHeartbeat = async (req, res) => {
       console.log(`[Heartbeat] ${device_id} - Throttled (no Firebase write)`);
     }
 
+    // Check for pending commands (lightweight query)
+    let hasPendingCommands = false;
+    try {
+      const pendingCommandsSnapshot = await deviceRef
+        .collection('commands')
+        .where('status', '==', 'pending')
+        .limit(1)
+        .get();
+
+      hasPendingCommands = !pendingCommandsSnapshot.empty;
+
+      if (hasPendingCommands) {
+        console.log(`[Heartbeat] ${device_id} - Has pending commands, notifying device`);
+      }
+    } catch (cmdError) {
+      console.error('[Heartbeat] Error checking commands:', cmdError);
+      // Non-blocking - continue with heartbeat response
+    }
+
     // ALWAYS respond OK to ESP32 (so it knows backend is alive)
     res.json({
       status: 'ok',
       message: 'Heartbeat received',
       written: shouldWrite, // For debugging
+      has_pending_commands: hasPendingCommands, // NEW: Tell device to fetch commands
       next_write_in: shouldWrite ? WRITE_INTERVAL_MS : Math.max(0, WRITE_INTERVAL_MS - (Date.now() - (deviceCache.get(device_id)?.lastWriteTime || 0)))
     });
 
@@ -495,6 +515,7 @@ const handleFaceDetection = async (req, res) => {
     console.log(`[FaceDetection] ${device_id} - Face detection event received`);
     console.log(`  Recognized: ${recognized}, Name: ${name || 'Unknown'}, Confidence: ${confidence || 0}`);
     console.log(`  Image: ${imageFile ? `${imageFile.size} bytes (${imageFile.mimetype})` : 'None'}`);
+    console.log(`  Buffer available: ${imageFile && imageFile.buffer ? 'Yes' : 'No'}`);
 
     const db = getFirestore();
     const deviceRef = db.collection('devices').doc(device_id);
@@ -502,28 +523,34 @@ const handleFaceDetection = async (req, res) => {
     let imageUrl = null;
 
     // Upload image to Firebase Storage if provided
-    if (imageFile && imageFile.buffer) {
+    if (imageFile && imageFile.buffer && imageFile.buffer.length > 0) {
       try {
         const bucket = admin.storage().bucket();
         const fileName = `face_detections/${device_id}/${Date.now()}.jpg`;
         const file = bucket.file(fileName);
 
-        // Upload the image buffer
+        console.log(`[FaceDetection] Uploading ${imageFile.buffer.length} bytes to ${fileName}`);
+
+        // Upload the image buffer with timeout
         await file.save(imageFile.buffer, {
           metadata: {
             contentType: imageFile.mimetype || 'image/jpeg',
           },
           public: true, // Make publicly accessible
+          timeout: 30000 // 30 second timeout for upload
         });
 
         // Get public URL
         imageUrl = `https://storage.googleapis.com/${bucket.name}/${fileName}`;
 
-        console.log(`[FaceDetection] Image uploaded to Firebase Storage: ${imageUrl}`);
+        console.log(`[FaceDetection] Image uploaded successfully: ${imageUrl}`);
       } catch (uploadError) {
         console.error('[FaceDetection] Failed to upload image to Firebase Storage:', uploadError);
+        console.error('[FaceDetection] Upload error details:', uploadError.message);
         // Continue without image URL - non-blocking error
       }
+    } else {
+      console.warn('[FaceDetection] No valid image buffer received');
     }
 
     // Create face detection event data
@@ -542,18 +569,24 @@ const handleFaceDetection = async (req, res) => {
     console.log(`[FaceDetection] ${device_id} - Saved to Firebase with ID: ${eventRef.id}`);
 
     // Publish to MQTT for instant hub notification
-    await publishFaceDetection({
-      device_id,
-      recognized: faceDetectionEvent.recognized,
-      name: name || 'Unknown',
-      confidence: confidence ? parseFloat(confidence) : 0,
-      event_id: eventRef.id
-    });
+    try {
+      await publishFaceDetection({
+        device_id,
+        recognized: faceDetectionEvent.recognized,
+        name: name || 'Unknown',
+        confidence: confidence ? parseFloat(confidence) : 0,
+        event_id: eventRef.id,
+        image_url: imageUrl
+      });
+    } catch (mqttError) {
+      console.error('[FaceDetection] MQTT publish failed:', mqttError);
+      // Non-blocking - event still saved to Firebase
+    }
 
     // Respond to doorbell device
     res.json({
       status: 'ok',
-      message: 'Face detection event saved and published to hub',
+      message: 'Face detection event saved' + (imageUrl ? ' with image' : ' (no image)'),
       event_id: eventRef.id,
       image_url: imageUrl,
       timestamp: Date.now()
@@ -561,7 +594,12 @@ const handleFaceDetection = async (req, res) => {
 
   } catch (error) {
     console.error('[FaceDetection] Error:', error);
-    res.status(500).json({ status: 'error', message: error.message });
+    console.error('[FaceDetection] Error stack:', error.stack);
+    res.status(500).json({
+      status: 'error',
+      message: error.message,
+      details: process.env.NODE_ENV === 'development' ? error.stack : undefined
+    });
   }
 };
 
@@ -619,78 +657,98 @@ const handleHubLog = async (req, res) => {
 };
 
 // ============================================================================
-// @route   GET /api/v1/devices/doorbell/:device_id/info
-// @desc    Get doorbell device info (proxies request to ESP32)
+// @route   POST /api/v1/devices/doorbell/status
+// @desc    Doorbell pushes its status/info to server (camera state, etc.)
 // ============================================================================
-const getDoorbellInfo = async (req, res) => {
+const handleDoorbellStatus = async (req, res) => {
   try {
-    const { device_id } = req.params;
+    const { device_id, camera_active, mic_active, recording, motion_detected, battery_level } = req.body;
+
+    if (!device_id) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'device_id is required'
+      });
+    }
+
+    console.log(`[DoorbellStatus] ${device_id} - Received status update`);
+
     const db = getFirestore();
+    const deviceRef = db.collection('devices').doc(device_id);
 
-    // Get device from Firebase to find its IP address
-    const deviceDoc = await db.collection('devices').doc(device_id).get();
+    // Update doorbell-specific status in Firebase
+    await deviceRef.collection('status').doc('doorbell').set({
+      camera_active: camera_active || false,
+      mic_active: mic_active || false,
+      recording: recording || false,
+      motion_detected: motion_detected || false,
+      battery_level: battery_level || null,
+      last_updated: admin.firestore.FieldValue.serverTimestamp()
+    }, { merge: true });
 
-    if (!deviceDoc.exists) {
-      return res.status(404).json({
-        status: 'error',
-        message: 'Device not found'
-      });
-    }
-
-    // Get current status which contains IP address
-    const statusDoc = await deviceDoc.ref.collection('status').doc('current').get();
-
-    if (!statusDoc.exists || !statusDoc.data().ip_address) {
-      return res.status(503).json({
-        status: 'error',
-        message: 'Device is offline or IP address not available'
-      });
-    }
-
-    const deviceIP = statusDoc.data().ip_address;
-
-    // Proxy request to ESP32 device
-    console.log(`[DoorbellInfo] Proxying request to http://${deviceIP}/info`);
-
-    const response = await axios.get(`http://${deviceIP}/info`, {
-      timeout: 5000  // 5 second timeout
-    });
-
-    // Return ESP32 response data
     res.json({
       status: 'ok',
-      device_id,
-      data: response.data
+      message: 'Doorbell status updated'
     });
 
   } catch (error) {
-    console.error('[DoorbellInfo] Error:', error.message);
-
-    if (error.code === 'ECONNREFUSED' || error.code === 'ETIMEDOUT') {
-      res.status(503).json({
-        status: 'error',
-        message: 'Failed to connect to doorbell device'
-      });
-    } else {
-      res.status(500).json({
-        status: 'error',
-        message: error.message
-      });
-    }
+    console.error('[DoorbellStatus] Error:', error);
+    res.status(500).json({ status: 'error', message: error.message });
   }
 };
 
 // ============================================================================
-// @route   POST /api/v1/devices/doorbell/:device_id/control
-// @desc    Control doorbell device (proxies commands to ESP32)
+// @route   GET /api/v1/devices/doorbell/:device_id/status
+// @desc    Get doorbell status from Firebase (not proxy - data pushed by doorbell)
 // ============================================================================
-const controlDoorbell = async (req, res) => {
+const getDoorbellStatus = async (req, res) => {
   try {
     const { device_id } = req.params;
-    const { action } = req.body;
+    const db = getFirestore();
+
+    // Get doorbell status from Firebase
+    const statusDoc = await db.collection('devices')
+      .doc(device_id)
+      .collection('status')
+      .doc('doorbell')
+      .get();
+
+    if (!statusDoc.exists) {
+      return res.status(404).json({
+        status: 'error',
+        message: 'No doorbell status found. Device may not have sent status yet.'
+      });
+    }
+
+    res.json({
+      status: 'ok',
+      device_id,
+      data: statusDoc.data()
+    });
+
+  } catch (error) {
+    console.error('[GetDoorbellStatus] Error:', error);
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+};
+
+// ============================================================================
+// @route   POST /api/v1/devices/:device_id/command
+// @desc    Send command to device (queued, device fetches on next heartbeat)
+// ============================================================================
+const sendDeviceCommand = async (req, res) => {
+  try {
+    const { device_id } = req.params;
+    const { action, params } = req.body;
 
     // Validate action
-    const validActions = ['camera_start', 'camera_stop', 'mic_start', 'mic_stop', 'ping'];
+    const validActions = [
+      'camera_start', 'camera_stop',
+      'mic_start', 'mic_stop',
+      'recording_start', 'recording_stop',
+      'reboot', 'update_config'
+    ];
+
     if (!action || !validActions.includes(action)) {
       return res.status(400).json({
         status: 'error',
@@ -699,10 +757,10 @@ const controlDoorbell = async (req, res) => {
     }
 
     const db = getFirestore();
+    const deviceRef = db.collection('devices').doc(device_id);
 
-    // Get device from Firebase to find its IP address
-    const deviceDoc = await db.collection('devices').doc(device_id).get();
-
+    // Verify device exists
+    const deviceDoc = await deviceRef.get();
     if (!deviceDoc.exists) {
       return res.status(404).json({
         status: 'error',
@@ -710,58 +768,129 @@ const controlDoorbell = async (req, res) => {
       });
     }
 
-    // Get current status which contains IP address
-    const statusDoc = await deviceDoc.ref.collection('status').doc('current').get();
-
-    if (!statusDoc.exists || !statusDoc.data().ip_address) {
-      return res.status(503).json({
-        status: 'error',
-        message: 'Device is offline or IP address not available'
-      });
-    }
-
-    const deviceIP = statusDoc.data().ip_address;
-
-    // Map actions to ESP32 endpoints
-    const endpoints = {
-      camera_start: '/camera/start',
-      camera_stop: '/camera/stop',
-      mic_start: '/mic/start',
-      mic_stop: '/mic/stop',
-      ping: '/ping'
-    };
-
-    const endpoint = endpoints[action];
-
-    // Proxy request to ESP32 device
-    console.log(`[DoorbellControl] Proxying ${action} to http://${deviceIP}${endpoint}`);
-
-    const response = await axios.get(`http://${deviceIP}${endpoint}`, {
-      timeout: 10000  // 10 second timeout for commands
+    // Create command document
+    const commandRef = await deviceRef.collection('commands').add({
+      action,
+      params: params || {},
+      status: 'pending',
+      created_at: admin.firestore.FieldValue.serverTimestamp(),
+      executed_at: null,
+      result: null
     });
 
-    // Return ESP32 response
+    console.log(`[SendCommand] ${device_id} - Queued command: ${action} (ID: ${commandRef.id})`);
+
     res.json({
       status: 'ok',
-      device_id,
-      action,
-      result: response.data
+      message: 'Command queued. Device will fetch on next heartbeat.',
+      command_id: commandRef.id,
+      action
     });
 
   } catch (error) {
-    console.error('[DoorbellControl] Error:', error.message);
+    console.error('[SendCommand] Error:', error);
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+};
 
-    if (error.code === 'ECONNREFUSED' || error.code === 'ETIMEDOUT') {
-      res.status(503).json({
+// ============================================================================
+// @route   GET /api/v1/devices/commands/pending
+// @desc    Device fetches pending commands (called when heartbeat says has_pending_commands=true)
+// ============================================================================
+const fetchPendingCommands = async (req, res) => {
+  try {
+    const { device_id } = req.body;
+
+    if (!device_id) {
+      return res.status(400).json({
         status: 'error',
-        message: 'Failed to connect to doorbell device'
-      });
-    } else {
-      res.status(500).json({
-        status: 'error',
-        message: error.message
+        message: 'device_id is required'
       });
     }
+
+    const db = getFirestore();
+    const deviceRef = db.collection('devices').doc(device_id);
+
+    // Get all pending commands
+    const pendingCommandsSnapshot = await deviceRef
+      .collection('commands')
+      .where('status', '==', 'pending')
+      .orderBy('created_at', 'asc')
+      .get();
+
+    const commands = [];
+    pendingCommandsSnapshot.forEach(doc => {
+      commands.push({
+        id: doc.id,
+        action: doc.data().action,
+        params: doc.data().params || {},
+        created_at: doc.data().created_at
+      });
+    });
+
+    console.log(`[FetchCommands] ${device_id} - Returning ${commands.length} pending command(s)`);
+
+    res.json({
+      status: 'ok',
+      count: commands.length,
+      commands
+    });
+
+  } catch (error) {
+    console.error('[FetchCommands] Error:', error);
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+};
+
+// ============================================================================
+// @route   POST /api/v1/devices/commands/ack
+// @desc    Device acknowledges command execution (success or failure)
+// ============================================================================
+const acknowledgeCommand = async (req, res) => {
+  try {
+    const { device_id, command_id, success, result, error } = req.body;
+
+    if (!device_id || !command_id) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'device_id and command_id are required'
+      });
+    }
+
+    const db = getFirestore();
+    const commandRef = db
+      .collection('devices')
+      .doc(device_id)
+      .collection('commands')
+      .doc(command_id);
+
+    // Verify command exists
+    const commandDoc = await commandRef.get();
+    if (!commandDoc.exists) {
+      return res.status(404).json({
+        status: 'error',
+        message: 'Command not found'
+      });
+    }
+
+    // Update command status
+    await commandRef.update({
+      status: success ? 'completed' : 'failed',
+      executed_at: admin.firestore.FieldValue.serverTimestamp(),
+      result: result || null,
+      error: error || null
+    });
+
+    console.log(`[AckCommand] ${device_id} - Command ${command_id} ${success ? 'completed' : 'failed'}`);
+
+    res.json({
+      status: 'ok',
+      message: 'Command acknowledgment received'
+    });
+
+  } catch (error) {
+    console.error('[AckCommand] Error:', error);
+    res.status(500).json({ status: 'error', message: error.message });
   }
 };
 
@@ -775,6 +904,9 @@ module.exports = {
   handleDoorbellRing,
   handleFaceDetection,
   handleHubLog,
-  getDoorbellInfo,
-  controlDoorbell
+  handleDoorbellStatus,
+  getDoorbellStatus,
+  sendDeviceCommand,
+  fetchPendingCommands,
+  acknowledgeCommand
 };

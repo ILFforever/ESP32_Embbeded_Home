@@ -11,19 +11,24 @@ const {
   handleDoorbellRing,
   handleFaceDetection,
   handleHubLog,
-  getDoorbellInfo,
-  controlDoorbell
+  handleDoorbellStatus,
+  getDoorbellStatus,
+  sendDeviceCommand,
+  fetchPendingCommands,
+  acknowledgeCommand
 } = require('../controllers/devices');
 const { authenticateDevice } = require('../middleware/deviceAuth');
 
 // Configure multer for in-memory file storage (for face detection images)
+// Increased limits for ESP32 reliability
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
-    fileSize: 1 * 1024 * 1024, // 1MB max file size (increased from 500KB for reliability)
+    fileSize: 2 * 1024 * 1024, // 2MB max file size (increased for reliability)
     fieldSize: 10 * 1024 * 1024, // 10MB for form fields
+    fields: 10, // Max number of non-file fields
+    parts: 20 // Max number of parts (fields + files)
   },
-  // Increase timeout for slow ESP32 uploads
   fileFilter: (req, file, cb) => {
     // Accept only images
     if (file.mimetype.startsWith('image/')) {
@@ -65,6 +70,11 @@ router.post('/doorbell/face-detection', upload.single('image'), authenticateDevi
 // @access  Private (requires device token)
 router.post('/hub/log', authenticateDevice, handleHubLog);
 
+// @route   POST /api/v1/devices/doorbell/status
+// @desc    Doorbell pushes its status/info to server (camera state, etc.)
+// @access  Private (requires device token)
+router.post('/doorbell/status', authenticateDevice, handleDoorbellStatus);
+
 // @route   GET /api/v1/devices/status/all
 // @desc    Get all devices status (for frontend dashboard)
 // @access  Public
@@ -80,14 +90,28 @@ router.get('/:device_id/status', getDeviceStatus);
 // @access  Public
 router.get('/:device_id/history', getDeviceHistory);
 
-// @route   GET /api/v1/devices/doorbell/:device_id/info
-// @desc    Get doorbell device info (proxies to ESP32)
+// @route   GET /api/v1/devices/doorbell/:device_id/status
+// @desc    Get doorbell status from Firebase (data pushed by doorbell, not proxy)
 // @access  Public
-router.get('/doorbell/:device_id/info', getDoorbellInfo);
+router.get('/doorbell/:device_id/status', getDoorbellStatus);
 
-// @route   POST /api/v1/devices/doorbell/:device_id/control
-// @desc    Control doorbell device (camera, mic, ping)
-// @access  Public
-router.post('/doorbell/:device_id/control', controlDoorbell);
+// ============================================================================
+// Command Queue Routes (Ping-Pong Command System - replaces MQTT)
+// ============================================================================
+
+// @route   POST /api/v1/devices/:device_id/command
+// @desc    Send command to device (queued in Firebase, device fetches on heartbeat)
+// @access  Public (TODO: Add user auth)
+router.post('/:device_id/command', sendDeviceCommand);
+
+// @route   POST /api/v1/devices/commands/pending
+// @desc    Device fetches pending commands (called when has_pending_commands=true)
+// @access  Private (requires device token)
+router.post('/commands/pending', authenticateDevice, fetchPendingCommands);
+
+// @route   POST /api/v1/devices/commands/ack
+// @desc    Device acknowledges command execution
+// @access  Private (requires device token)
+router.post('/commands/ack', authenticateDevice, acknowledgeCommand);
 
 module.exports = router;
