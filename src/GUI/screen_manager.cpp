@@ -121,6 +121,7 @@ void updateContent()
     {
       contentArea.fillScreen(TFT_BLACK);
       contentArea.setTextColor(TFT_WHITE);
+      contentArea.setTextSize(1);
 
       // Font test screen - antialiased fonts with better spacing
       int y = 10;
@@ -266,6 +267,7 @@ void updateContent()
     if (currentDoorbellRinging)
     {
       // Draw large notification
+      contentArea.setFont(&fonts::Font0);
       contentArea.fillRect(100, 200, 600, 100, TFT_RED);
       contentArea.setTextColor(TFT_WHITE, TFT_RED);
       contentArea.setTextSize(5);
@@ -311,7 +313,7 @@ void updateContent()
   }
   if (touchAreaNeedsUpdate)
   {
-    touchArea.pushSprite(0, 0, 0); // x, y, transparentColor (palette index 0) - positioned below top bar
+    touchArea.pushSprite(0, 0, 0); // x, y, transparentColor (palette index 0)
     touchAreaNeedsUpdate = false;
   }
 }
@@ -337,6 +339,7 @@ void updateBotBar()
   botBarNeedsUpdate = true;
 }
 
+// update touch lowlevel
 void updateTouchllv()
 {
   // Only read if interrupt fired
