@@ -24,3 +24,6 @@ Thumbs.db
 *~
 *.swp
 *.swo
+
+# Node modules (Backend branch dependency - not needed in ESP32 branches)
+node_modules/
