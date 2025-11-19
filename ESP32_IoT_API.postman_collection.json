@@ -1,0 +1,428 @@
+{
+  "info": {
+    "name": "ESP32 IoT Smart Home API",
+    "description": "Postman collection for testing ESP32 Smart Home device endpoints",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:3000/api/devices",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Device Registration & Status",
+      "item": [
+        {
+          "name": "Register Device",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"deviceId\": \"ESP32_MAIN_LCD_001\",\n  \"deviceType\": \"main_lcd\",\n  \"macAddress\": \"24:6F:28:12:34:56\",\n  \"firmwareVersion\": \"1.0.0\",\n  \"capabilities\": [\"display\", \"mesh_coordinator\", \"wifi\"]\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/register",
+              "host": ["{{base_url}}"],
+              "path": ["register"]
+            },
+            "description": "Register a new ESP32 device in the system"
+          }
+        },
+        {
+          "name": "Get Device Status",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/status/ESP32_MAIN_LCD_001",
+              "host": ["{{base_url}}"],
+              "path": ["status", "ESP32_MAIN_LCD_001"]
+            },
+            "description": "Get status of a specific device by deviceId"
+          }
+        },
+        {
+          "name": "Get All Devices Status",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/status",
+              "host": ["{{base_url}}"],
+              "path": ["status"]
+            },
+            "description": "Get status of all registered devices"
+          }
+        },
+        {
+          "name": "Device Heartbeat",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"deviceId\": \"ESP32_MAIN_LCD_001\",\n  \"timestamp\": \"2025-11-19T08:00:00Z\",\n  \"uptime\": 3600,\n  \"rssi\": -45,\n  \"freeHeap\": 120000,\n  \"status\": \"online\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/heartbeat",
+              "host": ["{{base_url}}"],
+              "path": ["heartbeat"]
+            },
+            "description": "Send periodic heartbeat from device to indicate it's alive"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Sensor Data",
+      "item": [
+        {
+          "name": "Send Sensor Data - Temperature & Humidity",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"deviceId\": \"ESP32_ROOM_SENSOR_001\",\n  \"timestamp\": \"2025-11-19T08:00:00Z\",\n  \"sensorType\": \"DHT22\",\n  \"data\": {\n    \"temperature\": 25.5,\n    \"humidity\": 65.2,\n    \"unit\": \"celsius\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/sensor-data",
+              "host": ["{{base_url}}"],
+              "path": ["sensor-data"]
+            },
+            "description": "Send temperature and humidity sensor data"
+          }
+        },
+        {
+          "name": "Send Sensor Data - Motion",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"deviceId\": \"ESP32_ROOM_SENSOR_002\",\n  \"timestamp\": \"2025-11-19T08:00:00Z\",\n  \"sensorType\": \"PIR\",\n  \"data\": {\n    \"motion\": true,\n    \"location\": \"living_room\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/sensor-data",
+              "host": ["{{base_url}}"],
+              "path": ["sensor-data"]
+            },
+            "description": "Send motion sensor data"
+          }
+        },
+        {
+          "name": "Get Device History",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/history/ESP32_ROOM_SENSOR_001?limit=100&startDate=2025-11-18&endDate=2025-11-19",
+              "host": ["{{base_url}}"],
+              "path": ["history", "ESP32_ROOM_SENSOR_001"],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "100"
+                },
+                {
+                  "key": "startDate",
+                  "value": "2025-11-18"
+                },
+                {
+                  "key": "endDate",
+                  "value": "2025-11-19"
+                }
+              ]
+            },
+            "description": "Get historical sensor data for a specific device"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Doorbell",
+      "item": [
+        {
+          "name": "Doorbell Ring Event",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"deviceId\": \"ESP32_DOORBELL_LCD_001\",\n  \"timestamp\": \"2025-11-19T08:00:00Z\",\n  \"ringType\": \"button_press\",\n  \"duration\": 2000\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/doorbell/ring",
+              "host": ["{{base_url}}"],
+              "path": ["doorbell", "ring"]
+            },
+            "description": "Trigger doorbell ring event"
+          }
+        },
+        {
+          "name": "Face Detection Event",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"deviceId\": \"ESP32_DOORBELL_CAM_001\",\n  \"timestamp\": \"2025-11-19T08:00:00Z\",\n  \"faceDetected\": true,\n  \"confidence\": 0.95,\n  \"faceId\": \"known_person_001\",\n  \"personName\": \"John Doe\",\n  \"imageUrl\": \"https://example.com/face_captures/img_001.jpg\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/doorbell/face-detection",
+              "host": ["{{base_url}}"],
+              "path": ["doorbell", "face-detection"]
+            },
+            "description": "Send face detection results from doorbell camera"
+          }
+        },
+        {
+          "name": "Update Doorbell Status",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"deviceId\": \"ESP32_DOORBELL_LCD_001\",\n  \"status\": \"armed\",\n  \"cameraEnabled\": true,\n  \"motionDetection\": true,\n  \"nightVision\": false\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/doorbell/status",
+              "host": ["{{base_url}}"],
+              "path": ["doorbell", "status"]
+            },
+            "description": "Update doorbell configuration status"
+          }
+        },
+        {
+          "name": "Get Doorbell Status",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/doorbell/status?deviceId=ESP32_DOORBELL_LCD_001",
+              "host": ["{{base_url}}"],
+              "path": ["doorbell", "status"],
+              "query": [
+                {
+                  "key": "deviceId",
+                  "value": "ESP32_DOORBELL_LCD_001"
+                }
+              ]
+            },
+            "description": "Get current doorbell status and configuration"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Hub Management",
+      "item": [
+        {
+          "name": "Send Hub Log",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"deviceId\": \"ESP32_MAIN_LCD_001\",\n  \"timestamp\": \"2025-11-19T08:00:00Z\",\n  \"logLevel\": \"INFO\",\n  \"message\": \"Mesh network initialized successfully\",\n  \"module\": \"mesh_coordinator\",\n  \"metadata\": {\n    \"connectedNodes\": 5,\n    \"rssi\": -45\n  }\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/hub/log",
+              "host": ["{{base_url}}"],
+              "path": ["hub", "log"]
+            },
+            "description": "Send log messages from hub devices"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Device Commands",
+      "item": [
+        {
+          "name": "Send Device Command",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"deviceId\": \"ESP32_MAIN_LCD_001\",\n  \"command\": \"display_message\",\n  \"parameters\": {\n    \"message\": \"Welcome Home!\",\n    \"duration\": 5000,\n    \"brightness\": 80\n  },\n  \"priority\": \"normal\",\n  \"timeout\": 30000\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/command",
+              "host": ["{{base_url}}"],
+              "path": ["command"]
+            },
+            "description": "Send a command to a specific device"
+          }
+        },
+        {
+          "name": "Fetch Pending Commands",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/commands/pending/ESP32_MAIN_LCD_001",
+              "host": ["{{base_url}}"],
+              "path": ["commands", "pending", "ESP32_MAIN_LCD_001"]
+            },
+            "description": "Fetch all pending commands for a device (polled by ESP32)"
+          }
+        },
+        {
+          "name": "Acknowledge Command",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"deviceId\": \"ESP32_MAIN_LCD_001\",\n  \"commandId\": \"cmd_12345\",\n  \"status\": \"completed\",\n  \"executionTime\": 1500,\n  \"result\": {\n    \"success\": true,\n    \"message\": \"Message displayed successfully\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/commands/acknowledge",
+              "host": ["{{base_url}}"],
+              "path": ["commands", "acknowledge"]
+            },
+            "description": "Acknowledge command execution by device"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Advanced Testing Scenarios",
+      "item": [
+        {
+          "name": "Register Room Sensor",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"deviceId\": \"ESP32_ROOM_SENSOR_001\",\n  \"deviceType\": \"room_sensor\",\n  \"macAddress\": \"24:6F:28:AA:BB:CC\",\n  \"firmwareVersion\": \"1.0.0\",\n  \"location\": \"living_room\",\n  \"capabilities\": [\"temperature\", \"humidity\", \"motion\"]\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/register",
+              "host": ["{{base_url}}"],
+              "path": ["register"]
+            }
+          }
+        },
+        {
+          "name": "Register Doorbell Camera",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"deviceId\": \"ESP32_DOORBELL_CAM_001\",\n  \"deviceType\": \"doorbell_camera\",\n  \"macAddress\": \"24:6F:28:DD:EE:FF\",\n  \"firmwareVersion\": \"1.2.0\",\n  \"capabilities\": [\"camera\", \"face_recognition\", \"spi_communication\"]\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/register",
+              "host": ["{{base_url}}"],
+              "path": ["register"]
+            }
+          }
+        },
+        {
+          "name": "Error Test - Invalid Device ID",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/status/INVALID_DEVICE",
+              "host": ["{{base_url}}"],
+              "path": ["status", "INVALID_DEVICE"]
+            },
+            "description": "Test error handling for non-existent device"
+          }
+        },
+        {
+          "name": "Error Test - Malformed Sensor Data",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"deviceId\": \"ESP32_ROOM_SENSOR_001\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/sensor-data",
+              "host": ["{{base_url}}"],
+              "path": ["sensor-data"]
+            },
+            "description": "Test validation for incomplete sensor data"
+          }
+        }
+      ]
+    }
+  ]
+}
