@@ -13,7 +13,7 @@ function generateDeviceToken() {
 }
 
 // Thresholds
-const WRITE_INTERVAL_MS = 5 * 60 * 1000; // Write every 5 minutes
+const WRITE_INTERVAL_MS = 1 * 60 * 1000; // Write every 1 minute
 const SENSOR_DELTA_THRESHOLD = 5; // Write if sensor changes by 5%
 const OFFLINE_THRESHOLD_MS = 2 * 60 * 1000; // 2 minutes = offline
 
@@ -47,7 +47,7 @@ function shouldWriteToFirebase(deviceId, newData, dataType = 'heartbeat') {
   const now = Date.now();
   const timeSinceLastWrite = now - cached.lastWriteTime;
 
-  // Always write if 5+ minutes elapsed
+  // Always write if 1+ minute elapsed
   if (timeSinceLastWrite >= WRITE_INTERVAL_MS) {
     return true;
   }
