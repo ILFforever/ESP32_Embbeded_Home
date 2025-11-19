@@ -360,11 +360,20 @@ const getDeviceStatus = async (req, res) => {
 // ============================================================================
 // @route   GET /api/v1/devices/status/all
 // @desc    Get status of all devices (use expireAt to determine online status)
+// @query   type - optional filter by device type (e.g., doorbell, hub, sensor)
 // ============================================================================
 const getAllDevicesStatus = async (req, res) => {
   try {
+    const { type } = req.query;
     const db = getFirestore();
-    const devicesSnapshot = await db.collection('devices').get();
+
+    // Build query - optionally filter by type
+    let query = db.collection('devices');
+    if (type) {
+      query = query.where('type', '==', type);
+    }
+
+    const devicesSnapshot = await query.get();
 
     const devices = [];
     let onlineCount = 0;
