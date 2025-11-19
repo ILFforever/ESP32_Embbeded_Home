@@ -706,12 +706,20 @@ const handleDoorbellStatus = async (req, res) => {
     const now = admin.firestore.FieldValue.serverTimestamp();
     const statusExpireAt = getStatusExpiration();
 
-    // Update doorbell-specific status in Firebase
-    await deviceRef.collection('status').doc('doorbell').set({
+    // Update doorbell-specific status in Firebase (includes heartbeat fields)
+    const doorbellStatus = {
       camera_active: camera_active !== undefined ? camera_active : false,
       mic_active: mic_active !== undefined ? mic_active : false,
+      ip_address: ip_address || req.ip,
       last_updated: now
-    }, { merge: true });
+    };
+
+    // Include optional heartbeat fields if provided
+    if (uptime_ms !== undefined) doorbellStatus.uptime_ms = uptime_ms;
+    if (free_heap !== undefined) doorbellStatus.free_heap = free_heap;
+    if (wifi_rssi !== undefined) doorbellStatus.wifi_rssi = wifi_rssi;
+
+    await deviceRef.collection('status').doc('doorbell').set(doorbellStatus, { merge: true });
 
     // ALSO update the main status document to reset TTL (acts as heartbeat)
     const heartbeatData = {
