@@ -88,6 +88,9 @@ bool face_recognition_active = false;
 // Dual button hold detection (for system reboot)
 bool both_buttons_hold_handled = false;
 
+// Preview mode state (for two-step doorbell interaction)
+bool preview_mode_active = false;
+
 // UI state
 bool uiNeedsUpdate = true; // Flag to redraw UI elements
 #define VIDEO_Y_OFFSET 40  // Reserve top 20px for status bar
@@ -941,6 +944,7 @@ void drawUIOverlay()
     sendUARTCommand("camera_control", "camera_stop");
     recognition_state = 0; // Reset to none
     recognition_state_timer = 0;
+    preview_mode_active = false; // Exit preview mode after recognition completes
   }
 
   if (card_success_timer > 100) // Show green border for card
@@ -1257,22 +1261,22 @@ void updateButtonState(ButtonState &btn, int pin, const char *buttonName)
           // Handle button hold action
           if (strcmp(buttonName, "Doorbell") == 0)
           {
-            // Start face recognition with preview
+            // Step 1: Start preview mode (camera + detection, no recognition yet)
+            updateStatusMsg("Preview mode - Press again to recognize", true, "Standing By");
             sendUARTCommand("camera_control", "camera_start");
-            // delay(100);
+            delay(100);
             sendUARTCommand("resume_detection");
-            // delay(500); // Show face bounding box for half a second
-            sendUARTCommand("recognize_face");
 
-            // Start face recognition timeout timer
-            face_recognition_start_time = millis();
-            face_recognition_active = true;
+            // Enter preview mode
+            preview_mode_active = true;
+            Serial.println("[BTN] Entered preview mode - waiting for second press to recognize");
           }
           else if (strcmp(buttonName, "Call") == 0)
           {
-            // Call button held - stop camera
+            // Call button held - stop camera and exit preview mode
             updateStatusMsg("End call", true, "On Stand By");
             sendUARTCommand("camera_control", "camera_stop");
+            preview_mode_active = false; // Exit preview mode if active
           }
         }
       }
@@ -1299,16 +1303,34 @@ void updateButtonState(ButtonState &btn, int pin, const char *buttonName)
         // Handle button press action (short press)
         if (strcmp(buttonName, "Doorbell") == 0)
         {
-          // Doorbell button pressed - play audio and send to backend
-          String oldStatus = status_msg;
-          updateStatusMsg("Ringing...", true, oldStatus.c_str());
-          sendUART2Command("play", "doorbell");
+          // Check if in preview mode - if so, trigger recognition
+          if (preview_mode_active)
+          {
+            // Step 2: Trigger face recognition
+            updateStatusMsg("Recognizing face...", true, "Standing By");
+            sendUARTCommand("recognize_face");
 
-          // Send doorbell ring event to backend (for logging to Firebase)
-          sendDoorbellRing();
+            // Start face recognition timeout timer
+            face_recognition_start_time = millis();
+            face_recognition_active = true;
 
-          // Publish to MQTT for instant hub notification
-          publishDoorbellRing();
+            // Exit preview mode
+            preview_mode_active = false;
+            Serial.println("[BTN] Triggered recognition from preview mode");
+          }
+          else
+          {
+            // Not in preview mode - play doorbell audio and send ring event
+            String oldStatus = status_msg;
+            updateStatusMsg("Ringing...", true, oldStatus.c_str());
+            sendUART2Command("play", "doorbell");
+
+            // Send doorbell ring event to backend (for logging to Firebase)
+            sendDoorbellRing();
+
+            // Publish to MQTT for instant hub notification
+            publishDoorbellRing();
+          }
         }
         else if (strcmp(buttonName, "Call") == 0)
         {
@@ -1360,6 +1382,7 @@ void checkTimers()
     updateStatusMsg("Recognition timeout", true, "Standing By");
     sendUARTCommand("camera_control", "camera_stop");
     face_recognition_active = false;
+    preview_mode_active = false; // Exit preview mode on timeout
   }
 }
 
