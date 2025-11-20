@@ -35,6 +35,9 @@ void sendFaceDetection(bool recognized, const char* name, float confidence, cons
 // Returns true if queued successfully, false if queue is full
 bool sendFaceDetectionAsync(bool recognized, const char* name, float confidence, const uint8_t* imageData = nullptr, size_t imageSize = 0);
 
+// Send face database result to backend (face_count, face_list, face_check)
+void sendFaceDatabaseResult(const char* type, int count = -1, JsonArray faces = JsonArray(), const char* status = nullptr, const char* message = nullptr);
+
 // Get last heartbeat status
 bool getLastHeartbeatSuccess();
 unsigned long getLastHeartbeatTime();
