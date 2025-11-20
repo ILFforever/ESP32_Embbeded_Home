@@ -12,17 +12,32 @@ import type {
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
 
+// Helper to get auth token from localStorage
+const getAuthToken = (): string | null => {
+  if (typeof window !== 'undefined') {
+    return localStorage.getItem('token');
+  }
+  return null;
+};
+
+// Helper to get auth headers
+const getAuthHeaders = () => {
+  const token = getAuthToken();
+  return token ? { Authorization: `Bearer ${token}` } : {};
+};
+
 // Backend device interface
 interface BackendDevice {
   device_id: string;
   type: string;
   name: string;
-  online: boolean;
+  online: boolean; // Computed by backend from expireAt
   last_seen: string | null;
   uptime_ms: number;
   free_heap: number;
   wifi_rssi: number;
   ip_address: string | null;
+  expireAt: any; // Firebase Timestamp - used by backend to compute online status
 }
 
 interface BackendDevicesResponse {
@@ -39,7 +54,10 @@ interface BackendDevicesResponse {
 // Get all devices status from backend
 export async function getAllDevices(): Promise<DevicesStatus> {
   try {
-    const response = await axios.get<BackendDevicesResponse>(`${API_URL}/api/v1/devices/status/all`);
+    const response = await axios.get<BackendDevicesResponse>(
+      `${API_URL}/api/v1/devices/status/all`,
+      { headers: getAuthHeaders() }
+    );
 
     // Transform backend data to match frontend DevicesStatus interface
     return {
@@ -266,7 +284,10 @@ export async function getDoorbellInfo(deviceId: string): Promise<DoorbellInfo | 
   try {
     const response = await axios.get<BackendDoorbellInfoResponse>(
       `${API_URL}/api/v1/devices/doorbell/${deviceId}/info`,
-      { timeout: 10000 }  // 10 second timeout
+      {
+        timeout: 10000,  // 10 second timeout
+        headers: getAuthHeaders()
+      }
     );
     return response.data.data;
   } catch (error) {
@@ -275,21 +296,349 @@ export async function getDoorbellInfo(deviceId: string): Promise<DoorbellInfo | 
   }
 }
 
-// Doorbell control actions via backend proxy
+// Camera control functions using new backend endpoints
+export async function startCamera(deviceId: string) {
+  try {
+    const response = await axios.post(
+      `${API_URL}/api/v1/devices/${deviceId}/camera/start`,
+      {},
+      {
+        timeout: 15000,
+        headers: getAuthHeaders()
+      }
+    );
+    return response.data;
+  } catch (error) {
+    console.error('Error starting camera:', error);
+    throw error;
+  }
+}
+
+export async function stopCamera(deviceId: string) {
+  try {
+    const response = await axios.post(
+      `${API_URL}/api/v1/devices/${deviceId}/camera/stop`,
+      {},
+      {
+        timeout: 15000,
+        headers: getAuthHeaders()
+      }
+    );
+    return response.data;
+  } catch (error) {
+    console.error('Error stopping camera:', error);
+    throw error;
+  }
+}
+
+export async function restartCamera(deviceId: string) {
+  try {
+    const response = await axios.post(
+      `${API_URL}/api/v1/devices/${deviceId}/camera/restart`,
+      {},
+      {
+        timeout: 15000,
+        headers: getAuthHeaders()
+      }
+    );
+    return response.data;
+  } catch (error) {
+    console.error('Error restarting camera:', error);
+    throw error;
+  }
+}
+
+// Microphone control functions
+export async function startMicrophone(deviceId: string) {
+  try {
+    const response = await axios.post(
+      `${API_URL}/api/v1/devices/${deviceId}/mic/start`,
+      {},
+      {
+        timeout: 15000,
+        headers: getAuthHeaders()
+      }
+    );
+    return response.data;
+  } catch (error) {
+    console.error('Error starting microphone:', error);
+    throw error;
+  }
+}
+
+export async function stopMicrophone(deviceId: string) {
+  try {
+    const response = await axios.post(
+      `${API_URL}/api/v1/devices/${deviceId}/mic/stop`,
+      {},
+      {
+        timeout: 15000,
+        headers: getAuthHeaders()
+      }
+    );
+    return response.data;
+  } catch (error) {
+    console.error('Error stopping microphone:', error);
+    throw error;
+  }
+}
+
+export async function getMicrophoneStatus(deviceId: string) {
+  try {
+    const response = await axios.post(
+      `${API_URL}/api/v1/devices/${deviceId}/mic/status`,
+      {},
+      {
+        timeout: 15000,
+        headers: getAuthHeaders()
+      }
+    );
+    return response.data;
+  } catch (error) {
+    console.error('Error getting microphone status:', error);
+    throw error;
+  }
+}
+
+// Audio amplifier control functions
+export async function playAmplifier(deviceId: string, url: string) {
+  try {
+    const response = await axios.post(
+      `${API_URL}/api/v1/devices/${deviceId}/amp/play?url=${encodeURIComponent(url)}`,
+      {},
+      {
+        timeout: 15000,
+        headers: getAuthHeaders()
+      }
+    );
+    return response.data;
+  } catch (error) {
+    console.error('Error playing amplifier:', error);
+    throw error;
+  }
+}
+
+export async function stopAmplifier(deviceId: string) {
+  try {
+    const response = await axios.post(
+      `${API_URL}/api/v1/devices/${deviceId}/amp/stop`,
+      {},
+      {
+        timeout: 15000,
+        headers: getAuthHeaders()
+      }
+    );
+    return response.data;
+  } catch (error) {
+    console.error('Error stopping amplifier:', error);
+    throw error;
+  }
+}
+
+export async function restartAmplifier(deviceId: string) {
+  try {
+    const response = await axios.post(
+      `${API_URL}/api/v1/devices/${deviceId}/amp/restart`,
+      {},
+      {
+        timeout: 15000,
+        headers: getAuthHeaders()
+      }
+    );
+    return response.data;
+  } catch (error) {
+    console.error('Error restarting amplifier:', error);
+    throw error;
+  }
+}
+
+export async function setAmplifierVolume(deviceId: string, level: number) {
+  try {
+    const response = await axios.post(
+      `${API_URL}/api/v1/devices/${deviceId}/amp/volume?level=${level}`,
+      {},
+      {
+        timeout: 15000,
+        headers: getAuthHeaders()
+      }
+    );
+    return response.data;
+  } catch (error) {
+    console.error('Error setting amplifier volume:', error);
+    throw error;
+  }
+}
+
+export async function getAmplifierStatus(deviceId: string) {
+  try {
+    const response = await axios.get(
+      `${API_URL}/api/v1/devices/${deviceId}/amp/status`,
+      {
+        timeout: 15000,
+        headers: getAuthHeaders()
+      }
+    );
+    return response.data;
+  } catch (error) {
+    console.error('Error getting amplifier status:', error);
+    throw error;
+  }
+}
+
+export async function listAmplifierFiles(deviceId: string) {
+  try {
+    const response = await axios.get(
+      `${API_URL}/api/v1/devices/${deviceId}/amp/files`,
+      {
+        timeout: 15000,
+        headers: getAuthHeaders()
+      }
+    );
+    return response.data;
+  } catch (error) {
+    console.error('Error listing amplifier files:', error);
+    throw error;
+  }
+}
+
+export async function setAmplifierWifi(deviceId: string, ssid: string, password: string) {
+  try {
+    const response = await axios.post(
+      `${API_URL}/api/v1/devices/${deviceId}/amp/wifi`,
+      { ssid, password },
+      {
+        timeout: 15000,
+        headers: getAuthHeaders()
+      }
+    );
+    return response.data;
+  } catch (error) {
+    console.error('Error setting amplifier WiFi:', error);
+    throw error;
+  }
+}
+
+// Face management functions
+export async function getFaceCount(deviceId: string) {
+  try {
+    const response = await axios.post(
+      `${API_URL}/api/v1/devices/${deviceId}/face/count`,
+      {},
+      {
+        timeout: 15000,
+        headers: getAuthHeaders()
+      }
+    );
+    return response.data;
+  } catch (error) {
+    console.error('Error getting face count:', error);
+    throw error;
+  }
+}
+
+export async function listFaces(deviceId: string) {
+  try {
+    const response = await axios.post(
+      `${API_URL}/api/v1/devices/${deviceId}/face/list`,
+      {},
+      {
+        timeout: 15000,
+        headers: getAuthHeaders()
+      }
+    );
+    return response.data;
+  } catch (error) {
+    console.error('Error listing faces:', error);
+    throw error;
+  }
+}
+
+export async function checkFaceDatabase(deviceId: string) {
+  try {
+    const response = await axios.post(
+      `${API_URL}/api/v1/devices/${deviceId}/face/check`,
+      {},
+      {
+        timeout: 15000,
+        headers: getAuthHeaders()
+      }
+    );
+    return response.data;
+  } catch (error) {
+    console.error('Error checking face database:', error);
+    throw error;
+  }
+}
+
+// System control functions
+export async function restartSystem(deviceId: string) {
+  try {
+    const response = await axios.post(
+      `${API_URL}/api/v1/devices/${deviceId}/system/restart`,
+      {},
+      {
+        timeout: 15000,
+        headers: getAuthHeaders()
+      }
+    );
+    return response.data;
+  } catch (error) {
+    console.error('Error restarting system:', error);
+    throw error;
+  }
+}
+
+// Get device info (combines live_status data)
+export async function getDeviceInfo(deviceId: string) {
+  try {
+    const response = await axios.get(
+      `${API_URL}/api/v1/devices/${deviceId}/info`,
+      {
+        timeout: 10000,
+        headers: getAuthHeaders()
+      }
+    );
+    return response.data;
+  } catch (error) {
+    console.error('Error getting device info:', error);
+    throw error;
+  }
+}
+
+// Get device history (face detections, doorbell rings, etc.)
+export async function getDeviceHistory(deviceId: string, limit: number = 20) {
+  try {
+    const response = await axios.get(
+      `${API_URL}/api/v1/devices/${deviceId}/history?limit=${limit}`,
+      {
+        timeout: 10000,
+        headers: getAuthHeaders()
+      }
+    );
+    return response.data;
+  } catch (error) {
+    console.error('Error getting device history:', error);
+    return { events: [] }; // Return empty events on error
+  }
+}
+
+// Legacy function for backward compatibility
 export async function controlDoorbell(
   deviceId: string,
   action: 'camera_start' | 'camera_stop' | 'mic_start' | 'mic_stop' | 'ping'
 ) {
-  try {
-    const response = await axios.post<BackendDoorbellControlResponse>(
-      `${API_URL}/api/v1/devices/doorbell/${deviceId}/control`,
-      { action },
-      { timeout: 15000 }  // 15 second timeout for commands
-    );
-    return response.data.result;
-  } catch (error) {
-    console.error(`Error controlling doorbell (${action}):`, error);
-    throw error;
+  // Use new endpoints based on action
+  switch (action) {
+    case 'camera_start':
+      return startCamera(deviceId);
+    case 'camera_stop':
+      return stopCamera(deviceId);
+    case 'mic_start':
+      return startMicrophone(deviceId);
+    case 'mic_stop':
+      return stopMicrophone(deviceId);
+    default:
+      throw new Error(`Unsupported action: ${action}`);
   }
 }
 
@@ -333,39 +682,34 @@ export function findHubDevice(devices: BackendDevice[]): BackendDevice | null {
   return devices.find(device => device.type === 'hub' || device.type === 'main_lcd') || null;
 }
 
-// Helper function to check if a device is online based on last_seen timestamp
-export function isDeviceOnline(lastSeen: string | null, thresholdMinutes: number = 2): boolean {
-  if (!lastSeen) return false;
-
-  const lastSeenDate = new Date(lastSeen);
-  const now = new Date();
-  const diffMinutes = (now.getTime() - lastSeenDate.getTime()) / 60000;
-
-  return diffMinutes < thresholdMinutes;
-}
-
 // Helper function to get device status class for styling
-export function getDeviceStatusClass(lastSeen: string | null): string {
+export function getDeviceStatusClass(online: boolean, lastSeen: string | null): string {
+  // Backend provides online boolean
+  if (online) return 'status-online';
+
+  // If offline, check how long ago it was last seen
   if (!lastSeen) return 'status-offline';
 
   const lastSeenDate = new Date(lastSeen);
   const now = new Date();
   const diffMinutes = (now.getTime() - lastSeenDate.getTime()) / 60000;
 
-  if (diffMinutes < 2) return 'status-online';
   if (diffMinutes < 5) return 'status-warning';
   return 'status-offline';
 }
 
 // Helper function to get human-readable device status text
-export function getDeviceStatusText(lastSeen: string | null): string {
+export function getDeviceStatusText(online: boolean, lastSeen: string | null): string {
+  // Backend provides online boolean
+  if (online) return 'ONLINE';
+
+  // If offline, show how long ago it was last seen
   if (!lastSeen) return 'OFFLINE';
 
   const lastSeenDate = new Date(lastSeen);
   const now = new Date();
   const diffMinutes = Math.floor((now.getTime() - lastSeenDate.getTime()) / 60000);
 
-  if (diffMinutes < 2) return 'ONLINE';
   if (diffMinutes < 5) return `LAST SEEN ${diffMinutes}M AGO`;
   return 'OFFLINE';
 }
