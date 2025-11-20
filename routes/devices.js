@@ -36,6 +36,7 @@ const {
   getFaceCount,
   listFaces,
   checkFaceDatabase,
+  syncFaceDatabase,
   handleFaceDatabaseResult,
   getFaceDatabaseInfo,
   // System control
@@ -236,6 +237,11 @@ router.post('/:device_id/face/list', protect, listFaces);
 // @desc    Queue face database check command
 // @access  Private (requires user token)
 router.post('/:device_id/face/check', protect, checkFaceDatabase);
+
+// @route   POST /api/v1/devices/:device_id/face/sync
+// @desc    Queue face database sync command (runs all three: count, list, check)
+// @access  Private (requires user token)
+router.post('/:device_id/face/sync', protect, syncFaceDatabase);
 
 // @route   POST /api/v1/devices/:device_id/face-database/result
 // @desc    Receive face database results from device (face_count, face_list, face_check)
