@@ -699,7 +699,7 @@ export function getDeviceStatusText(online: boolean, lastSeen: string | null): s
 
 // Device history interfaces
 export interface HistoryEvent {
-  type: 'heartbeat' | 'face_detection' | 'command';
+  type: 'heartbeat' | 'face_detection' | 'command' | 'device_state';
   id: string;
   timestamp: any;
   data: any;
@@ -710,7 +710,7 @@ export interface DeviceHistory {
   device_id: string;
   summary: {
     total: number;
-    heartbeats: number;
+    status_events: number;
     face_detections: number;
     commands: number;
   };
@@ -734,7 +734,7 @@ export async function getDeviceHistory(deviceId: string, limit: number = 20): Pr
     return {
       status: 'error',
       device_id: deviceId,
-      summary: { total: 0, heartbeats: 0, face_detections: 0, commands: 0 },
+      summary: { total: 0, status_events: 0, face_detections: 0, commands: 0 },
       history: []
     };
   }

@@ -27,7 +27,7 @@ import type { Device } from '@/types/dashboard';
 
 interface ActivityEvent {
   id: string;
-  type: 'heartbeat' | 'face_detection' | 'command';
+  type: 'heartbeat' | 'face_detection' | 'command' | 'device_state';
   timestamp: any;  // Firestore timestamp or ISO string
   data: any;
 }
@@ -397,7 +397,12 @@ export default function DoorbellControlPage() {
     }
     if (event.type === 'heartbeat') {
       const uptime = event.data?.uptime_ms ? Math.floor(event.data.uptime_ms / 60000) : 0;
-      return `Status update (uptime: ${uptime}m)`;
+      return `Heartbeat (uptime: ${uptime}m)`;
+    }
+    if (event.type === 'device_state') {
+      const ip = event.data?.ip_address || 'N/A';
+      const heap = event.data?.free_heap ? Math.floor(event.data.free_heap / 1024) : 0;
+      return `Device state (IP: ${ip}, Heap: ${heap}KB)`;
     }
     return 'Activity detected';
   };
@@ -411,6 +416,9 @@ export default function DoorbellControlPage() {
       return status.charAt(0).toUpperCase() + status.slice(1);
     }
     if (event.type === 'heartbeat') {
+      return 'Active';
+    }
+    if (event.type === 'device_state') {
       return 'Online';
     }
     return 'Event';
@@ -426,7 +434,7 @@ export default function DoorbellControlPage() {
       if (status === 'failed') return 'status-danger';
       return 'status-warning';
     }
-    if (event.type === 'heartbeat') {
+    if (event.type === 'heartbeat' || event.type === 'device_state') {
       return 'status-safe';
     }
     return 'status-safe';
