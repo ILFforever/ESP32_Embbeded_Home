@@ -574,7 +574,7 @@ export default function DoorbellControlPage() {
           <header className="dashboard-header">
             <div className="dashboard-header-left">
               <button className="sidebar-toggle" onClick={() => router.push('/dashboard')}>
-                ← Back
+                ←
               </button>
               <h1>DOORBELL CONTROL</h1>
             </div>
