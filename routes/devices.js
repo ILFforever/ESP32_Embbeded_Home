@@ -36,6 +36,8 @@ const {
   getFaceCount,
   listFaces,
   checkFaceDatabase,
+  handleFaceDatabaseResult,
+  getFaceDatabaseInfo,
   // System control
   restartSystem,
   // Device info
@@ -234,6 +236,16 @@ router.post('/:device_id/face/list', protect, listFaces);
 // @desc    Queue face database check command
 // @access  Private (requires user token)
 router.post('/:device_id/face/check', protect, checkFaceDatabase);
+
+// @route   POST /api/v1/devices/:device_id/face-database/result
+// @desc    Receive face database results from device (face_count, face_list, face_check)
+// @access  Private (requires device token)
+router.post('/:device_id/face-database/result', authenticateDevice, handleFaceDatabaseResult);
+
+// @route   GET /api/v1/devices/:device_id/face-database/info
+// @desc    Get current face database information (for frontend display)
+// @access  Private (requires user token)
+router.get('/:device_id/face-database/info', protect, getFaceDatabaseInfo);
 
 // ============================================================================
 // System Control Routes
