@@ -8,7 +8,9 @@ import type {
   DoorWindow,
   DoorbellControl,
   SecurityDevice,
-  SensorReading
+  SensorReading,
+  SensorData,
+  HubSensorData
 } from '@/types/dashboard';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
@@ -782,4 +784,80 @@ export async function getDeviceHistory(deviceId: string, limit: number = 20): Pr
       history: []
     };
   }
+}
+
+// Get device sensor data
+export async function getDeviceSensorData(deviceId: string): Promise<SensorData | null> {
+  try {
+    const response = await axios.get<any>(
+      `${API_URL}/api/v1/devices/${deviceId}/sensors/current`,
+      {
+        timeout: 10000,
+        headers: getAuthHeaders()
+      }
+    );
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching device sensor data:', error);
+    return null;
+  }
+}
+
+// Get hub sensor data (DHT11 + PM2.5)
+export async function getHubSensorData(deviceId: string): Promise<HubSensorData | null> {
+  try {
+    const sensorData = await getDeviceSensorData(deviceId);
+
+    if (!sensorData || !sensorData.sensors) {
+      return null;
+    }
+
+    const result: HubSensorData = {
+      device_id: deviceId,
+      timestamp: sensorData.timestamp || new Date().toISOString()
+    };
+
+    // Extract DHT11 data (temperature + humidity)
+    if (sensorData.sensors.temperature !== undefined || sensorData.sensors.humidity !== undefined) {
+      result.dht11 = {
+        temperature: sensorData.sensors.temperature || 0,
+        humidity: sensorData.sensors.humidity || 0
+      };
+    }
+
+    // Extract PM2.5 data
+    if (sensorData.sensors.pm25 !== undefined) {
+      result.pm25 = {
+        pm25: sensorData.sensors.pm25,
+        pm10: sensorData.sensors.pm10,
+        aqi: calculateAQI(sensorData.sensors.pm25)
+      };
+    }
+
+    return result;
+  } catch (error) {
+    console.error('Error fetching hub sensor data:', error);
+    return null;
+  }
+}
+
+// Calculate Air Quality Index from PM2.5
+function calculateAQI(pm25: number): number {
+  // Simple AQI calculation based on PM2.5
+  // 0-50: Good, 51-100: Moderate, 101-150: Unhealthy for Sensitive, 151-200: Unhealthy, 201+: Very Unhealthy
+  if (pm25 <= 12.0) return Math.round((50 / 12.0) * pm25);
+  if (pm25 <= 35.4) return Math.round(50 + ((100 - 50) / (35.4 - 12.1)) * (pm25 - 12.1));
+  if (pm25 <= 55.4) return Math.round(100 + ((150 - 100) / (55.4 - 35.5)) * (pm25 - 35.5));
+  if (pm25 <= 150.4) return Math.round(150 + ((200 - 150) / (150.4 - 55.5)) * (pm25 - 55.5));
+  return Math.round(200 + ((300 - 200) / (250.4 - 150.5)) * Math.min(pm25 - 150.5, 99.9));
+}
+
+// Get AQI category and color
+export function getAQICategory(aqi: number): { category: string; color: string; status: string } {
+  if (aqi <= 50) return { category: 'Good', color: 'var(--success)', status: 'status-online' };
+  if (aqi <= 100) return { category: 'Moderate', color: 'var(--warning)', status: 'status-warning' };
+  if (aqi <= 150) return { category: 'Unhealthy for Sensitive Groups', color: '#FF9800', status: 'status-warning' };
+  if (aqi <= 200) return { category: 'Unhealthy', color: 'var(--danger)', status: 'status-offline' };
+  if (aqi <= 300) return { category: 'Very Unhealthy', color: '#9C27B0', status: 'status-offline' };
+  return { category: 'Hazardous', color: '#880E4F', status: 'status-offline' };
 }
