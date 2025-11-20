@@ -6,6 +6,7 @@ import {
   getCurrentUser,
   UserData,
 } from '../services/auth.service';
+import { getCookie, deleteCookie } from '@/utils/cookies';
 
 
 interface AuthContextType {
@@ -42,20 +43,20 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const checkAuth = async () => {
     try {
-      const token = localStorage.getItem('token');
+      const token = getCookie('auth_token');
       if (token) {
-        const response = await getCurrentUser(token);
+        const response = await getCurrentUser();
         if (response && response.success) {
           setUser(response.data);
         } else {
           // Token invalid, clear it
-          localStorage.removeItem('token');
+          deleteCookie('auth_token');
           setUser(null);
         }
       }
     } catch (error) {
       console.error('Auth check error:', error);
-      localStorage.removeItem('token');
+      deleteCookie('auth_token');
       setUser(null);
     } finally {
       setIsLoading(false);
@@ -65,16 +66,16 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const login = async (email: string, password: string): Promise<boolean> => {
     try {
       const response = await loginUserService(email, password);
-      
+
       if (response.success && response.token) {
         // Fetch user data after successful login
-        const userResponse = await getCurrentUser(response.token);
+        const userResponse = await getCurrentUser();
         if (userResponse && userResponse.success) {
           setUser(userResponse.data);
           return true;
         }
       }
-      
+
       return false;
     } catch (error) {
       console.error('Login error:', error);
@@ -89,15 +90,15 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       console.error('Logout error:', error);
     } finally {
       setUser(null);
-      localStorage.removeItem('token');
+      deleteCookie('auth_token');
     }
   };
 
   const refreshUser = async () => {
     try {
-      const token = localStorage.getItem('token');
+      const token = getCookie('auth_token');
       if (token) {
-        const response = await getCurrentUser(token);
+        const response = await getCurrentUser();
         if (response && response.success) {
           setUser(response.data);
         }

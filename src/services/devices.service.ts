@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { getCookie } from '@/utils/cookies';
 import type {
   DevicesStatus,
   Alert,
@@ -12,10 +13,10 @@ import type {
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
 
-// Helper to get auth token from localStorage
+// Helper to get auth token from cookies
 const getAuthToken = (): string | null => {
   if (typeof window !== 'undefined') {
-    return localStorage.getItem('token');
+    return getCookie('auth_token');
   }
   return null;
 };
@@ -61,6 +62,7 @@ export async function getAllDevices(): Promise<DevicesStatus> {
 
     // Transform backend data to match frontend DevicesStatus interface
     return {
+      status: response.data.status,
       timestamp: response.data.timestamp,
       summary: response.data.summary,
       devices: response.data.devices
@@ -69,6 +71,7 @@ export async function getAllDevices(): Promise<DevicesStatus> {
     console.error('Error fetching devices:', error);
     // Return empty structure on error to prevent frontend crashes
     return {
+      status: 'error',
       timestamp: new Date().toISOString(),
       summary: { total: 0, online: 0, offline: 0 },
       devices: []
@@ -283,7 +286,7 @@ interface BackendDoorbellControlResponse {
 export async function getDoorbellInfo(deviceId: string): Promise<DoorbellInfo | null> {
   try {
     const response = await axios.get<BackendDoorbellInfoResponse>(
-      `${API_URL}/api/v1/devices/doorbell/${deviceId}/info`,
+      `${API_URL}/api/v1/devices/doorbell/${deviceId}/status`,
       {
         timeout: 10000,  // 10 second timeout
         headers: getAuthHeaders()
@@ -625,33 +628,74 @@ export async function controlDoorbell(
   }
 }
 
+// Backend response interface for device status
+interface BackendDeviceStatusResponse {
+  status: string;
+  device_id: string;
+  data: {
+    camera_active?: boolean;
+    mic_active?: boolean;
+    ip_address?: string;
+    wifi_rssi?: number;
+    last_updated?: {
+      _seconds: number;
+      _nanoseconds: number;
+    };
+    uptime_ms?: number;
+    free_heap?: number;
+  };
+}
+
 // Get real doorbell control status via backend
 export async function getDoorbellControlStatus(deviceId: string): Promise<DoorbellControl> {
   try {
-    const info = await getDoorbellInfo(deviceId);
+    // Use the correct backend endpoint that returns device state
+    const response = await axios.get<BackendDeviceStatusResponse>(
+      `${API_URL}/api/v1/devices/doorbell/${deviceId}/status`,
+      {
+        timeout: 10000,
+        headers: getAuthHeaders()
+      }
+    );
 
-    if (!info) {
-      // Return default offline state
+    console.log('Doorbell status response:', response.data); // Debug log
+
+    if (response.data && response.data.status === 'ok' && response.data.data) {
+      const data = response.data.data;
+
+      console.log('Camera active from backend:', data.camera_active); // Debug log
+
+      // Transform backend response to DoorbellControl format
       return {
-        camera_active: false,
-        mic_active: false,
-        face_recognition: false,
-        last_activity: new Date().toISOString(),
-        visitor_count_today: 0
+        camera_active: data.camera_active || false,
+        mic_active: data.mic_active || false,
+        face_recognition: false, // Not provided by backend yet
+        last_activity: data.last_updated
+          ? new Date(data.last_updated._seconds * 1000).toISOString()
+          : new Date().toISOString(),
+        visitor_count_today: 0  // Not provided by backend yet
       };
     }
 
-    // Transform ESP32 status to DoorbellControl format
+    console.warn('Invalid response format from backend'); // Debug log
+    // Return default offline state if response is invalid
     return {
-      camera_active: info.slave_status === 1,  // 1 = active
-      mic_active: false,  // Would need to query mic status
-      face_recognition: info.slave_status >= 0,  // >= 0 = connected
+      camera_active: false,
+      mic_active: false,
+      face_recognition: false,
       last_activity: new Date().toISOString(),
-      visitor_count_today: 0  // Would need to track this in backend
+      visitor_count_today: 0
     };
   } catch (error) {
     console.error('Error getting doorbell control status:', error);
-    return generateMockDoorbellControl();
+    // Return default offline state on error
+    return {
+      camera_active: false,
+      mic_active: false,
+      face_recognition: false,
+      last_activity: new Date().toISOString(),
+      visitor_count_today: 0
+    };
   }
 }
 

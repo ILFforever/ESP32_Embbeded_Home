@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { useAuth } from '@/context/AuthContext';
 import ProtectedRoute from '@/components/auth/ProtectedRoute';
 import { AlertsCard } from '@/components/dashboard/AlertsCard';
 import { TemperatureCard } from '@/components/dashboard/TemperatureCard';
@@ -24,6 +25,7 @@ import type { DevicesStatus } from '@/types/dashboard';
 
 export default function DashboardPage() {
   const router = useRouter();
+  const { logout } = useAuth();
   const [devicesStatus, setDevicesStatus] = useState<DevicesStatus | null>(null);
   const [doorbellControl, setDoorbellControl] = useState<any>(null);
   const [doorbellDeviceId, setDoorbellDeviceId] = useState<string | null>(null);
@@ -83,7 +85,7 @@ export default function DashboardPage() {
   };
 
   const handleLogout = () => {
-    localStorage.removeItem('isAuthenticated');
+    logout();
     router.push('/login');
   };
 
@@ -213,6 +215,25 @@ export default function DashboardPage() {
             </li>
           </ul>
         </nav>
+
+        {/* Sidebar Footer with Theme and Logout */}
+        <div className="sidebar-footer">
+          {/* Theme Switcher */}
+          <div className="sidebar-theme-switcher">
+            <span className="sidebar-label">Theme</span>
+            <div className="theme-toggle" data-theme={theme} onClick={toggleTheme}>
+              <div className="theme-toggle-slider"></div>
+              <span className="theme-icon theme-icon-purple">●</span>
+              <span className="theme-icon theme-icon-green">●</span>
+            </div>
+          </div>
+
+          {/* Logout Button */}
+          <button className="sidebar-logout-btn" onClick={handleLogout}>
+            <span className="sidebar-nav-icon">🚪</span>
+            <span>Logout</span>
+          </button>
+        </div>
       </aside>
 
       {/* Sidebar Overlay for Mobile */}
@@ -240,22 +261,6 @@ export default function DashboardPage() {
                 <span className="status-dot status-online"></span>
                 <span>ALL SYSTEMS OPERATIONAL</span>
               </div>
-
-              {/* Theme Switcher */}
-              <div className="theme-switcher">
-                <span className="theme-switcher-label">Theme</span>
-                <div className="theme-toggle" data-theme={theme} onClick={toggleTheme}>
-                  <div className="theme-toggle-slider"></div>
-                  <span className="theme-icon theme-icon-purple">●</span>
-                  <span className="theme-icon theme-icon-green">●</span>
-                </div>
-              </div>
-
-              {/* Logout Button */}
-              <button className="btn-logout" onClick={handleLogout}>
-                <span>Logout</span>
-                <span>→</span>
-              </button>
             </div>
           </header>
 

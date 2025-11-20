@@ -50,7 +50,7 @@ export function TemperatureCard({ temperatureData, isExpanded = false }: Tempera
                 <div key={data.room} className="temp-item">
                   <span className="temp-room">{data.room}</span>
                   <span className="temp-value">{data.current.toFixed(1)}°C</span>
-                  <span className="temp-humidity">{data.humidity.toFixed(0)}% RH</span>
+                  <span className="temp-humidity">{data.humidity?.toFixed(0) ?? 0}% RH</span>
                 </div>
               ))}
             </div>
@@ -136,7 +136,7 @@ export function TemperatureCard({ temperatureData, isExpanded = false }: Tempera
                         </div>
                         <div className="detail-item">
                           <span className="detail-label">HUMIDITY:</span>
-                          <span className="detail-value">{data.humidity.toFixed(0)}%</span>
+                          <span className="detail-value">{data.humidity?.toFixed(0) ?? 0}%</span>
                         </div>
                         <div className="detail-item">
                           <span className="detail-label">AVG (24H):</span>

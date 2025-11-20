@@ -41,7 +41,8 @@ export function DoorsWindowsCard({ doorsWindows, isExpanded = false }: DoorsWind
     }
   };
 
-  const getBatteryIcon = (battery: number) => {
+  const getBatteryIcon = (battery: number | undefined) => {
+    if (!battery) return <Battery className="battery-low" size={16} />;
     if (battery > 60) return <Battery className="battery-good" size={16} />;
     if (battery > 20) return <Battery className="battery-medium" size={16} />;
     return <Battery className="battery-low" size={16} />;
@@ -90,7 +91,7 @@ export function DoorsWindowsCard({ doorsWindows, isExpanded = false }: DoorsWind
                       {getStatusIcon(door)}
                       <div className="battery-indicator">
                         {getBatteryIcon(door.battery)}
-                        <span>{door.battery}%</span>
+                        <span>{door.battery ?? 0}%</span>
                       </div>
                     </div>
                     <h5>{door.name}</h5>
@@ -132,7 +133,7 @@ export function DoorsWindowsCard({ doorsWindows, isExpanded = false }: DoorsWind
                       {getStatusIcon(window)}
                       <div className="battery-indicator">
                         {getBatteryIcon(window.battery)}
-                        <span>{window.battery}%</span>
+                        <span>{window.battery ?? 0}%</span>
                       </div>
                     </div>
                     <h5>{window.name}</h5>

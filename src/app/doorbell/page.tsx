@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { Camera, Mic, Volume2, RotateCw, Power, Users, Settings } from 'lucide-react';
 import ProtectedRoute from '@/components/auth/ProtectedRoute';
 import { getAllDevices, getDeviceHistory } from '@/services/devices.service';
+import { getCookie } from '@/utils/cookies';
 import {
   startCamera,
   stopCamera,
@@ -79,7 +80,7 @@ export default function DoorbellControlPage() {
         if (doorbell) {
           setDoorbellDevice(doorbell);
 
-          // Use custom device_id if set, otherwise use the one from backend
+        // Use custom device_id if set, otherwise use the one from backend
           const deviceIdToUse = savedDeviceId || doorbell.device_id;
 
           // Fetch recent activity
@@ -87,6 +88,32 @@ export default function DoorbellControlPage() {
             const history = await getDeviceHistory(deviceIdToUse, 10);
             if (history.history) {
               setRecentActivity(history.history);
+            }
+
+            // Fetch actual camera/mic status from backend
+            try {
+              const authToken = getCookie('auth_token');
+              const statusResponse = await fetch(
+                `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'}/api/v1/devices/doorbell/${deviceIdToUse}/status`,
+                {
+                  headers: {
+                    'Authorization': `Bearer ${authToken || ''}`,
+                  },
+                }
+              );
+
+              if (statusResponse.ok) {
+                const statusData = await statusResponse.json();
+                console.log('Doorbell status fetched:', statusData); // Debug log
+                if (statusData.status === 'ok' && statusData.data) {
+                  // Update local state with backend values
+                  setCameraActive(statusData.data.camera_active || false);
+                  setMicActive(statusData.data.mic_active || false);
+                  console.log('Camera active:', statusData.data.camera_active, 'Mic active:', statusData.data.mic_active); // Debug log
+                }
+              }
+            } catch (statusError) {
+              console.error('Error fetching doorbell camera/mic status:', statusError);
             }
           }
         }

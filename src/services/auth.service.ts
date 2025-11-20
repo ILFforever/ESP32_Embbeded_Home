@@ -1,10 +1,14 @@
 import axios from 'axios';
+import { setCookie, getCookie, deleteCookie } from '@/utils/cookies';
 
 // Base API configuration - Use NEXT_PUBLIC_ prefix for client-side env vars
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
 const API_VERSION = '/api/v1';
 
 const apiPath = (path: string) => `${API_BASE_URL}${API_VERSION}${path}`;
+
+// Cookie name for storing auth token
+const AUTH_TOKEN_COOKIE = 'auth_token';
 
 // Create axios instance with default config
 const apiClient = axios.create({
@@ -58,11 +62,11 @@ export const loginUser = async (
     });
     
     console.log('Login response:', response.data);
-    
+
     if (response.data.success && response.data.token) {
-      // Store token in localStorage
-      localStorage.setItem('token', response.data.token);
-      
+      // Store token in cookie (expires in 7 days)
+      setCookie(AUTH_TOKEN_COOKIE, response.data.token, 7);
+
       return response.data;
     }
     
@@ -95,8 +99,8 @@ export const loginUser = async (
 // Get current user - Changed to GET request to match backend
 export const getCurrentUser = async (): Promise<CurrentUserResponse | null> => {
   try {
-    const authToken = localStorage.getItem('token');
-    
+    const authToken = getCookie(AUTH_TOKEN_COOKIE);
+
     if (!authToken) {
       return null;
     }
@@ -111,7 +115,7 @@ export const getCurrentUser = async (): Promise<CurrentUserResponse | null> => {
     if (response.status === 200 && response.data.success) {
       return response.data;
     }
-    
+
     return null;
   } catch (error) {
     console.error('Get current user error:', error);
@@ -133,8 +137,8 @@ export const registerUser = async (
     });
 
     if (response.data.success && response.data.token) {
-      // Store token in localStorage
-      localStorage.setItem('token', response.data.token);
+      // Store token in cookie (expires in 7 days)
+      setCookie(AUTH_TOKEN_COOKIE, response.data.token, 7);
     }
 
     return response.data;
@@ -150,8 +154,8 @@ export const registerUser = async (
 // Logout user
 export const logoutUser = async (token?: string): Promise<AuthResponse> => {
   try {
-    const authToken = token || localStorage.getItem('token');
-    
+    const authToken = token || getCookie(AUTH_TOKEN_COOKIE);
+
     if (!authToken) {
       return { success: false, message: 'No token found' };
     }
@@ -162,14 +166,14 @@ export const logoutUser = async (token?: string): Promise<AuthResponse> => {
       },
     });
 
-    // Clear token from localStorage
-    localStorage.removeItem('token');
+    // Clear token from cookie
+    deleteCookie(AUTH_TOKEN_COOKIE);
 
     return response.data;
   } catch (error: any) {
     console.error('Logout error:', error);
     // Still clear token even if request fails
-    localStorage.removeItem('token');
+    deleteCookie(AUTH_TOKEN_COOKIE);
     return {
       success: false,
       message: error.response?.data?.message || 'Logout failed',
@@ -180,8 +184,8 @@ export const logoutUser = async (token?: string): Promise<AuthResponse> => {
 // Admin only: Get all users
 export const getUsers = async (token?: string): Promise<UserData[]> => {
   try {
-    const authToken = token || localStorage.getItem('token');
-    
+    const authToken = token || getCookie(AUTH_TOKEN_COOKIE);
+
     if (!authToken) {
       throw new Error('No authentication token');
     }
@@ -195,7 +199,7 @@ export const getUsers = async (token?: string): Promise<UserData[]> => {
     if (response.data.success) {
       return response.data.data;
     }
-    
+
     return [];
   } catch (error) {
     console.error('Get users error:', error);
@@ -206,8 +210,8 @@ export const getUsers = async (token?: string): Promise<UserData[]> => {
 // Admin only: Get all admins
 export const getAdmins = async (token?: string): Promise<UserData[]> => {
   try {
-    const authToken = token || localStorage.getItem('token');
-    
+    const authToken = token || getCookie(AUTH_TOKEN_COOKIE);
+
     if (!authToken) {
       throw new Error('No authentication token');
     }
@@ -221,7 +225,7 @@ export const getAdmins = async (token?: string): Promise<UserData[]> => {
     if (response.data.success) {
       return response.data.data;
     }
-    
+
     return [];
   } catch (error) {
     console.error('Get admins error:', error);
@@ -235,8 +239,8 @@ export const deleteUser = async (
   token?: string
 ): Promise<AuthResponse> => {
   try {
-    const authToken = token || localStorage.getItem('token');
-    
+    const authToken = token || getCookie(AUTH_TOKEN_COOKIE);
+
     if (!authToken) {
       throw new Error('No authentication token');
     }
@@ -263,8 +267,8 @@ export const deleteAdmin = async (
   token?: string
 ): Promise<AuthResponse> => {
   try {
-    const authToken = token || localStorage.getItem('token');
-    
+    const authToken = token || getCookie(AUTH_TOKEN_COOKIE);
+
     if (!authToken) {
       throw new Error('No authentication token');
     }
@@ -287,10 +291,10 @@ export const deleteAdmin = async (
 
 // Helper function to check if user is authenticated
 export const isAuthenticated = (): boolean => {
-  return !!localStorage.getItem('token');
+  return !!getCookie(AUTH_TOKEN_COOKIE);
 };
 
 // Helper function to get stored token
 export const getStoredToken = (): string | null => {
-  return localStorage.getItem('token');
+  return getCookie(AUTH_TOKEN_COOKIE);
 };
