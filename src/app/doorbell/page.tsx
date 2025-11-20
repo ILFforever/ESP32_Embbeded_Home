@@ -22,8 +22,10 @@ import {
   getFaceCount,
   listFaces,
   checkFaceDatabase,
+  getFaceDatabaseInfo,
   restartSystem
 } from '@/services/devices.service';
+import type { FaceDatabaseInfo } from '@/services/devices.service';
 import type { Device } from '@/types/dashboard';
 
 interface ActivityEvent {
@@ -51,6 +53,9 @@ export default function DoorbellControlPage() {
 
   // Activity history
   const [recentActivity, setRecentActivity] = useState<ActivityEvent[]>([]);
+
+  // Face database info
+  const [faceDatabaseInfo, setFaceDatabaseInfo] = useState<FaceDatabaseInfo | null>(null);
 
   // Settings modal
   const [showSettings, setShowSettings] = useState(false);
@@ -89,6 +94,10 @@ export default function DoorbellControlPage() {
             if (history.history) {
               setRecentActivity(history.history);
             }
+
+            // Fetch face database info
+            const faceDbInfo = await getFaceDatabaseInfo(deviceIdToUse);
+            setFaceDatabaseInfo(faceDbInfo);
 
             // Fetch actual camera/mic status from backend
             try {
@@ -737,6 +746,70 @@ export default function DoorbellControlPage() {
                       {commandLoading === 'face_check' ? 'CHECKING...' : 'CHECK DB'}
                     </button>
                   </div>
+
+                  {/* Face Database Info Display */}
+                  {faceDatabaseInfo && (
+                    <div style={{
+                      marginTop: '16px',
+                      padding: '12px',
+                      background: 'linear-gradient(135deg, rgba(156, 39, 176, 0.1) 0%, rgba(123, 31, 162, 0.1) 100%)',
+                      borderRadius: '8px',
+                      border: '1px solid rgba(156, 39, 176, 0.3)'
+                    }}>
+                      <div style={{ fontSize: '12px', fontWeight: '600', color: '#9c27b0', marginBottom: '8px' }}>
+                        DATABASE STATUS
+                      </div>
+                      <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
+                        <div style={{ flex: '1', minWidth: '120px' }}>
+                          <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.6)', marginBottom: '4px' }}>
+                            Face Count
+                          </div>
+                          <div style={{ fontSize: '18px', fontWeight: '700', color: '#fff' }}>
+                            {faceDatabaseInfo.count}
+                          </div>
+                        </div>
+                        <div style={{ flex: '1', minWidth: '120px' }}>
+                          <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.6)', marginBottom: '4px' }}>
+                            DB Health
+                          </div>
+                          <div style={{
+                            fontSize: '14px',
+                            fontWeight: '600',
+                            color: faceDatabaseInfo.db_status === 'valid' ? '#4caf50' : '#f44336'
+                          }}>
+                            {faceDatabaseInfo.db_status?.toUpperCase() || 'UNKNOWN'}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Face List */}
+                      {faceDatabaseInfo.faces && faceDatabaseInfo.faces.length > 0 && (
+                        <div style={{ marginTop: '12px' }}>
+                          <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.6)', marginBottom: '6px' }}>
+                            Enrolled Faces
+                          </div>
+                          <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                            {faceDatabaseInfo.faces.map((face) => (
+                              <div
+                                key={face.id}
+                                style={{
+                                  padding: '4px 10px',
+                                  background: 'rgba(156, 39, 176, 0.2)',
+                                  borderRadius: '12px',
+                                  fontSize: '11px',
+                                  fontWeight: '500',
+                                  color: '#e1bee7',
+                                  border: '1px solid rgba(156, 39, 176, 0.4)'
+                                }}
+                              >
+                                ID {face.id}: {face.name}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
