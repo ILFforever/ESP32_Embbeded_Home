@@ -506,9 +506,8 @@ export default function DoorbellControlPage() {
         <div className="dashboard-container">
           <header className="dashboard-header">
             <div className="dashboard-header-left">
-              <button className="sidebar-toggle" onClick={() => router.push('/dashboard')} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <button className="sidebar-toggle" onClick={() => router.push('/dashboard')} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }} title="Back to Dashboard">
                 <ArrowLeft size={20} />
-                Back
               </button>
               <h1>DOORBELL CONTROL</h1>
             </div>

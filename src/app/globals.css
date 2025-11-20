@@ -573,16 +573,19 @@ h6 { font-size: var(--font-size-sm); }
 .device-clickable {
   cursor: pointer !important;
   position: relative;
+  z-index: 10;
 }
 
 .device-clickable:hover {
   background: rgba(102, 126, 234, 0.15) !important;
   border-color: var(--primary) !important;
+  z-index: 20;
 }
 
 :root[data-theme="green"] .device-clickable:hover {
   background: rgba(16, 185, 129, 0.15) !important;
   border-color: var(--primary) !important;
+  z-index: 20;
 }
 
 .device-hint {

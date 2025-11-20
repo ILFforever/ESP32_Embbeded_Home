@@ -41,6 +41,8 @@ export function SystemStatusCard({ devicesStatus, isExpanded = false }: SystemSt
       </div>
       <div className="card-content">
         <div className="system-status-grid">
+
+
           {/* Doorbell Status */}
           <div
             className="device-status-item device-clickable"
@@ -106,7 +108,6 @@ export function SystemStatusCard({ devicesStatus, isExpanded = false }: SystemSt
             )}
             <p className="device-hint">Click to configure →</p>
           </div>
-
           {/* System Overview */}
           <div className="device-status-item system-overview">
             <h3>SYSTEM HEALTH</h3>
@@ -118,8 +119,10 @@ export function SystemStatusCard({ devicesStatus, isExpanded = false }: SystemSt
                 </span>
               </div>
               <div className="health-metric">
-                <span className="metric-label">UPTIME:</span>
-                <span className="metric-value">99.8%</span>
+                <span className="metric-label">DEVICES OFFLINE:</span>
+                <span className="metric-value">
+                  {devicesStatus?.summary?.offline || 0}
+                </span>
               </div>
               <div className="health-metric">
                 <span className="metric-label">LAST SYNC:</span>
@@ -127,22 +130,6 @@ export function SystemStatusCard({ devicesStatus, isExpanded = false }: SystemSt
                   {devicesStatus ? new Date().toLocaleTimeString() : 'N/A'}
                 </span>
               </div>
-              {isExpanded && (
-                <>
-                  <div className="health-metric">
-                    <span className="metric-label">AVG RESPONSE TIME:</span>
-                    <span className="metric-value">42ms</span>
-                  </div>
-                  <div className="health-metric">
-                    <span className="metric-label">DATA USAGE TODAY:</span>
-                    <span className="metric-value">2.4 GB</span>
-                  </div>
-                  <div className="health-metric">
-                    <span className="metric-label">ALERTS THIS WEEK:</span>
-                    <span className="metric-value">15</span>
-                  </div>
-                </>
-              )}
             </div>
           </div>
         </div>
