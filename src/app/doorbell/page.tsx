@@ -482,23 +482,6 @@ export default function DoorbellControlPage() {
                       >
                         {commandLoading === 'amp_stop' ? 'STOPPING...' : 'STOP'}
                       </button>
-                      <button
-                        className="btn-control btn-warning"
-                        onClick={handleRestartAmplifier}
-                        disabled={commandLoading === 'amp_restart'}
-                        style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}
-                      >
-                        <RotateCw size={14} />
-                        {commandLoading === 'amp_restart' ? '...' : 'RST'}
-                      </button>
-                      <button
-                        className="btn-control btn-info"
-                        onClick={() => setShowWifiSettings(true)}
-                        style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px', fontSize: '12px' }}
-                      >
-                        <Settings size={14} />
-                        WIFI
-                      </button>
                     </div>
 
                     <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
@@ -511,6 +494,32 @@ export default function DoorbellControlPage() {
                         onChange={(e) => handleVolumeChange(parseInt(e.target.value))}
                         style={{ flex: 1 }}
                       />
+                    </div>
+
+                    <div className="control-divider" style={{ margin: '16px 0' }}></div>
+
+                    <div className="card-header" style={{ paddingBottom: '8px' }}>
+                      <h3>SUB MODULE COMMAND</h3>
+                    </div>
+                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                      <button
+                        className="btn-control btn-warning"
+                        onClick={handleRestartAmplifier}
+                        disabled={commandLoading === 'amp_restart'}
+                        style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}
+                      >
+                        <RotateCw size={14} />
+                        {commandLoading === 'amp_restart' ? '...' : 'RST'}
+                      </button>
+                      <button
+                        className="btn-control btn-info"
+                        onClick={() => setShowWifiSettings(true)}
+                        disabled={commandLoading === 'amp_wifi'}
+                        style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}
+                      >
+                        <Settings size={14} />
+                        WIFI
+                      </button>
                     </div>
                   </div>
                 </div>
