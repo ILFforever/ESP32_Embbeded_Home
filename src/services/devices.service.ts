@@ -605,23 +605,6 @@ export async function getDeviceInfo(deviceId: string) {
   }
 }
 
-// Get device history (face detections, doorbell rings, etc.)
-export async function getDeviceHistory(deviceId: string, limit: number = 20) {
-  try {
-    const response = await axios.get(
-      `${API_URL}/api/v1/devices/${deviceId}/history?limit=${limit}`,
-      {
-        timeout: 10000,
-        headers: getAuthHeaders()
-      }
-    );
-    return response.data;
-  } catch (error) {
-    console.error('Error getting device history:', error);
-    return { events: [] }; // Return empty events on error
-  }
-}
-
 // Legacy function for backward compatibility
 export async function controlDoorbell(
   deviceId: string,
@@ -712,4 +695,47 @@ export function getDeviceStatusText(online: boolean, lastSeen: string | null): s
 
   if (diffMinutes < 5) return `LAST SEEN ${diffMinutes}M AGO`;
   return 'OFFLINE';
+}
+
+// Device history interfaces
+export interface HistoryEvent {
+  type: 'heartbeat' | 'face_detection' | 'command';
+  id: string;
+  timestamp: any;
+  data: any;
+}
+
+export interface DeviceHistory {
+  status: string;
+  device_id: string;
+  summary: {
+    total: number;
+    heartbeats: number;
+    face_detections: number;
+    commands: number;
+  };
+  history: HistoryEvent[];
+}
+
+// Get device history (mixed: heartbeats, face detections, commands)
+export async function getDeviceHistory(deviceId: string, limit: number = 20): Promise<DeviceHistory> {
+  try {
+    const response = await axios.get<DeviceHistory>(
+      `${API_URL}/api/v1/devices/${deviceId}/history?limit=${limit}`,
+      {
+        timeout: 10000,
+        headers: getAuthHeaders()
+      }
+    );
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching device history:', error);
+    // Return empty history on error
+    return {
+      status: 'error',
+      device_id: deviceId,
+      summary: { total: 0, heartbeats: 0, face_detections: 0, commands: 0 },
+      history: []
+    };
+  }
 }
