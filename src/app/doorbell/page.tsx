@@ -457,14 +457,32 @@ export default function DoorbellControlPage() {
                     </div>
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', width: '100%', marginTop: '12px' }}>
-                    <input
-                      type="text"
-                      value={ampUrl}
-                      onChange={(e) => setAmpUrl(e.target.value)}
-                      placeholder="Stream URL"
-                      className="control-input"
-                      style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ddd' }}
-                    />
+                    <div>
+                      <label style={{ fontSize: '13px', fontWeight: '600', color: '#555', marginBottom: '4px', display: 'block' }}>Stream URL:</label>
+                      <input
+                        type="text"
+                        value={ampUrl}
+                        onChange={(e) => setAmpUrl(e.target.value)}
+                        placeholder="http://stream.example.com/radio"
+                        className="control-input"
+                        style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ddd', width: '100%' }}
+                      />
+                    </div>
+                    <div>
+                      <label style={{ fontSize: '13px', fontWeight: '600', color: '#555', marginBottom: '4px', display: 'block' }}>Quick Select:</label>
+                      <select
+                        onChange={(e) => setAmpUrl(e.target.value)}
+                        value=""
+                        className="control-input"
+                        style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ddd', width: '100%' }}
+                      >
+                        <option value="">-- Choose Station --</option>
+                        <option value="http://stream.radioparadise.com/aac-320">Radio Paradise (AAC 320k)</option>
+                        <option value="http://stream.radioparadise.com/mp3-192">Radio Paradise (MP3 192k)</option>
+                        <option value="doorbell">🔔 Doorbell (SPIFFS)</option>
+                        <option value="success">✅ Success (SPIFFS)</option>
+                      </select>
+                    </div>
                     <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                       <button
                         className="btn-control btn-start"
