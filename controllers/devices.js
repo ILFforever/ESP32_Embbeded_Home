@@ -1302,6 +1302,162 @@ const restartAmplifier = async (req, res) => {
   }
 };
 
+const setAmplifierVolume = async (req, res) => {
+  try {
+    const { device_id } = req.params;
+    const { level } = req.query;
+
+    if (level === undefined) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'level parameter is required (0-21)'
+      });
+    }
+
+    const volumeLevel = parseInt(level);
+    if (isNaN(volumeLevel) || volumeLevel < 0 || volumeLevel > 21) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'level must be a number between 0 and 21'
+      });
+    }
+
+    const db = getFirestore();
+    const deviceRef = db.collection('devices').doc(device_id);
+
+    // Queue amp_volume command
+    const commandRef = await deviceRef.collection('commands').add({
+      action: 'amp_volume',
+      params: { level: volumeLevel },
+      status: 'pending',
+      created_at: admin.firestore.FieldValue.serverTimestamp(),
+      executed_at: null,
+      result: null
+    });
+
+    console.log(`[AmpControl] ${device_id} - Set volume to ${volumeLevel} command queued (ID: ${commandRef.id})`);
+
+    // Notify device via MQTT
+    await publishDeviceCommand(device_id, commandRef.id, 'amp_volume');
+
+    res.json({
+      status: 'ok',
+      message: `Amplifier volume set to ${volumeLevel} command queued and device notified`,
+      command_id: commandRef.id
+    });
+  } catch (error) {
+    console.error('[AmpControl] Error setting amplifier volume:', error);
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+};
+
+const getAmplifierStatus = async (req, res) => {
+  try {
+    const { device_id } = req.params;
+
+    const db = getFirestore();
+    const deviceRef = db.collection('devices').doc(device_id);
+
+    // Queue amp_status command
+    const commandRef = await deviceRef.collection('commands').add({
+      action: 'amp_status',
+      params: {},
+      status: 'pending',
+      created_at: admin.firestore.FieldValue.serverTimestamp(),
+      executed_at: null,
+      result: null
+    });
+
+    console.log(`[AmpControl] ${device_id} - Get status command queued (ID: ${commandRef.id})`);
+
+    // Notify device via MQTT
+    await publishDeviceCommand(device_id, commandRef.id, 'amp_status');
+
+    res.json({
+      status: 'ok',
+      message: 'Amplifier status command queued and device notified. Check device serial output.',
+      command_id: commandRef.id
+    });
+  } catch (error) {
+    console.error('[AmpControl] Error getting amplifier status:', error);
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+};
+
+const listAmplifierFiles = async (req, res) => {
+  try {
+    const { device_id } = req.params;
+
+    const db = getFirestore();
+    const deviceRef = db.collection('devices').doc(device_id);
+
+    // Queue amp_list command
+    const commandRef = await deviceRef.collection('commands').add({
+      action: 'amp_list',
+      params: {},
+      status: 'pending',
+      created_at: admin.firestore.FieldValue.serverTimestamp(),
+      executed_at: null,
+      result: null
+    });
+
+    console.log(`[AmpControl] ${device_id} - List files command queued (ID: ${commandRef.id})`);
+
+    // Notify device via MQTT
+    await publishDeviceCommand(device_id, commandRef.id, 'amp_list');
+
+    res.json({
+      status: 'ok',
+      message: 'Amplifier list files command queued and device notified. Check device serial output.',
+      command_id: commandRef.id
+    });
+  } catch (error) {
+    console.error('[AmpControl] Error listing amplifier files:', error);
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+};
+
+const setAmplifierWifi = async (req, res) => {
+  try {
+    const { device_id } = req.params;
+    const { ssid, password } = req.body;
+
+    if (!ssid || !password) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'ssid and password are required in request body'
+      });
+    }
+
+    const db = getFirestore();
+    const deviceRef = db.collection('devices').doc(device_id);
+
+    // Queue amp_wifi command
+    const commandRef = await deviceRef.collection('commands').add({
+      action: 'amp_wifi',
+      params: { ssid, password },
+      status: 'pending',
+      created_at: admin.firestore.FieldValue.serverTimestamp(),
+      executed_at: null,
+      result: null
+    });
+
+    console.log(`[AmpControl] ${device_id} - Set WiFi credentials command queued (ID: ${commandRef.id})`);
+
+    // Notify device via MQTT
+    await publishDeviceCommand(device_id, commandRef.id, 'amp_wifi');
+
+    res.json({
+      status: 'ok',
+      message: 'Amplifier WiFi credentials command queued and device notified',
+      command_id: commandRef.id
+    });
+  } catch (error) {
+    console.error('[AmpControl] Error setting amplifier WiFi:', error);
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+};
+
 // ============================================================================
 // Face Management Endpoints
 // ============================================================================
@@ -1529,6 +1685,10 @@ module.exports = {
   playAmplifier,
   stopAmplifier,
   restartAmplifier,
+  setAmplifierVolume,
+  getAmplifierStatus,
+  listAmplifierFiles,
+  setAmplifierWifi,
   // Face management
   getFaceCount,
   listFaces,
