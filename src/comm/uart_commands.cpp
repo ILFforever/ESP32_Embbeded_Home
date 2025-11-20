@@ -321,12 +321,19 @@ void handleUARTResponse(String line)
         Serial.printf("✅ Face List:\n%s\n", msg);
 
         // Parse the face list JSON array and send to backend
-        StaticJsonDocument<2048> facesDoc;
-        DeserializationError error = deserializeJson(facesDoc, msg);
-
-        if (!error && facesDoc.is<JsonArray>())
+        // Use DynamicJsonDocument to avoid stack overflow with nested StaticJsonDocuments
+        DynamicJsonDocument* facesDoc = new DynamicJsonDocument(2048);
+        if (facesDoc == nullptr)
         {
-          JsonArray faces = facesDoc.as<JsonArray>();
+          Serial.println("❌ Failed to allocate memory for face list parsing");
+          return;
+        }
+
+        DeserializationError error = deserializeJson(*facesDoc, msg);
+
+        if (!error && facesDoc->is<JsonArray>())
+        {
+          JsonArray faces = facesDoc->as<JsonArray>();
           int count = faces.size();
 
           Serial.printf("Parsed %d faces, sending to backend...\n", count);
@@ -338,6 +345,9 @@ void handleUARTResponse(String line)
         {
           Serial.printf("❌ Failed to parse face list JSON: %s\n", error.c_str());
         }
+
+        // Clean up
+        delete facesDoc;
 
         return;
       }
