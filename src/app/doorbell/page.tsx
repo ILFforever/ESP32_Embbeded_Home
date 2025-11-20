@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { Camera, Mic, Volume2, RotateCw, Power, Users, Settings, Database } from 'lucide-react';
+import { Camera, Mic, Volume2, RotateCw, Power, Users, Settings, Database, ArrowLeft } from 'lucide-react';
 import ProtectedRoute from '@/components/auth/ProtectedRoute';
 import { getAllDevices, getDeviceHistory } from '@/services/devices.service';
 import { getCookie } from '@/utils/cookies';
@@ -573,8 +573,9 @@ export default function DoorbellControlPage() {
         <div className="dashboard-container">
           <header className="dashboard-header">
             <div className="dashboard-header-left">
-              <button className="sidebar-toggle" onClick={() => router.push('/dashboard')}>
-                ←
+              <button className="sidebar-toggle" onClick={() => router.push('/dashboard')} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <ArrowLeft size={20} />
+                Back
               </button>
               <h1>DOORBELL CONTROL</h1>
             </div>

@@ -13,7 +13,7 @@ import {
   getAQICategory
 } from '@/services/devices.service';
 import type { Device, HubSensorData } from '@/types/dashboard';
-import { Thermometer, Droplets, Wind, Activity, Power, RefreshCw } from 'lucide-react';
+import { Thermometer, Droplets, Wind, Activity, Power, RefreshCw, ArrowLeft } from 'lucide-react';
 
 export default function HubControlPage() {
   const router = useRouter();
@@ -102,8 +102,9 @@ export default function HubControlPage() {
         <div className="dashboard-container">
           <header className="dashboard-header">
             <div className="dashboard-header-left">
-              <button className="sidebar-toggle" onClick={() => router.push('/dashboard')}>
-                ← Back
+              <button className="sidebar-toggle" onClick={() => router.push('/dashboard')} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <ArrowLeft size={20} />
+                Back
               </button>
               <h1>HUB CONTROL</h1>
             </div>

@@ -1852,7 +1852,7 @@ h6 { font-size: var(--font-size-sm); }
   background: var(--bg-card);
   backdrop-filter: blur(20px);
   border-right: 1px solid rgba(255, 255, 255, 0.1);
-  z-index: 50;
+  z-index: 1000;
   transition: transform var(--transition-base);
   overflow-y: auto;
   padding: var(--spacing-xl);
@@ -1982,11 +1982,11 @@ h6 { font-size: var(--font-size-sm); }
 
 .main-content {
   margin-left: 0;
-  transition: margin-left var(--transition-base);
+  transition: none;
 }
 
 .main-content.with-sidebar {
-  margin-left: 280px;
+  margin-left: 0;
 }
 
 .sidebar-overlay {
@@ -1996,7 +1996,7 @@ h6 { font-size: var(--font-size-sm); }
   width: 100vw;
   height: 100vh;
   background: rgba(0, 0, 0, 0.5);
-  z-index: 49;
+  z-index: 999;
   display: none;
 }
 
