@@ -721,6 +721,70 @@ bool executeCommand(String action, JsonObject params)
     sendUART2Command("restart", "");
     return true;
   }
+  else if (action == "amp_volume") {
+    if (params.containsKey("level")) {
+      int level = params["level"];
+      Serial.printf("[Commands] Setting amplifier volume to %d\n", level);
+
+      // Send volume command to amplifier
+      StaticJsonDocument<256> doc;
+      doc["cmd"] = "volume";
+      doc["level"] = level;
+      String output;
+      serializeJson(doc, output);
+      AmpSerial.println(output);
+
+      return true;
+    } else {
+      Serial.println("[Commands] amp_volume requires 'level' parameter");
+      return false;
+    }
+  }
+  else if (action == "amp_status") {
+    Serial.println("[Commands] Requesting amplifier status");
+
+    // Send status command to amplifier
+    StaticJsonDocument<256> doc;
+    doc["cmd"] = "status";
+    String output;
+    serializeJson(doc, output);
+    AmpSerial.println(output);
+
+    return true;
+  }
+  else if (action == "amp_list") {
+    Serial.println("[Commands] Requesting amplifier file list");
+
+    // Send list command to amplifier
+    StaticJsonDocument<256> doc;
+    doc["cmd"] = "list";
+    String output;
+    serializeJson(doc, output);
+    AmpSerial.println(output);
+
+    return true;
+  }
+  else if (action == "amp_wifi") {
+    if (params.containsKey("ssid") && params.containsKey("password")) {
+      const char* ssid = params["ssid"];
+      const char* password = params["password"];
+      Serial.printf("[Commands] Updating amplifier WiFi credentials (SSID: %s)\n", ssid);
+
+      // Send WiFi command to amplifier
+      StaticJsonDocument<256> doc;
+      doc["cmd"] = "wifi";
+      doc["ssid"] = ssid;
+      doc["password"] = password;
+      String output;
+      serializeJson(doc, output);
+      AmpSerial.println(output);
+
+      return true;
+    } else {
+      Serial.println("[Commands] amp_wifi requires 'ssid' and 'password' parameters");
+      return false;
+    }
+  }
 
   // Face recognition commands
   else if (action == "face_count") {
