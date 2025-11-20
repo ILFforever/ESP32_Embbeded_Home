@@ -28,6 +28,10 @@ const {
   playAmplifier,
   stopAmplifier,
   restartAmplifier,
+  setAmplifierVolume,
+  getAmplifierStatus,
+  listAmplifierFiles,
+  setAmplifierWifi,
   // Face management
   getFaceCount,
   listFaces,
@@ -191,6 +195,26 @@ router.post('/:device_id/amp/stop', protect, stopAmplifier);
 // @desc    Queue amplifier restart command
 // @access  Private (requires user token)
 router.post('/:device_id/amp/restart', protect, restartAmplifier);
+
+// @route   POST /api/v1/devices/:device_id/amp/volume
+// @desc    Queue amplifier set volume command (requires ?level= parameter 0-21)
+// @access  Private (requires user token)
+router.post('/:device_id/amp/volume', protect, setAmplifierVolume);
+
+// @route   GET /api/v1/devices/:device_id/amp/status
+// @desc    Queue amplifier get status command
+// @access  Private (requires user token)
+router.get('/:device_id/amp/status', protect, getAmplifierStatus);
+
+// @route   GET /api/v1/devices/:device_id/amp/files
+// @desc    Queue amplifier list files command
+// @access  Private (requires user token)
+router.get('/:device_id/amp/files', protect, listAmplifierFiles);
+
+// @route   POST /api/v1/devices/:device_id/amp/wifi
+// @desc    Queue amplifier set WiFi credentials command (requires ssid and password in body)
+// @access  Private (requires user token)
+router.post('/:device_id/amp/wifi', protect, setAmplifierWifi);
 
 // ============================================================================
 // Face Management Routes
