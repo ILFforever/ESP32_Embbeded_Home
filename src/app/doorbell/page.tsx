@@ -28,7 +28,7 @@ import type { Device } from '@/types/dashboard';
 
 interface ActivityEvent {
   id: string;
-  type: 'heartbeat' | 'face_detection' | 'command' | 'device_state';
+  type: 'heartbeat' | 'face_detection' | 'command' | 'device_state' | 'device_log';
   timestamp: any;  // Firestore timestamp or ISO string
   data: any;
 }
@@ -437,6 +437,14 @@ export default function DoorbellControlPage() {
       const heap = event.data?.free_heap ? Math.floor(event.data.free_heap / 1024) : 0;
       return `Device state (IP: ${ip}, Heap: ${heap}KB)`;
     }
+    if (event.type === 'device_log') {
+      const message = event.data?.message || 'Log entry';
+      const errorMsg = event.data?.error_message;
+      if (errorMsg) {
+        return `${message}: ${errorMsg}`;
+      }
+      return message;
+    }
     return 'Activity detected';
   };
 
@@ -454,6 +462,10 @@ export default function DoorbellControlPage() {
     if (event.type === 'device_state') {
       return 'Online';
     }
+    if (event.type === 'device_log') {
+      const level = event.data?.level || 'INFO';
+      return level.charAt(0).toUpperCase() + level.slice(1).toLowerCase();
+    }
     return 'Event';
   };
 
@@ -468,6 +480,12 @@ export default function DoorbellControlPage() {
       return 'status-warning';
     }
     if (event.type === 'heartbeat' || event.type === 'device_state') {
+      return 'status-safe';
+    }
+    if (event.type === 'device_log') {
+      const level = event.data?.level?.toUpperCase() || 'INFO';
+      if (level === 'ERROR' || level === 'CRITICAL') return 'status-danger';
+      if (level === 'WARNING' || level === 'WARN') return 'status-warning';
       return 'status-safe';
     }
     return 'status-safe';
