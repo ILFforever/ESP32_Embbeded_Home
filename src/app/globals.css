@@ -450,11 +450,6 @@ h6 { font-size: var(--font-size-sm); }
   border-bottom-color: rgba(102, 126, 234, 0.3);
 }
 
-.card-header:hover h3 {
-  color: var(--primary-light);
-  transform: translateX(2px);
-}
-
 .card-title-group {
   display: flex;
   align-items: center;
