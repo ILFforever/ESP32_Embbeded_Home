@@ -26,12 +26,10 @@ import {
 import type { Device } from '@/types/dashboard';
 
 interface ActivityEvent {
-  timestamp: string;
-  type: string;
-  description: string;
-  recognized?: boolean;
-  name?: string;
-  confidence?: number;
+  id: string;
+  type: 'heartbeat' | 'face_detection' | 'command';
+  timestamp: any;  // Firestore timestamp or ISO string
+  data: any;
 }
 
 export default function DoorbellControlPage() {
@@ -87,8 +85,8 @@ export default function DoorbellControlPage() {
           // Fetch recent activity
           if (deviceIdToUse) {
             const history = await getDeviceHistory(deviceIdToUse, 10);
-            if (history.events) {
-              setRecentActivity(history.events);
+            if (history.history) {
+              setRecentActivity(history.history);
             }
           }
         }
@@ -369,32 +367,69 @@ export default function DoorbellControlPage() {
     }
   };
 
-  const formatActivityTime = (timestamp: string) => {
-    const date = new Date(timestamp);
+  const formatActivityTime = (timestamp: any) => {
+    // Handle Firestore timestamp or ISO string
+    let date: Date;
+    if (timestamp?.toDate) {
+      date = timestamp.toDate();
+    } else if (typeof timestamp === 'string') {
+      date = new Date(timestamp);
+    } else {
+      date = new Date();
+    }
     return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
   };
 
   const getActivityDescription = (event: ActivityEvent) => {
     if (event.type === 'face_detection') {
-      if (event.recognized && event.name) {
-        return `Face recognized: ${event.name} (${(event.confidence || 0).toFixed(0)}%)`;
+      const recognized = event.data?.recognized || false;
+      const name = event.data?.name || 'Unknown';
+      const confidence = event.data?.confidence || 0;
+      if (recognized && name !== 'Unknown') {
+        return `Face recognized: ${name} (${confidence.toFixed(0)}%)`;
       }
       return 'Unknown face detected';
     }
-    if (event.type === 'doorbell_ring') {
-      return 'Doorbell pressed';
+    if (event.type === 'command') {
+      const action = event.data?.action || 'unknown';
+      const status = event.data?.status || 'pending';
+      return `Command: ${action} (${status})`;
     }
-    return event.description || 'Activity detected';
+    if (event.type === 'heartbeat') {
+      const uptime = event.data?.uptime_ms ? Math.floor(event.data.uptime_ms / 60000) : 0;
+      return `Status update (uptime: ${uptime}m)`;
+    }
+    return 'Activity detected';
   };
 
   const getActivityStatus = (event: ActivityEvent) => {
     if (event.type === 'face_detection') {
-      return event.recognized ? 'Known' : 'Unknown';
+      return event.data?.recognized ? 'Known' : 'Unknown';
     }
-    if (event.type === 'doorbell_ring') {
-      return 'Ring';
+    if (event.type === 'command') {
+      const status = event.data?.status || 'pending';
+      return status.charAt(0).toUpperCase() + status.slice(1);
+    }
+    if (event.type === 'heartbeat') {
+      return 'Online';
     }
     return 'Event';
+  };
+
+  const getActivityStatusClass = (event: ActivityEvent) => {
+    if (event.type === 'face_detection') {
+      return event.data?.recognized ? 'status-safe' : 'status-warning';
+    }
+    if (event.type === 'command') {
+      const status = event.data?.status || 'pending';
+      if (status === 'completed') return 'status-safe';
+      if (status === 'failed') return 'status-danger';
+      return 'status-warning';
+    }
+    if (event.type === 'heartbeat') {
+      return 'status-safe';
+    }
+    return 'status-safe';
   };
 
   return (
@@ -731,10 +766,10 @@ export default function DoorbellControlPage() {
                 <div className="activity-list">
                   {recentActivity.length > 0 ? (
                     recentActivity.map((event, index) => (
-                      <div key={index} className="activity-item">
+                      <div key={event.id || index} className="activity-item">
                         <span className="activity-time">{formatActivityTime(event.timestamp)}</span>
                         <span className="activity-desc">{getActivityDescription(event)}</span>
-                        <span className="activity-status status-safe">{getActivityStatus(event)}</span>
+                        <span className={`activity-status ${getActivityStatusClass(event)}`}>{getActivityStatus(event)}</span>
                       </div>
                     ))
                   ) : (
