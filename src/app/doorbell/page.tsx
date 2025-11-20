@@ -14,6 +14,10 @@ import {
   playAmplifier,
   stopAmplifier,
   restartAmplifier,
+  setAmplifierVolume,
+  getAmplifierStatus,
+  listAmplifierFiles,
+  setAmplifierWifi,
   getFaceCount,
   listFaces,
   checkFaceDatabase,
@@ -41,6 +45,9 @@ export default function DoorbellControlPage() {
   const [micActive, setMicActive] = useState(false);
   const [faceRecognition, setFaceRecognition] = useState(false);
   const [ampUrl, setAmpUrl] = useState('http://stream.radioparadise.com/aac-320');
+  const [ampVolume, setAmpVolume] = useState(10);
+  const [wifiSsid, setWifiSsid] = useState('');
+  const [wifiPassword, setWifiPassword] = useState('');
 
   // Activity history
   const [recentActivity, setRecentActivity] = useState<ActivityEvent[]>([]);
@@ -243,6 +250,73 @@ export default function DoorbellControlPage() {
     } catch (error) {
       console.error('Error restarting amplifier:', error);
       alert('Failed to restart amplifier');
+    } finally {
+      setCommandLoading(null);
+    }
+  };
+
+  const handleSetAmplifierVolume = async () => {
+    if (!doorbellDevice?.device_id) return;
+
+    setCommandLoading('amp_volume');
+    try {
+      await setAmplifierVolume(doorbellDevice.device_id, ampVolume);
+      alert(`Amplifier volume set to ${ampVolume}`);
+    } catch (error) {
+      console.error('Error setting amplifier volume:', error);
+      alert('Failed to set amplifier volume');
+    } finally {
+      setCommandLoading(null);
+    }
+  };
+
+  const handleGetAmplifierStatus = async () => {
+    if (!doorbellDevice?.device_id) return;
+
+    setCommandLoading('amp_status');
+    try {
+      await getAmplifierStatus(doorbellDevice.device_id);
+      alert('Amplifier status command sent. Check device serial output for response.');
+    } catch (error) {
+      console.error('Error getting amplifier status:', error);
+      alert('Failed to get amplifier status');
+    } finally {
+      setCommandLoading(null);
+    }
+  };
+
+  const handleListAmplifierFiles = async () => {
+    if (!doorbellDevice?.device_id) return;
+
+    setCommandLoading('amp_list');
+    try {
+      await listAmplifierFiles(doorbellDevice.device_id);
+      alert('List files command sent. Check device serial output for file list.');
+    } catch (error) {
+      console.error('Error listing amplifier files:', error);
+      alert('Failed to list amplifier files');
+    } finally {
+      setCommandLoading(null);
+    }
+  };
+
+  const handleSetAmplifierWifi = async () => {
+    if (!doorbellDevice?.device_id) return;
+
+    if (!wifiSsid || !wifiPassword) {
+      alert('Please enter both SSID and password');
+      return;
+    }
+
+    setCommandLoading('amp_wifi');
+    try {
+      await setAmplifierWifi(doorbellDevice.device_id, wifiSsid, wifiPassword);
+      alert('WiFi credentials command sent. Amplifier will use new credentials on next stream.');
+      setWifiSsid('');
+      setWifiPassword('');
+    } catch (error) {
+      console.error('Error setting amplifier WiFi:', error);
+      alert('Failed to set amplifier WiFi');
     } finally {
       setCommandLoading(null);
     }
@@ -539,6 +613,75 @@ export default function DoorbellControlPage() {
                         style={{ flex: 1 }}
                       >
                         {commandLoading === 'amp_stop' ? 'STOPPING...' : 'STOP'}
+                      </button>
+                    </div>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '8px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <label style={{ fontSize: '12px', fontWeight: '600', minWidth: '60px' }}>VOLUME: {ampVolume}</label>
+                        <input
+                          type="range"
+                          min="0"
+                          max="21"
+                          value={ampVolume}
+                          onChange={(e) => setAmpVolume(parseInt(e.target.value))}
+                          style={{ flex: 1 }}
+                        />
+                        <button
+                          className="btn-control btn-info"
+                          onClick={handleSetAmplifierVolume}
+                          disabled={commandLoading === 'amp_volume'}
+                          style={{ padding: '4px 12px', fontSize: '12px' }}
+                        >
+                          {commandLoading === 'amp_volume' ? 'SETTING...' : 'SET'}
+                        </button>
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
+                      <button
+                        className="btn-control btn-info"
+                        onClick={handleGetAmplifierStatus}
+                        disabled={commandLoading === 'amp_status'}
+                        style={{ flex: 1, fontSize: '12px' }}
+                      >
+                        {commandLoading === 'amp_status' ? 'LOADING...' : 'STATUS'}
+                      </button>
+                      <button
+                        className="btn-control btn-info"
+                        onClick={handleListAmplifierFiles}
+                        disabled={commandLoading === 'amp_list'}
+                        style={{ flex: 1, fontSize: '12px' }}
+                      >
+                        {commandLoading === 'amp_list' ? 'LOADING...' : 'LIST FILES'}
+                      </button>
+                    </div>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '8px', padding: '8px', backgroundColor: '#f5f5f5', borderRadius: '4px' }}>
+                      <div style={{ fontSize: '11px', fontWeight: '600', color: '#666' }}>WIFI SETTINGS</div>
+                      <input
+                        type="text"
+                        value={wifiSsid}
+                        onChange={(e) => setWifiSsid(e.target.value)}
+                        placeholder="WiFi SSID"
+                        className="control-input"
+                        style={{ padding: '6px', fontSize: '12px', borderRadius: '3px', border: '1px solid #ddd' }}
+                      />
+                      <input
+                        type="password"
+                        value={wifiPassword}
+                        onChange={(e) => setWifiPassword(e.target.value)}
+                        placeholder="WiFi Password"
+                        className="control-input"
+                        style={{ padding: '6px', fontSize: '12px', borderRadius: '3px', border: '1px solid #ddd' }}
+                      />
+                      <button
+                        className="btn-control btn-warning"
+                        onClick={handleSetAmplifierWifi}
+                        disabled={commandLoading === 'amp_wifi'}
+                        style={{ fontSize: '12px', padding: '6px' }}
+                      >
+                        {commandLoading === 'amp_wifi' ? 'SAVING...' : 'SET WIFI'}
                       </button>
                     </div>
                   </div>
