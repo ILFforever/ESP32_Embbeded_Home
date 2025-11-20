@@ -729,7 +729,7 @@ const handleFaceDetection = async (req, res) => {
 const handleDeviceLog = async (req, res) => {
   try {
     const { device_id } = req.params;
-    const { level, message, data, timestamp } = req.body;
+    const { level, message, data, timestamp, metadata } = req.body;
 
     // Validation
     if (!level || !message) {
@@ -752,6 +752,11 @@ const handleDeviceLog = async (req, res) => {
       timestamp: timestamp || admin.firestore.FieldValue.serverTimestamp(),
       created_at: admin.firestore.FieldValue.serverTimestamp()
     };
+
+    // Add error_message from metadata if present
+    if (metadata && metadata.error_message) {
+      logEntry.error_message = metadata.error_message;
+    }
 
     // Write log to Firebase (in device_logs collection)
     await deviceRef.collection('device_logs').add(logEntry);
