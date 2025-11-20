@@ -746,6 +746,8 @@ const sendDeviceCommand = async (req, res) => {
       'camera_start', 'camera_stop',
       'mic_start', 'mic_stop',
       'recording_start', 'recording_stop',
+      'start_preview',      // Start camera preview when button held down
+      'recognize_face',     // Trigger face recognition when button pressed again
       'reboot', 'update_config'
     ];
 
