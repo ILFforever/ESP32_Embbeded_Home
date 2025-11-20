@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { Camera, Mic, Volume2, RotateCw, Power, Users } from 'lucide-react';
+import { Camera, Mic, Volume2, RotateCw, Power, Users, Settings } from 'lucide-react';
 import ProtectedRoute from '@/components/auth/ProtectedRoute';
 import { getAllDevices, getDeviceHistory } from '@/services/devices.service';
 import {
@@ -40,6 +40,36 @@ export default function DoorbellControlPage() {
   const [loading, setLoading] = useState(true);
   const [commandLoading, setCommandLoading] = useState<string | null>(null);
 
+  // Add custom range slider styles
+  useEffect(() => {
+    const style = document.createElement('style');
+    style.innerHTML = `
+      input[type="range"]::-webkit-slider-thumb {
+        -webkit-appearance: none;
+        appearance: none;
+        width: 18px;
+        height: 18px;
+        border-radius: 50%;
+        background: #4CAF50;
+        cursor: pointer;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+      }
+      input[type="range"]::-moz-range-thumb {
+        width: 18px;
+        height: 18px;
+        border-radius: 50%;
+        background: #4CAF50;
+        cursor: pointer;
+        border: none;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+      }
+    `;
+    document.head.appendChild(style);
+    return () => {
+      document.head.removeChild(style);
+    };
+  }, []);
+
   // Control states
   const [cameraActive, setCameraActive] = useState(false);
   const [micActive, setMicActive] = useState(false);
@@ -48,6 +78,7 @@ export default function DoorbellControlPage() {
   const [ampVolume, setAmpVolume] = useState(10);
   const [wifiSsid, setWifiSsid] = useState('');
   const [wifiPassword, setWifiPassword] = useState('');
+  const [showWifiSettings, setShowWifiSettings] = useState(false);
 
   // Activity history
   const [recentActivity, setRecentActivity] = useState<ActivityEvent[]>([]);
@@ -255,48 +286,16 @@ export default function DoorbellControlPage() {
     }
   };
 
-  const handleSetAmplifierVolume = async () => {
+  const handleVolumeChange = async (newVolume: number) => {
     if (!doorbellDevice?.device_id) return;
 
-    setCommandLoading('amp_volume');
+    setAmpVolume(newVolume);
+
+    // Auto-set volume when slider changes
     try {
-      await setAmplifierVolume(doorbellDevice.device_id, ampVolume);
-      alert(`Amplifier volume set to ${ampVolume}`);
+      await setAmplifierVolume(doorbellDevice.device_id, newVolume);
     } catch (error) {
       console.error('Error setting amplifier volume:', error);
-      alert('Failed to set amplifier volume');
-    } finally {
-      setCommandLoading(null);
-    }
-  };
-
-  const handleGetAmplifierStatus = async () => {
-    if (!doorbellDevice?.device_id) return;
-
-    setCommandLoading('amp_status');
-    try {
-      await getAmplifierStatus(doorbellDevice.device_id);
-      alert('Amplifier status command sent. Check device serial output for response.');
-    } catch (error) {
-      console.error('Error getting amplifier status:', error);
-      alert('Failed to get amplifier status');
-    } finally {
-      setCommandLoading(null);
-    }
-  };
-
-  const handleListAmplifierFiles = async () => {
-    if (!doorbellDevice?.device_id) return;
-
-    setCommandLoading('amp_list');
-    try {
-      await listAmplifierFiles(doorbellDevice.device_id);
-      alert('List files command sent. Check device serial output for file list.');
-    } catch (error) {
-      console.error('Error listing amplifier files:', error);
-      alert('Failed to list amplifier files');
-    } finally {
-      setCommandLoading(null);
     }
   };
 
@@ -311,9 +310,10 @@ export default function DoorbellControlPage() {
     setCommandLoading('amp_wifi');
     try {
       await setAmplifierWifi(doorbellDevice.device_id, wifiSsid, wifiPassword);
-      alert('WiFi credentials command sent. Amplifier will use new credentials on next stream.');
+      alert('WiFi credentials saved. Amplifier will use new credentials on next stream.');
       setWifiSsid('');
       setWifiPassword('');
+      setShowWifiSettings(false);
     } catch (error) {
       console.error('Error setting amplifier WiFi:', error);
       alert('Failed to set amplifier WiFi');
@@ -528,75 +528,15 @@ export default function DoorbellControlPage() {
                       <span className="status-description">Stream audio to amplifier</span>
                     </div>
                   </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', width: '100%', marginTop: '12px' }}>
-                    <div style={{ position: 'relative', width: '100%' }}>
-                      <input
-                        type="text"
-                        value={ampUrl}
-                        onChange={(e) => setAmpUrl(e.target.value)}
-                        placeholder="Enter stream URL (e.g., http://stream.example.com/audio)"
-                        className="control-input"
-                        style={{
-                          width: '100%',
-                          padding: '10px 45px 10px 12px',
-                          borderRadius: '6px',
-                          border: '2px solid #e0e0e0',
-                          fontSize: '13px',
-                          fontFamily: 'monospace',
-                          transition: 'all 0.2s ease',
-                          outline: 'none',
-                          backgroundColor: '#f8f9fa'
-                        }}
-                        onFocus={(e) => {
-                          e.target.style.borderColor = '#2196F3';
-                          e.target.style.backgroundColor = '#fff';
-                        }}
-                        onBlur={(e) => {
-                          e.target.style.borderColor = '#e0e0e0';
-                          e.target.style.backgroundColor = '#f8f9fa';
-                        }}
-                      />
-                      <select
-                        onChange={(e) => setAmpUrl(e.target.value)}
-                        value=""
-                        className="stream-selector"
-                        style={{
-                          position: 'absolute',
-                          right: '4px',
-                          top: '50%',
-                          transform: 'translateY(-50%)',
-                          padding: '6px 8px',
-                          borderRadius: '4px',
-                          border: '1px solid #e0e0e0',
-                          fontSize: '13px',
-                          backgroundColor: '#fff',
-                          cursor: 'pointer',
-                          outline: 'none',
-                          transition: 'all 0.2s ease',
-                          appearance: 'none',
-                          WebkitAppearance: 'none',
-                          MozAppearance: 'none',
-                          backgroundImage: 'url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 24 24\' fill=\'none\' stroke=\'%23333\' stroke-width=\'2\' stroke-linecap=\'round\' stroke-linejoin=\'round\'%3e%3cpolyline points=\'6 9 12 15 18 9\'%3e%3c/polyline%3e%3c/svg%3e")',
-                          backgroundRepeat: 'no-repeat',
-                          backgroundPosition: 'center',
-                          backgroundSize: '18px',
-                          width: '32px',
-                          height: '32px',
-                          color: 'transparent'
-                        }}
-                        onMouseEnter={(e) => {
-                          (e.target as HTMLSelectElement).style.backgroundColor = '#f0f0f0';
-                        }}
-                        onMouseLeave={(e) => {
-                          (e.target as HTMLSelectElement).style.backgroundColor = '#fff';
-                        }}
-                      >
-                        <option value="" style={{ color: '#000' }}>Select Station</option>
-                        <option value="https://stream.live.vc.bbcmedia.co.uk/bbc_world_service_east_asia" style={{ color: '#000' }}>BBC World Service</option>
-                        <option value="https://play.streamafrica.net/japancitypop" style={{ color: '#000' }}>Japan City Pop</option>
-                        <option value="http://stream.radioparadise.com/aac-128" style={{ color: '#000' }}>Radio Paradise</option>
-                      </select>
-                    </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', width: '100%', marginTop: '12px' }}>
+                    <input
+                      type="text"
+                      value={ampUrl}
+                      onChange={(e) => setAmpUrl(e.target.value)}
+                      placeholder="Stream URL"
+                      className="control-input"
+                      style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ddd' }}
+                    />
                     <div style={{ display: 'flex', gap: '8px' }}>
                       <button
                         className="btn-control btn-start"
@@ -616,76 +556,98 @@ export default function DoorbellControlPage() {
                       </button>
                     </div>
 
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '8px' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <label style={{ fontSize: '12px', fontWeight: '600', minWidth: '60px' }}>VOLUME: {ampVolume}</label>
-                        <input
-                          type="range"
-                          min="0"
-                          max="21"
-                          value={ampVolume}
-                          onChange={(e) => setAmpVolume(parseInt(e.target.value))}
-                          style={{ flex: 1 }}
-                        />
-                        <button
-                          className="btn-control btn-info"
-                          onClick={handleSetAmplifierVolume}
-                          disabled={commandLoading === 'amp_volume'}
-                          style={{ padding: '4px 12px', fontSize: '12px' }}
-                        >
-                          {commandLoading === 'amp_volume' ? 'SETTING...' : 'SET'}
-                        </button>
-                      </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      <label style={{ fontSize: '13px', fontWeight: '600', color: '#555' }}>VOLUME: {ampVolume}</label>
+                      <input
+                        type="range"
+                        min="0"
+                        max="21"
+                        value={ampVolume}
+                        onChange={(e) => handleVolumeChange(parseInt(e.target.value))}
+                        style={{
+                          width: '100%',
+                          height: '6px',
+                          borderRadius: '3px',
+                          background: `linear-gradient(to right, #4CAF50 0%, #4CAF50 ${(ampVolume / 21) * 100}%, #ddd ${(ampVolume / 21) * 100}%, #ddd 100%)`,
+                          outline: 'none',
+                          WebkitAppearance: 'none',
+                          cursor: 'pointer'
+                        }}
+                      />
                     </div>
 
-                    <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
-                      <button
-                        className="btn-control btn-info"
-                        onClick={handleGetAmplifierStatus}
-                        disabled={commandLoading === 'amp_status'}
-                        style={{ flex: 1, fontSize: '12px' }}
-                      >
-                        {commandLoading === 'amp_status' ? 'LOADING...' : 'STATUS'}
-                      </button>
-                      <button
-                        className="btn-control btn-info"
-                        onClick={handleListAmplifierFiles}
-                        disabled={commandLoading === 'amp_list'}
-                        style={{ flex: 1, fontSize: '12px' }}
-                      >
-                        {commandLoading === 'amp_list' ? 'LOADING...' : 'LIST FILES'}
-                      </button>
-                    </div>
-
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '8px', padding: '8px', backgroundColor: '#f5f5f5', borderRadius: '4px' }}>
-                      <div style={{ fontSize: '11px', fontWeight: '600', color: '#666' }}>WIFI SETTINGS</div>
-                      <input
-                        type="text"
-                        value={wifiSsid}
-                        onChange={(e) => setWifiSsid(e.target.value)}
-                        placeholder="WiFi SSID"
-                        className="control-input"
-                        style={{ padding: '6px', fontSize: '12px', borderRadius: '3px', border: '1px solid #ddd' }}
-                      />
-                      <input
-                        type="password"
-                        value={wifiPassword}
-                        onChange={(e) => setWifiPassword(e.target.value)}
-                        placeholder="WiFi Password"
-                        className="control-input"
-                        style={{ padding: '6px', fontSize: '12px', borderRadius: '3px', border: '1px solid #ddd' }}
-                      />
-                      <button
-                        className="btn-control btn-warning"
-                        onClick={handleSetAmplifierWifi}
-                        disabled={commandLoading === 'amp_wifi'}
-                        style={{ fontSize: '12px', padding: '6px' }}
-                      >
-                        {commandLoading === 'amp_wifi' ? 'SAVING...' : 'SET WIFI'}
-                      </button>
-                    </div>
+                    <button
+                      className="btn-control btn-info"
+                      onClick={() => setShowWifiSettings(true)}
+                      style={{ fontSize: '13px', padding: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
+                    >
+                      <Settings size={16} />
+                      WIFI SETTINGS
+                    </button>
                   </div>
                 </div>
+
+                {/* WiFi Settings Modal */}
+                {showWifiSettings && (
+                  <div style={{
+                    position: 'fixed',
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    zIndex: 1000
+                  }}>
+                    <div style={{
+                      backgroundColor: 'white',
+                      borderRadius: '8px',
+                      padding: '24px',
+                      maxWidth: '400px',
+                      width: '90%',
+                      boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)'
+                    }}>
+                      <h3 style={{ marginTop: 0, marginBottom: '16px', color: '#333' }}>Amplifier WiFi Settings</h3>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                        <input
+                          type="text"
+                          value={wifiSsid}
+                          onChange={(e) => setWifiSsid(e.target.value)}
+                          placeholder="WiFi SSID"
+                          className="control-input"
+                          style={{ padding: '10px', fontSize: '14px', borderRadius: '4px', border: '1px solid #ddd' }}
+                        />
+                        <input
+                          type="password"
+                          value={wifiPassword}
+                          onChange={(e) => setWifiPassword(e.target.value)}
+                          placeholder="WiFi Password"
+                          className="control-input"
+                          style={{ padding: '10px', fontSize: '14px', borderRadius: '4px', border: '1px solid #ddd' }}
+                        />
+                        <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
+                          <button
+                            className="btn-control btn-warning"
+                            onClick={handleSetAmplifierWifi}
+                            disabled={commandLoading === 'amp_wifi'}
+                            style={{ flex: 1, fontSize: '14px', padding: '10px' }}
+                          >
+                            {commandLoading === 'amp_wifi' ? 'SAVING...' : 'SAVE'}
+                          </button>
+                          <button
+                            className="btn-control"
+                            onClick={() => setShowWifiSettings(false)}
+                            style={{ flex: 1, fontSize: '14px', padding: '10px', backgroundColor: '#6c757d', borderColor: '#6c757d' }}
+                          >
+                            CANCEL
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 <div className="control-divider"></div>
 
