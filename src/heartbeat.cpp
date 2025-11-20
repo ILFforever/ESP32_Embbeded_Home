@@ -554,6 +554,17 @@ void fetchAndExecuteCommands() {
 
         Serial.printf("[Commands] Executing: %s (ID: %s)\n", action.c_str(), commandId.c_str());
 
+        // Special handling for reboot/system_restart: acknowledge BEFORE executing
+        // (otherwise acknowledgment will never reach backend)
+        if (action == "system_restart" || action == "reboot") {
+          Serial.println("[Commands] Reboot requested - acknowledging before execution");
+          acknowledgeCommand(commandId, true, action);
+          Serial.println("[Commands] Rebooting system in 3 seconds...");
+          delay(3000);
+          ESP.restart();
+          // Won't reach here
+        }
+
         // Execute command
         bool success = executeCommand(action, params);
 
@@ -642,11 +653,11 @@ bool executeCommand(String action, JsonObject params) {
   }
 
   // System commands
+  // Note: reboot/system_restart is handled specially in fetchAndExecuteCommands()
+  // to ensure acknowledgment happens before reboot
   else if (action == "system_restart" || action == "reboot") {
-    Serial.println("[Commands] Rebooting system in 3 seconds...");
-    delay(3000);
-    ESP.restart();
-    return true; // Won't reach here but for completeness
+    Serial.println("[Commands] ERROR: Reboot should be handled in fetchAndExecuteCommands()");
+    return false;
   }
 
   // Legacy recording commands
