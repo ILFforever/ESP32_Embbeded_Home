@@ -668,7 +668,7 @@ void fetchAndExecuteCommands()
           metadata["reason"] = "remote_command";
           metadata["uptime_ms"] = millis();
           metadata["free_heap"] = ESP.getFreeHeap();
-          logCritical("system", "System restart via remote command", metadata);
+          logInfo("system", "System restart via remote command", metadata);
 
           Serial.println("[Commands] Rebooting system in 3 seconds...");
           delay(3000);
