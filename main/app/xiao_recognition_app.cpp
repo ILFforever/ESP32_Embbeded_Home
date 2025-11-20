@@ -147,19 +147,32 @@ namespace who
             // Send recognition result via UART
             if (m_uart)
             {
-                // Parse ESP-WHO result string format: "id:X,similarity:Y.YY"
-                // Example: "id:1,similarity:0.85" or "id:unknown,similarity:0.00"
+                // Parse ESP-WHO result string format: "id: X, sim: Y.YY"
+                // Example: "id: 1, sim: 0.72" or "id: unknown, sim: 0.00"
 
                 int id = -1;
                 float confidence = 0.0f;
                 std::string name = "Unknown";
 
-                // Try to parse ID
+                // Try to parse ID (handles both "id:" and "id: " formats)
                 size_t id_pos = result.find("id:");
                 if (id_pos != std::string::npos)
                 {
-                    size_t comma_pos = result.find(",", id_pos);
-                    std::string id_str = result.substr(id_pos + 3, comma_pos - id_pos - 3);
+                    // Skip "id:" and any whitespace
+                    size_t start_pos = id_pos + 3;
+                    while (start_pos < result.length() && result[start_pos] == ' ')
+                    {
+                        start_pos++;
+                    }
+
+                    size_t comma_pos = result.find(",", start_pos);
+                    std::string id_str = result.substr(start_pos, comma_pos - start_pos);
+
+                    // Trim trailing whitespace
+                    while (!id_str.empty() && id_str.back() == ' ')
+                    {
+                        id_str.pop_back();
+                    }
 
                     if (id_str != "unknown")
                     {
@@ -173,11 +186,33 @@ namespace who
                     }
                 }
 
-                // Try to parse confidence/similarity
-                size_t sim_pos = result.find("similarity:");
+                // Try to parse confidence/similarity (handles both "sim:" and "similarity:")
+                size_t sim_pos = result.find("sim:");
+                if (sim_pos == std::string::npos)
+                {
+                    sim_pos = result.find("similarity:");
+                }
+
                 if (sim_pos != std::string::npos)
                 {
-                    std::string sim_str = result.substr(sim_pos + 11);
+                    // Find the position after "sim:" or "similarity:"
+                    size_t start_pos = sim_pos;
+                    if (result.substr(sim_pos, 4) == "sim:")
+                    {
+                        start_pos = sim_pos + 4;
+                    }
+                    else if (result.substr(sim_pos, 11) == "similarity:")
+                    {
+                        start_pos = sim_pos + 11;
+                    }
+
+                    // Skip whitespace
+                    while (start_pos < result.length() && result[start_pos] == ' ')
+                    {
+                        start_pos++;
+                    }
+
+                    std::string sim_str = result.substr(start_pos);
                     confidence = std::stof(sim_str);
                 }
 
@@ -190,6 +225,11 @@ namespace who
                 char *json_str = cJSON_PrintUnformatted(rec_data);
                 if (json_str)
                 {
+                    // Debug: Print what we're sending to master
+                    ESP_LOGI(TAG, "Sending to master: ID=%d Name=%s Confidence=%.2f",
+                             id, name.c_str(), confidence);
+                    ESP_LOGI(TAG, "UART JSON: %s", json_str);
+
                     m_uart->send_event("face_recognized", json_str);
                     free(json_str);
                 }

@@ -352,12 +352,22 @@ void create_uart_commands()
         g_recognition_app->restore_detection_callback();
         g_uart->send_status("ok", "Detection callback restored"); });
 
+    g_uart->register_command("pause_detection", [](const char *cmd, cJSON *params)
+                             {
+        if (!g_recognition_app) {
+            g_uart->send_status("error", "Recognition app not initialized");
+            return;
+        }
+
+        pause_face_detection();
+        g_uart->send_status("ok", "Pause detection success "); });
+
     // ============================================================
     // Face Database Reader Commands
     // ============================================================
 
     // Get face count from database
-    g_uart->register_command("get_face_count", [](const char *cmd, cJSON *params)
+    g_uart->register_command("face_count", [](const char *cmd, cJSON *params)
                              {
         if (!g_face_db_reader) {
             g_uart->send_status("error", "Face database reader not initialized");
@@ -367,10 +377,10 @@ void create_uart_commands()
         int face_count = g_face_db_reader->get_face_count();
         char msg[64];
         snprintf(msg, sizeof(msg), "Face count: %d", face_count);
-        g_uart->send_status("ok", msg); });
+        g_uart->send_status("face_count", msg); });
 
-    // Get all faces in database and send to LCD via UART
-    g_uart->register_command("print_faces", [](const char *cmd, cJSON *params)
+    // Get all faces in database and send as JSON array
+    g_uart->register_command("list_faces", [](const char *cmd, cJSON *params)
                              {
         if (!g_face_db_reader) {
             g_uart->send_status("error", "Face database reader not initialized");
@@ -380,30 +390,37 @@ void create_uart_commands()
         int face_count = g_face_db_reader->get_face_count();
 
         if (face_count == 0) {
-            g_uart->send_status("ok", "No faces enrolled");
+            g_uart->send_status("list_faces", "[]");  // Empty JSON array
             return;
         }
-        
-        // Send face list as formatted string (one face per line)
-        char face_list[512];
-        int offset = 0;
-        offset += snprintf(face_list + offset, sizeof(face_list) - offset,
-                          "Total: %d faces\n", face_count);
 
-        for (int i = 1; i <= face_count && offset < (int)sizeof(face_list) - 50; i++) {
+        // Create JSON array of face objects
+        cJSON *faces_array = cJSON_CreateArray();
+
+        for (int i = 1; i <= face_count; i++) {
             std::string name = g_face_db_reader->get_name(i);
-            offset += snprintf(face_list + offset, sizeof(face_list) - offset,
-                             "ID %d: %s\n", i, name.c_str());
+
+            cJSON *face_obj = cJSON_CreateObject();
+            cJSON_AddNumberToObject(face_obj, "id", i);
+            cJSON_AddStringToObject(face_obj, "name", name.c_str());
+
+            cJSON_AddItemToArray(faces_array, face_obj);
         }
 
-        // Send to LCD via UART
-        g_uart->send_status("ok", face_list);
+        // Convert to JSON string and send
+        char *json_str = cJSON_PrintUnformatted(faces_array);
+        if (json_str) {
+            g_uart->send_status("list_faces", json_str);
+            free(json_str);
+        }
+
+        cJSON_Delete(faces_array);
 
         // Also print detailed info to serial console
         g_face_db_reader->print_all_faces(); });
 
     // Check if database is valid and accessible
-    g_uart->register_command("check_db", [](const char *cmd, cJSON *params)
+    g_uart->register_command("check_face_db", [](const char *cmd, cJSON *params)
                              {
         if (!g_face_db_reader) {
             g_uart->send_status("error", "Face database reader not initialized");
@@ -414,7 +431,7 @@ void create_uart_commands()
         const char *status = is_valid ? "valid" : "invalid";
         char msg[64];
         snprintf(msg, sizeof(msg), "Database status: %s", status);
-        g_uart->send_status("ok", msg); });
+        g_uart->send_status("face_db", msg); });
 
     // ============================================================
     // Name Management Commands
@@ -479,7 +496,7 @@ void create_uart_commands()
         snprintf(msg, sizeof(msg), "ID %d: %s", id, name.c_str());
         g_uart->send_status("ok", msg); });
 
-    // Enroll face with optional name
+    // Enroll face with optional name TODO
     g_uart->register_command("enroll_with_name", [](const char *cmd, cJSON *params)
                              {
         if (!g_button_handler) {
@@ -498,85 +515,105 @@ void create_uart_commands()
     // Microphone Control Commands
     // ============================================================
 
-    // Start microphone (also starts WiFi and HTTP server)
-    g_uart->register_command("mic_start", [](const char *cmd, cJSON *params)
+    // Unified microphone control command with action parameter
+    // Usage: {"cmd": "mic_control", "params": {"action": "mic_start"}}
+    //        {"cmd": "mic_control", "params": {"action": "mic_stop"}}
+    //        {"cmd": "mic_control", "params": {"action": "mic_status"}}
+    g_uart->register_command("mic_control", [](const char *cmd, cJSON *params)
                              {
-        if (!g_microphone) {
-            // Create microphone instance
-            g_microphone = new I2SMicrophone();
-            esp_err_t ret = g_microphone->init();
-            if (ret != ESP_OK) {
-                delete g_microphone;
-                g_microphone = nullptr;
-                g_uart->send_status("error", "Failed to initialize microphone");
+        if (!params) {
+            g_uart->send_status("error", "Missing parameters");
+            return;
+        }
+
+        cJSON* action = cJSON_GetObjectItem(params, "action");
+        if (!action || !cJSON_IsString(action)) {
+            g_uart->send_status("error", "Missing or invalid 'action' parameter");
+            return;
+        }
+
+        const char* action_str = action->valuestring;
+
+        if (strcmp(action_str, "mic_start") == 0) {
+            // Start microphone (also starts WiFi and HTTP server)
+            if (!g_microphone) {
+                // Create microphone instance
+                g_microphone = new I2SMicrophone();
+                esp_err_t ret = g_microphone->init();
+                if (ret != ESP_OK) {
+                    delete g_microphone;
+                    g_microphone = nullptr;
+                    g_uart->send_status("error", "Failed to initialize microphone");
+                    return;
+                }
+
+                // Update HTTP server reference after creating microphone
+                set_http_server_refs(g_standby_control,
+                                   g_recognition_app->get_recognition(),
+                                   g_face_db_reader,
+                                   g_microphone,
+                                   g_frame_cap);
+            }
+
+            if (g_microphone->is_running()) {
+                g_uart->send_status("error", "Microphone already running");
                 return;
             }
 
-            // Update HTTP server reference after creating microphone
-            set_http_server_refs(g_standby_control,
-                               g_recognition_app->get_recognition(),
-                               g_face_db_reader,
-                               g_microphone,
-                               g_frame_cap);
-        }
+            // Start WiFi and HTTP server first
+            init_wifi_and_server();
 
-        if (g_microphone->is_running()) {
-            g_uart->send_status("error", "Microphone already running");
-            return;
-        }
+            // Wait a bit for WiFi to connect
+            vTaskDelay(pdMS_TO_TICKS(2000));
 
-        // Start WiFi and HTTP server first
-        init_wifi_and_server();
+            // Start microphone
+            if (g_microphone->start()) {
+                g_uart->send_status("microphone_event", "Microphone and WiFi started");
+            } else {
+                // If mic fails to start, stop WiFi
+                stop_webserver_and_wifi();
+                g_uart->send_status("error", "Failed to start microphone");
+            }
 
-        // Wait a bit for WiFi to connect
-        vTaskDelay(pdMS_TO_TICKS(2000));
+        } else if (strcmp(action_str, "mic_stop") == 0) {
+            // Stop microphone (also stops WiFi and HTTP server)
+            if (!g_microphone) {
+                g_uart->send_status("error", "Microphone not initialized");
+                return;
+            }
 
-        // Start microphone
-        if (g_microphone->start()) {
-            g_uart->send_status("ok", "Microphone and WiFi started. Stream at http://192.168.1.100/audio/stream");
-        } else {
-            // If mic fails to start, stop WiFi
+            if (!g_microphone->is_running()) {
+                g_uart->send_status("error", "Microphone not running");
+                return;
+            }
+
+            // Stop microphone first
+            g_microphone->stop();
+
+            // Then stop WiFi and HTTP server
             stop_webserver_and_wifi();
-            g_uart->send_status("error", "Failed to start microphone");
-        } });
 
-    // Stop microphone (also stops WiFi and HTTP server)
-    g_uart->register_command("mic_stop", [](const char *cmd, cJSON *params)
-                             {
-        if (!g_microphone) {
-            g_uart->send_status("error", "Microphone not initialized");
-            return;
-        }
+            g_uart->send_status("microphone_event", "Microphone, WiFi, and HTTP server stopped");
 
-        if (!g_microphone->is_running()) {
-            g_uart->send_status("error", "Microphone not running");
-            return;
-        }
+        } else if (strcmp(action_str, "mic_status") == 0) {
+            // Get microphone status
+            if (!g_microphone) {
+                g_uart->send_status("microphone_event", "Microphone: Not initialized");
+                return;
+            }
 
-        // Stop microphone first
-        g_microphone->stop();
+            if (g_microphone->is_running()) {
+                char msg[128];
+                snprintf(msg, sizeof(msg), "Running - RMS:%lu Peak:%lu",
+                         g_microphone->get_rms_level(),
+                         g_microphone->get_peak_level());
+                g_uart->send_status("microphone_event", msg);
+            } else {
+                g_uart->send_status("microphone_event", "Microphone: Initialized but not running");
+            }
 
-        // Then stop WiFi and HTTP server
-        stop_webserver_and_wifi();
-
-        g_uart->send_status("ok", "Microphone, WiFi, and HTTP server stopped"); });
-
-    // Get microphone status
-    g_uart->register_command("mic_status", [](const char *cmd, cJSON *params)
-                             {
-        if (!g_microphone) {
-            g_uart->send_status("ok", "Microphone: Not initialized");
-            return;
-        }
-
-        if (g_microphone->is_running()) {
-            char msg[128];
-            snprintf(msg, sizeof(msg), "Running - RMS:%lu Peak:%lu",
-                     g_microphone->get_rms_level(),
-                     g_microphone->get_peak_level());
-            g_uart->send_status("ok", msg);
         } else {
-            g_uart->send_status("ok", "Microphone: Initialized but not running");
+            g_uart->send_status("error", "Unknown microphone action");
         } });
 }
 
