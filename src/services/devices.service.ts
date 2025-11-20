@@ -539,6 +539,23 @@ export async function getDeviceInfo(deviceId: string) {
   }
 }
 
+// Get device history (face detections, doorbell rings, etc.)
+export async function getDeviceHistory(deviceId: string, limit: number = 20) {
+  try {
+    const response = await axios.get(
+      `${API_URL}/api/v1/devices/${deviceId}/history?limit=${limit}`,
+      {
+        timeout: 10000,
+        headers: getAuthHeaders()
+      }
+    );
+    return response.data;
+  } catch (error) {
+    console.error('Error getting device history:', error);
+    return { events: [] }; // Return empty events on error
+  }
+}
+
 // Legacy function for backward compatibility
 export async function controlDoorbell(
   deviceId: string,
