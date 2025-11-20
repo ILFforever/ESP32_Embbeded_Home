@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { Camera, Mic, Volume2, RotateCw, Power, Users, Settings } from 'lucide-react';
+import { Camera, Mic, Volume2, RotateCw, Power, Users, Settings, Database } from 'lucide-react';
 import ProtectedRoute from '@/components/auth/ProtectedRoute';
 import { getAllDevices, getDeviceHistory } from '@/services/devices.service';
 import { getCookie } from '@/utils/cookies';
@@ -416,6 +416,39 @@ export default function DoorbellControlPage() {
     }
   };
 
+  const handleSyncDatabase = async () => {
+    const deviceId = getEffectiveDeviceId();
+    if (!deviceId) return;
+
+    setCommandLoading('sync_database');
+    try {
+      // Call all three face database commands in sequence
+      console.log('Syncing database - sending all face database commands...');
+
+      await getFaceCount(deviceId);
+      console.log('✓ Face count command queued');
+
+      // Small delay between commands
+      await new Promise(resolve => setTimeout(resolve, 500));
+
+      await checkFaceDatabase(deviceId);
+      console.log('✓ Check database command queued');
+
+      // Small delay between commands
+      await new Promise(resolve => setTimeout(resolve, 500));
+
+      await listFaces(deviceId);
+      console.log('✓ List faces command queued');
+
+      alert('Database sync complete! All commands queued:\n• Face count\n• Database check\n• Face list\n\nCheck device serial output for results.');
+    } catch (error) {
+      console.error('Error syncing database:', error);
+      alert('Failed to sync database. Some commands may have been queued.');
+    } finally {
+      setCommandLoading(null);
+    }
+  };
+
   // System control handler
   const handleSystemRestart = async () => {
     const deviceId = getEffectiveDeviceId();
@@ -756,9 +789,9 @@ export default function DoorbellControlPage() {
                   <div className="control-status">
                     <Users size={48} className={faceRecognition ? 'status-active-large' : 'status-inactive-large'} />
                     <div className="status-label">
-                      <span className="status-text">{faceRecognition ? 'ENABLED' : 'DISABLED'}</span>
+                      <span className="status-text">{faceRecognition ? 'TRIGGERED' : 'IDLE'}</span>
                       <span className="status-description">
-                        {faceRecognition ? 'Identifying visitors' : 'Face recognition off'}
+                        {faceRecognition ? 'Identifying visitors' : 'Face recognition idle'}
                       </span>
                     </div>
                   </div>
@@ -767,28 +800,16 @@ export default function DoorbellControlPage() {
                       className={`btn-control ${faceRecognition ? 'btn-stop' : 'btn-start'}`}
                       onClick={handleFaceRecognitionToggle}
                     >
-                      {faceRecognition ? 'DISABLE' : 'ENABLE'}
+                      {faceRecognition ? 'IDLE' : 'TRIGGER'}
                     </button>
                     <button
-                      className="btn-control btn-info"
-                      onClick={handleGetFaceCount}
-                      disabled={commandLoading === 'face_count'}
+                      className="btn-control btn-warning"
+                      onClick={handleSyncDatabase}
+                      disabled={commandLoading === 'sync_database'}
+                      style={{ display: 'flex', alignItems: 'center', gap: '6px', flex: '1 1 auto' }}
                     >
-                      {commandLoading === 'face_count' ? 'CHECKING...' : 'COUNT'}
-                    </button>
-                    <button
-                      className="btn-control btn-info"
-                      onClick={handleListFaces}
-                      disabled={commandLoading === 'face_list'}
-                    >
-                      {commandLoading === 'face_list' ? 'LISTING...' : 'LIST'}
-                    </button>
-                    <button
-                      className="btn-control btn-info"
-                      onClick={handleCheckFaceDB}
-                      disabled={commandLoading === 'face_check'}
-                    >
-                      {commandLoading === 'face_check' ? 'CHECKING...' : 'CHECK DB'}
+                      <Database size={16} />
+                      {commandLoading === 'sync_database' ? 'SYNCING...' : 'SYNC DATABASE'}
                     </button>
                   </div>
 

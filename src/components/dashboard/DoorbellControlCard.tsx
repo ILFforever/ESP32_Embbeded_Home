@@ -390,9 +390,9 @@ export function DoorbellControlCard({ doorbellControl, deviceId, isExpanded = fa
                 <div className="control-status">
                   <UserCheck size={48} className={faceRecognition ? 'status-active-large' : 'status-inactive-large'} />
                   <div className="status-label">
-                    <span className="status-text">{faceRecognition ? 'ENABLED' : 'DISABLED'}</span>
+                    <span className="status-text">{faceRecognition ? 'TRIGGERED' : 'IDLE'}</span>
                     <span className="status-description">
-                      {faceRecognition ? 'Identifying visitors' : 'Face recognition off'}
+                      {faceRecognition ? 'Identifying visitors' : 'Face recognition idle'}
                     </span>
                   </div>
                 </div>
@@ -401,7 +401,7 @@ export function DoorbellControlCard({ doorbellControl, deviceId, isExpanded = fa
                     className={`btn-control ${faceRecognition ? 'btn-stop' : 'btn-start'}`}
                     onClick={handleFaceRecognitionToggle}
                   >
-                    {faceRecognition ? 'DISABLE' : 'ENABLE'}
+                    {faceRecognition ? 'IDLE' : 'TRIGGER'}
                   </button>
                   <button
                     className="btn-control btn-warning"
@@ -411,29 +411,6 @@ export function DoorbellControlCard({ doorbellControl, deviceId, isExpanded = fa
                   >
                     <Database size={16} />
                     {loading === 'sync_database' ? 'SYNCING...' : 'SYNC DATABASE'}
-                  </button>
-                  <button
-                    className="btn-control btn-info"
-                    onClick={handleGetFaceCount}
-                    disabled={loading === 'face_count'}
-                    style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
-                  >
-                    <Users size={16} />
-                    {loading === 'face_count' ? 'CHECKING...' : 'FACE COUNT'}
-                  </button>
-                  <button
-                    className="btn-control btn-info"
-                    onClick={handleListFaces}
-                    disabled={loading === 'face_list'}
-                  >
-                    {loading === 'face_list' ? 'LISTING...' : 'LIST FACES'}
-                  </button>
-                  <button
-                    className="btn-control btn-info"
-                    onClick={handleCheckFaceDB}
-                    disabled={loading === 'face_check'}
-                  >
-                    {loading === 'face_check' ? 'CHECKING...' : 'CHECK DB'}
                   </button>
                 </div>
               </div>
