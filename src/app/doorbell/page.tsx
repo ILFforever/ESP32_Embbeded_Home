@@ -374,8 +374,15 @@ export default function DoorbellControlPage() {
       date = timestamp.toDate();
     } else if (typeof timestamp === 'string') {
       date = new Date(timestamp);
+    } else if (timestamp?._seconds) {
+      // Handle Firestore timestamp object with _seconds
+      date = new Date(timestamp._seconds * 1000);
+    } else if (typeof timestamp === 'number') {
+      // Handle Unix timestamp (milliseconds)
+      date = new Date(timestamp);
     } else {
-      date = new Date();
+      // If no valid timestamp, return 'N/A' instead of current time
+      return 'N/A';
     }
     return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
   };
@@ -392,8 +399,7 @@ export default function DoorbellControlPage() {
     }
     if (event.type === 'command') {
       const action = event.data?.action || 'unknown';
-      const status = event.data?.status || 'pending';
-      return `Command: ${action} (${status})`;
+      return `Command: ${action}`;
     }
     if (event.type === 'heartbeat') {
       const uptime = event.data?.uptime_ms ? Math.floor(event.data.uptime_ms / 60000) : 0;
