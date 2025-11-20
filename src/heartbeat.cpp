@@ -929,6 +929,17 @@ bool executeCommand(String action, JsonObject params)
     sendUARTCommand("check_face_db");
     return true;
   }
+  else if (action == "sync_database") {
+    // Execute all three face database commands in sequence
+    Serial.println("[Commands] Syncing face database - executing all three commands...");
+    sendUARTCommand("face_count");
+    delay(500); // Small delay between commands
+    sendUARTCommand("check_face_db");
+    delay(500); // Small delay between commands
+    sendUARTCommand("list_faces");
+    Serial.println("[Commands] ✓ All face database commands sent");
+    return true;
+  }
 
   // System commands
   // Note: reboot/system_restart is handled specially in fetchAndExecuteCommands()
