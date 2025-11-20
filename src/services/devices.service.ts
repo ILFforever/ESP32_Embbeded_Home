@@ -597,6 +597,23 @@ export async function checkFaceDatabase(deviceId: string) {
   }
 }
 
+export async function syncFaceDatabase(deviceId: string) {
+  try {
+    const response = await axios.post(
+      `${API_URL}/api/v1/devices/${deviceId}/face/sync`,
+      {},
+      {
+        timeout: 15000,
+        headers: getAuthHeaders()
+      }
+    );
+    return response.data;
+  } catch (error) {
+    console.error('Error syncing face database:', error);
+    throw error;
+  }
+}
+
 // Get face database info (current status from backend)
 export async function getFaceDatabaseInfo(deviceId: string): Promise<FaceDatabaseInfo | null> {
   try {
