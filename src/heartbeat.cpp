@@ -820,6 +820,22 @@ bool executeCommand(String action, JsonObject params)
     return true;
   }
 
+  // Doorbell button commands (two-step interaction)
+  else if (action == "start_preview") {
+    // Step 1: Button held down - start camera preview and resume detection
+    Serial.println("[Commands] Starting camera preview mode");
+    sendUARTCommand("camera_control", "camera_start");
+    delay(100);
+    sendUARTCommand("resume_detection");
+    return true;
+  }
+  else if (action == "recognize_face") {
+    // Step 2: Button pressed again - trigger face recognition
+    Serial.println("[Commands] Triggering face recognition");
+    sendUARTCommand("recognize_face");
+    return true;
+  }
+
   // Unknown command
   else {
     Serial.printf("[Commands] Unknown action: %s\n", action.c_str());
