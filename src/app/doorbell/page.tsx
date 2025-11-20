@@ -637,7 +637,18 @@ export default function DoorbellControlPage() {
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', width: '100%', marginTop: '12px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                      <label style={{ fontSize: '13px', fontWeight: '600', color: '#555', minWidth: '80px' }}>VOLUME: {ampVolume}</label>
+                      <label style={{
+                        fontSize: '13px',
+                        fontWeight: '600',
+                        color: '#333',
+                        minWidth: '80px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px'
+                      }}>
+                        <Volume2 size={16} style={{ color: '#4CAF50' }} />
+                        VOL: {ampVolume}
+                      </label>
                       <input
                         type="range"
                         min="0"
@@ -649,14 +660,25 @@ export default function DoorbellControlPage() {
                         className="volume-slider"
                         style={{
                           flex: 1,
-                          height: '6px',
-                          borderRadius: '3px',
+                          height: '8px',
+                          borderRadius: '4px',
                           background: `linear-gradient(to right, #4CAF50 0%, #4CAF50 ${(ampVolume / 21) * 100}%, #e0e0e0 ${(ampVolume / 21) * 100}%, #e0e0e0 100%)`,
                           outline: 'none',
                           cursor: 'pointer',
-                          transition: 'background 0.15s ease'
+                          transition: 'background 0.15s ease',
+                          WebkitAppearance: 'none',
+                          appearance: 'none'
                         }}
                       />
+                      <span style={{
+                        fontSize: '11px',
+                        fontWeight: '500',
+                        color: '#666',
+                        minWidth: '35px',
+                        textAlign: 'right'
+                      }}>
+                        {Math.round((ampVolume / 21) * 100)}%
+                      </span>
                     </div>
                     <div style={{ position: 'relative', width: '100%' }}>
                       <input
@@ -1117,49 +1139,77 @@ export default function DoorbellControlPage() {
       {/* Volume Slider Styles */}
       <style jsx>{`
         .volume-slider::-webkit-slider-thumb {
+          -webkit-appearance: none;
           appearance: none;
-          width: 18px;
-          height: 18px;
+          width: 22px;
+          height: 22px;
           border-radius: 50%;
-          background: #4CAF50;
+          background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%);
           cursor: pointer;
-          box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
-          transition: all 0.2s ease;
+          border: 3px solid #fff;
+          box-shadow: 0 2px 6px rgba(76, 175, 80, 0.4), 0 1px 3px rgba(0, 0, 0, 0.2);
+          transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
         }
 
         .volume-slider::-webkit-slider-thumb:hover {
-          background: #45a049;
-          box-shadow: 0 3px 6px rgba(0, 0, 0, 0.3);
-          transform: scale(1.1);
+          background: linear-gradient(135deg, #45a049 0%, #3d8b40 100%);
+          box-shadow: 0 4px 12px rgba(76, 175, 80, 0.6), 0 2px 4px rgba(0, 0, 0, 0.25);
+          transform: scale(1.15);
         }
 
         .volume-slider::-webkit-slider-thumb:active {
-          background: #3d8b40;
-          box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
-          transform: scale(0.95);
+          background: linear-gradient(135deg, #3d8b40 0%, #2e7d32 100%);
+          box-shadow: 0 2px 4px rgba(76, 175, 80, 0.5), 0 1px 2px rgba(0, 0, 0, 0.3);
+          transform: scale(1.0);
         }
 
         .volume-slider::-moz-range-thumb {
-          width: 18px;
-          height: 18px;
+          width: 22px;
+          height: 22px;
           border-radius: 50%;
-          background: #4CAF50;
+          background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%);
           cursor: pointer;
-          border: none;
-          box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
-          transition: all 0.2s ease;
+          border: 3px solid #fff;
+          box-shadow: 0 2px 6px rgba(76, 175, 80, 0.4), 0 1px 3px rgba(0, 0, 0, 0.2);
+          transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
         }
 
         .volume-slider::-moz-range-thumb:hover {
-          background: #45a049;
-          box-shadow: 0 3px 6px rgba(0, 0, 0, 0.3);
-          transform: scale(1.1);
+          background: linear-gradient(135deg, #45a049 0%, #3d8b40 100%);
+          box-shadow: 0 4px 12px rgba(76, 175, 80, 0.6), 0 2px 4px rgba(0, 0, 0, 0.25);
+          transform: scale(1.15);
         }
 
         .volume-slider::-moz-range-thumb:active {
-          background: #3d8b40;
-          box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
-          transform: scale(0.95);
+          background: linear-gradient(135deg, #3d8b40 0%, #2e7d32 100%);
+          box-shadow: 0 2px 4px rgba(76, 175, 80, 0.5), 0 1px 2px rgba(0, 0, 0, 0.3);
+          transform: scale(1.0);
+        }
+
+        .volume-slider::-webkit-slider-runnable-track {
+          width: 100%;
+          height: 8px;
+          cursor: pointer;
+          border-radius: 4px;
+        }
+
+        .volume-slider::-moz-range-track {
+          width: 100%;
+          height: 8px;
+          cursor: pointer;
+          border-radius: 4px;
+        }
+
+        .volume-slider:focus {
+          outline: none;
+        }
+
+        .volume-slider:focus::-webkit-slider-thumb {
+          box-shadow: 0 0 0 4px rgba(76, 175, 80, 0.2), 0 4px 12px rgba(76, 175, 80, 0.6), 0 2px 4px rgba(0, 0, 0, 0.25);
+        }
+
+        .volume-slider:focus::-moz-range-thumb {
+          box-shadow: 0 0 0 4px rgba(76, 175, 80, 0.2), 0 4px 12px rgba(76, 175, 80, 0.6), 0 2px 4px rgba(0, 0, 0, 0.25);
         }
       `}</style>
     </ProtectedRoute>
