@@ -1651,6 +1651,108 @@ const checkFaceDatabase = async (req, res) => {
   }
 };
 
+// @desc    Receive face database results from device (face_count, face_list, face_check)
+// @access  Private (requires device token)
+const handleFaceDatabaseResult = async (req, res) => {
+  try {
+    const { device_id } = req.params;
+    const { type, count, faces, status, message } = req.body;
+
+    if (!type || !['face_count', 'face_list', 'face_check'].includes(type)) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'Invalid type. Must be face_count, face_list, or face_check'
+      });
+    }
+
+    const db = getFirestore();
+    const deviceRef = db.collection('devices').doc(device_id);
+
+    // Prepare result data based on type
+    const resultData = {
+      type,
+      timestamp: admin.firestore.FieldValue.serverTimestamp(),
+      created_at: admin.firestore.FieldValue.serverTimestamp()
+    };
+
+    if (type === 'face_count') {
+      resultData.count = count || 0;
+    } else if (type === 'face_list') {
+      resultData.faces = faces || [];
+      resultData.count = faces ? faces.length : 0;
+    } else if (type === 'face_check') {
+      resultData.status = status || 'unknown';
+      resultData.message = message || '';
+    }
+
+    // Save to face_database collection (with TTL for history)
+    await deviceRef.collection('face_database').add({
+      ...resultData,
+      ttl: admin.firestore.FieldValue.serverTimestamp()
+    });
+
+    // Update live_status/face_database with latest result (overwrites previous)
+    await deviceRef.collection('live_status').doc('face_database').set({
+      ...resultData,
+      last_updated: admin.firestore.FieldValue.serverTimestamp()
+    }, { merge: true });
+
+    console.log(`[FaceDatabase] ${device_id} - Received ${type} result:`, resultData);
+
+    res.json({
+      status: 'ok',
+      message: 'Face database result saved successfully'
+    });
+  } catch (error) {
+    console.error('[FaceDatabase] Error saving face database result:', error);
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+};
+
+// @desc    Get current face database info (for frontend display)
+// @access  Private (requires user token)
+const getFaceDatabaseInfo = async (req, res) => {
+  try {
+    const { device_id } = req.params;
+
+    const db = getFirestore();
+    const deviceRef = db.collection('devices').doc(device_id);
+
+    // Get latest face database status from live_status
+    const faceDbDoc = await deviceRef
+      .collection('live_status')
+      .doc('face_database')
+      .get();
+
+    if (!faceDbDoc.exists) {
+      return res.json({
+        status: 'ok',
+        device_id,
+        face_database: null,
+        message: 'No face database information available'
+      });
+    }
+
+    const faceDbData = faceDbDoc.data();
+
+    res.json({
+      status: 'ok',
+      device_id,
+      face_database: {
+        type: faceDbData.type,
+        count: faceDbData.count || 0,
+        faces: faceDbData.faces || [],
+        db_status: faceDbData.status || 'unknown',
+        db_message: faceDbData.message || '',
+        last_updated: faceDbData.last_updated
+      }
+    });
+  } catch (error) {
+    console.error('[FaceDatabase] Error fetching face database info:', error);
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+};
+
 // ============================================================================
 // System Control Endpoints
 // ============================================================================
@@ -1783,6 +1885,8 @@ module.exports = {
   getFaceCount,
   listFaces,
   checkFaceDatabase,
+  handleFaceDatabaseResult,
+  getFaceDatabaseInfo,
   // System control
   restartSystem,
   // Device info
