@@ -6,10 +6,10 @@
 #include <ArduinoJson.h>
 
 // Configuration variables (set via initHeartbeat)
-const char* BACKEND_SERVER_URL = "";
-const char* DEVICE_ID = "";
-const char* DEVICE_TYPE = "";
-const char* DEVICE_API_TOKEN = "";
+const char *BACKEND_SERVER_URL = "";
+const char *DEVICE_ID = "";
+const char *DEVICE_TYPE = "";
+const char *DEVICE_API_TOKEN = "";
 
 // Status tracking
 static bool lastHeartbeatSuccess = false;
@@ -18,7 +18,8 @@ static unsigned long lastHeartbeatTime = 0;
 // ============================================================================
 // Initialize heartbeat module with server config
 // ============================================================================
-void initHeartbeat(const char* serverUrl, const char* deviceId, const char* deviceType, const char* apiToken) {
+void initHeartbeat(const char *serverUrl, const char *deviceId, const char *deviceType, const char *apiToken)
+{
   BACKEND_SERVER_URL = serverUrl;
   DEVICE_ID = deviceId;
   DEVICE_TYPE = deviceType;
@@ -34,9 +35,11 @@ void initHeartbeat(const char* serverUrl, const char* deviceId, const char* devi
 // Send heartbeat to backend server
 // Now checks for pending commands and fetches them automatically
 // ============================================================================
-void sendHeartbeat() {
+void sendHeartbeat()
+{
   // Check WiFi connection
-  if (WiFi.status() != WL_CONNECTED) {
+  if (WiFi.status() != WL_CONNECTED)
+  {
     Serial.println("[Heartbeat] WiFi not connected - skipping");
     lastHeartbeatSuccess = false;
     return;
@@ -45,11 +48,12 @@ void sendHeartbeat() {
   HTTPClient http;
   String url = String(BACKEND_SERVER_URL) + "/api/v1/devices/heartbeat";
 
-  http.begin(url);  // Plain HTTP - no SSL (memory optimization for ESP32)
+  http.begin(url); // Plain HTTP - no SSL (memory optimization for ESP32)
   http.addHeader("Content-Type", "application/json");
 
   // Add Authorization header with Bearer token
-  if (DEVICE_API_TOKEN && strlen(DEVICE_API_TOKEN) > 0) {
+  if (DEVICE_API_TOKEN && strlen(DEVICE_API_TOKEN) > 0)
+  {
     String authHeader = String("Bearer ") + DEVICE_API_TOKEN;
     http.addHeader("Authorization", authHeader.c_str());
   }
@@ -71,10 +75,12 @@ void sendHeartbeat() {
   // Send POST request
   int httpResponseCode = http.POST(jsonString);
 
-  if (httpResponseCode > 0) {
+  if (httpResponseCode > 0)
+  {
     String response = http.getString();
 
-    if (httpResponseCode == 200) {
+    if (httpResponseCode == 200)
+    {
       Serial.printf("[Heartbeat] ✓ Sent (code: %d)\n", httpResponseCode);
       lastHeartbeatSuccess = true;
       lastHeartbeatTime = millis();
@@ -82,32 +88,43 @@ void sendHeartbeat() {
       // Parse response to check for pending commands
       StaticJsonDocument<1024> responseDoc;
       DeserializationError error = deserializeJson(responseDoc, response);
-      if (!error) {
+      if (!error)
+      {
         // Check if data was written to Firebase
-        if (responseDoc.containsKey("written")) {
+        if (responseDoc.containsKey("written"))
+        {
           bool written = responseDoc["written"];
-          if (written) {
+          if (written)
+          {
             Serial.println("[Heartbeat] → Written to Firebase");
-          } else {
+          }
+          else
+          {
             Serial.println("[Heartbeat] → Throttled (cached)");
           }
         }
 
         // NEW: Check for pending commands
-        if (responseDoc.containsKey("has_pending_commands")) {
+        if (responseDoc.containsKey("has_pending_commands"))
+        {
           bool hasPendingCommands = responseDoc["has_pending_commands"];
-          if (hasPendingCommands) {
+          if (hasPendingCommands)
+          {
             Serial.println("[Heartbeat] → Server says we have pending commands!");
             // Immediately fetch and execute commands
             fetchAndExecuteCommands();
           }
         }
       }
-    } else {
+    }
+    else
+    {
       Serial.printf("[Heartbeat] ✗ Failed (code: %d)\n", httpResponseCode);
       lastHeartbeatSuccess = false;
     }
-  } else {
+  }
+  else
+  {
     Serial.printf("[Heartbeat] ✗ Connection failed: %s\n",
                   http.errorToString(httpResponseCode).c_str());
     lastHeartbeatSuccess = false;
@@ -119,8 +136,10 @@ void sendHeartbeat() {
 // ============================================================================
 // Send disconnect warning to backend (for 30+ second disconnects)
 // ============================================================================
-void sendDisconnectWarning(const char* module_name, bool isDisconnected) {
-  if (WiFi.status() != WL_CONNECTED) {
+void sendDisconnectWarning(const char *module_name, bool isDisconnected)
+{
+  if (WiFi.status() != WL_CONNECTED)
+  {
     Serial.println("[Warning] WiFi not connected - cannot send warning");
     return;
   }
@@ -128,7 +147,7 @@ void sendDisconnectWarning(const char* module_name, bool isDisconnected) {
   HTTPClient http;
   String url = String(BACKEND_SERVER_URL) + "/api/v1/devices/warning";
 
-  http.begin(url);  // Plain HTTP - no SSL (memory optimization for ESP32)
+  http.begin(url); // Plain HTTP - no SSL (memory optimization for ESP32)
   http.addHeader("Content-Type", "application/json");
   http.setTimeout(5000);
 
@@ -145,12 +164,15 @@ void sendDisconnectWarning(const char* module_name, bool isDisconnected) {
   // Send POST request
   int httpResponseCode = http.POST(jsonString);
 
-  if (httpResponseCode > 0) {
+  if (httpResponseCode > 0)
+  {
     Serial.printf("[Warning] Module '%s' %s - sent to server (code: %d)\n",
                   module_name,
                   isDisconnected ? "DISCONNECTED" : "RECONNECTED",
                   httpResponseCode);
-  } else {
+  }
+  else
+  {
     Serial.printf("[Warning] Failed to send warning: %s\n",
                   http.errorToString(httpResponseCode).c_str());
   }
@@ -161,8 +183,10 @@ void sendDisconnectWarning(const char* module_name, bool isDisconnected) {
 // ============================================================================
 // Send doorbell ring event to backend (notify hub to play audio)
 // ============================================================================
-void sendDoorbellRing() {
-  if (WiFi.status() != WL_CONNECTED) {
+void sendDoorbellRing()
+{
+  if (WiFi.status() != WL_CONNECTED)
+  {
     Serial.println("[Doorbell] WiFi not connected - skipping ring event");
     return;
   }
@@ -170,11 +194,12 @@ void sendDoorbellRing() {
   HTTPClient http;
   String url = String(BACKEND_SERVER_URL) + "/api/v1/devices/doorbell/ring";
 
-  http.begin(url);  // Plain HTTP - no SSL (memory optimization for ESP32)
+  http.begin(url); // Plain HTTP - no SSL (memory optimization for ESP32)
   http.addHeader("Content-Type", "application/json");
 
   // Add Authorization header with Bearer token
-  if (DEVICE_API_TOKEN && strlen(DEVICE_API_TOKEN) > 0) {
+  if (DEVICE_API_TOKEN && strlen(DEVICE_API_TOKEN) > 0)
+  {
     String authHeader = String("Bearer ") + DEVICE_API_TOKEN;
     http.addHeader("Authorization", authHeader.c_str());
   }
@@ -191,24 +216,31 @@ void sendDoorbellRing() {
   // Send POST request
   int httpResponseCode = http.POST(jsonString);
 
-  if (httpResponseCode > 0) {
+  if (httpResponseCode > 0)
+  {
     String response = http.getString();
 
-    if (httpResponseCode == 200) {
+    if (httpResponseCode == 200)
+    {
       Serial.printf("[Doorbell] ✓ Ring event sent (code: %d)\n", httpResponseCode);
 
       // Optional: Parse response
       StaticJsonDocument<1024> responseDoc;
       DeserializationError error = deserializeJson(responseDoc, response);
-      if (!error && responseDoc.containsKey("status")) {
-        const char* status = responseDoc["status"];
+      if (!error && responseDoc.containsKey("status"))
+      {
+        const char *status = responseDoc["status"];
         Serial.printf("[Doorbell] → Server response: %s\n", status);
       }
-    } else {
+    }
+    else
+    {
       Serial.printf("[Doorbell] ✗ Failed (code: %d)\n", httpResponseCode);
       Serial.printf("[Doorbell] Response: %s\n", response.c_str());
     }
-  } else {
+  }
+  else
+  {
     Serial.printf("[Doorbell] ✗ Connection failed: %s\n",
                   http.errorToString(httpResponseCode).c_str());
   }
@@ -220,8 +252,10 @@ void sendDoorbellRing() {
 // Send doorbell status to backend (camera_active, mic_active)
 // ALSO acts as heartbeat - resets TTL timer
 // ============================================================================
-void sendDoorbellStatus(bool camera_active, bool mic_active) {
-  if (WiFi.status() != WL_CONNECTED) {
+void sendDoorbellStatus(bool camera_active, bool mic_active)
+{
+  if (WiFi.status() != WL_CONNECTED)
+  {
     Serial.println("[DoorbellStatus] WiFi not connected - skipping");
     return;
   }
@@ -233,7 +267,8 @@ void sendDoorbellStatus(bool camera_active, bool mic_active) {
   http.addHeader("Content-Type", "application/json");
 
   // Add Authorization header with Bearer token
-  if (DEVICE_API_TOKEN && strlen(DEVICE_API_TOKEN) > 0) {
+  if (DEVICE_API_TOKEN && strlen(DEVICE_API_TOKEN) > 0)
+  {
     String authHeader = String("Bearer ") + DEVICE_API_TOKEN;
     http.addHeader("Authorization", authHeader.c_str());
   }
@@ -258,15 +293,21 @@ void sendDoorbellStatus(bool camera_active, bool mic_active) {
   // Send POST request
   int httpResponseCode = http.POST(jsonString);
 
-  if (httpResponseCode > 0) {
+  if (httpResponseCode > 0)
+  {
     String response = http.getString();
 
-    if (httpResponseCode == 200) {
+    if (httpResponseCode == 200)
+    {
       Serial.printf("[DoorbellStatus] ✓ Sent (code: %d, also acts as heartbeat)\n", httpResponseCode);
-    } else {
+    }
+    else
+    {
       Serial.printf("[DoorbellStatus] ✗ Failed (code: %d)\n", httpResponseCode);
     }
-  } else {
+  }
+  else
+  {
     Serial.printf("[DoorbellStatus] ✗ Connection failed: %s\n",
                   http.errorToString(httpResponseCode).c_str());
   }
@@ -278,8 +319,10 @@ void sendDoorbellStatus(bool camera_active, bool mic_active) {
 // Send face detection event to backend (saves to Firebase, publishes to Hub)
 // Uses chunked sending to avoid socket buffer overflow with large images
 // ============================================================================
-void sendFaceDetection(bool recognized, const char* name, float confidence, const uint8_t* imageData, size_t imageSize) {
-  if (WiFi.status() != WL_CONNECTED) {
+void sendFaceDetection(bool recognized, const char *name, float confidence, const uint8_t *imageData, size_t imageSize)
+{
+  if (WiFi.status() != WL_CONNECTED)
+  {
     Serial.println("[FaceDetection] WiFi not connected - skipping");
     return;
   }
@@ -292,17 +335,22 @@ void sendFaceDetection(bool recognized, const char* name, float confidence, cons
   int colonIdx = serverUrl.indexOf(':');
   int slashIdx = serverUrl.indexOf('/');
 
-  String host = (colonIdx > 0) ? serverUrl.substring(0, colonIdx) :
-                (slashIdx > 0) ? serverUrl.substring(0, slashIdx) : serverUrl;
+  String host = (colonIdx > 0) ? serverUrl.substring(0, colonIdx) : (slashIdx > 0) ? serverUrl.substring(0, slashIdx)
+                                                                                   : serverUrl;
   int port = (colonIdx > 0) ? serverUrl.substring(colonIdx + 1, (slashIdx > 0) ? slashIdx : serverUrl.length()).toInt() : 80;
   String path = (slashIdx > 0) ? serverUrl.substring(slashIdx) : "";
 
   // Ensure path construction avoids double slashes
-  if (path.length() == 0 || path == "/") {
+  if (path.length() == 0 || path == "/")
+  {
     path = "/api/v1/devices/doorbell/face-detection";
-  } else if (path.endsWith("/")) {
+  }
+  else if (path.endsWith("/"))
+  {
     path += "api/v1/devices/doorbell/face-detection";
-  } else {
+  }
+  else
+  {
     path += "/api/v1/devices/doorbell/face-detection";
   }
 
@@ -310,7 +358,8 @@ void sendFaceDetection(bool recognized, const char* name, float confidence, cons
 
   WiFiClient client;
 
-  if (!client.connect(host.c_str(), port)) {
+  if (!client.connect(host.c_str(), port))
+  {
     Serial.println("[FaceDetection] ✗ Connection failed");
     return;
   }
@@ -346,7 +395,8 @@ void sendFaceDetection(bool recognized, const char* name, float confidence, cons
 
   // Image header (if image provided)
   String imageHeader = "";
-  if (imageData != nullptr && imageSize > 0) {
+  if (imageData != nullptr && imageSize > 0)
+  {
     imageHeader += "--" + boundary + "\r\n";
     imageHeader += "Content-Disposition: form-data; name=\"image\"; filename=\"face.jpg\"\r\n";
     imageHeader += "Content-Type: image/jpeg\r\n\r\n";
@@ -364,11 +414,14 @@ void sendFaceDetection(bool recognized, const char* name, float confidence, cons
   client.print("Content-Length: " + String(contentLength) + "\r\n");
 
   // Add Authorization header with debug logging
-  if (DEVICE_API_TOKEN && strlen(DEVICE_API_TOKEN) > 0) {
+  if (DEVICE_API_TOKEN && strlen(DEVICE_API_TOKEN) > 0)
+  {
     String authHeader = "Authorization: Bearer " + String(DEVICE_API_TOKEN) + "\r\n";
     client.print(authHeader);
     Serial.printf("[FaceDetection] Sending auth header (token length: %d)\n", strlen(DEVICE_API_TOKEN));
-  } else {
+  }
+  else
+  {
     Serial.println("[FaceDetection] ⚠️  WARNING: No API token configured!");
   }
 
@@ -378,7 +431,8 @@ void sendFaceDetection(bool recognized, const char* name, float confidence, cons
   client.print(formData);
 
   // Send image in chunks if provided
-  if (imageData != nullptr && imageSize > 0) {
+  if (imageData != nullptr && imageSize > 0)
+  {
     client.print(imageHeader);
 
     const size_t CHUNK_SIZE = 512; // Send 512 bytes at a time (reduced from 1KB for reliability)
@@ -386,9 +440,11 @@ void sendFaceDetection(bool recognized, const char* name, float confidence, cons
 
     Serial.printf("[FaceDetection] Sending image in chunks (%u bytes total)\n", imageSize);
 
-    while (sent < imageSize) {
+    while (sent < imageSize)
+    {
       // Check if connection is still alive before writing
-      if (!client.connected()) {
+      if (!client.connected())
+      {
         Serial.printf("[FaceDetection] ✗ Connection lost at %u/%u bytes\n", sent, imageSize);
         client.stop();
         return;
@@ -397,7 +453,8 @@ void sendFaceDetection(bool recognized, const char* name, float confidence, cons
       size_t toSend = min(CHUNK_SIZE, imageSize - sent);
       size_t written = client.write(imageData + sent, toSend);
 
-      if (written != toSend) {
+      if (written != toSend)
+      {
         Serial.printf("[FaceDetection] ✗ Write failed at %u/%u bytes (expected %u, wrote %u)\n",
                       sent, imageSize, toSend, written);
         client.stop();
@@ -410,12 +467,14 @@ void sendFaceDetection(bool recognized, const char* name, float confidence, cons
       client.flush();
 
       // Delay to let socket buffer drain and server process data
-      if (sent < imageSize) {
+      if (sent < imageSize)
+      {
         delay(50); // Increased from 10ms to 50ms for better reliability
       }
 
       // Progress indicator every 2KB
-      if (sent % 2048 == 0) {
+      if (sent % 2048 == 0)
+      {
         Serial.printf("[FaceDetection] Progress: %u/%u bytes (%.1f%%)\n",
                       sent, imageSize, (sent * 100.0) / imageSize);
       }
@@ -431,8 +490,10 @@ void sendFaceDetection(bool recognized, const char* name, float confidence, cons
 
   // Wait for response
   unsigned long timeout = millis();
-  while (client.available() == 0) {
-    if (millis() - timeout > 15000) {
+  while (client.available() == 0)
+  {
+    if (millis() - timeout > 15000)
+    {
       Serial.println("[FaceDetection] ✗ Timeout waiting for response");
       client.stop();
       return;
@@ -445,38 +506,47 @@ void sendFaceDetection(bool recognized, const char* name, float confidence, cons
   int httpCode = 0;
   bool headersEnd = false;
 
-  while (client.available() && !headersEnd) {
+  while (client.available() && !headersEnd)
+  {
     String line = client.readStringUntil('\n');
-    if (line.startsWith("HTTP/1.")) {
+    if (line.startsWith("HTTP/1."))
+    {
       int spaceIdx = line.indexOf(' ');
-      if (spaceIdx > 0) {
+      if (spaceIdx > 0)
+      {
         httpCode = line.substring(spaceIdx + 1, spaceIdx + 4).toInt();
       }
     }
-    if (line == "\r" || line.length() == 0) {
+    if (line == "\r" || line.length() == 0)
+    {
       headersEnd = true;
     }
   }
 
   String responseBody = "";
-  while (client.available()) {
+  while (client.available())
+  {
     responseBody += client.readString();
   }
 
   client.stop();
 
-  if (httpCode == 200) {
+  if (httpCode == 200)
+  {
     Serial.printf("[FaceDetection] ✓ Sent to backend (recognized: %s, name: %s, conf: %.2f)\n",
                   recognized ? "Yes" : "No", name, confidence);
 
     // Parse response
     StaticJsonDocument<1024> responseDoc;
     DeserializationError error = deserializeJson(responseDoc, responseBody);
-    if (!error && responseDoc.containsKey("event_id")) {
-      const char* eventId = responseDoc["event_id"];
+    if (!error && responseDoc.containsKey("event_id"))
+    {
+      const char *eventId = responseDoc["event_id"];
       Serial.printf("[FaceDetection] → Event ID: %s\n", eventId);
     }
-  } else {
+  }
+  else
+  {
     Serial.printf("[FaceDetection] ✗ Failed (code: %d)\n", httpCode);
     Serial.printf("[FaceDetection] Response: %s\n", responseBody.c_str());
   }
@@ -485,16 +555,20 @@ void sendFaceDetection(bool recognized, const char* name, float confidence, cons
 // ============================================================================
 // Send face detection event asynchronously (NON-BLOCKING)
 // ============================================================================
-bool sendFaceDetectionAsync(bool recognized, const char* name, float confidence,
-                            const uint8_t* imageData, size_t imageSize) {
+bool sendFaceDetectionAsync(bool recognized, const char *name, float confidence,
+                            const uint8_t *imageData, size_t imageSize)
+{
   Serial.printf("[Heartbeat] Queueing face detection (async) - recognized: %s, name: %s\n",
                 recognized ? "Yes" : "No", name);
 
   bool success = queueFaceDetection(recognized, name, confidence, imageData, imageSize);
 
-  if (success) {
+  if (success)
+  {
     Serial.println("[Heartbeat] ✓ Face detection queued (non-blocking)");
-  } else {
+  }
+  else
+  {
     Serial.println("[Heartbeat] ✗ Failed to queue (queue full or error)");
   }
 
@@ -504,8 +578,10 @@ bool sendFaceDetectionAsync(bool recognized, const char* name, float confidence,
 // ============================================================================
 // Fetch and execute pending commands from backend
 // ============================================================================
-void fetchAndExecuteCommands() {
-  if (WiFi.status() != WL_CONNECTED) {
+void fetchAndExecuteCommands()
+{
+  if (WiFi.status() != WL_CONNECTED)
+  {
     Serial.println("[Commands] WiFi not connected - cannot fetch commands");
     return;
   }
@@ -517,7 +593,8 @@ void fetchAndExecuteCommands() {
   http.addHeader("Content-Type", "application/json");
 
   // Add Authorization header with Bearer token
-  if (DEVICE_API_TOKEN && strlen(DEVICE_API_TOKEN) > 0) {
+  if (DEVICE_API_TOKEN && strlen(DEVICE_API_TOKEN) > 0)
+  {
     String authHeader = String("Bearer ") + DEVICE_API_TOKEN;
     http.addHeader("Authorization", authHeader.c_str());
   }
@@ -534,20 +611,23 @@ void fetchAndExecuteCommands() {
   // Send POST request
   int httpResponseCode = http.POST(jsonString);
 
-  if (httpResponseCode == 200) {
+  if (httpResponseCode == 200)
+  {
     String response = http.getString();
 
     // Parse response
     StaticJsonDocument<2048> responseDoc;
     DeserializationError error = deserializeJson(responseDoc, response);
 
-    if (!error && responseDoc.containsKey("commands")) {
+    if (!error && responseDoc.containsKey("commands"))
+    {
       JsonArray commands = responseDoc["commands"];
       int commandCount = commands.size();
 
       Serial.printf("[Commands] Fetched %d pending command(s)\n", commandCount);
 
-      for (JsonObject cmd : commands) {
+      for (JsonObject cmd : commands)
+      {
         String commandId = cmd["id"].as<String>();
         String action = cmd["action"].as<String>();
         JsonObject params = cmd["params"];
@@ -572,7 +652,9 @@ void fetchAndExecuteCommands() {
         acknowledgeCommand(commandId, success, action);
       }
     }
-  } else {
+  }
+  else
+  {
     Serial.printf("[Commands] Failed to fetch (code: %d)\n", httpResponseCode);
   }
 
@@ -582,7 +664,8 @@ void fetchAndExecuteCommands() {
 // ============================================================================
 // Execute a command received from backend
 // ============================================================================
-bool executeCommand(String action, JsonObject params) {
+bool executeCommand(String action, JsonObject params)
+{
   Serial.printf("[Commands] Executing action: %s\n", action.c_str());
 
   // Camera commands
@@ -590,7 +673,8 @@ bool executeCommand(String action, JsonObject params) {
     sendUARTCommand("camera_control", "camera_start");
     return true;
   }
-  else if (action == "camera_stop") {
+  else if (action == "camera_stop")
+  {
     sendUARTCommand("camera_control", "camera_stop");
     return true;
   }
@@ -666,7 +750,8 @@ bool executeCommand(String action, JsonObject params) {
     sendUARTCommand("resume_detection");
     return true;
   }
-  else if (action == "recording_stop") {
+  else if (action == "recording_stop")
+  {
     sendUARTCommand("stop_detection");
     return true;
   }
@@ -681,8 +766,10 @@ bool executeCommand(String action, JsonObject params) {
 // ============================================================================
 // Acknowledge command execution to backend
 // ============================================================================
-void acknowledgeCommand(String commandId, bool success, String action) {
-  if (WiFi.status() != WL_CONNECTED) {
+void acknowledgeCommand(String commandId, bool success, String action)
+{
+  if (WiFi.status() != WL_CONNECTED)
+  {
     Serial.println("[Commands] WiFi not connected - cannot acknowledge");
     return;
   }
@@ -694,7 +781,8 @@ void acknowledgeCommand(String commandId, bool success, String action) {
   http.addHeader("Content-Type", "application/json");
 
   // Add Authorization header with Bearer token
-  if (DEVICE_API_TOKEN && strlen(DEVICE_API_TOKEN) > 0) {
+  if (DEVICE_API_TOKEN && strlen(DEVICE_API_TOKEN) > 0)
+  {
     String authHeader = String("Bearer ") + DEVICE_API_TOKEN;
     http.addHeader("Authorization", authHeader.c_str());
   }
@@ -706,9 +794,12 @@ void acknowledgeCommand(String commandId, bool success, String action) {
   doc["device_id"] = DEVICE_ID;
   doc["command_id"] = commandId;
   doc["success"] = success;
-  if (success) {
+  if (success)
+  {
     doc["result"] = "Command executed: " + action;
-  } else {
+  }
+  else
+  {
     doc["error"] = "Failed to execute: " + action;
   }
 
@@ -718,10 +809,13 @@ void acknowledgeCommand(String commandId, bool success, String action) {
   // Send POST request
   int httpResponseCode = http.POST(jsonString);
 
-  if (httpResponseCode == 200) {
+  if (httpResponseCode == 200)
+  {
     Serial.printf("[Commands] ✓ Acknowledged command %s (%s)\n",
                   commandId.c_str(), success ? "success" : "failed");
-  } else {
+  }
+  else
+  {
     Serial.printf("[Commands] ✗ Failed to acknowledge (code: %d)\n", httpResponseCode);
   }
 
@@ -731,10 +825,12 @@ void acknowledgeCommand(String commandId, bool success, String action) {
 // ============================================================================
 // Status getters
 // ============================================================================
-bool getLastHeartbeatSuccess() {
+bool getLastHeartbeatSuccess()
+{
   return lastHeartbeatSuccess;
 }
 
-unsigned long getLastHeartbeatTime() {
+unsigned long getLastHeartbeatTime()
+{
   return lastHeartbeatTime;
 }

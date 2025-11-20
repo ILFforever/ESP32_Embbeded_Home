@@ -4,11 +4,12 @@
 #include <TFT_eSPI.h>
 #include <SPI.h>
 #include <WiFi.h>
+//#include "WiFiServer.h"
 #include <TaskScheduler.h>
 #include "uart_commands.h"
 #include "lcd_helper.h"
 #include "nfc_controller.h"
-#include "http_control.h"
+// #include "http_control.h"  // DISABLED: HTTP server to save ~10-14KB RAM
 #include "SPIMaster.h"
 #include "slave_state_manager.h"
 #include "weather.h"
@@ -276,8 +277,41 @@ void setup()
     Serial.println("[MAIN] NFC initialized");
   }
 
+  // Initialize WiFi (needed for backend communication, weather, heartbeat, MQTT)
+  Serial.println("\n=== WiFi Setup ===");
+  Serial.printf("Connecting to %s...\n", "ILFforever2");
+  WiFi.mode(WIFI_STA);
+  WiFi.setAutoReconnect(true);
+  WiFi.setAutoConnect(true);
+  WiFi.setSleep(false); // Disable WiFi sleep for better stability
+  WiFi.begin("ILFforever2", "19283746");
+
+  int wifi_timeout = 20; // 20 second timeout
+  while (WiFi.status() != WL_CONNECTED && wifi_timeout > 0)
+  {
+    delay(500);
+    Serial.print(".");
+    wifi_timeout--;
+  }
+
+  if (WiFi.status() == WL_CONNECTED)
+  {
+    Serial.println("\n✅ WiFi Connected!");
+    Serial.print("IP Address: ");
+    Serial.println(WiFi.localIP());
+
+    // Configure NTP for Thailand (UTC+7)
+    Serial.println("Configuring time for Thailand (UTC+7)...");
+    configTime(7 * 3600, 0, "pool.ntp.org");
+  }
+  else
+  {
+    Serial.println("\n❌ WiFi Connection Failed!");
+    Serial.println("Backend communication will not work");
+  }
+
   // Initialize HTTP server
-  initHTTPServer();
+  // initHTTPServer();  // DISABLED: HTTP server to save ~10-14KB RAM (WiFi init moved above)
   delay(50);
 
   // Initialize weather module
@@ -291,14 +325,14 @@ void setup()
   // TODO: Update device_id and token after registering via POST /api/v1/devices/register
   initHeartbeat(
       "http://embedded-smarthome.fly.dev",                               // HTTP (not HTTPS) - ESP32 memory optimization
-      "db_001",                                                           // Device ID (must match registration)
+      "db_001",                                                          // Device ID (must match registration)
       "doorbell",                                                        // Device type
       "d8ac2f1ee97b4a8b3f299696773e807e735284c47cfc30aadef1287e10a53b6d" // API token (from registration response)
   );
   Serial.println("[MAIN] Heartbeat module initialized");
 
   // Initialize MQTT client (WiFi already initialized by heartbeat module)
-  initDoorbellMQTT("db_001");  // Same device ID as heartbeat
+  initDoorbellMQTT("db_001"); // Same device ID as heartbeat
   connectDoorbellMQTT();
   Serial.println("[MAIN] MQTT client initialized - will publish doorbell rings");
 
@@ -1131,7 +1165,12 @@ void onCardDetected(NFCCardData card)
 // Task: WiFi Watchdog - check connection health
 void wifiWatchdogTask()
 {
-  checkWiFiConnection();
+  // Check WiFi connection (HTTP server disabled, but WiFi needed for backend communication)
+  if (WiFi.status() != WL_CONNECTED)
+  {
+    Serial.println("⚠️ WiFi disconnected! Attempting reconnect...");
+    WiFi.reconnect();
+  }
 }
 
 // Helper function to update button state with debouncing
@@ -1220,9 +1259,9 @@ void updateButtonState(ButtonState &btn, int pin, const char *buttonName)
           {
             // Start face recognition with preview
             sendUARTCommand("camera_control", "camera_start");
-            //delay(100);
+            // delay(100);
             sendUARTCommand("resume_detection");
-            //delay(500); // Show face bounding box for half a second
+            // delay(500); // Show face bounding box for half a second
             sendUARTCommand("recognize_face");
 
             // Start face recognition timeout timer
