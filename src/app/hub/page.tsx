@@ -3,87 +3,98 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import ProtectedRoute from '@/components/auth/ProtectedRoute';
-import { getAllDevices } from '@/services/devices.service';
-import type { Device } from '@/types/dashboard';
+import {
+  getAllDevices,
+  findHubDevice,
+  getHubSensorData,
+  restartSystem,
+  getDeviceStatusClass,
+  getDeviceStatusText,
+  getAQICategory
+} from '@/services/devices.service';
+import type { Device, HubSensorData } from '@/types/dashboard';
+import { Thermometer, Droplets, Wind, Activity, Power, RefreshCw } from 'lucide-react';
 
 export default function HubControlPage() {
   const router = useRouter();
   const [hubDevice, setHubDevice] = useState<Device | null>(null);
-  const [isOnline, setIsOnline] = useState(false);
+  const [sensorData, setSensorData] = useState<HubSensorData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [settings, setSettings] = useState({
-    autoDiscovery: true,
-    cloudSync: true,
-    localStorage: true,
-    encryption: true,
-    autoUpdate: false,
-    debugMode: false,
-    mqttEnabled: true,
-    restApiEnabled: true,
-  });
+  const [restarting, setRestarting] = useState(false);
 
   useEffect(() => {
-    const fetchDeviceStatus = async () => {
+    const fetchData = async () => {
       try {
         const devicesStatus = await getAllDevices();
-        const hub = devicesStatus.devices.find(d => d.type === 'hub' || d.type === 'main_lcd');
+        const hub = findHubDevice(devicesStatus.devices);
 
         if (hub) {
           setHubDevice(hub);
 
-          // Determine if device is online (last seen within 2 minutes)
-          if (hub.last_seen) {
-            const lastSeenDate = new Date(hub.last_seen);
-            const now = new Date();
-            const diffMinutes = (now.getTime() - lastSeenDate.getTime()) / 60000;
-            setIsOnline(diffMinutes < 2);
-          } else {
-            setIsOnline(false);
-          }
+          // Fetch sensor data
+          const sensors = await getHubSensorData(hub.device_id);
+          setSensorData(sensors);
         }
       } catch (error) {
-        console.error('Error fetching hub status:', error);
+        console.error('Error fetching hub data:', error);
       } finally {
         setLoading(false);
       }
     };
 
-    fetchDeviceStatus();
+    fetchData();
     // Refresh every 5 seconds
-    const interval = setInterval(fetchDeviceStatus, 5000);
+    const interval = setInterval(fetchData, 5000);
     return () => clearInterval(interval);
   }, []);
 
-  const toggleSetting = (key: keyof typeof settings) => {
-    setSettings(prev => ({
-      ...prev,
-      [key]: !prev[key]
-    }));
+  const handleRestart = async () => {
+    if (!hubDevice) return;
+
+    const confirmed = confirm('Are you sure you want to restart the hub? This will take a few minutes.');
+    if (!confirmed) return;
+
+    try {
+      setRestarting(true);
+      await restartSystem(hubDevice.device_id);
+      alert('Hub restart command sent successfully!');
+    } catch (error) {
+      console.error('Error restarting hub:', error);
+      alert('Failed to restart hub. Please try again.');
+    } finally {
+      setRestarting(false);
+    }
   };
 
-  const getStatusClass = () => {
-    if (!hubDevice || !hubDevice.last_seen) return 'status-offline';
-
-    const lastSeenDate = new Date(hubDevice.last_seen);
-    const now = new Date();
-    const diffMinutes = (now.getTime() - lastSeenDate.getTime()) / 60000;
-
-    if (diffMinutes < 2) return 'status-online';
-    if (diffMinutes < 5) return 'status-warning';
-    return 'status-offline';
+  const getTemperatureStatus = (temp: number) => {
+    if (temp < 18) return { text: 'Cold', color: '#4FC3F7', status: 'status-warning' };
+    if (temp <= 25) return { text: 'Comfortable', color: 'var(--success)', status: 'status-online' };
+    if (temp <= 30) return { text: 'Warm', color: 'var(--warning)', status: 'status-warning' };
+    return { text: 'Hot', color: 'var(--danger)', status: 'status-offline' };
   };
 
-  const getStatusText = () => {
-    if (!hubDevice || !hubDevice.last_seen) return 'OFFLINE';
-
-    const lastSeenDate = new Date(hubDevice.last_seen);
-    const now = new Date();
-    const diffMinutes = Math.floor((now.getTime() - lastSeenDate.getTime()) / 60000);
-
-    if (diffMinutes < 2) return 'ONLINE';
-    if (diffMinutes < 5) return `LAST SEEN ${diffMinutes}M AGO`;
-    return 'OFFLINE';
+  const getHumidityStatus = (humidity: number) => {
+    if (humidity < 30) return { text: 'Dry', color: 'var(--warning)', status: 'status-warning' };
+    if (humidity <= 60) return { text: 'Comfortable', color: 'var(--success)', status: 'status-online' };
+    return { text: 'Humid', color: 'var(--warning)', status: 'status-warning' };
   };
+
+  if (loading) {
+    return (
+      <ProtectedRoute>
+        <div className="dashboard-loading">
+          <div className="loading-spinner"></div>
+          <p>Loading hub data...</p>
+        </div>
+      </ProtectedRoute>
+    );
+  }
+
+  const statusClass = hubDevice ? getDeviceStatusClass(hubDevice.online, hubDevice.last_seen) : 'status-offline';
+  const statusText = hubDevice ? getDeviceStatusText(hubDevice.online, hubDevice.last_seen) : 'OFFLINE';
+  const tempStatus = sensorData?.dht11 ? getTemperatureStatus(sensorData.dht11.temperature) : null;
+  const humidityStatus = sensorData?.dht11 ? getHumidityStatus(sensorData.dht11.humidity) : null;
+  const aqiData = sensorData?.pm25?.aqi ? getAQICategory(sensorData.pm25.aqi) : null;
 
   return (
     <ProtectedRoute>
@@ -98,309 +109,327 @@ export default function HubControlPage() {
             </div>
             <div className="dashboard-header-right">
               <div className="header-info">
-                <span className={`status-dot ${getStatusClass()}`}></span>
-                <span>{getStatusText()}</span>
+                <span className={`status-dot ${statusClass}`}></span>
+                <span>{statusText}</span>
               </div>
             </div>
           </header>
 
           <div className="control-page-grid">
-            {/* System Overview */}
+            {/* Temperature Card (DHT11) */}
+            <div className="card">
+              <div className="card-header">
+                <div className="card-title-group">
+                  <Thermometer size={24} />
+                  <h3>TEMPERATURE</h3>
+                </div>
+                {tempStatus && (
+                  <span className={`status-indicator ${tempStatus.status}`}>
+                    {tempStatus.text}
+                  </span>
+                )}
+              </div>
+              <div className="card-content">
+                {sensorData?.dht11 ? (
+                  <>
+                    <div
+                      className="card-value"
+                      style={{
+                        fontSize: '56px',
+                        color: tempStatus?.color,
+                        textAlign: 'center',
+                        margin: '20px 0'
+                      }}
+                    >
+                      {sensorData.dht11.temperature.toFixed(1)}°C
+                    </div>
+                    <div style={{ textAlign: 'center', color: 'var(--text-secondary)' }}>
+                      <p style={{ fontSize: '14px', marginBottom: '8px' }}>
+                        Last updated: {new Date(sensorData.timestamp).toLocaleTimeString()}
+                      </p>
+                      <div className="temp-ranges" style={{
+                        display: 'flex',
+                        justifyContent: 'space-around',
+                        marginTop: '16px',
+                        padding: '12px',
+                        background: 'rgba(0,0,0,0.3)',
+                        borderRadius: '8px'
+                      }}>
+                        <div>
+                          <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Comfort Range</div>
+                          <div style={{ fontSize: '14px', fontWeight: 'bold' }}>18-25°C</div>
+                        </div>
+                        <div>
+                          <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Device</div>
+                          <div style={{ fontSize: '14px', fontWeight: 'bold' }}>DHT11</div>
+                        </div>
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <div className="no-alerts">
+                    <Activity size={48} style={{ margin: '0 auto 16px', opacity: 0.3 }} />
+                    <p>No temperature data available</p>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Humidity Card (DHT11) */}
+            <div className="card">
+              <div className="card-header">
+                <div className="card-title-group">
+                  <Droplets size={24} />
+                  <h3>HUMIDITY</h3>
+                </div>
+                {humidityStatus && (
+                  <span className={`status-indicator ${humidityStatus.status}`}>
+                    {humidityStatus.text}
+                  </span>
+                )}
+              </div>
+              <div className="card-content">
+                {sensorData?.dht11 ? (
+                  <>
+                    <div
+                      className="card-value"
+                      style={{
+                        fontSize: '56px',
+                        color: humidityStatus?.color,
+                        textAlign: 'center',
+                        margin: '20px 0'
+                      }}
+                    >
+                      {sensorData.dht11.humidity.toFixed(1)}%
+                    </div>
+                    <div style={{ textAlign: 'center', color: 'var(--text-secondary)' }}>
+                      <p style={{ fontSize: '14px', marginBottom: '8px' }}>
+                        Last updated: {new Date(sensorData.timestamp).toLocaleTimeString()}
+                      </p>
+                      <div className="progress-bar" style={{ marginTop: '16px' }}>
+                        <div
+                          className="progress-fill"
+                          style={{
+                            width: `${Math.min(sensorData.dht11.humidity, 100)}%`,
+                            background: humidityStatus?.color
+                          }}
+                        ></div>
+                      </div>
+                      <div style={{
+                        display: 'flex',
+                        justifyContent: 'space-around',
+                        marginTop: '16px',
+                        padding: '12px',
+                        background: 'rgba(0,0,0,0.3)',
+                        borderRadius: '8px'
+                      }}>
+                        <div>
+                          <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Comfort Range</div>
+                          <div style={{ fontSize: '14px', fontWeight: 'bold' }}>30-60%</div>
+                        </div>
+                        <div>
+                          <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Device</div>
+                          <div style={{ fontSize: '14px', fontWeight: 'bold' }}>DHT11</div>
+                        </div>
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <div className="no-alerts">
+                    <Activity size={48} style={{ margin: '0 auto 16px', opacity: 0.3 }} />
+                    <p>No humidity data available</p>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Air Quality Card (PM2.5) */}
             <div className="card control-card-large">
               <div className="card-header">
-                <h3>SYSTEM OVERVIEW</h3>
+                <div className="card-title-group">
+                  <Wind size={24} />
+                  <h3>AIR QUALITY (PM2.5)</h3>
+                </div>
+                {aqiData && (
+                  <span className={`status-indicator ${aqiData.status}`}>
+                    {aqiData.category}
+                  </span>
+                )}
               </div>
               <div className="card-content">
-                <div className="hub-stats-grid">
-                  <div className="stat-card">
-                    <div className="stat-icon">🔧</div>
-                    <div className="stat-info">
-                      <span className="stat-value">12</span>
-                      <span className="stat-label">Connected Devices</span>
+                {sensorData?.pm25 ? (
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '20px' }}>
+                    <div style={{ textAlign: 'center' }}>
+                      <div style={{ fontSize: '14px', color: 'var(--text-muted)', marginBottom: '8px' }}>PM2.5</div>
+                      <div
+                        className="card-value"
+                        style={{
+                          fontSize: '48px',
+                          color: aqiData?.color
+                        }}
+                      >
+                        {sensorData.pm25.pm25.toFixed(1)}
+                      </div>
+                      <div style={{ fontSize: '14px', color: 'var(--text-secondary)' }}>μg/m³</div>
                     </div>
-                  </div>
-                  <div className="stat-card">
-                    <div className="stat-icon">📊</div>
-                    <div className="stat-info">
-                      <span className="stat-value">1.2K</span>
-                      <span className="stat-label">Messages/Hour</span>
-                    </div>
-                  </div>
-                  <div className="stat-card">
-                    <div className="stat-icon">💾</div>
-                    <div className="stat-info">
-                      <span className="stat-value">45%</span>
-                      <span className="stat-label">Storage Used</span>
-                    </div>
-                  </div>
-                  <div className="stat-card">
-                    <div className="stat-icon">⏱️</div>
-                    <div className="stat-info">
-                      <span className="stat-value">99.9%</span>
-                      <span className="stat-label">Uptime</span>
-                    </div>
-                  </div>
-                </div>
 
-                <div className="resource-meters">
-                  <div className="meter-item">
-                    <div className="meter-header">
-                      <span>CPU Usage</span>
-                      <span>32%</span>
-                    </div>
-                    <div className="progress-bar">
-                      <div className="progress-fill" style={{ width: '32%' }}></div>
-                    </div>
+                    {sensorData.pm25.pm10 !== undefined && (
+                      <div style={{ textAlign: 'center' }}>
+                        <div style={{ fontSize: '14px', color: 'var(--text-muted)', marginBottom: '8px' }}>PM10</div>
+                        <div
+                          className="card-value"
+                          style={{ fontSize: '48px' }}
+                        >
+                          {sensorData.pm25.pm10.toFixed(1)}
+                        </div>
+                        <div style={{ fontSize: '14px', color: 'var(--text-secondary)' }}>μg/m³</div>
+                      </div>
+                    )}
+
+                    {sensorData.pm25.aqi !== undefined && (
+                      <div style={{ textAlign: 'center' }}>
+                        <div style={{ fontSize: '14px', color: 'var(--text-muted)', marginBottom: '8px' }}>AQI</div>
+                        <div
+                          className="card-value"
+                          style={{
+                            fontSize: '48px',
+                            color: aqiData?.color
+                          }}
+                        >
+                          {sensorData.pm25.aqi}
+                        </div>
+                        <div style={{ fontSize: '14px', color: aqiData?.color, fontWeight: 'bold' }}>
+                          {aqiData?.category}
+                        </div>
+                      </div>
+                    )}
                   </div>
-                  <div className="meter-item">
-                    <div className="meter-header">
-                      <span>Memory</span>
-                      <span>58%</span>
-                    </div>
-                    <div className="progress-bar">
-                      <div className="progress-fill" style={{ width: '58%' }}></div>
-                    </div>
+                ) : (
+                  <div className="no-alerts">
+                    <Wind size={64} style={{ margin: '0 auto 16px', opacity: 0.3 }} />
+                    <p>No air quality data available</p>
                   </div>
-                  <div className="meter-item">
-                    <div className="meter-header">
-                      <span>Network</span>
-                      <span>12 Mbps</span>
+                )}
+
+                {sensorData?.pm25 && (
+                  <div style={{
+                    marginTop: '24px',
+                    padding: '16px',
+                    background: 'rgba(0,0,0,0.3)',
+                    borderRadius: '8px',
+                    borderLeft: `4px solid ${aqiData?.color}`
+                  }}>
+                    <h4 style={{ marginBottom: '12px', color: 'var(--primary)' }}>AQI Information</h4>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '8px', fontSize: '12px' }}>
+                      <div>
+                        <span style={{ color: 'var(--success)' }}>● 0-50:</span> Good
+                      </div>
+                      <div>
+                        <span style={{ color: 'var(--warning)' }}>● 51-100:</span> Moderate
+                      </div>
+                      <div>
+                        <span style={{ color: '#FF9800' }}>● 101-150:</span> Unhealthy for Sensitive
+                      </div>
+                      <div>
+                        <span style={{ color: 'var(--danger)' }}>● 151-200:</span> Unhealthy
+                      </div>
+                      <div>
+                        <span style={{ color: '#9C27B0' }}>● 201-300:</span> Very Unhealthy
+                      </div>
+                      <div>
+                        <span style={{ color: '#880E4F' }}>● 301+:</span> Hazardous
+                      </div>
                     </div>
-                    <div className="progress-bar">
-                      <div className="progress-fill" style={{ width: '45%' }}></div>
-                    </div>
+                    <p style={{ marginTop: '12px', fontSize: '12px', color: 'var(--text-secondary)' }}>
+                      Last updated: {new Date(sensorData.timestamp).toLocaleString()}
+                    </p>
                   </div>
-                </div>
+                )}
               </div>
             </div>
 
-            {/* Hub Settings */}
+            {/* Hub Information Card */}
             <div className="card">
               <div className="card-header">
-                <h3>HUB SETTINGS</h3>
+                <div className="card-title-group">
+                  <Activity size={24} />
+                  <h3>HUB INFORMATION</h3>
+                </div>
               </div>
               <div className="card-content">
-                <div className="settings-list">
-                  <div className="setting-item">
-                    <div className="setting-info">
-                      <span className="setting-label">Auto Discovery</span>
-                      <span className="setting-description">Automatically find new devices</span>
+                {hubDevice ? (
+                  <>
+                    <div className="info-grid">
+                      <div className="info-item">
+                        <span className="info-label">Device ID:</span>
+                        <span className="info-value">{hubDevice.device_id}</span>
+                      </div>
+                      <div className="info-item">
+                        <span className="info-label">Status:</span>
+                        <span className={`info-value status-indicator ${statusClass}`}>
+                          {hubDevice.online ? 'Online' : 'Offline'}
+                        </span>
+                      </div>
+                      <div className="info-item">
+                        <span className="info-label">Type:</span>
+                        <span className="info-value">{hubDevice.type}</span>
+                      </div>
+                      <div className="info-item">
+                        <span className="info-label">IP Address:</span>
+                        <span className="info-value">{hubDevice.ip_address || 'N/A'}</span>
+                      </div>
+                      <div className="info-item">
+                        <span className="info-label">Last Seen:</span>
+                        <span className="info-value">
+                          {hubDevice.last_seen ? new Date(hubDevice.last_seen).toLocaleString() : 'Never'}
+                        </span>
+                      </div>
+                      <div className="info-item">
+                        <span className="info-label">WiFi Signal:</span>
+                        <span className="info-value">
+                          {hubDevice.wifi_rssi ? `${hubDevice.wifi_rssi} dBm` : 'N/A'}
+                        </span>
+                      </div>
+                      <div className="info-item">
+                        <span className="info-label">Uptime:</span>
+                        <span className="info-value">
+                          {hubDevice.uptime_ms ? `${Math.floor(hubDevice.uptime_ms / 3600000)}h ${Math.floor((hubDevice.uptime_ms % 3600000) / 60000)}m` : 'N/A'}
+                        </span>
+                      </div>
+                      <div className="info-item">
+                        <span className="info-label">Free Heap:</span>
+                        <span className="info-value">
+                          {hubDevice.free_heap ? `${(hubDevice.free_heap / 1024).toFixed(1)} KB` : 'N/A'}
+                        </span>
+                      </div>
                     </div>
-                    <label className="toggle-switch">
-                      <input
-                        type="checkbox"
-                        checked={settings.autoDiscovery}
-                        onChange={() => toggleSetting('autoDiscovery')}
-                      />
-                      <span className="toggle-slider"></span>
-                    </label>
-                  </div>
 
-                  <div className="setting-item">
-                    <div className="setting-info">
-                      <span className="setting-label">Cloud Sync</span>
-                      <span className="setting-description">Sync data to cloud</span>
+                    <div className="action-buttons" style={{ marginTop: '20px' }}>
+                      <button
+                        className="btn-action"
+                        onClick={handleRestart}
+                        disabled={restarting || !hubDevice.online}
+                        style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
+                      >
+                        {restarting ? (
+                          <>
+                            <RefreshCw size={18} className="rotating" />
+                            <span>Restarting...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Power size={18} />
+                            <span>Restart Hub</span>
+                          </>
+                        )}
+                      </button>
                     </div>
-                    <label className="toggle-switch">
-                      <input
-                        type="checkbox"
-                        checked={settings.cloudSync}
-                        onChange={() => toggleSetting('cloudSync')}
-                      />
-                      <span className="toggle-slider"></span>
-                    </label>
+                  </>
+                ) : (
+                  <div className="no-alerts">
+                    <p>No hub device found</p>
                   </div>
-
-                  <div className="setting-item">
-                    <div className="setting-info">
-                      <span className="setting-label">Local Storage</span>
-                      <span className="setting-description">Store data locally</span>
-                    </div>
-                    <label className="toggle-switch">
-                      <input
-                        type="checkbox"
-                        checked={settings.localStorage}
-                        onChange={() => toggleSetting('localStorage')}
-                      />
-                      <span className="toggle-slider"></span>
-                    </label>
-                  </div>
-
-                  <div className="setting-item">
-                    <div className="setting-info">
-                      <span className="setting-label">Encryption</span>
-                      <span className="setting-description">Encrypt all communications</span>
-                    </div>
-                    <label className="toggle-switch">
-                      <input
-                        type="checkbox"
-                        checked={settings.encryption}
-                        onChange={() => toggleSetting('encryption')}
-                      />
-                      <span className="toggle-slider"></span>
-                    </label>
-                  </div>
-
-                  <div className="setting-item">
-                    <div className="setting-info">
-                      <span className="setting-label">Auto Update</span>
-                      <span className="setting-description">Install updates automatically</span>
-                    </div>
-                    <label className="toggle-switch">
-                      <input
-                        type="checkbox"
-                        checked={settings.autoUpdate}
-                        onChange={() => toggleSetting('autoUpdate')}
-                      />
-                      <span className="toggle-slider"></span>
-                    </label>
-                  </div>
-
-                  <div className="setting-item">
-                    <div className="setting-info">
-                      <span className="setting-label">Debug Mode</span>
-                      <span className="setting-description">Enable verbose logging</span>
-                    </div>
-                    <label className="toggle-switch">
-                      <input
-                        type="checkbox"
-                        checked={settings.debugMode}
-                        onChange={() => toggleSetting('debugMode')}
-                      />
-                      <span className="toggle-slider"></span>
-                    </label>
-                  </div>
-
-                  <div className="setting-item">
-                    <div className="setting-info">
-                      <span className="setting-label">MQTT Protocol</span>
-                      <span className="setting-description">Enable MQTT messaging</span>
-                    </div>
-                    <label className="toggle-switch">
-                      <input
-                        type="checkbox"
-                        checked={settings.mqttEnabled}
-                        onChange={() => toggleSetting('mqttEnabled')}
-                      />
-                      <span className="toggle-slider"></span>
-                    </label>
-                  </div>
-
-                  <div className="setting-item">
-                    <div className="setting-info">
-                      <span className="setting-label">REST API</span>
-                      <span className="setting-description">Enable HTTP REST API</span>
-                    </div>
-                    <label className="toggle-switch">
-                      <input
-                        type="checkbox"
-                        checked={settings.restApiEnabled}
-                        onChange={() => toggleSetting('restApiEnabled')}
-                      />
-                      <span className="toggle-slider"></span>
-                    </label>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Connected Devices */}
-            <div className="card">
-              <div className="card-header">
-                <h3>CONNECTED DEVICES</h3>
-              </div>
-              <div className="card-content">
-                <div className="devices-list">
-                  <div className="device-item">
-                    <span className="device-icon">🚪</span>
-                    <div className="device-details">
-                      <span className="device-name">Doorbell Camera</span>
-                      <span className="device-id">doorbell_001</span>
-                    </div>
-                    <span className="status-indicator status-online">ONLINE</span>
-                  </div>
-                  <div className="device-item">
-                    <span className="device-icon">🌡️</span>
-                    <div className="device-details">
-                      <span className="device-name">Temperature Sensor (Living Room)</span>
-                      <span className="device-id">temp_lr_001</span>
-                    </div>
-                    <span className="status-indicator status-online">ONLINE</span>
-                  </div>
-                  <div className="device-item">
-                    <span className="device-icon">🔒</span>
-                    <div className="device-details">
-                      <span className="device-name">Smart Lock (Front Door)</span>
-                      <span className="device-id">lock_fd_001</span>
-                    </div>
-                    <span className="status-indicator status-online">ONLINE</span>
-                  </div>
-                  <div className="device-item">
-                    <span className="device-icon">💡</span>
-                    <div className="device-details">
-                      <span className="device-name">Smart Bulb (Bedroom)</span>
-                      <span className="device-id">bulb_br_001</span>
-                    </div>
-                    <span className="status-indicator status-warning">IDLE</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Device Information */}
-            <div className="card">
-              <div className="card-header">
-                <h3>HUB INFORMATION</h3>
-              </div>
-              <div className="card-content">
-                <div className="info-grid">
-                  <div className="info-item">
-                    <span className="info-label">Device ID:</span>
-                    <span className="info-value">{hubDevice?.device_id || 'N/A'}</span>
-                  </div>
-                  <div className="info-item">
-                    <span className="info-label">Status:</span>
-                    <span className="info-value">{isOnline ? 'Online' : 'Offline'}</span>
-                  </div>
-                  <div className="info-item">
-                    <span className="info-label">Type:</span>
-                    <span className="info-value">{hubDevice?.type || 'N/A'}</span>
-                  </div>
-                  <div className="info-item">
-                    <span className="info-label">IP Address:</span>
-                    <span className="info-value">{hubDevice?.ip_address || 'N/A'}</span>
-                  </div>
-                  <div className="info-item">
-                    <span className="info-label">Last Seen:</span>
-                    <span className="info-value">
-                      {hubDevice?.last_seen ? new Date(hubDevice.last_seen).toLocaleString() : 'Never'}
-                    </span>
-                  </div>
-                  <div className="info-item">
-                    <span className="info-label">WiFi Signal:</span>
-                    <span className="info-value">
-                      {hubDevice?.wifi_rssi ? `${hubDevice.wifi_rssi} dBm` : 'N/A'}
-                    </span>
-                  </div>
-                  <div className="info-item">
-                    <span className="info-label">Uptime:</span>
-                    <span className="info-value">
-                      {hubDevice?.uptime_ms ? `${Math.floor(hubDevice.uptime_ms / 3600000)}h ${Math.floor((hubDevice.uptime_ms % 3600000) / 60000)}m` : 'N/A'}
-                    </span>
-                  </div>
-                  <div className="info-item">
-                    <span className="info-label">Free Heap:</span>
-                    <span className="info-value">
-                      {hubDevice?.free_heap ? `${(hubDevice.free_heap / 1024).toFixed(1)} KB` : 'N/A'}
-                    </span>
-                  </div>
-                </div>
-
-                <div className="action-buttons">
-                  <button className="btn-action">Restart Hub</button>
-                  <button className="btn-action">Clear Cache</button>
-                  <button className="btn-action btn-stop">Factory Reset</button>
-                </div>
+                )}
               </div>
             </div>
           </div>
