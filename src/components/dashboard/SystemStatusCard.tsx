@@ -110,7 +110,7 @@ export function SystemStatusCard({ devicesStatus, isExpanded = false }: SystemSt
           </div>
           {/* System Overview */}
           <div className="device-status-item system-overview">
-            <h3>SYSTEM HEALTH</h3>
+            <h3 style={{ marginBottom: 'var(--spacing-sm)' }}>SYSTEM HEALTH</h3>
             <div className="health-metrics">
               <div className="health-metric">
                 <span className="metric-label">DEVICES ONLINE:</span>
