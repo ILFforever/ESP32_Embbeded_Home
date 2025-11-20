@@ -1651,6 +1651,41 @@ const checkFaceDatabase = async (req, res) => {
   }
 };
 
+// @desc    Sync face database (queues all three commands: face_count, face_list, face_check)
+// @access  Private (requires user token)
+const syncFaceDatabase = async (req, res) => {
+  try {
+    const { device_id } = req.params;
+
+    const db = getFirestore();
+    const deviceRef = db.collection('devices').doc(device_id);
+
+    // Queue sync_database command - ESP32 will handle executing all three
+    const commandRef = await deviceRef.collection('commands').add({
+      action: 'sync_database',
+      params: {},
+      status: 'pending',
+      created_at: admin.firestore.FieldValue.serverTimestamp(),
+      executed_at: null,
+      result: null
+    });
+
+    console.log(`[FaceManagement] ${device_id} - Sync database command queued (ID: ${commandRef.id})`);
+
+    // Notify device via MQTT
+    await publishDeviceCommand(device_id, commandRef.id, 'sync_database');
+
+    res.json({
+      status: 'ok',
+      message: 'Face database sync command queued and device notified',
+      command_id: commandRef.id
+    });
+  } catch (error) {
+    console.error('[FaceManagement] Error syncing face database:', error);
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+};
+
 // @desc    Receive face database results from device (face_count, face_list, face_check)
 // @access  Private (requires device token)
 const handleFaceDatabaseResult = async (req, res) => {
@@ -1885,6 +1920,7 @@ module.exports = {
   getFaceCount,
   listFaces,
   checkFaceDatabase,
+  syncFaceDatabase,
   handleFaceDatabaseResult,
   getFaceDatabaseInfo,
   // System control
