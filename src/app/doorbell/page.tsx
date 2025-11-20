@@ -83,6 +83,25 @@ export default function DoorbellControlPage() {
   // Activity history
   const [recentActivity, setRecentActivity] = useState<ActivityEvent[]>([]);
 
+  // Settings modal
+  const [showSettings, setShowSettings] = useState(false);
+  const [customDeviceId, setCustomDeviceId] = useState('');
+  const [savedDeviceId, setSavedDeviceId] = useState<string | null>(null);
+
+  // Load saved device_id from localStorage on mount
+  useEffect(() => {
+    const saved = localStorage.getItem('doorbell_device_id');
+    if (saved) {
+      setSavedDeviceId(saved);
+      setCustomDeviceId(saved);
+    }
+  }, []);
+
+  // Get the effective device_id (custom or from backend)
+  const getEffectiveDeviceId = () => {
+    return savedDeviceId || doorbellDevice?.device_id || null;
+  };
+
   useEffect(() => {
     const fetchDeviceStatus = async () => {
       try {
@@ -92,9 +111,12 @@ export default function DoorbellControlPage() {
         if (doorbell) {
           setDoorbellDevice(doorbell);
 
+          // Use custom device_id if set, otherwise use the one from backend
+          const deviceIdToUse = savedDeviceId || doorbell.device_id;
+
           // Fetch recent activity
-          if (doorbell.device_id) {
-            const history = await getDeviceHistory(doorbell.device_id, 10);
+          if (deviceIdToUse) {
+            const history = await getDeviceHistory(deviceIdToUse, 10);
             if (history.events) {
               setRecentActivity(history.events);
             }
@@ -111,7 +133,7 @@ export default function DoorbellControlPage() {
     // Refresh every 5 seconds
     const interval = setInterval(fetchDeviceStatus, 5000);
     return () => clearInterval(interval);
-  }, []);
+  }, [savedDeviceId]);
 
   const getStatusClass = () => {
     if (!doorbellDevice || !doorbellDevice.last_seen) return 'status-offline';
@@ -137,16 +159,37 @@ export default function DoorbellControlPage() {
     return 'OFFLINE';
   };
 
+  // Settings handlers
+  const handleSaveSettings = () => {
+    if (customDeviceId.trim()) {
+      localStorage.setItem('doorbell_device_id', customDeviceId.trim());
+      setSavedDeviceId(customDeviceId.trim());
+      setShowSettings(false);
+      alert('Device ID saved successfully!');
+    } else {
+      alert('Please enter a valid device ID');
+    }
+  };
+
+  const handleClearSettings = () => {
+    localStorage.removeItem('doorbell_device_id');
+    setSavedDeviceId(null);
+    setCustomDeviceId('');
+    setShowSettings(false);
+    alert('Device ID cleared. Using backend default.');
+  };
+
   // Camera control handlers
   const handleCameraToggle = async () => {
-    if (!doorbellDevice?.device_id) return;
+    const deviceId = getEffectiveDeviceId();
+    if (!deviceId) return;
 
     setCommandLoading('camera');
     try {
       if (cameraActive) {
-        await stopCamera(doorbellDevice.device_id);
+        await stopCamera(deviceId);
       } else {
-        await startCamera(doorbellDevice.device_id);
+        await startCamera(deviceId);
       }
       setCameraActive(!cameraActive);
     } catch (error) {
@@ -158,11 +201,12 @@ export default function DoorbellControlPage() {
   };
 
   const handleCameraRestart = async () => {
-    if (!doorbellDevice?.device_id) return;
+    const deviceId = getEffectiveDeviceId();
+    if (!deviceId) return;
 
     setCommandLoading('camera_restart');
     try {
-      await restartCamera(doorbellDevice.device_id);
+      await restartCamera(deviceId);
       alert('Camera restart command sent');
     } catch (error) {
       console.error('Error restarting camera:', error);
@@ -174,14 +218,15 @@ export default function DoorbellControlPage() {
 
   // Microphone control handlers
   const handleMicToggle = async () => {
-    if (!doorbellDevice?.device_id) return;
+    const deviceId = getEffectiveDeviceId();
+    if (!deviceId) return;
 
     setCommandLoading('mic');
     try {
       if (micActive) {
-        await stopMicrophone(doorbellDevice.device_id);
+        await stopMicrophone(deviceId);
       } else {
-        await startMicrophone(doorbellDevice.device_id);
+        await startMicrophone(deviceId);
       }
       setMicActive(!micActive);
     } catch (error) {
@@ -194,11 +239,12 @@ export default function DoorbellControlPage() {
 
   // Amplifier control handlers
   const handlePlayAmplifier = async () => {
-    if (!doorbellDevice?.device_id || !ampUrl) return;
+    const deviceId = getEffectiveDeviceId();
+    if (!deviceId || !ampUrl) return;
 
     setCommandLoading('amp_play');
     try {
-      await playAmplifier(doorbellDevice.device_id, ampUrl);
+      await playAmplifier(deviceId, ampUrl);
       alert('Amplifier play command sent');
     } catch (error) {
       console.error('Error playing amplifier:', error);
@@ -209,11 +255,12 @@ export default function DoorbellControlPage() {
   };
 
   const handleStopAmplifier = async () => {
-    if (!doorbellDevice?.device_id) return;
+    const deviceId = getEffectiveDeviceId();
+    if (!deviceId) return;
 
     setCommandLoading('amp_stop');
     try {
-      await stopAmplifier(doorbellDevice.device_id);
+      await stopAmplifier(deviceId);
       alert('Amplifier stopped');
     } catch (error) {
       console.error('Error stopping amplifier:', error);
@@ -224,11 +271,12 @@ export default function DoorbellControlPage() {
   };
 
   const handleRestartAmplifier = async () => {
-    if (!doorbellDevice?.device_id) return;
+    const deviceId = getEffectiveDeviceId();
+    if (!deviceId) return;
 
     setCommandLoading('amp_restart');
     try {
-      await restartAmplifier(doorbellDevice.device_id);
+      await restartAmplifier(deviceId);
       alert('Amplifier restart command sent');
     } catch (error) {
       console.error('Error restarting amplifier:', error);
@@ -280,11 +328,12 @@ export default function DoorbellControlPage() {
   };
 
   const handleGetFaceCount = async () => {
-    if (!doorbellDevice?.device_id) return;
+    const deviceId = getEffectiveDeviceId();
+    if (!deviceId) return;
 
     setCommandLoading('face_count');
     try {
-      const result = await getFaceCount(doorbellDevice.device_id);
+      const result = await getFaceCount(deviceId);
       console.log('Face count command queued:', result);
       alert('Face count command queued. Check device serial output.');
     } catch (error) {
@@ -296,11 +345,12 @@ export default function DoorbellControlPage() {
   };
 
   const handleListFaces = async () => {
-    if (!doorbellDevice?.device_id) return;
+    const deviceId = getEffectiveDeviceId();
+    if (!deviceId) return;
 
     setCommandLoading('face_list');
     try {
-      const result = await listFaces(doorbellDevice.device_id);
+      const result = await listFaces(deviceId);
       console.log('List faces command queued:', result);
       alert('List faces command queued. Check device serial output.');
     } catch (error) {
@@ -312,11 +362,12 @@ export default function DoorbellControlPage() {
   };
 
   const handleCheckFaceDB = async () => {
-    if (!doorbellDevice?.device_id) return;
+    const deviceId = getEffectiveDeviceId();
+    if (!deviceId) return;
 
     setCommandLoading('face_check');
     try {
-      const result = await checkFaceDatabase(doorbellDevice.device_id);
+      const result = await checkFaceDatabase(deviceId);
       console.log('Check face DB command queued:', result);
       alert('Face DB check command queued. Check device serial output.');
     } catch (error) {
@@ -329,7 +380,8 @@ export default function DoorbellControlPage() {
 
   // System control handler
   const handleSystemRestart = async () => {
-    if (!doorbellDevice?.device_id) return;
+    const deviceId = getEffectiveDeviceId();
+    if (!deviceId) return;
 
     if (!confirm('Are you sure you want to restart the doorbell system? It will be offline for about 30 seconds.')) {
       return;
@@ -337,7 +389,7 @@ export default function DoorbellControlPage() {
 
     setCommandLoading('system_restart');
     try {
-      await restartSystem(doorbellDevice.device_id);
+      await restartSystem(deviceId);
       alert('System restart command sent. Device will reboot shortly.');
     } catch (error) {
       console.error('Error restarting system:', error);
@@ -425,30 +477,20 @@ export default function DoorbellControlPage() {
                       </span>
                     </div>
                   </div>
-                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '12px' }}>
-                    <button
-                      className={`btn-control ${cameraActive ? 'btn-stop' : 'btn-start'}`}
-                      onClick={handleCameraToggle}
-                      disabled={commandLoading === 'camera'}
-                    >
-                      {commandLoading === 'camera' ? 'PROCESSING...' : cameraActive ? 'STOP CAMERA' : 'START CAMERA'}
-                    </button>
-                    <button
-                      className="btn-control btn-warning"
-                      onClick={handleCameraRestart}
-                      disabled={commandLoading === 'camera_restart'}
-                      style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
-                    >
-                      <RotateCw size={16} />
-                      {commandLoading === 'camera_restart' ? 'RESTARTING...' : 'RESTART'}
-                    </button>
-                  </div>
+                  <button
+                    className={`btn-control ${cameraActive ? 'btn-stop' : 'btn-start'}`}
+                    onClick={handleCameraToggle}
+                    disabled={commandLoading === 'camera'}
+                    style={{ marginTop: '12px' }}
+                  >
+                    {commandLoading === 'camera' ? 'PROCESSING...' : cameraActive ? 'STOP CAMERA' : 'START CAMERA'}
+                  </button>
                 </div>
 
                 <div className="control-divider"></div>
 
                 <div className="card-header" style={{ paddingTop: '8px' }}>
-                  <h3>MICROPHONE</h3>
+                  <h3>MICROPHONE CONTROL</h3>
                 </div>
                 <div className="control-panel">
                   <div className="control-status">
@@ -511,15 +553,6 @@ export default function DoorbellControlPage() {
                         style={{ flex: 1 }}
                       >
                         {commandLoading === 'amp_stop' ? 'STOPPING...' : 'STOP'}
-                      </button>
-                      <button
-                        className="btn-control btn-warning"
-                        onClick={handleRestartAmplifier}
-                        disabled={commandLoading === 'amp_restart'}
-                        style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}
-                      >
-                        <RotateCw size={14} />
-                        {commandLoading === 'amp_restart' ? '...' : 'RST'}
                       </button>
                     </div>
 
@@ -664,6 +697,99 @@ export default function DoorbellControlPage() {
               </div>
             </div>
 
+            {/* Sub Module Command & Recent Activity */}
+            <div className="card">
+              <div className="card-header">
+                <h3>SUB MODULE COMMAND</h3>
+              </div>
+              <div className="card-content">
+                <div className="control-panel">
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    <div style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '12px',
+                      padding: '12px',
+                      background: 'linear-gradient(135deg, rgba(255, 193, 7, 0.1) 0%, rgba(255, 152, 0, 0.1) 100%)',
+                      borderRadius: '8px',
+                      border: '1px solid rgba(255, 193, 7, 0.3)'
+                    }}>
+                      <Camera size={32} className="status-warning-large" style={{ flexShrink: 0 }} />
+                      <button
+                        className="btn-control btn-warning"
+                        onClick={handleCameraRestart}
+                        disabled={commandLoading === 'camera_restart'}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '8px',
+                          flex: 1,
+                          fontWeight: 'bold'
+                        }}
+                      >
+                        <RotateCw size={18} className={commandLoading === 'camera_restart' ? 'rotating' : ''} />
+                        {commandLoading === 'camera_restart' ? 'RESTARTING...' : 'RESTART CAMERA'}
+                      </button>
+                    </div>
+                    <div style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '12px',
+                      padding: '12px',
+                      background: 'linear-gradient(135deg, rgba(33, 150, 243, 0.1) 0%, rgba(21, 101, 192, 0.1) 100%)',
+                      borderRadius: '8px',
+                      border: '1px solid rgba(33, 150, 243, 0.3)'
+                    }}>
+                      <Volume2 size={32} className="status-info-large" style={{ flexShrink: 0 }} />
+                      <button
+                        className="btn-control btn-warning"
+                        onClick={handleRestartAmplifier}
+                        disabled={commandLoading === 'amp_restart'}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '8px',
+                          flex: 1,
+                          fontWeight: 'bold'
+                        }}
+                      >
+                        <RotateCw size={18} className={commandLoading === 'amp_restart' ? 'rotating' : ''} />
+                        {commandLoading === 'amp_restart' ? 'RESTARTING...' : 'RESTART AMPLIFIER'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="control-divider"></div>
+
+                <div className="card-header" style={{ paddingTop: '8px' }}>
+                  <h3>RECENT ACTIVITY</h3>
+                </div>
+                <div className="activity-list">
+                  {recentActivity.length > 0 ? (
+                    recentActivity.map((event, index) => (
+                      <div key={index} className="activity-item">
+                        <span className="activity-time">{formatActivityTime(event.timestamp)}</span>
+                        <span className="activity-desc">{getActivityDescription(event)}</span>
+                        <span className="activity-status status-safe">{getActivityStatus(event)}</span>
+                      </div>
+                    ))
+                  ) : (
+                    <div style={{
+                      textAlign: 'center',
+                      padding: '40px 20px',
+                      color: '#6c757d',
+                      fontSize: '14px',
+                      fontStyle: 'italic'
+                    }}>
+                      No recent activity
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
             {/* Column 3: System Control & Device Info */}
             <div className="card">
               <div className="card-header">
@@ -731,38 +857,107 @@ export default function DoorbellControlPage() {
                       </span>
                     </div>
                   </div>
+                  <button
+                    className="btn-control btn-info"
+                    onClick={() => setShowSettings(true)}
+                    style={{
+                      marginTop: '16px',
+                      width: '100%',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '6px'
+                    }}
+                  >
+                    ⚙️ PAIR DEVICE
+                  </button>
                 </div>
               </div>
             </div>
 
-            {/* Recent Activity - Full Width */}
-            <div className="card" style={{ gridColumn: '1 / -1' }}>
-              <div className="card-header">
-                <h3>RECENT ACTIVITY</h3>
-              </div>
-              <div className="card-content">
-                <div className="activity-list">
-                  {recentActivity.length > 0 ? (
-                    recentActivity.map((event, index) => (
-                      <div key={index} className="activity-item">
-                        <span className="activity-time">{formatActivityTime(event.timestamp)}</span>
-                        <span className="activity-desc">{getActivityDescription(event)}</span>
-                        <span className="activity-status status-safe">{getActivityStatus(event)}</span>
-                      </div>
-                    ))
-                  ) : (
-                    <div className="activity-item">
-                      <span className="activity-desc" style={{ textAlign: 'center', width: '100%', color: '#999' }}>
-                        No recent activity
-                      </span>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
           </div>
         </div>
       </div>
+
+      {/* Settings Modal */}
+      {showSettings && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.7)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1000
+          }}
+          onClick={() => setShowSettings(false)}
+        >
+          <div
+            style={{
+              backgroundColor: '#fff',
+              borderRadius: '12px',
+              padding: '24px',
+              maxWidth: '500px',
+              width: '90%',
+              boxShadow: '0 10px 40px rgba(0, 0, 0, 0.3)'
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 style={{ marginBottom: '20px', color: '#333' }}>Device Settings</h2>
+
+            <div style={{ marginBottom: '20px' }}>
+              <label style={{ display: 'block', marginBottom: '8px', fontWeight: 'bold', color: '#555' }}>
+                Custom Device ID
+              </label>
+              <input
+                type="text"
+                value={customDeviceId}
+                onChange={(e) => setCustomDeviceId(e.target.value)}
+                placeholder="e.g., db_001"
+                style={{
+                  width: '100%',
+                  padding: '10px 12px',
+                  borderRadius: '6px',
+                  border: '2px solid #e0e0e0',
+                  fontSize: '14px',
+                  fontFamily: 'monospace'
+                }}
+              />
+              <p style={{ marginTop: '8px', fontSize: '12px', color: '#666' }}>
+                Current: {savedDeviceId || doorbellDevice?.device_id || 'Not set'}
+              </p>
+            </div>
+
+            <div style={{ display: 'flex', gap: '12px' }}>
+              <button
+                onClick={handleSaveSettings}
+                className="btn-control btn-start"
+                style={{ flex: 1 }}
+              >
+                SAVE
+              </button>
+              <button
+                onClick={handleClearSettings}
+                className="btn-control btn-warning"
+                style={{ flex: 1 }}
+              >
+                CLEAR
+              </button>
+              <button
+                onClick={() => setShowSettings(false)}
+                className="btn-control btn-stop"
+                style={{ flex: 1 }}
+              >
+                CANCEL
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </ProtectedRoute>
   );
 }

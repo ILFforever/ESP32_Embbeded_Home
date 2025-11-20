@@ -1463,6 +1463,28 @@ h6 { font-size: var(--font-size-sm); }
   gap: var(--spacing-xl);
 }
 
+/* Doorbell Page Grid Layout */
+.doorbell-page-grid {
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr;
+  gap: var(--spacing-lg);
+  align-items: start;
+}
+
+.doorbell-controls-column,
+.doorbell-system-column,
+.doorbell-activity-column {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-lg);
+}
+
+.control-divider {
+  height: 1px;
+  background: rgba(255, 255, 255, 0.1);
+  margin: var(--spacing-lg) 0;
+}
+
 .control-section {
   background: rgba(0, 0, 0, 0.3);
   border-radius: var(--radius-lg);
@@ -1669,6 +1691,10 @@ h6 { font-size: var(--font-size-sm); }
   to { transform: rotate(360deg); }
 }
 
+.rotating {
+  animation: spin 1s linear infinite;
+}
+
 /* Mobile Responsive */
 @media (max-width: 1024px) {
   .dashboard-grid {
@@ -1763,6 +1789,10 @@ h6 { font-size: var(--font-size-sm); }
   }
 
   .doorbell-status-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .doorbell-page-grid {
     grid-template-columns: 1fr;
   }
 

@@ -232,7 +232,16 @@ export function DoorbellControlCard({ doorbellControl, deviceId, isExpanded = fa
             </div>
             <div className="doorbell-stats">
               <p>VISITORS TODAY: {doorbellControl.visitor_count_today}</p>
-              <p>LAST ACTIVITY: {new Date(doorbellControl.last_activity).toLocaleTimeString()}</p>
+              <p>
+                LAST ACTIVITY: {doorbellControl.last_activity
+                  ? new Date(doorbellControl.last_activity).toLocaleString('en-US', {
+                      month: 'short',
+                      day: 'numeric',
+                      hour: '2-digit',
+                      minute: '2-digit'
+                    })
+                  : 'No Activity'}
+              </p>
             </div>
           </div>
         ) : (
@@ -420,7 +429,16 @@ export function DoorbellControlCard({ doorbellControl, deviceId, isExpanded = fa
                 </div>
                 <div className="stat-item">
                   <span className="stat-label">LAST ACTIVITY:</span>
-                  <span className="stat-value">{new Date(doorbellControl.last_activity).toLocaleString()}</span>
+                  <span className="stat-value">
+                    {doorbellControl.last_activity
+                      ? new Date(doorbellControl.last_activity).toLocaleString('en-US', {
+                          month: 'short',
+                          day: 'numeric',
+                          hour: '2-digit',
+                          minute: '2-digit'
+                        })
+                      : 'No Activity'}
+                  </span>
                 </div>
                 {faceCount !== null && (
                   <div className="stat-item">
