@@ -241,7 +241,8 @@ void handleUARTResponse(String line)
 
       // Send face detection event to backend (saves to Firebase + publishes to Hub via MQTT)
       // Sends raw JPEG binary - much more efficient than Base64!
-      sendFaceDetection(recognized, name, confidence, frameData, frameSize);
+      // Using async version to avoid blocking the UI during upload
+      sendFaceDetectionAsync(recognized, name, confidence, frameData, frameSize);
 
       // Update LCD status with recognition result
       if (recognized)

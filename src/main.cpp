@@ -16,6 +16,7 @@
 #include "heartbeat.h"
 #include "doorbell_mqtt.h"
 #include "logger.h"
+#include "face_detection_sender.h"
 #include <TJpg_Decoder.h>
 #include <cstring>
 #include <esp_system.h>
@@ -338,6 +339,10 @@ void setup()
   // Initialize logger module (must be after heartbeat)
   initLogger();
   Serial.println("[MAIN] Logger module initialized");
+
+  // Initialize face detection sender (async/non-blocking)
+  initFaceDetectionSender(8192, 1, 0); // 8KB stack, priority 1, Core 0
+  Serial.println("[MAIN] Face detection sender initialized (async)");
 
   // Initialize MQTT client (WiFi already initialized by heartbeat module)
   initDoorbellMQTT("db_001"); // Same device ID as heartbeat
