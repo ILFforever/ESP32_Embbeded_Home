@@ -808,7 +808,7 @@ export interface DeviceHistory {
 }
 
 // Get device history (mixed: status, face detections, commands, logs)
-export async function getDeviceHistory(deviceId: string, limit: number = 20): Promise<DeviceHistory> {
+export async function getDeviceHistory(deviceId: string, limit: number = 10): Promise<DeviceHistory> {
   try {
     const response = await axios.get<DeviceHistory>(
       `${API_URL}/api/v1/devices/${deviceId}/history?limit=${limit}`,
