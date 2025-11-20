@@ -16,7 +16,7 @@
   "scripts": {
     "dev": "cross-env NEXT_PUBLIC_API_URL=\"http://localhost:5000\" next dev",
     "online": "cross-env NEXT_PUBLIC_API_URL=\"https://embedded-smarthome.fly.dev\" next dev",
-    "build": "next build",
+    "build": "cross-env NEXT_PUBLIC_API_URL=\"https://embedded-smarthome.fly.dev\" next build",
     "start": "next start",
     "lint": "next lint"
   }
