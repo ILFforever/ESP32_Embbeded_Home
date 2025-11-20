@@ -351,30 +351,20 @@ export default function DoorbellControlPage() {
                       </span>
                     </div>
                   </div>
-                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '12px' }}>
-                    <button
-                      className={`btn-control ${cameraActive ? 'btn-stop' : 'btn-start'}`}
-                      onClick={handleCameraToggle}
-                      disabled={commandLoading === 'camera'}
-                    >
-                      {commandLoading === 'camera' ? 'PROCESSING...' : cameraActive ? 'STOP CAMERA' : 'START CAMERA'}
-                    </button>
-                    <button
-                      className="btn-control btn-warning"
-                      onClick={handleCameraRestart}
-                      disabled={commandLoading === 'camera_restart'}
-                      style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
-                    >
-                      <RotateCw size={16} />
-                      {commandLoading === 'camera_restart' ? 'RESTARTING...' : 'RESTART'}
-                    </button>
-                  </div>
+                  <button
+                    className={`btn-control ${cameraActive ? 'btn-stop' : 'btn-start'}`}
+                    onClick={handleCameraToggle}
+                    disabled={commandLoading === 'camera'}
+                    style={{ marginTop: '12px' }}
+                  >
+                    {commandLoading === 'camera' ? 'PROCESSING...' : cameraActive ? 'STOP CAMERA' : 'START CAMERA'}
+                  </button>
                 </div>
 
                 <div className="control-divider"></div>
 
                 <div className="card-header" style={{ paddingTop: '8px' }}>
-                  <h3>MICROPHONE</h3>
+                  <h3>MICROPHONE CONTROL</h3>
                 </div>
                 <div className="control-panel">
                   <div className="control-status">
@@ -413,14 +403,74 @@ export default function DoorbellControlPage() {
                     </div>
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', width: '100%', marginTop: '12px' }}>
-                    <input
-                      type="text"
-                      value={ampUrl}
-                      onChange={(e) => setAmpUrl(e.target.value)}
-                      placeholder="Stream URL"
-                      className="control-input"
-                      style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ddd' }}
-                    />
+                    <div style={{ position: 'relative', width: '100%' }}>
+                      <input
+                        type="text"
+                        value={ampUrl}
+                        onChange={(e) => setAmpUrl(e.target.value)}
+                        placeholder="Enter stream URL (e.g., http://stream.example.com/audio)"
+                        className="control-input"
+                        style={{
+                          width: '100%',
+                          padding: '10px 45px 10px 12px',
+                          borderRadius: '6px',
+                          border: '2px solid #e0e0e0',
+                          fontSize: '13px',
+                          fontFamily: 'monospace',
+                          transition: 'all 0.2s ease',
+                          outline: 'none',
+                          backgroundColor: '#f8f9fa'
+                        }}
+                        onFocus={(e) => {
+                          e.target.style.borderColor = '#2196F3';
+                          e.target.style.backgroundColor = '#fff';
+                        }}
+                        onBlur={(e) => {
+                          e.target.style.borderColor = '#e0e0e0';
+                          e.target.style.backgroundColor = '#f8f9fa';
+                        }}
+                      />
+                      <select
+                        onChange={(e) => setAmpUrl(e.target.value)}
+                        value=""
+                        className="stream-selector"
+                        style={{
+                          position: 'absolute',
+                          right: '4px',
+                          top: '50%',
+                          transform: 'translateY(-50%)',
+                          padding: '6px 8px',
+                          borderRadius: '4px',
+                          border: '1px solid #e0e0e0',
+                          fontSize: '13px',
+                          backgroundColor: '#fff',
+                          cursor: 'pointer',
+                          outline: 'none',
+                          transition: 'all 0.2s ease',
+                          appearance: 'none',
+                          WebkitAppearance: 'none',
+                          MozAppearance: 'none',
+                          backgroundImage: 'url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 24 24\' fill=\'none\' stroke=\'%23333\' stroke-width=\'2\' stroke-linecap=\'round\' stroke-linejoin=\'round\'%3e%3cpolyline points=\'6 9 12 15 18 9\'%3e%3c/polyline%3e%3c/svg%3e")',
+                          backgroundRepeat: 'no-repeat',
+                          backgroundPosition: 'center',
+                          backgroundSize: '18px',
+                          width: '32px',
+                          height: '32px',
+                          color: 'transparent'
+                        }}
+                        onMouseEnter={(e) => {
+                          (e.target as HTMLSelectElement).style.backgroundColor = '#f0f0f0';
+                        }}
+                        onMouseLeave={(e) => {
+                          (e.target as HTMLSelectElement).style.backgroundColor = '#fff';
+                        }}
+                      >
+                        <option value="" style={{ color: '#000' }}>Select Station</option>
+                        <option value="https://stream.live.vc.bbcmedia.co.uk/bbc_world_service_east_asia" style={{ color: '#000' }}>BBC World Service</option>
+                        <option value="https://play.streamafrica.net/japancitypop" style={{ color: '#000' }}>Japan City Pop</option>
+                        <option value="http://stream.radioparadise.com/aac-128" style={{ color: '#000' }}>Radio Paradise</option>
+                      </select>
+                    </div>
                     <div style={{ display: 'flex', gap: '8px' }}>
                       <button
                         className="btn-control btn-start"
@@ -437,15 +487,6 @@ export default function DoorbellControlPage() {
                         style={{ flex: 1 }}
                       >
                         {commandLoading === 'amp_stop' ? 'STOPPING...' : 'STOP'}
-                      </button>
-                      <button
-                        className="btn-control btn-warning"
-                        onClick={handleRestartAmplifier}
-                        disabled={commandLoading === 'amp_restart'}
-                        style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}
-                      >
-                        <RotateCw size={14} />
-                        {commandLoading === 'amp_restart' ? '...' : 'RST'}
                       </button>
                     </div>
                   </div>
@@ -499,6 +540,99 @@ export default function DoorbellControlPage() {
               </div>
             </div>
 
+            {/* Sub Module Command & Recent Activity */}
+            <div className="card">
+              <div className="card-header">
+                <h3>SUB MODULE COMMAND</h3>
+              </div>
+              <div className="card-content">
+                <div className="control-panel">
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    <div style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '12px',
+                      padding: '12px',
+                      background: 'linear-gradient(135deg, rgba(255, 193, 7, 0.1) 0%, rgba(255, 152, 0, 0.1) 100%)',
+                      borderRadius: '8px',
+                      border: '1px solid rgba(255, 193, 7, 0.3)'
+                    }}>
+                      <Camera size={32} className="status-warning-large" style={{ flexShrink: 0 }} />
+                      <button
+                        className="btn-control btn-warning"
+                        onClick={handleCameraRestart}
+                        disabled={commandLoading === 'camera_restart'}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '8px',
+                          flex: 1,
+                          fontWeight: 'bold'
+                        }}
+                      >
+                        <RotateCw size={18} className={commandLoading === 'camera_restart' ? 'rotating' : ''} />
+                        {commandLoading === 'camera_restart' ? 'RESTARTING...' : 'RESTART CAMERA'}
+                      </button>
+                    </div>
+                    <div style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '12px',
+                      padding: '12px',
+                      background: 'linear-gradient(135deg, rgba(33, 150, 243, 0.1) 0%, rgba(21, 101, 192, 0.1) 100%)',
+                      borderRadius: '8px',
+                      border: '1px solid rgba(33, 150, 243, 0.3)'
+                    }}>
+                      <Volume2 size={32} className="status-info-large" style={{ flexShrink: 0 }} />
+                      <button
+                        className="btn-control btn-warning"
+                        onClick={handleRestartAmplifier}
+                        disabled={commandLoading === 'amp_restart'}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '8px',
+                          flex: 1,
+                          fontWeight: 'bold'
+                        }}
+                      >
+                        <RotateCw size={18} className={commandLoading === 'amp_restart' ? 'rotating' : ''} />
+                        {commandLoading === 'amp_restart' ? 'RESTARTING...' : 'RESTART AMPLIFIER'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="control-divider"></div>
+
+                <div className="card-header" style={{ paddingTop: '8px' }}>
+                  <h3>RECENT ACTIVITY</h3>
+                </div>
+                <div className="activity-list">
+                  {recentActivity.length > 0 ? (
+                    recentActivity.map((event, index) => (
+                      <div key={index} className="activity-item">
+                        <span className="activity-time">{formatActivityTime(event.timestamp)}</span>
+                        <span className="activity-desc">{getActivityDescription(event)}</span>
+                        <span className="activity-status status-safe">{getActivityStatus(event)}</span>
+                      </div>
+                    ))
+                  ) : (
+                    <div style={{
+                      textAlign: 'center',
+                      padding: '40px 20px',
+                      color: '#6c757d',
+                      fontSize: '14px',
+                      fontStyle: 'italic'
+                    }}>
+                      No recent activity
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
             {/* Column 3: System Control & Device Info */}
             <div className="card">
               <div className="card-header">
@@ -570,31 +704,6 @@ export default function DoorbellControlPage() {
               </div>
             </div>
 
-            {/* Recent Activity - Full Width */}
-            <div className="card" style={{ gridColumn: '1 / -1' }}>
-              <div className="card-header">
-                <h3>RECENT ACTIVITY</h3>
-              </div>
-              <div className="card-content">
-                <div className="activity-list">
-                  {recentActivity.length > 0 ? (
-                    recentActivity.map((event, index) => (
-                      <div key={index} className="activity-item">
-                        <span className="activity-time">{formatActivityTime(event.timestamp)}</span>
-                        <span className="activity-desc">{getActivityDescription(event)}</span>
-                        <span className="activity-status status-safe">{getActivityStatus(event)}</span>
-                      </div>
-                    ))
-                  ) : (
-                    <div className="activity-item">
-                      <span className="activity-desc" style={{ textAlign: 'center', width: '100%', color: '#999' }}>
-                        No recent activity
-                      </span>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
           </div>
         </div>
       </div>
