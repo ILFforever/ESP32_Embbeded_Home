@@ -10,7 +10,7 @@ const {
   registerDevice,
   handleDoorbellRing,
   handleFaceDetection,
-  handleHubLog,
+  handleDeviceLog,
   handleDoorbellStatus,
   getDoorbellStatus,
   sendDeviceCommand,
@@ -90,10 +90,10 @@ router.post('/doorbell/ring', authenticateDevice, handleDoorbellRing);
 // NOTE: upload.single('image') MUST come before authenticateDevice to parse req.body
 router.post('/doorbell/face-detection', upload.single('image'), authenticateDevice, handleFaceDetection);
 
-// @route   POST /api/v1/devices/hub/log
-// @desc    Receive logs and errors from Hub (saves to Firebase for frontend)
+// @route   POST /api/v1/devices/:device_id/log
+// @desc    Unified log endpoint - any device can send logs (hub, doorbell, etc.)
 // @access  Private (requires device token)
-router.post('/hub/log', authenticateDevice, handleHubLog);
+router.post('/:device_id/log', authenticateDevice, handleDeviceLog);
 
 // @route   POST /api/v1/devices/doorbell/status
 // @desc    Doorbell pushes its status/info to server (camera state, etc.)

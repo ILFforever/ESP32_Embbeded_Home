@@ -592,12 +592,11 @@ describe('Device Controller Tests', () => {
   });
 
   // ============================================================================
-  // 9. TEST: handleHubLog
+  // 9. TEST: handleDeviceLog (unified log endpoint)
   // ============================================================================
-  describe('POST /api/v1/devices/hub/log', () => {
+  describe('POST /api/v1/devices/:device_id/log', () => {
     it('should accept hub log entry', async () => {
       const logData = {
-        device_id: 'hub_001',
         level: 'info',
         message: 'System started',
         data: { uptime: 120000 }
@@ -606,7 +605,7 @@ describe('Device Controller Tests', () => {
       mockCollection.add.mockResolvedValue({ id: 'log_id' });
 
       const response = await request(app)
-        .post('/api/v1/devices/hub/log')
+        .post('/api/v1/devices/hub_001/log')
         .set('Authorization', `Bearer ${validDeviceToken}`)
         .send(logData)
         .expect(200);
@@ -615,11 +614,40 @@ describe('Device Controller Tests', () => {
       expect(mockCollection.add).toHaveBeenCalled();
     });
 
-    it('should return 400 if device_id is missing', async () => {
+    it('should accept doorbell log entry', async () => {
+      const logData = {
+        level: 'error',
+        message: 'Camera initialization failed',
+        data: { error_code: 'CAM_ERR_001' }
+      };
+
+      mockCollection.add.mockResolvedValue({ id: 'log_id' });
+
       const response = await request(app)
-        .post('/api/v1/devices/hub/log')
+        .post('/api/v1/devices/doorbell_001/log')
         .set('Authorization', `Bearer ${validDeviceToken}`)
-        .send({ level: 'info', message: 'test' })
+        .send(logData)
+        .expect(200);
+
+      expect(response.body.status).toBe('ok');
+      expect(mockCollection.add).toHaveBeenCalled();
+    });
+
+    it('should return 400 if level is missing', async () => {
+      const response = await request(app)
+        .post('/api/v1/devices/hub_001/log')
+        .set('Authorization', `Bearer ${validDeviceToken}`)
+        .send({ message: 'test' })
+        .expect(400);
+
+      expect(response.body.status).toBe('error');
+    });
+
+    it('should return 400 if message is missing', async () => {
+      const response = await request(app)
+        .post('/api/v1/devices/hub_001/log')
+        .set('Authorization', `Bearer ${validDeviceToken}`)
+        .send({ level: 'info' })
         .expect(400);
 
       expect(response.body.status).toBe('error');

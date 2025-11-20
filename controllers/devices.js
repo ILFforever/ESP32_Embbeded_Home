@@ -703,22 +703,23 @@ const handleFaceDetection = async (req, res) => {
 };
 
 // ============================================================================
-// @route   POST /api/v1/devices/hub/log
-// @desc    Receive logs and errors from Hub - save to Firebase for frontend display
+// @route   POST /api/v1/devices/:device_id/log
+// @desc    Unified log endpoint - any device can send logs (hub, doorbell, etc.)
 // ============================================================================
-const handleHubLog = async (req, res) => {
+const handleDeviceLog = async (req, res) => {
   try {
-    const { device_id, level, message, data, timestamp } = req.body;
+    const { device_id } = req.params;
+    const { level, message, data, timestamp } = req.body;
 
     // Validation
-    if (!device_id || !level || !message) {
+    if (!level || !message) {
       return res.status(400).json({
         status: 'error',
-        message: 'device_id, level, and message are required'
+        message: 'level and message are required'
       });
     }
 
-    console.log(`[HubLog] ${device_id} [${level}] - ${message}`);
+    console.log(`[DeviceLog] ${device_id} [${level}] - ${message}`);
 
     const db = getFirestore();
     const deviceRef = db.collection('devices').doc(device_id);
@@ -743,14 +744,14 @@ const handleHubLog = async (req, res) => {
       }, { merge: true });
     }
 
-    // Respond to hub
+    // Respond to device
     res.json({
       status: 'ok',
       message: 'Log saved successfully'
     });
 
   } catch (error) {
-    console.error('[HubLog] Error:', error);
+    console.error('[DeviceLog] Error:', error);
     res.status(500).json({ status: 'error', message: error.message });
   }
 };
@@ -1729,7 +1730,7 @@ module.exports = {
   getDeviceHistory,
   handleDoorbellRing,
   handleFaceDetection,
-  handleHubLog,
+  handleDeviceLog,
   handleDoorbellStatus,
   getDoorbellStatus,
   sendDeviceCommand,
