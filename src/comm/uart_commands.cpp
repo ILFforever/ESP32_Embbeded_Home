@@ -299,10 +299,59 @@ void handleUARTResponse(String line)
     {
       const char *msg = doc["msg"];
 
+      // Handle face_count response
+      if (strcmp(status, "face_count") == 0)
+      {
+        Serial.printf("✅ Face Count: %s\n", msg);
+
+        // Try to parse count from message and send to backend
+        int count = atoi(msg);
+        if (count >= 0)
+        {
+          Serial.printf("Sending face count (%d) to backend...\n", count);
+          sendFaceDatabaseResult("face_count", count, JsonArray(), nullptr, nullptr);
+        }
+
+        return;
+      }
+
       // Handle list_faces response
       if (strcmp(status, "list_faces") == 0)
       {
-        Serial.printf("✅ Face List:\n%s", msg);
+        Serial.printf("✅ Face List:\n%s\n", msg);
+
+        // Parse the face list JSON array and send to backend
+        StaticJsonDocument<2048> facesDoc;
+        DeserializationError error = deserializeJson(facesDoc, msg);
+
+        if (!error && facesDoc.is<JsonArray>())
+        {
+          JsonArray faces = facesDoc.as<JsonArray>();
+          int count = faces.size();
+
+          Serial.printf("Parsed %d faces, sending to backend...\n", count);
+
+          // Send face_list result to backend
+          sendFaceDatabaseResult("face_list", count, faces, nullptr, nullptr);
+        }
+        else
+        {
+          Serial.printf("❌ Failed to parse face list JSON: %s\n", error.c_str());
+        }
+
+        return;
+      }
+
+      // Handle check_face_db response
+      if (strcmp(status, "face_db") == 0)
+      {
+        Serial.printf("✅ Face Database: %s\n", msg);
+
+        // Parse database status and send to backend
+        const char *db_status = strstr(msg, "valid") ? "valid" : "invalid";
+        Serial.printf("Sending database check (%s) to backend...\n", db_status);
+        sendFaceDatabaseResult("face_check", -1, JsonArray(), db_status, msg);
+
         return;
       }
 
