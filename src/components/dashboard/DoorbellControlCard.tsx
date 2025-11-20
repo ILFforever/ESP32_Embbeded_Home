@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Camera, Mic, UserCheck, Bell, Volume2, RotateCw, Power, Users } from 'lucide-react';
+import { Camera, Mic, UserCheck, Bell, Volume2, RotateCw, Power, Users, Database } from 'lucide-react';
 import type { DoorbellControl } from '@/types/dashboard';
 import {
   startCamera,
@@ -179,6 +179,38 @@ export function DoorbellControlCard({ doorbellControl, deviceId, isExpanded = fa
     } catch (error) {
       console.error('Error checking face database:', error);
       alert('Failed to check face database');
+    } finally {
+      setLoading(null);
+    }
+  };
+
+  const handleSyncDatabase = async () => {
+    if (!deviceId) return;
+
+    setLoading('sync_database');
+    try {
+      // Call all three face database commands in sequence
+      console.log('Syncing database - sending all face database commands...');
+
+      await getFaceCount(deviceId);
+      console.log('✓ Face count command queued');
+
+      // Small delay between commands
+      await new Promise(resolve => setTimeout(resolve, 500));
+
+      await checkFaceDatabase(deviceId);
+      console.log('✓ Check database command queued');
+
+      // Small delay between commands
+      await new Promise(resolve => setTimeout(resolve, 500));
+
+      await listFaces(deviceId);
+      console.log('✓ List faces command queued');
+
+      alert('Database sync complete! All commands queued:\n• Face count\n• Database check\n• Face list\n\nCheck device serial output for results.');
+    } catch (error) {
+      console.error('Error syncing database:', error);
+      alert('Failed to sync database. Some commands may have been queued.');
     } finally {
       setLoading(null);
     }
@@ -370,6 +402,15 @@ export function DoorbellControlCard({ doorbellControl, deviceId, isExpanded = fa
                     onClick={handleFaceRecognitionToggle}
                   >
                     {faceRecognition ? 'DISABLE' : 'ENABLE'}
+                  </button>
+                  <button
+                    className="btn-control btn-warning"
+                    onClick={handleSyncDatabase}
+                    disabled={loading === 'sync_database'}
+                    style={{ display: 'flex', alignItems: 'center', gap: '6px', flex: '1 1 auto' }}
+                  >
+                    <Database size={16} />
+                    {loading === 'sync_database' ? 'SYNCING...' : 'SYNC DATABASE'}
                   </button>
                   <button
                     className="btn-control btn-info"
