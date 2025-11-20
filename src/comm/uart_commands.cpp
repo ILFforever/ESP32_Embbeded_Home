@@ -244,11 +244,11 @@ void handleUARTResponse(String line)
     return;
   }
 
-  // Handle list_faces response
+  // Handle list_faces response (print_faces command)
   if (doc.containsKey("faces") && doc.containsKey("count"))
   {
     int count = doc["count"];
-    Serial.printf("✅ Found %d faces:\n", count);
+    Serial.printf("✅ Face List: Found %d faces\n", count);
 
     JsonArray faces = doc["faces"];
     for (JsonObject face : faces)
@@ -258,6 +258,9 @@ void handleUARTResponse(String line)
       const char *enrolled = face["enrolled"];
       Serial.printf("  - ID %d: %s (enrolled: %s)\n", id, name, enrolled);
     }
+
+    // Send face_list result to backend
+    sendFaceDatabaseResult("face_list", -1, faces, nullptr, nullptr);
     return;
   }
 
@@ -284,6 +287,27 @@ void handleUARTResponse(String line)
         }
         Serial.printf("❌ Cam Slave Error: %s\n", msg);
         sendUART2Command("play", "error"); // Play error sound
+        return;
+      }
+
+      // Handle face_count response (format: "Face count: N")
+      if (strstr(msg, "Face count:") != nullptr)
+      {
+        int count = 0;
+        if (sscanf(msg, "Face count: %d", &count) == 1)
+        {
+          Serial.printf("✅ Face Count: %d\n", count);
+          sendFaceDatabaseResult("face_count", count, JsonArray(), nullptr, nullptr);
+        }
+        return;
+      }
+
+      // Handle face_check response (format: "Database status: valid/invalid")
+      if (strstr(msg, "Database status:") != nullptr)
+      {
+        const char* db_status = strstr(msg, "valid") ? "valid" : "invalid";
+        Serial.printf("✅ Face Database: %s\n", msg);
+        sendFaceDatabaseResult("face_check", -1, JsonArray(), db_status, msg);
         return;
       }
 

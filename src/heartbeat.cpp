@@ -576,6 +576,87 @@ bool sendFaceDetectionAsync(bool recognized, const char *name, float confidence,
 }
 
 // ============================================================================
+// Send face database result to backend (face_count, face_list, face_check)
+// ============================================================================
+void sendFaceDatabaseResult(const char* type, int count, JsonArray faces, const char* db_status, const char* db_message)
+{
+  if (WiFi.status() != WL_CONNECTED)
+  {
+    Serial.println("[FaceDB] WiFi not connected - cannot send result");
+    return;
+  }
+
+  HTTPClient http;
+  String url = String(BACKEND_SERVER_URL) + "/api/v1/devices/" + DEVICE_ID + "/face-database/result";
+
+  http.begin(url);
+  http.addHeader("Content-Type", "application/json");
+
+  // Add Authorization header with Bearer token
+  if (DEVICE_API_TOKEN && strlen(DEVICE_API_TOKEN) > 0)
+  {
+    String authHeader = String("Bearer ") + DEVICE_API_TOKEN;
+    http.addHeader("Authorization", authHeader.c_str());
+  }
+
+  http.setTimeout(5000);
+
+  // Build JSON payload
+  StaticJsonDocument<2048> doc;
+  doc["type"] = type;
+
+  if (strcmp(type, "face_count") == 0 && count >= 0)
+  {
+    doc["count"] = count;
+  }
+  else if (strcmp(type, "face_list") == 0 && !faces.isNull())
+  {
+    JsonArray facesArray = doc.createNestedArray("faces");
+    for (JsonObject face : faces)
+    {
+      JsonObject newFace = facesArray.createNestedObject();
+      newFace["id"] = face["id"];
+      newFace["name"] = face["name"];
+    }
+  }
+  else if (strcmp(type, "face_check") == 0)
+  {
+    if (db_status != nullptr)
+    {
+      doc["status"] = db_status;
+    }
+    if (db_message != nullptr)
+    {
+      doc["message"] = db_message;
+    }
+  }
+
+  String jsonString;
+  serializeJson(doc, jsonString);
+
+  // Send POST request
+  int httpResponseCode = http.POST(jsonString);
+
+  if (httpResponseCode > 0)
+  {
+    if (httpResponseCode == 200)
+    {
+      Serial.printf("[FaceDB] ✓ %s result sent successfully\n", type);
+    }
+    else
+    {
+      Serial.printf("[FaceDB] ✗ Error sending %s result (code: %d)\n", type, httpResponseCode);
+    }
+  }
+  else
+  {
+    Serial.printf("[FaceDB] ✗ HTTP error: %s\n", http.errorToString(httpResponseCode).c_str());
+  }
+
+  http.end();
+}
+
+// ============================================================================
 // Fetch and execute pending commands from backend
 // ============================================================================
 void fetchAndExecuteCommands()
@@ -788,15 +869,15 @@ bool executeCommand(String action, JsonObject params)
 
   // Face recognition commands
   else if (action == "face_count") {
-    sendUARTCommand("face_count");
+    sendUARTCommand("get_face_count");
     return true;
   }
   else if (action == "face_list") {
-    sendUARTCommand("list_faces");
+    sendUARTCommand("print_faces");
     return true;
   }
   else if (action == "face_check") {
-    sendUARTCommand("check_face_db");
+    sendUARTCommand("check_db");
     return true;
   }
 
