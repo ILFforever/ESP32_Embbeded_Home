@@ -918,15 +918,15 @@ bool executeCommand(String action, JsonObject params)
 
   // Face recognition commands
   else if (action == "face_count") {
-    sendUARTCommand("get_face_count");
+    sendUARTCommand("face_count");
     return true;
   }
   else if (action == "face_list") {
-    sendUARTCommand("print_faces");
+    sendUARTCommand("list_faces");
     return true;
   }
   else if (action == "face_check") {
-    sendUARTCommand("check_db");
+    sendUARTCommand("check_face_db");
     return true;
   }
 
