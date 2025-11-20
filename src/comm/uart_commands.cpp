@@ -3,6 +3,7 @@
 #include "slave_state_manager.h"
 #include "heartbeat.h"
 #include "SPIMaster.h"
+#include "logger.h"
 
 // External references
 extern SPIMaster spiMaster;
@@ -126,8 +127,25 @@ void handleUARTResponse(String line)
     Serial.println(error.c_str());
     Serial.print("Line length: ");
     Serial.println(line.length());
+
+    // Log JSON parse error to backend
+    // Too many records just gracfuly handle it - Hammy
+    // StaticJsonDocument<256> meta;
+    // JsonObject metadata = meta.to<JsonObject>();
+    // metadata["error"] = error.c_str();
+    // metadata["line_length"] = line.length();
+    // metadata["raw_data"] = line.substring(0, min((int)line.length(), 100)); // First 100 chars
+    // logError("uart_slave", "Failed to parse JSON from camera slave", metadata);
+
     return;
   }
+
+  // // Print all incoming JSON messages (except pong)
+  // if (!doc.containsKey("type") || doc["type"] != "pong")
+  // {
+  //   Serial.print("📥 RX from Slave: ");
+  //   Serial.println(line);
+  // }
 
   // Handle pong response (silently, no print)
   if (doc.containsKey("type") && doc["type"] == "pong")
@@ -182,7 +200,7 @@ void handleUARTResponse(String line)
       JsonObject data = doc["data"];
       int id = data["id"] | -1;
       const char *name = data["name"] | "Unknown";
-      float confidence = data["confidence"] | 0.0;
+      float confidence = data.containsKey("confidence") ? data["confidence"].as<float>() : 0.0;
       bool recognized = (id >= 0);
 
       Serial.printf("Face Recognized: ID=%d, Name=%s, Confidence=%.2f\n",
@@ -192,7 +210,7 @@ void handleUARTResponse(String line)
       face_recognition_active = false;
 
       // Capture last frame (raw JPEG - no Base64 encoding needed!)
-      uint8_t* frameData = nullptr;
+      uint8_t *frameData = nullptr;
       uint32_t frameSize = 0;
 
       if (spiMaster.isFrameReady())
@@ -211,7 +229,7 @@ void handleUARTResponse(String line)
       {
         char msg[64];
         snprintf(msg, sizeof(msg), "Uploading data...");
-        updateStatusMsg(msg, false);  // Non-temporary message during upload
+        updateStatusMsg(msg, false); // Non-temporary message during upload
       }
       else
       {
@@ -268,25 +286,76 @@ void handleUARTResponse(String line)
   if (doc.containsKey("status"))
   {
     const char *status = doc["status"];
-    // Serial.printf("✅ Status: %s", status);
+
+    // Skip ping response messages (msg="0")
+    if (doc.containsKey("msg") && strcmp(doc["msg"], "0") == 0)
+    {
+      last_pong_time = millis();
+      return;
+    }
 
     if (doc.containsKey("msg"))
     {
       const char *msg = doc["msg"];
-      // Serial.printf(" - %s", msg);
+
+      // Handle face_count response
+      if (strcmp(status, "face_count") == 0)
+      {
+        Serial.printf("✅ Face Count: %s\n", msg);
+        return;
+      }
+
+      // Handle list_faces response
+      if (strcmp(status, "list_faces") == 0)
+      {
+        Serial.printf("✅ Face List:\n%s", msg);
+        return;
+      }
+
+      // Handle check_face_db response
+      if (strcmp(status, "face_db") == 0)
+      {
+        Serial.printf("✅ Face Database: %s\n", msg);
+        return;
+      }
+
+      // Handle microphone_event response
+      if (strcmp(status, "microphone_event") == 0)
+      {
+        Serial.printf("🎤 Microphone Event: %s\n", msg);
+        return;
+      }
 
       // Handle error status
       if (strcmp(status, "error") == 0)
       {
+        //these two messages happen too often and is handled already by status manager
         if (strcmp(msg, "Camera already stopped") == 0)
         {
           slave_status = 0;
           updateActualMode(0); // Sync actual mode
           updateStatusMsg("Doorbell Off", true, "Standing by");
           sendDoorbellStatus(false, false); // Camera inactive
+          return;
+        }
+        if (strcmp(msg, "Camera already running") == 0)
+        {
+          slave_status = 1;
+          updateActualMode(1); // Sync actual mode
+          updateStatusMsg("Doorbell Active");
+          sendDoorbellStatus(true, false); // Camera active
+          return;
         }
         Serial.printf("❌ Cam Slave Error: %s\n", msg);
         sendUART2Command("play", "error"); // Play error sound
+
+        // Log camera slave error to backend
+        StaticJsonDocument<256> meta;
+        JsonObject metadata = meta.to<JsonObject>();
+        metadata["error_message"] = msg;
+        metadata["slave_status"] = slave_status;
+        logError("uart_slave", "Camera slave reported error", metadata);
+
         return;
       }
 
@@ -400,6 +469,15 @@ void handleUART2Response(String line)
     Serial.println(line);
     Serial.print("❌ JSON parse error: ");
     Serial.println(error.c_str());
+
+    // Log JSON parse error to backend
+    StaticJsonDocument<256> meta;
+    JsonObject metadata = meta.to<JsonObject>();
+    metadata["error"] = error.c_str();
+    metadata["line_length"] = line.length();
+    metadata["raw_data"] = line.substring(0, min((int)line.length(), 100)); // First 100 chars
+    logError("uart_amp", "Failed to parse JSON from amplifier", metadata);
+
     return;
   }
 
