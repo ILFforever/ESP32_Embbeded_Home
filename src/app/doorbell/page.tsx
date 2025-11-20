@@ -498,16 +498,76 @@ export default function DoorbellControlPage() {
                       <span className="status-description">Stream audio to amplifier</span>
                     </div>
                   </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', width: '100%', marginTop: '12px' }}>
-                    <input
-                      type="text"
-                      value={ampUrl}
-                      onChange={(e) => setAmpUrl(e.target.value)}
-                      placeholder="Stream URL"
-                      className="control-input"
-                      style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ddd' }}
-                    />
-                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', width: '100%', marginTop: '12px' }}>
+                    <div style={{ position: 'relative', width: '100%' }}>
+                      <input
+                        type="text"
+                        value={ampUrl}
+                        onChange={(e) => setAmpUrl(e.target.value)}
+                        placeholder="Enter stream URL (e.g., http://stream.example.com/audio)"
+                        className="control-input"
+                        style={{
+                          width: '100%',
+                          padding: '10px 45px 10px 12px',
+                          borderRadius: '6px',
+                          border: '2px solid #e0e0e0',
+                          fontSize: '13px',
+                          fontFamily: 'monospace',
+                          transition: 'all 0.2s ease',
+                          outline: 'none',
+                          backgroundColor: '#f8f9fa'
+                        }}
+                        onFocus={(e) => {
+                          e.target.style.borderColor = '#2196F3';
+                          e.target.style.backgroundColor = '#fff';
+                        }}
+                        onBlur={(e) => {
+                          e.target.style.borderColor = '#e0e0e0';
+                          e.target.style.backgroundColor = '#f8f9fa';
+                        }}
+                      />
+                      <select
+                        onChange={(e) => setAmpUrl(e.target.value)}
+                        value=""
+                        className="stream-selector"
+                        style={{
+                          position: 'absolute',
+                          right: '4px',
+                          top: '50%',
+                          transform: 'translateY(-50%)',
+                          padding: '6px 8px',
+                          borderRadius: '4px',
+                          border: '1px solid #e0e0e0',
+                          fontSize: '13px',
+                          backgroundColor: '#fff',
+                          cursor: 'pointer',
+                          outline: 'none',
+                          transition: 'all 0.2s ease',
+                          appearance: 'none',
+                          WebkitAppearance: 'none',
+                          MozAppearance: 'none',
+                          backgroundImage: 'url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 24 24\' fill=\'none\' stroke=\'%23333\' stroke-width=\'2\' stroke-linecap=\'round\' stroke-linejoin=\'round\'%3e%3cpolyline points=\'6 9 12 15 18 9\'%3e%3c/polyline%3e%3c/svg%3e")',
+                          backgroundRepeat: 'no-repeat',
+                          backgroundPosition: 'center',
+                          backgroundSize: '18px',
+                          width: '32px',
+                          height: '32px',
+                          color: 'transparent'
+                        }}
+                        onMouseEnter={(e) => {
+                          (e.target as HTMLSelectElement).style.backgroundColor = '#f0f0f0';
+                        }}
+                        onMouseLeave={(e) => {
+                          (e.target as HTMLSelectElement).style.backgroundColor = '#fff';
+                        }}
+                      >
+                        <option value="" style={{ color: '#000' }}>Select Station</option>
+                        <option value="https://stream.live.vc.bbcmedia.co.uk/bbc_world_service_east_asia" style={{ color: '#000' }}>BBC World Service</option>
+                        <option value="https://play.streamafrica.net/japancitypop" style={{ color: '#000' }}>Japan City Pop</option>
+                        <option value="http://stream.radioparadise.com/aac-128" style={{ color: '#000' }}>Radio Paradise</option>
+                      </select>
+                    </div>
+                    <div style={{ display: 'flex', gap: '8px' }}>
                       <button
                         className="btn-control btn-start"
                         onClick={handlePlayAmplifier}
@@ -524,23 +584,6 @@ export default function DoorbellControlPage() {
                       >
                         {commandLoading === 'amp_stop' ? 'STOPPING...' : 'STOP'}
                       </button>
-                      <button
-                        className="btn-control btn-warning"
-                        onClick={handleRestartAmplifier}
-                        disabled={commandLoading === 'amp_restart'}
-                        style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}
-                      >
-                        <RotateCw size={14} />
-                        {commandLoading === 'amp_restart' ? '...' : 'RST'}
-                      </button>
-                      <button
-                        className="btn-control btn-info"
-                        onClick={() => setShowWifiSettings(true)}
-                        style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px', fontSize: '12px' }}
-                      >
-                        <Settings size={14} />
-                        WIFI
-                      </button>
                     </div>
 
                     <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
@@ -553,6 +596,32 @@ export default function DoorbellControlPage() {
                         onChange={(e) => handleVolumeChange(parseInt(e.target.value))}
                         style={{ flex: 1 }}
                       />
+                    </div>
+
+                    <div className="control-divider" style={{ margin: '16px 0' }}></div>
+
+                    <div className="card-header" style={{ paddingBottom: '8px' }}>
+                      <h3>SUB MODULE COMMAND</h3>
+                    </div>
+                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                      <button
+                        className="btn-control btn-warning"
+                        onClick={handleRestartAmplifier}
+                        disabled={commandLoading === 'amp_restart'}
+                        style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}
+                      >
+                        <RotateCw size={14} />
+                        {commandLoading === 'amp_restart' ? '...' : 'RST'}
+                      </button>
+                      <button
+                        className="btn-control btn-info"
+                        onClick={() => setShowWifiSettings(true)}
+                        disabled={commandLoading === 'amp_wifi'}
+                        style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}
+                      >
+                        <Settings size={14} />
+                        WIFI
+                      </button>
                     </div>
                   </div>
                 </div>
