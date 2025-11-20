@@ -402,34 +402,96 @@ const getAllDevicesStatus = async (req, res) => {
 
 // ============================================================================
 // @route   GET /api/v1/devices/:device_id/history
-// @desc    Get device history (last 24 hours)
+// @desc    Get device history - returns mix of heartbeats, face detections, and commands
 // ============================================================================
 const getDeviceHistory = async (req, res) => {
   try {
     const { device_id } = req.params;
-    const { limit = 100 } = req.query;
+    const { limit = 20 } = req.query; // Reduced default for mixed data
     const db = getFirestore();
+    const deviceRef = db.collection('devices').doc(device_id);
 
-    const historySnapshot = await db.collection('devices')
-      .doc(device_id)
-      .collection('heartbeat_history')
-      .orderBy('timestamp', 'desc')
-      .limit(parseInt(limit))
-      .get();
+    // Fetch data from multiple collections in parallel
+    const [heartbeatSnapshot, faceDetectionsSnapshot, commandsSnapshot] = await Promise.all([
+      // 1. Recent heartbeat/status history
+      deviceRef
+        .collection('heartbeat_history')
+        .orderBy('timestamp', 'desc')
+        .limit(parseInt(limit))
+        .get()
+        .catch(() => ({ docs: [] })), // Return empty if collection doesn't exist
 
-    const history = [];
-    historySnapshot.forEach(doc => {
-      history.push({
+      // 2. Recent face detections
+      deviceRef
+        .collection('face_detections')
+        .orderBy('detected_at', 'desc')
+        .limit(parseInt(limit))
+        .get()
+        .catch(() => ({ docs: [] })),
+
+      // 3. Recent commands (if command queue is implemented)
+      deviceRef
+        .collection('commands')
+        .orderBy('created_at', 'desc')
+        .limit(parseInt(limit))
+        .get()
+        .catch(() => ({ docs: [] }))
+    ]);
+
+    // Process heartbeat history
+    const heartbeats = [];
+    heartbeatSnapshot.docs.forEach(doc => {
+      heartbeats.push({
+        type: 'heartbeat',
         id: doc.id,
-        ...doc.data()
+        timestamp: doc.data().timestamp,
+        data: doc.data()
       });
     });
 
+    // Process face detections
+    const faceDetections = [];
+    faceDetectionsSnapshot.docs.forEach(doc => {
+      faceDetections.push({
+        type: 'face_detection',
+        id: doc.id,
+        timestamp: doc.data().detected_at || doc.data().timestamp,
+        data: doc.data()
+      });
+    });
+
+    // Process commands
+    const commands = [];
+    commandsSnapshot.docs.forEach(doc => {
+      commands.push({
+        type: 'command',
+        id: doc.id,
+        timestamp: doc.data().created_at || doc.data().executed_at,
+        data: doc.data()
+      });
+    });
+
+    // Combine all events and sort by timestamp (most recent first)
+    const allEvents = [...heartbeats, ...faceDetections, ...commands];
+
+    // Sort by timestamp
+    allEvents.sort((a, b) => {
+      const timeA = a.timestamp?.toDate ? a.timestamp.toDate() : new Date(a.timestamp || 0);
+      const timeB = b.timestamp?.toDate ? b.timestamp.toDate() : new Date(b.timestamp || 0);
+      return timeB - timeA; // Descending order (newest first)
+    });
+
+    // Return mixed history
     res.json({
       status: 'ok',
       device_id,
-      count: history.length,
-      history
+      summary: {
+        total: allEvents.length,
+        heartbeats: heartbeats.length,
+        face_detections: faceDetections.length,
+        commands: commands.length
+      },
+      history: allEvents.slice(0, parseInt(limit)) // Limit total results
     });
 
   } catch (error) {

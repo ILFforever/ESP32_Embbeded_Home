@@ -373,18 +373,52 @@ describe('Device Controller Tests', () => {
   // 6. TEST: getDeviceHistory
   // ============================================================================
   describe('GET /api/v1/devices/:device_id/history', () => {
-    it('should return device history with default limit', async () => {
+    it('should return mixed history with heartbeats, face detections, and commands', async () => {
       const deviceId = 'doorbell_001';
-      const mockHistory = [
-        { id: '1', data: () => ({ temperature: 25, timestamp: new Date() }) },
-        { id: '2', data: () => ({ temperature: 26, timestamp: new Date() }) }
+      const now = new Date();
+
+      // Mock heartbeat history
+      const mockHeartbeats = [
+        {
+          id: 'hb1',
+          data: () => ({
+            timestamp: admin.firestore.Timestamp.fromDate(now),
+            uptime_ms: 120000
+          })
+        }
       ];
 
+      // Mock face detections
+      const mockFaceDetections = [
+        {
+          id: 'face1',
+          data: () => ({
+            detected_at: admin.firestore.Timestamp.fromDate(now),
+            recognized: true,
+            name: 'John'
+          })
+        }
+      ];
+
+      // Mock commands
+      const mockCommands = [
+        {
+          id: 'cmd1',
+          data: () => ({
+            created_at: admin.firestore.Timestamp.fromDate(now),
+            action: 'camera_start',
+            status: 'completed'
+          })
+        }
+      ];
+
+      // Setup mock chain for multiple collections
       mockCollection.orderBy.mockReturnThis();
       mockCollection.limit.mockReturnThis();
-      mockCollection.get.mockResolvedValue({
-        docs: mockHistory
-      });
+      mockCollection.get
+        .mockResolvedValueOnce({ docs: mockHeartbeats })
+        .mockResolvedValueOnce({ docs: mockFaceDetections })
+        .mockResolvedValueOnce({ docs: mockCommands });
 
       const response = await request(app)
         .get(`/api/v1/devices/${deviceId}/history`)
@@ -392,7 +426,13 @@ describe('Device Controller Tests', () => {
 
       expect(response.body.status).toBe('ok');
       expect(response.body.device_id).toBe(deviceId);
-      expect(response.body.data).toHaveLength(2);
+      expect(response.body.summary).toBeDefined();
+      expect(response.body.summary.heartbeats).toBe(1);
+      expect(response.body.summary.face_detections).toBe(1);
+      expect(response.body.summary.commands).toBe(1);
+      expect(response.body.summary.total).toBe(3);
+      expect(response.body.history).toHaveLength(3);
+      expect(response.body.history[0].type).toBeDefined();
     });
 
     it('should respect custom limit parameter', async () => {
@@ -408,6 +448,59 @@ describe('Device Controller Tests', () => {
         .expect(200);
 
       expect(mockCollection.limit).toHaveBeenCalledWith(limit);
+    });
+
+    it('should handle missing collections gracefully', async () => {
+      const deviceId = 'doorbell_001';
+
+      mockCollection.orderBy.mockReturnThis();
+      mockCollection.limit.mockReturnThis();
+      mockCollection.get.mockResolvedValue({ docs: [] });
+
+      const response = await request(app)
+        .get(`/api/v1/devices/${deviceId}/history`)
+        .expect(200);
+
+      expect(response.body.status).toBe('ok');
+      expect(response.body.summary.total).toBe(0);
+      expect(response.body.history).toHaveLength(0);
+    });
+
+    it('should sort events by timestamp in descending order', async () => {
+      const deviceId = 'doorbell_001';
+      const now = Date.now();
+
+      const mockHeartbeats = [
+        {
+          id: 'hb1',
+          data: () => ({
+            timestamp: admin.firestore.Timestamp.fromDate(new Date(now - 2000))
+          })
+        }
+      ];
+
+      const mockFaceDetections = [
+        {
+          id: 'face1',
+          data: () => ({
+            detected_at: admin.firestore.Timestamp.fromDate(new Date(now))
+          })
+        }
+      ];
+
+      mockCollection.orderBy.mockReturnThis();
+      mockCollection.limit.mockReturnThis();
+      mockCollection.get
+        .mockResolvedValueOnce({ docs: mockHeartbeats })
+        .mockResolvedValueOnce({ docs: mockFaceDetections })
+        .mockResolvedValueOnce({ docs: [] });
+
+      const response = await request(app)
+        .get(`/api/v1/devices/${deviceId}/history`)
+        .expect(200);
+
+      expect(response.body.history[0].type).toBe('face_detection'); // Most recent first
+      expect(response.body.history[1].type).toBe('heartbeat');
     });
   });
 
