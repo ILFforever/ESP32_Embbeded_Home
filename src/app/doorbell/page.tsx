@@ -248,8 +248,13 @@ export default function DoorbellControlPage() {
 
     setCommandLoading('amp_play');
     try {
-      await playAmplifier(deviceId, ampUrl);
-      alert('Amplifier play command sent');
+      const response = await playAmplifier(deviceId, ampUrl);
+      if (response.status === 'ok') {
+        alert('Amplifier play command sent');
+      } else {
+        console.error('Failed to play amplifier:', response);
+        alert('Failed to play amplifier');
+      }
     } catch (error) {
       console.error('Error playing amplifier:', error);
       alert('Failed to play amplifier');
@@ -264,8 +269,13 @@ export default function DoorbellControlPage() {
 
     setCommandLoading('amp_stop');
     try {
-      await stopAmplifier(deviceId);
-      alert('Amplifier stopped');
+      const response = await stopAmplifier(deviceId);
+      if (response.status === 'ok') {
+        alert('Amplifier stopped');
+      } else {
+        console.error('Failed to stop amplifier:', response);
+        alert('Failed to stop amplifier');
+      }
     } catch (error) {
       console.error('Error stopping amplifier:', error);
       alert('Failed to stop amplifier');
@@ -280,8 +290,13 @@ export default function DoorbellControlPage() {
 
     setCommandLoading('amp_restart');
     try {
-      await restartAmplifier(deviceId);
-      alert('Amplifier restart command sent');
+      const response = await restartAmplifier(deviceId);
+      if (response.status === 'ok') {
+        alert('Amplifier restart command sent');
+      } else {
+        console.error('Failed to restart amplifier:', response);
+        alert('Failed to restart amplifier');
+      }
     } catch (error) {
       console.error('Error restarting amplifier:', error);
       alert('Failed to restart amplifier');
@@ -290,21 +305,35 @@ export default function DoorbellControlPage() {
     }
   };
 
-  const handleVolumeChange = async (newVolume: number) => {
-    if (!doorbellDevice?.device_id) return;
-
+  const handleVolumeChange = (newVolume: number) => {
+    // Update local state immediately for responsive UI
     setAmpVolume(newVolume);
+  };
 
-    // Auto-set volume when slider changes
+  const handleVolumeSend = async (finalVolume: number) => {
+    const deviceId = getEffectiveDeviceId();
+    if (!deviceId) return;
+
+    // Send volume command to backend only when user releases slider
     try {
-      await setAmplifierVolume(doorbellDevice.device_id, newVolume);
+      const response = await setAmplifierVolume(deviceId, finalVolume);
+
+      // Check backend response
+      if (response.status === 'ok') {
+        console.log(`Volume set to ${finalVolume}: ${response.message}`);
+      } else {
+        console.error('Failed to set volume:', response);
+        alert('Failed to set amplifier volume');
+      }
     } catch (error) {
       console.error('Error setting amplifier volume:', error);
+      alert('Failed to set amplifier volume');
     }
   };
 
   const handleSetAmplifierWifi = async () => {
-    if (!doorbellDevice?.device_id) return;
+    const deviceId = getEffectiveDeviceId();
+    if (!deviceId) return;
 
     if (!wifiSsid || !wifiPassword) {
       alert('Please enter both SSID and password');
@@ -313,11 +342,16 @@ export default function DoorbellControlPage() {
 
     setCommandLoading('amp_wifi');
     try {
-      await setAmplifierWifi(doorbellDevice.device_id, wifiSsid, wifiPassword);
-      alert('WiFi credentials saved. Amplifier will use new credentials on next stream.');
-      setWifiSsid('');
-      setWifiPassword('');
-      setShowWifiSettings(false);
+      const response = await setAmplifierWifi(deviceId, wifiSsid, wifiPassword);
+      if (response.status === 'ok') {
+        alert('WiFi credentials saved. Amplifier will use new credentials on next stream.');
+        setWifiSsid('');
+        setWifiPassword('');
+        setShowWifiSettings(false);
+      } else {
+        console.error('Failed to set WiFi:', response);
+        alert('Failed to set amplifier WiFi');
+      }
     } catch (error) {
       console.error('Error setting amplifier WiFi:', error);
       alert('Failed to set amplifier WiFi');
@@ -610,7 +644,18 @@ export default function DoorbellControlPage() {
                         max="21"
                         value={ampVolume}
                         onChange={(e) => handleVolumeChange(parseInt(e.target.value))}
-                        style={{ flex: 1 }}
+                        onMouseUp={(e) => handleVolumeSend(parseInt((e.target as HTMLInputElement).value))}
+                        onTouchEnd={(e) => handleVolumeSend(parseInt((e.target as HTMLInputElement).value))}
+                        className="volume-slider"
+                        style={{
+                          flex: 1,
+                          height: '6px',
+                          borderRadius: '3px',
+                          background: `linear-gradient(to right, #4CAF50 0%, #4CAF50 ${(ampVolume / 21) * 100}%, #e0e0e0 ${(ampVolume / 21) * 100}%, #e0e0e0 100%)`,
+                          outline: 'none',
+                          cursor: 'pointer',
+                          transition: 'background 0.15s ease'
+                        }}
                       />
                     </div>
                     <div style={{ position: 'relative', width: '100%' }}>
@@ -1068,6 +1113,55 @@ export default function DoorbellControlPage() {
           </div>
         </div>
       )}
+
+      {/* Volume Slider Styles */}
+      <style jsx>{`
+        .volume-slider::-webkit-slider-thumb {
+          appearance: none;
+          width: 18px;
+          height: 18px;
+          border-radius: 50%;
+          background: #4CAF50;
+          cursor: pointer;
+          box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+          transition: all 0.2s ease;
+        }
+
+        .volume-slider::-webkit-slider-thumb:hover {
+          background: #45a049;
+          box-shadow: 0 3px 6px rgba(0, 0, 0, 0.3);
+          transform: scale(1.1);
+        }
+
+        .volume-slider::-webkit-slider-thumb:active {
+          background: #3d8b40;
+          box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+          transform: scale(0.95);
+        }
+
+        .volume-slider::-moz-range-thumb {
+          width: 18px;
+          height: 18px;
+          border-radius: 50%;
+          background: #4CAF50;
+          cursor: pointer;
+          border: none;
+          box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+          transition: all 0.2s ease;
+        }
+
+        .volume-slider::-moz-range-thumb:hover {
+          background: #45a049;
+          box-shadow: 0 3px 6px rgba(0, 0, 0, 0.3);
+          transform: scale(1.1);
+        }
+
+        .volume-slider::-moz-range-thumb:active {
+          background: #3d8b40;
+          box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+          transform: scale(0.95);
+        }
+      `}</style>
     </ProtectedRoute>
   );
 }
