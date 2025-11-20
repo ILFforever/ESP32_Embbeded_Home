@@ -456,7 +456,7 @@ const getDeviceHistory = async (req, res) => {
     const deviceRef = db.collection('devices').doc(device_id);
 
     // Fetch data from multiple sources in parallel
-    const [liveStatusDoc, faceDetectionsSnapshot, commandsSnapshot] = await Promise.all([
+    const [liveStatusDoc, faceDetectionsSnapshot, commandsSnapshot, deviceLogsSnapshot] = await Promise.all([
       // 1. Current live_status (contains device_state and heartbeat)
       deviceRef
         .collection('live_status')
@@ -475,6 +475,14 @@ const getDeviceHistory = async (req, res) => {
       // 3. Recent commands
       deviceRef
         .collection('commands')
+        .orderBy('created_at', 'desc')
+        .limit(parseInt(limit))
+        .get()
+        .catch(() => ({ docs: [] })),
+
+      // 4. Recent device logs
+      deviceRef
+        .collection('device_logs')
         .orderBy('created_at', 'desc')
         .limit(parseInt(limit))
         .get()
@@ -529,8 +537,19 @@ const getDeviceHistory = async (req, res) => {
       });
     });
 
+    // Process device logs
+    const deviceLogs = [];
+    deviceLogsSnapshot.docs.forEach(doc => {
+      deviceLogs.push({
+        type: 'device_log',
+        id: doc.id,
+        timestamp: doc.data().created_at || doc.data().timestamp,
+        data: doc.data()
+      });
+    });
+
     // Combine all events and sort by timestamp (most recent first)
-    const allEvents = [...statusEvents, ...faceDetections, ...commands];
+    const allEvents = [...statusEvents, ...faceDetections, ...commands, ...deviceLogs];
 
     // Sort by timestamp
     allEvents.sort((a, b) => {
@@ -547,7 +566,8 @@ const getDeviceHistory = async (req, res) => {
         total: allEvents.length,
         status_events: statusEvents.length,
         face_detections: faceDetections.length,
-        commands: commands.length
+        commands: commands.length,
+        device_logs: deviceLogs.length
       },
       history: allEvents.slice(0, parseInt(limit)) // Limit total results
     });
