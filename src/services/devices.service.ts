@@ -284,6 +284,28 @@ interface BackendDoorbellControlResponse {
   result: any;
 }
 
+// Face database info types
+export interface FaceInfo {
+  id: number;
+  name: string;
+}
+
+export interface FaceDatabaseInfo {
+  type: string;
+  count: number;
+  faces: FaceInfo[];
+  db_status: string;
+  db_message: string;
+  last_updated: any;
+}
+
+interface BackendFaceDatabaseInfoResponse {
+  status: string;
+  device_id: string;
+  face_database: FaceDatabaseInfo | null;
+  message?: string;
+}
+
 // Get doorbell device info via backend proxy
 export async function getDoorbellInfo(deviceId: string): Promise<DoorbellInfo | null> {
   try {
@@ -572,6 +594,27 @@ export async function checkFaceDatabase(deviceId: string) {
   } catch (error) {
     console.error('Error checking face database:', error);
     throw error;
+  }
+}
+
+// Get face database info (current status from backend)
+export async function getFaceDatabaseInfo(deviceId: string): Promise<FaceDatabaseInfo | null> {
+  try {
+    const response = await axios.get<BackendFaceDatabaseInfoResponse>(
+      `${API_URL}/api/v1/devices/${deviceId}/face-database/info`,
+      {
+        timeout: 10000,
+        headers: getAuthHeaders()
+      }
+    );
+
+    if (response.data.status === 'ok') {
+      return response.data.face_database;
+    }
+    return null;
+  } catch (error) {
+    console.error('Error fetching face database info:', error);
+    return null;
   }
 }
 
