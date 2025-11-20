@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import ProtectedRoute from '@/components/auth/ProtectedRoute';
-import { getAllDevices, getDeviceHistory, type HistoryEvent, type DeviceHistory } from '@/services/devices.service';
+import { getAllDevices } from '@/services/devices.service';
 import type { Device } from '@/types/dashboard';
 
 export default function DoorbellControlPage() {
@@ -11,8 +11,6 @@ export default function DoorbellControlPage() {
   const [doorbellDevice, setDoorbellDevice] = useState<Device | null>(null);
   const [isOnline, setIsOnline] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [history, setHistory] = useState<HistoryEvent[]>([]);
-  const [historySummary, setHistorySummary] = useState<DeviceHistory['summary'] | null>(null);
   const [settings, setSettings] = useState({
     cameraEnabled: true,
     micEnabled: true,
@@ -43,15 +41,6 @@ export default function DoorbellControlPage() {
             setIsOnline(diffMinutes < 2);
           } else {
             setIsOnline(false);
-          }
-
-          // Fetch device history
-          try {
-            const historyData = await getDeviceHistory(doorbell.device_id, 10);
-            setHistory(historyData.history);
-            setHistorySummary(historyData.summary);
-          } catch (historyError) {
-            console.error('Error fetching device history:', historyError);
           }
         }
       } catch (error) {
@@ -357,55 +346,29 @@ export default function DoorbellControlPage() {
             <div className="card">
               <div className="card-header">
                 <h3>RECENT ACTIVITY</h3>
-                {historySummary && (
-                  <span style={{ fontSize: '0.8rem', color: '#888' }}>
-                    {historySummary.total} events ({historySummary.heartbeats} status, {historySummary.face_detections} faces, {historySummary.commands} commands)
-                  </span>
-                )}
               </div>
               <div className="card-content">
                 <div className="activity-list">
-                  {history.length === 0 ? (
-                    <div style={{ textAlign: 'center', padding: '20px', color: '#888' }}>
-                      No recent activity
-                    </div>
-                  ) : (
-                    history.map((event) => {
-                      const timestamp = event.timestamp?.toDate ? event.timestamp.toDate() : new Date(event.timestamp);
-                      const timeStr = timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-
-                      let description = '';
-                      let status = 'status-safe';
-
-                      if (event.type === 'face_detection') {
-                        const recognized = event.data.recognized;
-                        const name = event.data.name || 'Unknown';
-                        description = recognized ? `Face recognized: ${name}` : `Unknown face detected`;
-                        status = recognized ? 'status-safe' : 'status-warning';
-                      } else if (event.type === 'command') {
-                        const action = event.data.action || 'unknown';
-                        const cmdStatus = event.data.status || 'pending';
-                        description = `Command: ${action}`;
-                        status = cmdStatus === 'completed' ? 'status-safe' : cmdStatus === 'failed' ? 'status-danger' : 'status-warning';
-                      } else if (event.type === 'heartbeat') {
-                        const uptime = event.data.uptime_ms ? Math.floor(event.data.uptime_ms / 60000) : 0;
-                        description = `Status update (uptime: ${uptime}m)`;
-                        status = 'status-safe';
-                      }
-
-                      return (
-                        <div key={event.id} className="activity-item">
-                          <span className="activity-time">{timeStr}</span>
-                          <span className="activity-desc">{description}</span>
-                          <span className={`activity-status ${status}`}>
-                            {event.type === 'face_detection' ? (event.data.recognized ? 'Known' : 'Unknown') :
-                             event.type === 'command' ? (event.data.status || 'Pending') :
-                             'Online'}
-                          </span>
-                        </div>
-                      );
-                    })
-                  )}
+                  <div className="activity-item">
+                    <span className="activity-time">2:30 PM</span>
+                    <span className="activity-desc">Motion detected</span>
+                    <span className="activity-status status-safe">Normal</span>
+                  </div>
+                  <div className="activity-item">
+                    <span className="activity-time">11:45 AM</span>
+                    <span className="activity-desc">Doorbell pressed</span>
+                    <span className="activity-status status-safe">Delivered</span>
+                  </div>
+                  <div className="activity-item">
+                    <span className="activity-time">9:20 AM</span>
+                    <span className="activity-desc">Face recognized: John Doe</span>
+                    <span className="activity-status status-safe">Known</span>
+                  </div>
+                  <div className="activity-item">
+                    <span className="activity-time">8:00 AM</span>
+                    <span className="activity-desc">Recording started</span>
+                    <span className="activity-status status-safe">Auto</span>
+                  </div>
                 </div>
               </div>
             </div>
