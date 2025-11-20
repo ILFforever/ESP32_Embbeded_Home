@@ -299,24 +299,10 @@ void handleUARTResponse(String line)
     {
       const char *msg = doc["msg"];
 
-      // Handle face_count response
-      if (strcmp(status, "face_count") == 0)
-      {
-        Serial.printf("✅ Face Count: %s\n", msg);
-        return;
-      }
-
       // Handle list_faces response
       if (strcmp(status, "list_faces") == 0)
       {
         Serial.printf("✅ Face List:\n%s", msg);
-        return;
-      }
-
-      // Handle check_face_db response
-      if (strcmp(status, "face_db") == 0)
-      {
-        Serial.printf("✅ Face Database: %s\n", msg);
         return;
       }
 
