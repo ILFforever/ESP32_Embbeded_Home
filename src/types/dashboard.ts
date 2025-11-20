@@ -106,3 +106,33 @@ export interface SensorPairing {
   paired: boolean;
   last_seen: string | null;
 }
+
+// Sensor data from Backend API
+export interface SensorData {
+  device_id: string;
+  sensors: {
+    temperature?: number;
+    humidity?: number;
+    pm25?: number;
+    pm10?: number;
+    co2?: number;
+    motion?: boolean;
+    [key: string]: any;
+  };
+  timestamp?: string;
+}
+
+// Hub sensor data with multiple sensors
+export interface HubSensorData {
+  device_id: string;
+  dht11?: {
+    temperature: number;
+    humidity: number;
+  };
+  pm25?: {
+    pm25: number;
+    pm10?: number;
+    aqi?: number; // Air Quality Index
+  };
+  timestamp: string;
+}
