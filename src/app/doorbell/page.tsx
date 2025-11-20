@@ -418,9 +418,9 @@ export default function DoorbellControlPage() {
     if (event.type === 'face_detection') {
       const recognized = event.data?.recognized || false;
       const name = event.data?.name || 'Unknown';
-      const confidence = event.data?.confidence || 0;
+      const confidence = event.data?.confidence * 100 || 0;
       if (recognized && name !== 'Unknown') {
-        return `Face recognized: ${name} (${confidence.toFixed(0)}%)`;
+        return `Face recognized: ${name} (CFD : ${confidence.toFixed(0)}%)`;
       }
       return 'Unknown face detected';
     }
