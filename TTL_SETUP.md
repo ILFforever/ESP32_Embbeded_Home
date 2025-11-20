@@ -37,15 +37,15 @@ firebase login
 
 ### Step 3: Create TTL Policy for Status (Auto-Offline Detection)
 
-This policy automatically deletes status documents after 2 minutes of no heartbeat:
+This policy automatically deletes live status documents after 2 minutes of no heartbeat:
 
 ```bash
 firebase firestore:ttl-policies:create \
-  --collection-group=status \
+  --collection-group=live_status \
   --field=expireAt
 ```
 
-**Purpose:** When devices go offline, the status/current document is automatically deleted by Firestore after the `expireAt` timestamp passes. This makes online detection as simple as checking if the document exists.
+**Purpose:** When devices go offline, the live_status/heartbeat document is automatically deleted by Firestore after the `expireAt` timestamp passes. This makes online detection as simple as checking if the document exists.
 
 ### Step 4: Create TTL Policy for History (Cleanup Old Data)
 
@@ -69,7 +69,7 @@ firebase firestore:ttl-policies:list
 
 You should see:
 ```
-Collection Group: status
+Collection Group: live_status
 Field: expireAt
 Status: Active
 
@@ -80,9 +80,9 @@ Status: Active
 
 ## Data Structure
 
-### Status Document (with TTL)
+### Heartbeat Document (with TTL)
 ```
-devices/{device_id}/status/current/
+devices/{device_id}/live_status/heartbeat/
 ├── last_heartbeat: timestamp
 ├── ip_address: "192.168.1.100"
 ├── uptime_ms: 123456789
@@ -90,6 +90,18 @@ devices/{device_id}/status/current/
 ├── wifi_rssi: -65
 ├── updated_at: timestamp
 └── expireAt: timestamp (2 min from now) ← AUTO-DELETES when time passes
+```
+
+### Device State Document (with TTL)
+```
+devices/{device_id}/live_status/device_state/
+├── camera_active: boolean
+├── mic_active: boolean
+├── recording: boolean
+├── motion_detected: boolean
+├── battery_level: number
+├── last_updated: timestamp
+└── expireAt: timestamp (2 min from now) ← AUTO-DELETES when device offline
 ```
 
 ### History Document (with TTL)
@@ -120,8 +132,8 @@ const HISTORY_RETENTION_DAYS = 30; // 30 days - history data retention
 ```javascript
 const statusDoc = await db.collection('devices')
   .doc(device_id)
-  .collection('status')
-  .doc('current')
+  .collection('live_status')
+  .doc('heartbeat')
   .get();
 
 const isOnline = statusDoc.exists; // Simple!

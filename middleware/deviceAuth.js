@@ -9,7 +9,13 @@ const authenticateDevice = async (req, res, next) => {
     // Get token from Authorization header
     const authHeader = req.headers.authorization;
 
+    // Debug logging for missing auth
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      console.log('[AUTH] Missing/invalid Authorization header');
+      console.log('[AUTH] Received headers:', JSON.stringify(req.headers, null, 2));
+      console.log('[AUTH] Path:', req.path);
+      console.log('[AUTH] Method:', req.method);
+
       return res.status(401).json({
         status: 'error',
         message: 'Missing or invalid Authorization header. Expected: Bearer <token>'
@@ -25,13 +31,21 @@ const authenticateDevice = async (req, res, next) => {
       });
     }
 
-    // Get device_id from request body
-    const { device_id } = req.body;
+    // Get device_id from request body, params, or query (supports POST and GET requests)
+    // For multipart form data (multer), check both req.body and req.body fields
+    let device_id = req.body?.device_id || req.params?.device_id || req.query?.device_id;
+
+    // Debug logging for multipart issues
+    if (!device_id && req.file) {
+      console.log('[AUTH] Multipart request - req.body:', req.body);
+      console.log('[AUTH] Available fields:', Object.keys(req.body || {}));
+    }
 
     if (!device_id) {
       return res.status(400).json({
         status: 'error',
-        message: 'device_id required in request body'
+        message: 'device_id required in request body, params, or query',
+        debug: req.file ? 'Multipart form detected but device_id not found in body' : undefined
       });
     }
 

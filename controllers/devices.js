@@ -1,5 +1,5 @@
 const { getFirestore, admin } = require('../config/firebase');
-const { publishFaceDetection } = require('../config/mqtt');
+const { publishFaceDetection, publishDeviceCommand } = require('../config/mqtt');
 const crypto = require('crypto');
 
 // ============================================================================
@@ -13,7 +13,7 @@ function generateDeviceToken() {
 }
 
 // Thresholds
-const WRITE_INTERVAL_MS = 5 * 60 * 1000; // Write every 5 minutes
+const WRITE_INTERVAL_MS = 1 * 60 * 1000; // Write every 1 minute
 const SENSOR_DELTA_THRESHOLD = 5; // Write if sensor changes by 5%
 const OFFLINE_THRESHOLD_MS = 2 * 60 * 1000; // 2 minutes = offline
 
@@ -47,7 +47,7 @@ function shouldWriteToFirebase(deviceId, newData, dataType = 'heartbeat') {
   const now = Date.now();
   const timeSinceLastWrite = now - cached.lastWriteTime;
 
-  // Always write if 5+ minutes elapsed
+  // Always write if 1+ minute elapsed
   if (timeSinceLastWrite >= WRITE_INTERVAL_MS) {
     return true;
   }
@@ -149,6 +149,7 @@ const registerDevice = async (req, res) => {
 // ============================================================================
 // @route   POST /api/v1/devices/heartbeat
 // @desc    Receive device heartbeat - ALWAYS respond OK, throttle Firebase writes
+//          Also notify device if there are pending commands to fetch
 // ============================================================================
 const handleHeartbeat = async (req, res) => {
   try {
@@ -173,18 +174,18 @@ const handleHeartbeat = async (req, res) => {
 
     // Check if we should write to Firebase (throttling logic)
     const shouldWrite = shouldWriteToFirebase(device_id, heartbeatData, 'heartbeat');
+    const db = getFirestore();
+    const deviceRef = db.collection('devices').doc(device_id);
 
     if (shouldWrite) {
       console.log(`[Heartbeat] ${device_id} - Writing to Firebase`);
 
-      const db = getFirestore();
-      const deviceRef = db.collection('devices').doc(device_id);
       const now = admin.firestore.FieldValue.serverTimestamp();
       const statusExpireAt = getStatusExpiration();
       const historyExpireAt = getHistoryExpiration();
 
       // Write current status WITH TTL - auto-deletes if device goes offline
-      await deviceRef.collection('status').doc('current').set({
+      await deviceRef.collection('live_status').doc('heartbeat').set({
         ...heartbeatData,
         last_heartbeat: now,
         updated_at: now,
@@ -213,11 +214,31 @@ const handleHeartbeat = async (req, res) => {
       console.log(`[Heartbeat] ${device_id} - Throttled (no Firebase write)`);
     }
 
+    // Check for pending commands (lightweight query)
+    let hasPendingCommands = false;
+    try {
+      const pendingCommandsSnapshot = await deviceRef
+        .collection('commands')
+        .where('status', '==', 'pending')
+        .limit(1)
+        .get();
+
+      hasPendingCommands = !pendingCommandsSnapshot.empty;
+
+      if (hasPendingCommands) {
+        console.log(`[Heartbeat] ${device_id} - Has pending commands, notifying device`);
+      }
+    } catch (cmdError) {
+      console.error('[Heartbeat] Error checking commands:', cmdError);
+      // Non-blocking - continue with heartbeat response
+    }
+
     // ALWAYS respond OK to ESP32 (so it knows backend is alive)
     res.json({
       status: 'ok',
       message: 'Heartbeat received',
       written: shouldWrite, // For debugging
+      has_pending_commands: hasPendingCommands, // NEW: Tell device to fetch commands
       next_write_in: shouldWrite ? WRITE_INTERVAL_MS : Math.max(0, WRITE_INTERVAL_MS - (Date.now() - (deviceCache.get(device_id)?.lastWriteTime || 0)))
     });
 
@@ -287,7 +308,7 @@ const handleSensorData = async (req, res) => {
 
 // ============================================================================
 // @route   GET /api/v1/devices/:device_id/status
-// @desc    Get current device status (TTL-based: document exists = online, missing = offline)
+// @desc    Get current device status (use expireAt to determine online status)
 // ============================================================================
 const getDeviceStatus = async (req, res) => {
   try {
@@ -296,22 +317,29 @@ const getDeviceStatus = async (req, res) => {
 
     const statusDoc = await db.collection('devices')
       .doc(device_id)
-      .collection('status')
-      .doc('current')
+      .collection('live_status')
+      .doc('heartbeat')
       .get();
 
     if (statusDoc.exists) {
-      // Document exists = device is online (TTL hasn't deleted it)
+      // Document exists - calculate online status from expireAt
       const data = statusDoc.data();
+
+      // Check if device is online based on expireAt timestamp
+      const now = Date.now();
+      const expireAtMillis = data.expireAt ? data.expireAt.toMillis() : 0;
+      const isOnline = expireAtMillis > now;
+
       res.json({
         status: 'ok',
         device_id,
-        online: true,
+        online: isOnline,
         last_heartbeat: data.last_heartbeat,
         uptime_ms: data.uptime_ms,
         free_heap: data.free_heap,
         wifi_rssi: data.wifi_rssi,
-        ip_address: data.ip_address
+        ip_address: data.ip_address,
+        expireAt: data.expireAt
       });
     } else {
       // Document doesn't exist = device went offline and TTL deleted it
@@ -331,37 +359,53 @@ const getDeviceStatus = async (req, res) => {
 
 // ============================================================================
 // @route   GET /api/v1/devices/status/all
-// @desc    Get status of all devices (TTL-based: document exists = online)
+// @desc    Get status of all devices (use expireAt to determine online status)
+// @query   type - optional filter by device type (e.g., doorbell, hub, sensor)
 // ============================================================================
 const getAllDevicesStatus = async (req, res) => {
   try {
+    const { type } = req.query;
     const db = getFirestore();
-    const devicesSnapshot = await db.collection('devices').get();
+
+    // Build query - optionally filter by type
+    let query = db.collection('devices');
+    if (type) {
+      query = query.where('type', '==', type);
+    }
+
+    const devicesSnapshot = await query.get();
 
     const devices = [];
+    let onlineCount = 0;
 
     for (const deviceDoc of devicesSnapshot.docs) {
       const deviceId = deviceDoc.id;
       const deviceData = deviceDoc.data();
 
       // Get status subcollection
-      const statusDoc = await deviceDoc.ref.collection('status').doc('current').get();
+      const statusDoc = await deviceDoc.ref.collection('live_status').doc('heartbeat').get();
 
       if (statusDoc.exists) {
-        // Document exists = device is online (TTL hasn't deleted it)
+        // Document exists - calculate online status from expireAt
         const statusData = statusDoc.data();
         const lastHeartbeat = statusData.last_heartbeat?.toMillis() || 0;
+        const expireAt = statusData.expireAt;
+
+        // Count as online if expireAt is in the future
+        const isOnline = expireAt && expireAt.toMillis() > Date.now();
+        if (isOnline) onlineCount++;
 
         devices.push({
           device_id: deviceId,
           type: deviceData.type || 'unknown',
           name: deviceData.name || deviceId,
-          online: true,  // Document exists = online
+          online: isOnline,
           last_seen: lastHeartbeat ? new Date(lastHeartbeat).toISOString() : null,
           uptime_ms: statusData.uptime_ms || 0,
           free_heap: statusData.free_heap || 0,
           wifi_rssi: statusData.wifi_rssi || 0,
-          ip_address: statusData.ip_address || null
+          ip_address: statusData.ip_address || null,
+          expireAt: expireAt
         });
       } else {
         // Document doesn't exist = device offline (TTL deleted it or never sent heartbeat)
@@ -369,18 +413,18 @@ const getAllDevicesStatus = async (req, res) => {
           device_id: deviceId,
           type: deviceData.type || 'unknown',
           name: deviceData.name || deviceId,
-          online: false,  // Document missing = offline
+          online: false,
           last_seen: null,
           uptime_ms: 0,
           free_heap: 0,
           wifi_rssi: 0,
-          ip_address: null
+          ip_address: null,
+          expireAt: null
         });
       }
     }
 
     // Summary stats
-    const onlineCount = devices.filter(d => d.online).length;
     const offlineCount = devices.length - onlineCount;
 
     res.json({
@@ -679,7 +723,7 @@ const handleHubLog = async (req, res) => {
 
     // If it's an error, also update device status
     if (level === 'error') {
-      await deviceRef.collection('status').doc('current').set({
+      await deviceRef.collection('live_status').doc('heartbeat').set({
         last_error: message,
         last_error_time: admin.firestore.FieldValue.serverTimestamp()
       }, { merge: true });
@@ -700,10 +744,20 @@ const handleHubLog = async (req, res) => {
 // ============================================================================
 // @route   POST /api/v1/devices/doorbell/status
 // @desc    Doorbell pushes its status/info to server (camera state, etc.)
+//          ALSO acts as heartbeat - resets TTL timer to keep device online
 // ============================================================================
 const handleDoorbellStatus = async (req, res) => {
   try {
-    const { device_id, camera_active, mic_active, recording, motion_detected, battery_level } = req.body;
+    const {
+      device_id,
+      camera_active,
+      mic_active,
+      // Optional heartbeat fields (if doorbell wants to send them)
+      uptime_ms,
+      free_heap,
+      wifi_rssi,
+      ip_address
+    } = req.body;
 
     if (!device_id) {
       return res.status(400).json({
@@ -712,24 +766,55 @@ const handleDoorbellStatus = async (req, res) => {
       });
     }
 
-    console.log(`[DoorbellStatus] ${device_id} - Received status update`);
+    console.log(`[DoorbellStatus] ${device_id} - Received status update (also acts as heartbeat)`);
 
     const db = getFirestore();
     const deviceRef = db.collection('devices').doc(device_id);
+    const now = admin.firestore.FieldValue.serverTimestamp();
+    const statusExpireAt = getStatusExpiration();
 
-    // Update doorbell-specific status in Firebase
-    await deviceRef.collection('status').doc('doorbell').set({
-      camera_active: camera_active || false,
-      mic_active: mic_active || false,
-      recording: recording || false,
-      motion_detected: motion_detected || false,
-      battery_level: battery_level || null,
-      last_updated: admin.firestore.FieldValue.serverTimestamp()
+    // Update doorbell-specific status in Firebase (includes heartbeat fields)
+    const doorbellStatus = {
+      camera_active: camera_active !== undefined ? camera_active : false,
+      mic_active: mic_active !== undefined ? mic_active : false,
+      ip_address: ip_address || req.ip,
+      last_updated: now
+    };
+
+    // Include optional heartbeat fields if provided
+    if (uptime_ms !== undefined) doorbellStatus.uptime_ms = uptime_ms;
+    if (free_heap !== undefined) doorbellStatus.free_heap = free_heap;
+    if (wifi_rssi !== undefined) doorbellStatus.wifi_rssi = wifi_rssi;
+
+    await deviceRef.collection('live_status').doc('device_state').set(doorbellStatus, { merge: true });
+
+    // ALSO update the main status document to reset TTL (acts as heartbeat)
+    const heartbeatData = {
+      online: true,
+      last_heartbeat: now,
+      updated_at: now,
+      expireAt: statusExpireAt,  // TTL: Reset expiration timer
+      ip_address: ip_address || req.ip,
+    };
+
+    // Include optional heartbeat fields if provided
+    if (uptime_ms !== undefined) heartbeatData.uptime_ms = uptime_ms;
+    if (free_heap !== undefined) heartbeatData.free_heap = free_heap;
+    if (wifi_rssi !== undefined) heartbeatData.wifi_rssi = wifi_rssi;
+
+    await deviceRef.collection('live_status').doc('heartbeat').set(heartbeatData, { merge: true });
+
+    // Update device metadata
+    await deviceRef.set({
+      type: 'doorbell',
+      last_seen: now,
     }, { merge: true });
+
+    console.log(`[DoorbellStatus] ${device_id} - Status updated and TTL reset`);
 
     res.json({
       status: 'ok',
-      message: 'Doorbell status updated'
+      message: 'Doorbell status updated and heartbeat recorded'
     });
 
   } catch (error) {
@@ -750,8 +835,8 @@ const getDoorbellStatus = async (req, res) => {
     // Get doorbell status from Firebase
     const statusDoc = await db.collection('devices')
       .doc(device_id)
-      .collection('status')
-      .doc('doorbell')
+      .collection('live_status')
+      .doc('device_state')
       .get();
 
     if (!statusDoc.exists) {
@@ -773,6 +858,854 @@ const getDoorbellStatus = async (req, res) => {
   }
 };
 
+// ============================================================================
+// @route   POST /api/v1/devices/:device_id/command
+// @desc    Send command to device (queued, device fetches on next heartbeat)
+// ============================================================================
+const sendDeviceCommand = async (req, res) => {
+  try {
+    const { device_id } = req.params;
+    const { action, params } = req.body;
+
+    // Validate action
+    const validActions = [
+      'camera_start', 'camera_stop',
+      'mic_start', 'mic_stop',
+      'recording_start', 'recording_stop',
+      'reboot', 'update_config'
+    ];
+
+    if (!action || !validActions.includes(action)) {
+      return res.status(400).json({
+        status: 'error',
+        message: `Invalid action. Must be one of: ${validActions.join(', ')}`
+      });
+    }
+
+    const db = getFirestore();
+    const deviceRef = db.collection('devices').doc(device_id);
+
+    // Verify device exists
+    const deviceDoc = await deviceRef.get();
+    if (!deviceDoc.exists) {
+      return res.status(404).json({
+        status: 'error',
+        message: 'Device not found'
+      });
+    }
+
+    // Create command document
+    const commandRef = await deviceRef.collection('commands').add({
+      action,
+      params: params || {},
+      status: 'pending',
+      created_at: admin.firestore.FieldValue.serverTimestamp(),
+      executed_at: null,
+      result: null
+    });
+
+    console.log(`[SendCommand] ${device_id} - Queued command: ${action} (ID: ${commandRef.id})`);
+
+    // Notify device via MQTT to fetch commands immediately (faster than waiting for heartbeat)
+    await publishDeviceCommand(device_id, commandRef.id, action);
+
+    res.json({
+      status: 'ok',
+      message: 'Command queued and device notified via MQTT.',
+      command_id: commandRef.id,
+      action
+    });
+
+  } catch (error) {
+    console.error('[SendCommand] Error:', error);
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+};
+
+// ============================================================================
+// @route   GET /api/v1/devices/commands/pending
+// @desc    Device fetches pending commands (called when heartbeat says has_pending_commands=true)
+// ============================================================================
+const fetchPendingCommands = async (req, res) => {
+  try {
+    const { device_id } = req.body;
+
+    if (!device_id) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'device_id is required'
+      });
+    }
+
+    const db = getFirestore();
+    const deviceRef = db.collection('devices').doc(device_id);
+
+    // Get all pending commands
+    const pendingCommandsSnapshot = await deviceRef
+      .collection('commands')
+      .where('status', '==', 'pending')
+      .orderBy('created_at', 'asc')
+      .get();
+
+    const commands = [];
+    pendingCommandsSnapshot.forEach(doc => {
+      commands.push({
+        id: doc.id,
+        action: doc.data().action,
+        params: doc.data().params || {},
+        created_at: doc.data().created_at
+      });
+    });
+
+    console.log(`[FetchCommands] ${device_id} - Returning ${commands.length} pending command(s)`);
+
+    res.json({
+      status: 'ok',
+      count: commands.length,
+      commands
+    });
+
+  } catch (error) {
+    console.error('[FetchCommands] Error:', error);
+
+    // Check if error is due to missing Firestore index
+    if (error.message && error.message.includes('index')) {
+      return res.status(500).json({
+        status: 'error',
+        message: 'Firestore index required. Run: firebase deploy --only firestore:indexes',
+        details: error.message
+      });
+    }
+
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+};
+
+// ============================================================================
+// @route   POST /api/v1/devices/commands/ack
+// @desc    Device acknowledges command execution (success or failure)
+// ============================================================================
+const acknowledgeCommand = async (req, res) => {
+  try {
+    const { device_id, command_id, success, result, error } = req.body;
+
+    if (!device_id || !command_id) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'device_id and command_id are required'
+      });
+    }
+
+    const db = getFirestore();
+    const commandRef = db
+      .collection('devices')
+      .doc(device_id)
+      .collection('commands')
+      .doc(command_id);
+
+    // Verify command exists
+    const commandDoc = await commandRef.get();
+    if (!commandDoc.exists) {
+      return res.status(404).json({
+        status: 'error',
+        message: 'Command not found'
+      });
+    }
+
+    // Update command status
+    await commandRef.update({
+      status: success ? 'completed' : 'failed',
+      executed_at: admin.firestore.FieldValue.serverTimestamp(),
+      result: result || null,
+      error: error || null
+    });
+
+    console.log(`[AckCommand] ${device_id} - Command ${command_id} ${success ? 'completed' : 'failed'}`);
+
+    res.json({
+      status: 'ok',
+      message: 'Command acknowledgment received'
+    });
+
+  } catch (error) {
+    console.error('[AckCommand] Error:', error);
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+};
+
+// ============================================================================
+// Camera Control Endpoints
+// ============================================================================
+
+const startCamera = async (req, res) => {
+  try {
+    const { device_id } = req.params;
+
+    const db = getFirestore();
+    const deviceRef = db.collection('devices').doc(device_id);
+
+    // Queue camera_start command
+    const commandRef = await deviceRef.collection('commands').add({
+      action: 'camera_start',
+      params: {},
+      status: 'pending',
+      created_at: admin.firestore.FieldValue.serverTimestamp(),
+      executed_at: null,
+      result: null
+    });
+
+    console.log(`[CameraControl] ${device_id} - Start camera command queued (ID: ${commandRef.id})`);
+
+    // Notify device via MQTT
+    await publishDeviceCommand(device_id, commandRef.id, 'camera_start');
+
+    res.json({
+      status: 'ok',
+      message: 'Camera start command queued and device notified',
+      command_id: commandRef.id
+    });
+  } catch (error) {
+    console.error('[CameraControl] Error starting camera:', error);
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+};
+
+const stopCamera = async (req, res) => {
+  try {
+    const { device_id } = req.params;
+
+    const db = getFirestore();
+    const deviceRef = db.collection('devices').doc(device_id);
+
+    // Queue camera_stop command
+    const commandRef = await deviceRef.collection('commands').add({
+      action: 'camera_stop',
+      params: {},
+      status: 'pending',
+      created_at: admin.firestore.FieldValue.serverTimestamp(),
+      executed_at: null,
+      result: null
+    });
+
+    console.log(`[CameraControl] ${device_id} - Stop camera command queued (ID: ${commandRef.id})`);
+
+    // Notify device via MQTT
+    await publishDeviceCommand(device_id, commandRef.id, 'camera_stop');
+
+    res.json({
+      status: 'ok',
+      message: 'Camera stop command queued and device notified',
+      command_id: commandRef.id
+    });
+  } catch (error) {
+    console.error('[CameraControl] Error stopping camera:', error);
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+};
+
+const restartCamera = async (req, res) => {
+  try {
+    const { device_id } = req.params;
+
+    const db = getFirestore();
+    const deviceRef = db.collection('devices').doc(device_id);
+
+    // Queue camera_restart command
+    const commandRef = await deviceRef.collection('commands').add({
+      action: 'camera_restart',
+      params: {},
+      status: 'pending',
+      created_at: admin.firestore.FieldValue.serverTimestamp(),
+      executed_at: null,
+      result: null
+    });
+
+    console.log(`[CameraControl] ${device_id} - Restart camera command queued (ID: ${commandRef.id})`);
+
+    // Notify device via MQTT
+    await publishDeviceCommand(device_id, commandRef.id, 'camera_restart');
+
+    res.json({
+      status: 'ok',
+      message: 'Camera restart command queued and device notified',
+      command_id: commandRef.id
+    });
+  } catch (error) {
+    console.error('[CameraControl] Error restarting camera:', error);
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+};
+
+// ============================================================================
+// Microphone Control Endpoints
+// ============================================================================
+
+const startMicrophone = async (req, res) => {
+  try {
+    const { device_id } = req.params;
+
+    const db = getFirestore();
+    const deviceRef = db.collection('devices').doc(device_id);
+
+    // Queue mic_start command
+    const commandRef = await deviceRef.collection('commands').add({
+      action: 'mic_start',
+      params: {},
+      status: 'pending',
+      created_at: admin.firestore.FieldValue.serverTimestamp(),
+      executed_at: null,
+      result: null
+    });
+
+    console.log(`[MicControl] ${device_id} - Start microphone command queued (ID: ${commandRef.id})`);
+
+    // Notify device via MQTT
+    await publishDeviceCommand(device_id, commandRef.id, 'mic_start');
+
+    res.json({
+      status: 'ok',
+      message: 'Microphone start command queued and device notified',
+      command_id: commandRef.id
+    });
+  } catch (error) {
+    console.error('[MicControl] Error starting microphone:', error);
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+};
+
+const stopMicrophone = async (req, res) => {
+  try {
+    const { device_id } = req.params;
+
+    const db = getFirestore();
+    const deviceRef = db.collection('devices').doc(device_id);
+
+    // Queue mic_stop command
+    const commandRef = await deviceRef.collection('commands').add({
+      action: 'mic_stop',
+      params: {},
+      status: 'pending',
+      created_at: admin.firestore.FieldValue.serverTimestamp(),
+      executed_at: null,
+      result: null
+    });
+
+    console.log(`[MicControl] ${device_id} - Stop microphone command queued (ID: ${commandRef.id})`);
+
+    // Notify device via MQTT
+    await publishDeviceCommand(device_id, commandRef.id, 'mic_stop');
+
+    res.json({
+      status: 'ok',
+      message: 'Microphone stop command queued and device notified',
+      command_id: commandRef.id
+    });
+  } catch (error) {
+    console.error('[MicControl] Error stopping microphone:', error);
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+};
+
+const getMicrophoneStatus = async (req, res) => {
+  try {
+    const { device_id } = req.params;
+
+    const db = getFirestore();
+    const deviceRef = db.collection('devices').doc(device_id);
+
+    // Queue mic_status command
+    const commandRef = await deviceRef.collection('commands').add({
+      action: 'mic_status',
+      params: {},
+      status: 'pending',
+      created_at: admin.firestore.FieldValue.serverTimestamp(),
+      executed_at: null,
+      result: null
+    });
+
+    console.log(`[MicControl] ${device_id} - Get microphone status command queued (ID: ${commandRef.id})`);
+
+    // Notify device via MQTT
+    await publishDeviceCommand(device_id, commandRef.id, 'mic_status');
+
+    res.json({
+      status: 'ok',
+      message: 'Microphone status command queued and device notified',
+      command_id: commandRef.id
+    });
+  } catch (error) {
+    console.error('[MicControl] Error getting microphone status:', error);
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+};
+
+// ============================================================================
+// Audio Amplifier Control Endpoints
+// ============================================================================
+
+const playAmplifier = async (req, res) => {
+  try {
+    const { device_id } = req.params;
+    const { url } = req.query;
+
+    if (!url) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'url parameter is required'
+      });
+    }
+
+    const db = getFirestore();
+    const deviceRef = db.collection('devices').doc(device_id);
+
+    // Queue amp_play command with URL parameter
+    const commandRef = await deviceRef.collection('commands').add({
+      action: 'amp_play',
+      params: { url },
+      status: 'pending',
+      created_at: admin.firestore.FieldValue.serverTimestamp(),
+      executed_at: null,
+      result: null
+    });
+
+    console.log(`[AmpControl] ${device_id} - Play amplifier command queued (ID: ${commandRef.id}, URL: ${url})`);
+
+    // Notify device via MQTT
+    await publishDeviceCommand(device_id, commandRef.id, 'amp_play');
+
+    res.json({
+      status: 'ok',
+      message: 'Amplifier play command queued and device notified',
+      command_id: commandRef.id
+    });
+  } catch (error) {
+    console.error('[AmpControl] Error playing amplifier:', error);
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+};
+
+const stopAmplifier = async (req, res) => {
+  try {
+    const { device_id } = req.params;
+
+    const db = getFirestore();
+    const deviceRef = db.collection('devices').doc(device_id);
+
+    // Queue amp_stop command
+    const commandRef = await deviceRef.collection('commands').add({
+      action: 'amp_stop',
+      params: {},
+      status: 'pending',
+      created_at: admin.firestore.FieldValue.serverTimestamp(),
+      executed_at: null,
+      result: null
+    });
+
+    console.log(`[AmpControl] ${device_id} - Stop amplifier command queued (ID: ${commandRef.id})`);
+
+    // Notify device via MQTT
+    await publishDeviceCommand(device_id, commandRef.id, 'amp_stop');
+
+    res.json({
+      status: 'ok',
+      message: 'Amplifier stop command queued and device notified',
+      command_id: commandRef.id
+    });
+  } catch (error) {
+    console.error('[AmpControl] Error stopping amplifier:', error);
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+};
+
+const restartAmplifier = async (req, res) => {
+  try {
+    const { device_id } = req.params;
+
+    const db = getFirestore();
+    const deviceRef = db.collection('devices').doc(device_id);
+
+    // Queue amp_restart command
+    const commandRef = await deviceRef.collection('commands').add({
+      action: 'amp_restart',
+      params: {},
+      status: 'pending',
+      created_at: admin.firestore.FieldValue.serverTimestamp(),
+      executed_at: null,
+      result: null
+    });
+
+    console.log(`[AmpControl] ${device_id} - Restart amplifier command queued (ID: ${commandRef.id})`);
+
+    // Notify device via MQTT
+    await publishDeviceCommand(device_id, commandRef.id, 'amp_restart');
+
+    res.json({
+      status: 'ok',
+      message: 'Amplifier restart command queued and device notified',
+      command_id: commandRef.id
+    });
+  } catch (error) {
+    console.error('[AmpControl] Error restarting amplifier:', error);
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+};
+
+const setAmplifierVolume = async (req, res) => {
+  try {
+    const { device_id } = req.params;
+    const { level } = req.query;
+
+    if (level === undefined) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'level parameter is required (0-21)'
+      });
+    }
+
+    const volumeLevel = parseInt(level);
+    if (isNaN(volumeLevel) || volumeLevel < 0 || volumeLevel > 21) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'level must be a number between 0 and 21'
+      });
+    }
+
+    const db = getFirestore();
+    const deviceRef = db.collection('devices').doc(device_id);
+
+    // Queue amp_volume command
+    const commandRef = await deviceRef.collection('commands').add({
+      action: 'amp_volume',
+      params: { level: volumeLevel },
+      status: 'pending',
+      created_at: admin.firestore.FieldValue.serverTimestamp(),
+      executed_at: null,
+      result: null
+    });
+
+    console.log(`[AmpControl] ${device_id} - Set volume to ${volumeLevel} command queued (ID: ${commandRef.id})`);
+
+    // Notify device via MQTT
+    await publishDeviceCommand(device_id, commandRef.id, 'amp_volume');
+
+    res.json({
+      status: 'ok',
+      message: `Amplifier volume set to ${volumeLevel} command queued and device notified`,
+      command_id: commandRef.id
+    });
+  } catch (error) {
+    console.error('[AmpControl] Error setting amplifier volume:', error);
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+};
+
+const getAmplifierStatus = async (req, res) => {
+  try {
+    const { device_id } = req.params;
+
+    const db = getFirestore();
+    const deviceRef = db.collection('devices').doc(device_id);
+
+    // Queue amp_status command
+    const commandRef = await deviceRef.collection('commands').add({
+      action: 'amp_status',
+      params: {},
+      status: 'pending',
+      created_at: admin.firestore.FieldValue.serverTimestamp(),
+      executed_at: null,
+      result: null
+    });
+
+    console.log(`[AmpControl] ${device_id} - Get status command queued (ID: ${commandRef.id})`);
+
+    // Notify device via MQTT
+    await publishDeviceCommand(device_id, commandRef.id, 'amp_status');
+
+    res.json({
+      status: 'ok',
+      message: 'Amplifier status command queued and device notified. Check device serial output.',
+      command_id: commandRef.id
+    });
+  } catch (error) {
+    console.error('[AmpControl] Error getting amplifier status:', error);
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+};
+
+const listAmplifierFiles = async (req, res) => {
+  try {
+    const { device_id } = req.params;
+
+    const db = getFirestore();
+    const deviceRef = db.collection('devices').doc(device_id);
+
+    // Queue amp_list command
+    const commandRef = await deviceRef.collection('commands').add({
+      action: 'amp_list',
+      params: {},
+      status: 'pending',
+      created_at: admin.firestore.FieldValue.serverTimestamp(),
+      executed_at: null,
+      result: null
+    });
+
+    console.log(`[AmpControl] ${device_id} - List files command queued (ID: ${commandRef.id})`);
+
+    // Notify device via MQTT
+    await publishDeviceCommand(device_id, commandRef.id, 'amp_list');
+
+    res.json({
+      status: 'ok',
+      message: 'Amplifier list files command queued and device notified. Check device serial output.',
+      command_id: commandRef.id
+    });
+  } catch (error) {
+    console.error('[AmpControl] Error listing amplifier files:', error);
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+};
+
+const setAmplifierWifi = async (req, res) => {
+  try {
+    const { device_id } = req.params;
+    const { ssid, password } = req.body;
+
+    if (!ssid || !password) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'ssid and password are required in request body'
+      });
+    }
+
+    const db = getFirestore();
+    const deviceRef = db.collection('devices').doc(device_id);
+
+    // Queue amp_wifi command
+    const commandRef = await deviceRef.collection('commands').add({
+      action: 'amp_wifi',
+      params: { ssid, password },
+      status: 'pending',
+      created_at: admin.firestore.FieldValue.serverTimestamp(),
+      executed_at: null,
+      result: null
+    });
+
+    console.log(`[AmpControl] ${device_id} - Set WiFi credentials command queued (ID: ${commandRef.id})`);
+
+    // Notify device via MQTT
+    await publishDeviceCommand(device_id, commandRef.id, 'amp_wifi');
+
+    res.json({
+      status: 'ok',
+      message: 'Amplifier WiFi credentials command queued and device notified',
+      command_id: commandRef.id
+    });
+  } catch (error) {
+    console.error('[AmpControl] Error setting amplifier WiFi:', error);
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+};
+
+// ============================================================================
+// Face Management Endpoints
+// ============================================================================
+
+const getFaceCount = async (req, res) => {
+  try {
+    const { device_id } = req.params;
+
+    const db = getFirestore();
+    const deviceRef = db.collection('devices').doc(device_id);
+
+    // Queue face_count command
+    const commandRef = await deviceRef.collection('commands').add({
+      action: 'face_count',
+      params: {},
+      status: 'pending',
+      created_at: admin.firestore.FieldValue.serverTimestamp(),
+      executed_at: null,
+      result: null
+    });
+
+    console.log(`[FaceManagement] ${device_id} - Get face count command queued (ID: ${commandRef.id})`);
+
+    // Notify device via MQTT
+    await publishDeviceCommand(device_id, commandRef.id, 'face_count');
+
+    res.json({
+      status: 'ok',
+      message: 'Face count command queued and device notified',
+      command_id: commandRef.id
+    });
+  } catch (error) {
+    console.error('[FaceManagement] Error getting face count:', error);
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+};
+
+const listFaces = async (req, res) => {
+  try {
+    const { device_id } = req.params;
+
+    const db = getFirestore();
+    const deviceRef = db.collection('devices').doc(device_id);
+
+    // Queue face_list command
+    const commandRef = await deviceRef.collection('commands').add({
+      action: 'face_list',
+      params: {},
+      status: 'pending',
+      created_at: admin.firestore.FieldValue.serverTimestamp(),
+      executed_at: null,
+      result: null
+    });
+
+    console.log(`[FaceManagement] ${device_id} - List faces command queued (ID: ${commandRef.id})`);
+
+    // Notify device via MQTT
+    await publishDeviceCommand(device_id, commandRef.id, 'face_list');
+
+    res.json({
+      status: 'ok',
+      message: 'Face list command queued and device notified (output will be in serial)',
+      command_id: commandRef.id
+    });
+  } catch (error) {
+    console.error('[FaceManagement] Error listing faces:', error);
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+};
+
+const checkFaceDatabase = async (req, res) => {
+  try {
+    const { device_id } = req.params;
+
+    const db = getFirestore();
+    const deviceRef = db.collection('devices').doc(device_id);
+
+    // Queue face_check command
+    const commandRef = await deviceRef.collection('commands').add({
+      action: 'face_check',
+      params: {},
+      status: 'pending',
+      created_at: admin.firestore.FieldValue.serverTimestamp(),
+      executed_at: null,
+      result: null
+    });
+
+    console.log(`[FaceManagement] ${device_id} - Check face database command queued (ID: ${commandRef.id})`);
+
+    // Notify device via MQTT
+    await publishDeviceCommand(device_id, commandRef.id, 'face_check');
+
+    res.json({
+      status: 'ok',
+      message: 'Face database check command queued and device notified',
+      command_id: commandRef.id
+    });
+  } catch (error) {
+    console.error('[FaceManagement] Error checking face database:', error);
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+};
+
+// ============================================================================
+// System Control Endpoints
+// ============================================================================
+
+const restartSystem = async (req, res) => {
+  try {
+    const { device_id } = req.params;
+
+    const db = getFirestore();
+    const deviceRef = db.collection('devices').doc(device_id);
+
+    // Queue system_restart command
+    const commandRef = await deviceRef.collection('commands').add({
+      action: 'system_restart',
+      params: {},
+      status: 'pending',
+      created_at: admin.firestore.FieldValue.serverTimestamp(),
+      executed_at: null,
+      result: null
+    });
+
+    console.log(`[SystemControl] ${device_id} - System restart command queued (ID: ${commandRef.id})`);
+
+    // Notify device via MQTT
+    await publishDeviceCommand(device_id, commandRef.id, 'system_restart');
+
+    res.json({
+      status: 'ok',
+      message: 'System restart command queued and device notified',
+      command_id: commandRef.id
+    });
+  } catch (error) {
+    console.error('[SystemControl] Error restarting system:', error);
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+};
+
+// ============================================================================
+// Device Info Endpoint
+// ============================================================================
+
+const getDeviceInfo = async (req, res) => {
+  try {
+    const { device_id } = req.params;
+
+    const db = getFirestore();
+    const deviceRef = db.collection('devices').doc(device_id);
+
+    // Get device heartbeat data
+    const heartbeatDoc = await deviceRef
+      .collection('live_status')
+      .doc('heartbeat')
+      .get();
+
+    // Get device state data
+    const deviceStateDoc = await deviceRef
+      .collection('live_status')
+      .doc('device_state')
+      .get();
+
+    if (!heartbeatDoc.exists) {
+      return res.status(404).json({
+        status: 'error',
+        message: 'Device not found or offline'
+      });
+    }
+
+    const heartbeatData = heartbeatDoc.data();
+    const deviceStateData = deviceStateDoc.exists ? deviceStateDoc.data() : {};
+
+    // Calculate online status
+    const now = Date.now();
+    const expireAtMillis = heartbeatData.expireAt ? heartbeatData.expireAt.toMillis() : 0;
+    const isOnline = expireAtMillis > now;
+
+    // Build info response similar to HTML controller expectations
+    res.json({
+      status: 'ok',
+      online: isOnline,
+      ip: heartbeatData.ip_address || 'unknown',
+      free_heap: heartbeatData.free_heap || 0,
+      uptime: heartbeatData.uptime_ms || 0,
+      slave_status: deviceStateData.camera_active ? 1 : 0,
+      amp_status: deviceStateData.audio_active ? 1 : 0,
+      mesh_status: -1, // Not tracked yet
+      ping_count: 0, // Not tracked yet
+      wifi_rssi: heartbeatData.wifi_rssi || -100,
+      last_heartbeat: heartbeatData.last_heartbeat,
+      device_state: deviceStateData
+    });
+
+  } catch (error) {
+    console.error('[DeviceInfo] Error getting device info:', error);
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+};
+
 module.exports = {
   registerDevice,
   handleHeartbeat,
@@ -784,5 +1717,32 @@ module.exports = {
   handleFaceDetection,
   handleHubLog,
   handleDoorbellStatus,
-  getDoorbellStatus
+  getDoorbellStatus,
+  sendDeviceCommand,
+  fetchPendingCommands,
+  acknowledgeCommand,
+  // Camera control
+  startCamera,
+  stopCamera,
+  restartCamera,
+  // Microphone control
+  startMicrophone,
+  stopMicrophone,
+  getMicrophoneStatus,
+  // Amplifier control
+  playAmplifier,
+  stopAmplifier,
+  restartAmplifier,
+  setAmplifierVolume,
+  getAmplifierStatus,
+  listAmplifierFiles,
+  setAmplifierWifi,
+  // Face management
+  getFaceCount,
+  listFaces,
+  checkFaceDatabase,
+  // System control
+  restartSystem,
+  // Device info
+  getDeviceInfo
 };
