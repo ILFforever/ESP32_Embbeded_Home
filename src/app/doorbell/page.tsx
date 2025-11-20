@@ -19,9 +19,7 @@ import {
   getAmplifierStatus,
   listAmplifierFiles,
   setAmplifierWifi,
-  getFaceCount,
-  listFaces,
-  checkFaceDatabase,
+  syncFaceDatabase,
   getFaceDatabaseInfo,
   restartSystem
 } from '@/services/devices.service';
@@ -365,85 +363,20 @@ export default function DoorbellControlPage() {
     setFaceRecognition(!faceRecognition);
   };
 
-  const handleGetFaceCount = async () => {
-    const deviceId = getEffectiveDeviceId();
-    if (!deviceId) return;
-
-    setCommandLoading('face_count');
-    try {
-      const result = await getFaceCount(deviceId);
-      console.log('Face count command queued:', result);
-      alert('Face count command queued. Check device serial output.');
-    } catch (error) {
-      console.error('Error getting face count:', error);
-      alert('Failed to get face count');
-    } finally {
-      setCommandLoading(null);
-    }
-  };
-
-  const handleListFaces = async () => {
-    const deviceId = getEffectiveDeviceId();
-    if (!deviceId) return;
-
-    setCommandLoading('face_list');
-    try {
-      const result = await listFaces(deviceId);
-      console.log('List faces command queued:', result);
-      alert('List faces command queued. Check device serial output.');
-    } catch (error) {
-      console.error('Error listing faces:', error);
-      alert('Failed to list faces');
-    } finally {
-      setCommandLoading(null);
-    }
-  };
-
-  const handleCheckFaceDB = async () => {
-    const deviceId = getEffectiveDeviceId();
-    if (!deviceId) return;
-
-    setCommandLoading('face_check');
-    try {
-      const result = await checkFaceDatabase(deviceId);
-      console.log('Check face DB command queued:', result);
-      alert('Face DB check command queued. Check device serial output.');
-    } catch (error) {
-      console.error('Error checking face database:', error);
-      alert('Failed to check face database');
-    } finally {
-      setCommandLoading(null);
-    }
-  };
-
   const handleSyncDatabase = async () => {
     const deviceId = getEffectiveDeviceId();
     if (!deviceId) return;
 
     setCommandLoading('sync_database');
     try {
-      // Call all three face database commands in sequence
-      console.log('Syncing database - sending all face database commands...');
+      // Call single sync endpoint - backend/ESP32 handles all three operations
+      await syncFaceDatabase(deviceId);
+      console.log('✓ Face database sync command queued');
 
-      await getFaceCount(deviceId);
-      console.log('✓ Face count command queued');
-
-      // Small delay between commands
-      await new Promise(resolve => setTimeout(resolve, 500));
-
-      await checkFaceDatabase(deviceId);
-      console.log('✓ Check database command queued');
-
-      // Small delay between commands
-      await new Promise(resolve => setTimeout(resolve, 500));
-
-      await listFaces(deviceId);
-      console.log('✓ List faces command queued');
-
-      alert('Database sync complete! All commands queued:\n• Face count\n• Database check\n• Face list\n\nCheck device serial output for results.');
+      alert('Database sync command queued!\n\nThe device will execute:\n• Face count\n• Database check\n• Face list\n\nCheck device serial output for results.');
     } catch (error) {
       console.error('Error syncing database:', error);
-      alert('Failed to sync database. Some commands may have been queued.');
+      alert('Failed to sync database.');
     } finally {
       setCommandLoading(null);
     }
