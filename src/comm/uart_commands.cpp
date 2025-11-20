@@ -235,14 +235,14 @@ void handleUARTResponse(String line)
       {
         updateStatusMsg("Uploading data...", false);
       }
-
-      // Fill video area with uploading screen
-      showUploadingScreen();
-
+      
       // Send face detection event to backend (saves to Firebase + publishes to Hub via MQTT)
       // Sends raw JPEG binary - much more efficient than Base64!
       // Using async version to avoid blocking the UI during upload
       sendFaceDetectionAsync(recognized, name, confidence, frameData, frameSize);
+
+      // Fill video area with uploading screen
+      showUploadingScreen();
 
       // Update LCD status with recognition result
       if (recognized)
@@ -330,7 +330,7 @@ void handleUARTResponse(String line)
       // Handle error status
       if (strcmp(status, "error") == 0)
       {
-        //these two messages happen too often and is handled already by status manager
+        // these two messages happen too often and is handled already by status manager
         if (strcmp(msg, "Camera already stopped") == 0)
         {
           slave_status = 0;
@@ -375,7 +375,7 @@ void handleUARTResponse(String line)
       // Handle face_check response (format: "Database status: valid/invalid")
       if (strstr(msg, "Database status:") != nullptr)
       {
-        const char* db_status = strstr(msg, "valid") ? "valid" : "invalid";
+        const char *db_status = strstr(msg, "valid") ? "valid" : "invalid";
         Serial.printf("✅ Face Database: %s\n", msg);
         sendFaceDatabaseResult("face_check", -1, JsonArray(), db_status, msg);
         return;

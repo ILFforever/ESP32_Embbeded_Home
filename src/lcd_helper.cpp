@@ -37,7 +37,7 @@ void showUploadingScreen()
 
     // Push sprite to screen at video position
     videoSprite.pushSprite(0, 65);  // VIDEO_Y_OFFSET = 40
-    
+    //delay(500);
     xSemaphoreGive(tftMutex);
   }
 }
