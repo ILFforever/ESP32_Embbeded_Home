@@ -451,19 +451,18 @@ const getAllDevicesStatus = async (req, res) => {
 const getDeviceHistory = async (req, res) => {
   try {
     const { device_id } = req.params;
-    const { limit = 20 } = req.query; // Reduced default for mixed data
+    const { limit = 20 } = req.query;
     const db = getFirestore();
     const deviceRef = db.collection('devices').doc(device_id);
 
-    // Fetch data from multiple collections in parallel
-    const [heartbeatSnapshot, faceDetectionsSnapshot, commandsSnapshot] = await Promise.all([
-      // 1. Recent heartbeat/status history
+    // Fetch data from multiple sources in parallel
+    const [liveStatusDoc, faceDetectionsSnapshot, commandsSnapshot] = await Promise.all([
+      // 1. Current live_status (contains device_state and heartbeat)
       deviceRef
-        .collection('heartbeat_history')
-        .orderBy('timestamp', 'desc')
-        .limit(parseInt(limit))
+        .collection('live_status')
+        .doc('current')
         .get()
-        .catch(() => ({ docs: [] })), // Return empty if collection doesn't exist
+        .catch(() => null), // Return null if doesn't exist
 
       // 2. Recent face detections
       deviceRef
@@ -473,7 +472,7 @@ const getDeviceHistory = async (req, res) => {
         .get()
         .catch(() => ({ docs: [] })),
 
-      // 3. Recent commands (if command queue is implemented)
+      // 3. Recent commands
       deviceRef
         .collection('commands')
         .orderBy('created_at', 'desc')
@@ -482,16 +481,31 @@ const getDeviceHistory = async (req, res) => {
         .catch(() => ({ docs: [] }))
     ]);
 
-    // Process heartbeat history
-    const heartbeats = [];
-    heartbeatSnapshot.docs.forEach(doc => {
-      heartbeats.push({
-        type: 'heartbeat',
-        id: doc.id,
-        timestamp: doc.data().timestamp,
-        data: doc.data()
-      });
-    });
+    // Process current live status (only 1 entry)
+    const statusEvents = [];
+    if (liveStatusDoc && liveStatusDoc.exists) {
+      const liveData = liveStatusDoc.data();
+
+      // Add device_state as one event
+      if (liveData.device_state) {
+        statusEvents.push({
+          type: 'device_state',
+          id: 'current_device_state',
+          timestamp: liveData.device_state.timestamp || liveData.timestamp,
+          data: liveData.device_state
+        });
+      }
+
+      // Add heartbeat as another event
+      if (liveData.heartbeat) {
+        statusEvents.push({
+          type: 'heartbeat',
+          id: 'current_heartbeat',
+          timestamp: liveData.heartbeat.timestamp || liveData.timestamp,
+          data: liveData.heartbeat
+        });
+      }
+    }
 
     // Process face detections
     const faceDetections = [];
@@ -516,7 +530,7 @@ const getDeviceHistory = async (req, res) => {
     });
 
     // Combine all events and sort by timestamp (most recent first)
-    const allEvents = [...heartbeats, ...faceDetections, ...commands];
+    const allEvents = [...statusEvents, ...faceDetections, ...commands];
 
     // Sort by timestamp
     allEvents.sort((a, b) => {
@@ -531,7 +545,7 @@ const getDeviceHistory = async (req, res) => {
       device_id,
       summary: {
         total: allEvents.length,
-        heartbeats: heartbeats.length,
+        status_events: statusEvents.length,
         face_detections: faceDetections.length,
         commands: commands.length
       },
