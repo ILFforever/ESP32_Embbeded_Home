@@ -499,6 +499,17 @@ export default function DoorbellControlPage() {
                     </div>
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', width: '100%', marginTop: '12px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                      <label style={{ fontSize: '13px', fontWeight: '600', color: '#555', minWidth: '80px' }}>VOLUME: {ampVolume}</label>
+                      <input
+                        type="range"
+                        min="0"
+                        max="21"
+                        value={ampVolume}
+                        onChange={(e) => handleVolumeChange(parseInt(e.target.value))}
+                        style={{ flex: 1 }}
+                      />
+                    </div>
                     <div style={{ position: 'relative', width: '100%' }}>
                       <input
                         type="text"
@@ -583,44 +594,6 @@ export default function DoorbellControlPage() {
                         style={{ flex: 1 }}
                       >
                         {commandLoading === 'amp_stop' ? 'STOPPING...' : 'STOP'}
-                      </button>
-                    </div>
-
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                      <label style={{ fontSize: '13px', fontWeight: '600', color: '#555', minWidth: '80px' }}>VOLUME: {ampVolume}</label>
-                      <input
-                        type="range"
-                        min="0"
-                        max="21"
-                        value={ampVolume}
-                        onChange={(e) => handleVolumeChange(parseInt(e.target.value))}
-                        style={{ flex: 1 }}
-                      />
-                    </div>
-
-                    <div className="control-divider" style={{ margin: '16px 0' }}></div>
-
-                    <div className="card-header" style={{ paddingBottom: '8px' }}>
-                      <h3>SUB MODULE COMMAND</h3>
-                    </div>
-                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                      <button
-                        className="btn-control btn-warning"
-                        onClick={handleRestartAmplifier}
-                        disabled={commandLoading === 'amp_restart'}
-                        style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}
-                      >
-                        <RotateCw size={14} />
-                        {commandLoading === 'amp_restart' ? '...' : 'RST'}
-                      </button>
-                      <button
-                        className="btn-control btn-info"
-                        onClick={() => setShowWifiSettings(true)}
-                        disabled={commandLoading === 'amp_wifi'}
-                        style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}
-                      >
-                        <Settings size={14} />
-                        WIFI
                       </button>
                     </div>
                   </div>
@@ -719,26 +692,37 @@ export default function DoorbellControlPage() {
                       border: '1px solid rgba(33, 150, 243, 0.3)'
                     }}>
                       <Volume2 size={32} className="status-info-large" style={{ flexShrink: 0 }} />
-                      <button
-                        className="btn-control btn-warning"
-                        onClick={handleRestartAmplifier}
-                        disabled={commandLoading === 'amp_restart'}
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          gap: '8px',
-                          flex: 1,
-                          fontWeight: 'bold'
-                        }}
-                      >
-                        <RotateCw size={18} className={commandLoading === 'amp_restart' ? 'rotating' : ''} />
-                        {commandLoading === 'amp_restart' ? 'RESTARTING...' : 'RESTART AMPLIFIER'}
-                      </button>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: 1 }}>
+                        <button
+                          className="btn-control btn-warning"
+                          onClick={handleRestartAmplifier}
+                          disabled={commandLoading === 'amp_restart'}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '8px',
+                            flex: 1,
+                            fontWeight: 'bold'
+                          }}
+                        >
+                          <RotateCw size={18} className={commandLoading === 'amp_restart' ? 'rotating' : ''} />
+                          {commandLoading === 'amp_restart' ? 'RESTARTING...' : 'RESTART AMPLIFIER'}
+                        </button>
+
+                        <button
+                          className="btn-control btn-info"
+                          onClick={() => setShowWifiSettings(true)}
+                          disabled={commandLoading === 'amp_wifi'}
+                          style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}
+                        >
+                          <Settings size={14} />
+                          WIFI
+                        </button>
+                      </div>
                     </div>
                   </div>
                 </div>
-
                 <div className="control-divider"></div>
 
                 <div className="card-header" style={{ paddingTop: '8px' }}>
