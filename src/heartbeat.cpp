@@ -634,14 +634,15 @@ void fetchAndExecuteCommands()
 
         Serial.printf("[Commands] Executing: %s (ID: %s)\n", action.c_str(), commandId.c_str());
 
-        // Special handling for reboot - acknowledge BEFORE rebooting to avoid boot loop
-        if (action == "reboot" || action == "system_restart")
-        {
+        // Special handling for reboot/system_restart: acknowledge BEFORE executing
+        // (otherwise acknowledgment will never reach backend)
+        if (action == "system_restart" || action == "reboot") {
+          Serial.println("[Commands] Reboot requested - acknowledging before execution");
           acknowledgeCommand(commandId, true, action);
-          Serial.println("[Commands] Rebooting in 3 seconds...");
+          Serial.println("[Commands] Rebooting system in 3 seconds...");
           delay(3000);
           ESP.restart();
-          return; // Won't reach here
+          // Won't reach here
         }
 
         // Execute command
@@ -667,8 +668,8 @@ bool executeCommand(String action, JsonObject params)
 {
   Serial.printf("[Commands] Executing action: %s\n", action.c_str());
 
-  if (action == "camera_start")
-  {
+  // Camera commands
+  if (action == "camera_start") {
     sendUARTCommand("camera_control", "camera_start");
     return true;
   }
@@ -677,20 +678,74 @@ bool executeCommand(String action, JsonObject params)
     sendUARTCommand("camera_control", "camera_stop");
     return true;
   }
-  else if (action == "mic_start")
-  {
-    // Mic control not implemented yet
-    Serial.println("[Commands] Mic control not implemented");
+  else if (action == "camera_restart") {
+    Serial.println("[Commands] Restarting camera (stop + start)");
+    sendUARTCommand("camera_control", "camera_stop");
+    delay(500);
+    sendUARTCommand("camera_control", "camera_start");
+    return true;
+  }
+
+  // Microphone commands
+  else if (action == "mic_start") {
+    sendUARTCommand("mic_control", "mic_start");
+    return true;
+  }
+  else if (action == "mic_stop") {
+    sendUARTCommand("mic_control", "mic_stop");
+    return true;
+  }
+  else if (action == "mic_status") {
+    sendUARTCommand("mic_control", "mic_status");
+    return true;
+  }
+
+  // Amplifier commands
+  else if (action == "amp_play") {
+    if (params.containsKey("url")) {
+      const char* url = params["url"];
+      Serial.printf("[Commands] Playing amplifier URL: %s\n", url);
+      sendUART2Command("play", url);
+      return true;
+    } else {
+      Serial.println("[Commands] amp_play requires 'url' parameter");
+      return false;
+    }
+  }
+  else if (action == "amp_stop") {
+    sendUART2Command("stop", "");
+    return true;
+  }
+  else if (action == "amp_restart") {
+    Serial.println("[Commands] Restarting amplifier");
+    sendUART2Command("restart", "");
+    return true;
+  }
+
+  // Face recognition commands
+  else if (action == "face_count") {
+    sendUARTCommand("face_count");
+    return true;
+  }
+  else if (action == "face_list") {
+    sendUARTCommand("list_faces");
+    return true;
+  }
+  else if (action == "face_check") {
+    sendUARTCommand("check_face_db");
+    return true;
+  }
+
+  // System commands
+  // Note: reboot/system_restart is handled specially in fetchAndExecuteCommands()
+  // to ensure acknowledgment happens before reboot
+  else if (action == "system_restart" || action == "reboot") {
+    Serial.println("[Commands] ERROR: Reboot should be handled in fetchAndExecuteCommands()");
     return false;
   }
-  else if (action == "mic_stop")
-  {
-    // Mic control not implemented yet
-    Serial.println("[Commands] Mic control not implemented");
-    return false;
-  }
-  else if (action == "recording_start")
-  {
+
+  // Legacy recording commands
+  else if (action == "recording_start") {
     // Start face detection/recognition
     sendUARTCommand("resume_detection");
     return true;
@@ -700,44 +755,9 @@ bool executeCommand(String action, JsonObject params)
     sendUARTCommand("stop_detection");
     return true;
   }
-  // Note: reboot/system_restart is handled specially in fetchAndExecuteCommands()
-  // to ensure acknowledgment happens before reboot
-  else if (action == "amp_play")
-  {
-    // Play audio on amp - get URL from params
-    if (params.containsKey("url"))
-    {
-      const char *url = params["url"];
-      sendUART2Command("play", url);
-      Serial.printf("[Commands] Amp play: %s\n", url);
-      return true;
-    }
-    else
-    {
-      Serial.println("[Commands] amp_play missing 'url' parameter");
-      return false;
-    }
-  }
-  else if (action == "amp_stop")
-  {
-    sendUART2Command("stop", "");
-    Serial.println("[Commands] Amp stop");
-    return true;
-  }
-  else if (action == "amp_restart")
-  {
-    sendUART2Command("restart", "");
-    Serial.println("[Commands] Amp restart");
-    return true;
-  }
-  else if (action == "update_config")
-  {
-    // Config update not implemented yet
-    Serial.println("[Commands] Config update not implemented");
-    return false;
-  }
-  else
-  {
+
+  // Unknown command
+  else {
     Serial.printf("[Commands] Unknown action: %s\n", action.c_str());
     return false;
   }
