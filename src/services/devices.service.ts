@@ -452,6 +452,72 @@ export async function restartAmplifier(deviceId: string) {
   }
 }
 
+export async function setAmplifierVolume(deviceId: string, level: number) {
+  try {
+    const response = await axios.post(
+      `${API_URL}/api/v1/devices/${deviceId}/amp/volume?level=${level}`,
+      {},
+      {
+        timeout: 15000,
+        headers: getAuthHeaders()
+      }
+    );
+    return response.data;
+  } catch (error) {
+    console.error('Error setting amplifier volume:', error);
+    throw error;
+  }
+}
+
+export async function getAmplifierStatus(deviceId: string) {
+  try {
+    const response = await axios.get(
+      `${API_URL}/api/v1/devices/${deviceId}/amp/status`,
+      {
+        timeout: 15000,
+        headers: getAuthHeaders()
+      }
+    );
+    return response.data;
+  } catch (error) {
+    console.error('Error getting amplifier status:', error);
+    throw error;
+  }
+}
+
+export async function listAmplifierFiles(deviceId: string) {
+  try {
+    const response = await axios.get(
+      `${API_URL}/api/v1/devices/${deviceId}/amp/files`,
+      {
+        timeout: 15000,
+        headers: getAuthHeaders()
+      }
+    );
+    return response.data;
+  } catch (error) {
+    console.error('Error listing amplifier files:', error);
+    throw error;
+  }
+}
+
+export async function setAmplifierWifi(deviceId: string, ssid: string, password: string) {
+  try {
+    const response = await axios.post(
+      `${API_URL}/api/v1/devices/${deviceId}/amp/wifi`,
+      { ssid, password },
+      {
+        timeout: 15000,
+        headers: getAuthHeaders()
+      }
+    );
+    return response.data;
+  } catch (error) {
+    console.error('Error setting amplifier WiFi:', error);
+    throw error;
+  }
+}
+
 // Face management functions
 export async function getFaceCount(deviceId: string) {
   try {
