@@ -657,7 +657,8 @@ void fetchAndExecuteCommands()
 
         // Special handling for reboot/system_restart: acknowledge BEFORE executing
         // (otherwise acknowledgment will never reach backend)
-        if (action == "system_restart" || action == "reboot") {
+        if (action == "system_restart" || action == "reboot")
+        {
           Serial.println("[Commands] Reboot requested - acknowledging before execution");
           acknowledgeCommand(commandId, true, action);
 
@@ -699,7 +700,8 @@ bool executeCommand(String action, JsonObject params)
   Serial.printf("[Commands] Executing action: %s\n", action.c_str());
 
   // Camera commands
-  if (action == "camera_start") {
+  if (action == "camera_start")
+  {
     sendUARTCommand("camera_control", "camera_start");
     return true;
   }
@@ -708,51 +710,60 @@ bool executeCommand(String action, JsonObject params)
     sendUARTCommand("camera_control", "camera_stop");
     return true;
   }
-  else if (action == "camera_restart") {
-    Serial.println("[Commands] Restarting camera (stop + start)");
-    sendUARTCommand("camera_control", "camera_stop");
-    delay(500);
-    sendUARTCommand("camera_control", "camera_start");
+  else if (action == "camera_restart")
+  {
+    sendUARTCommand("reboot");
     return true;
   }
 
   // Microphone commands
-  else if (action == "mic_start") {
+  else if (action == "mic_start")
+  {
     sendUARTCommand("mic_control", "mic_start");
     return true;
   }
-  else if (action == "mic_stop") {
+  else if (action == "mic_stop")
+  {
     sendUARTCommand("mic_control", "mic_stop");
     return true;
   }
-  else if (action == "mic_status") {
+  else if (action == "mic_status")
+  {
     sendUARTCommand("mic_control", "mic_status");
     return true;
   }
 
   // Amplifier commands
-  else if (action == "amp_play") {
-    if (params.containsKey("url")) {
-      const char* url = params["url"];
+  else if (action == "amp_play")
+  {
+    if (params.containsKey("url"))
+    {
+      const char *url = params["url"];
       Serial.printf("[Commands] Playing amplifier URL: %s\n", url);
       sendUART2Command("play", url);
       return true;
-    } else {
+    }
+    else
+    {
       Serial.println("[Commands] amp_play requires 'url' parameter");
       return false;
     }
   }
-  else if (action == "amp_stop") {
+  else if (action == "amp_stop")
+  {
     sendUART2Command("stop", "");
     return true;
   }
-  else if (action == "amp_restart") {
+  else if (action == "amp_restart")
+  {
     Serial.println("[Commands] Restarting amplifier");
     sendUART2Command("restart", "");
     return true;
   }
-  else if (action == "amp_volume") {
-    if (params.containsKey("level")) {
+  else if (action == "amp_volume")
+  {
+    if (params.containsKey("level"))
+    {
       int level = params["level"];
       Serial.printf("[Commands] Setting amplifier volume to %d\n", level);
 
@@ -765,12 +776,15 @@ bool executeCommand(String action, JsonObject params)
       AmpSerial.println(output);
 
       return true;
-    } else {
+    }
+    else
+    {
       Serial.println("[Commands] amp_volume requires 'level' parameter");
       return false;
     }
   }
-  else if (action == "amp_status") {
+  else if (action == "amp_status")
+  {
     Serial.println("[Commands] Requesting amplifier status");
 
     // Send status command to amplifier
@@ -782,7 +796,8 @@ bool executeCommand(String action, JsonObject params)
 
     return true;
   }
-  else if (action == "amp_list") {
+  else if (action == "amp_list")
+  {
     Serial.println("[Commands] Requesting amplifier file list");
 
     // Send list command to amplifier
@@ -794,10 +809,12 @@ bool executeCommand(String action, JsonObject params)
 
     return true;
   }
-  else if (action == "amp_wifi") {
-    if (params.containsKey("ssid") && params.containsKey("password")) {
-      const char* ssid = params["ssid"];
-      const char* password = params["password"];
+  else if (action == "amp_wifi")
+  {
+    if (params.containsKey("ssid") && params.containsKey("password"))
+    {
+      const char *ssid = params["ssid"];
+      const char *password = params["password"];
       Serial.printf("[Commands] Updating amplifier WiFi credentials (SSID: %s)\n", ssid);
 
       // Send WiFi command to amplifier
@@ -810,22 +827,27 @@ bool executeCommand(String action, JsonObject params)
       AmpSerial.println(output);
 
       return true;
-    } else {
+    }
+    else
+    {
       Serial.println("[Commands] amp_wifi requires 'ssid' and 'password' parameters");
       return false;
     }
   }
 
   // Face recognition commands
-  else if (action == "face_count") {
+  else if (action == "face_count")
+  {
     sendUARTCommand("face_count");
     return true;
   }
-  else if (action == "face_list") {
+  else if (action == "face_list")
+  {
     sendUARTCommand("list_faces");
     return true;
   }
-  else if (action == "face_check") {
+  else if (action == "face_check")
+  {
     sendUARTCommand("check_face_db");
     return true;
   }
@@ -833,13 +855,15 @@ bool executeCommand(String action, JsonObject params)
   // System commands
   // Note: reboot/system_restart is handled specially in fetchAndExecuteCommands()
   // to ensure acknowledgment happens before reboot
-  else if (action == "system_restart" || action == "reboot") {
+  else if (action == "system_restart" || action == "reboot")
+  {
     Serial.println("[Commands] ERROR: Reboot should be handled in fetchAndExecuteCommands()");
     return false;
   }
 
   // Legacy recording commands
-  else if (action == "recording_start") {
+  else if (action == "recording_start")
+  {
     // Start face detection/recognition
     sendUARTCommand("resume_detection");
     return true;
@@ -851,7 +875,8 @@ bool executeCommand(String action, JsonObject params)
   }
 
   // Doorbell button commands (two-step interaction)
-  else if (action == "start_preview") {
+  else if (action == "start_preview")
+  {
     // Step 1: Button held down - start camera preview and resume detection
     Serial.println("[Commands] Starting camera preview mode");
     sendUARTCommand("camera_control", "camera_start");
@@ -859,7 +884,8 @@ bool executeCommand(String action, JsonObject params)
     sendUARTCommand("resume_detection");
     return true;
   }
-  else if (action == "recognize_face") {
+  else if (action == "recognize_face")
+  {
     // Step 2: Button pressed again - trigger face recognition
     Serial.println("[Commands] Triggering face recognition");
     sendUARTCommand("recognize_face");
@@ -867,7 +893,8 @@ bool executeCommand(String action, JsonObject params)
   }
 
   // Unknown command
-  else {
+  else
+  {
     Serial.printf("[Commands] Unknown action: %s\n", action.c_str());
     return false;
   }

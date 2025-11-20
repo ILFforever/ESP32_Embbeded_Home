@@ -316,15 +316,32 @@ void handleUARTResponse(String line)
         return;
       }
 
+      // Handle microphone_event response
+      if (strcmp(status, "microphone_event") == 0)
+      {
+        Serial.printf("🎤 Microphone Event: %s\n", msg);
+        return;
+      }
+
       // Handle error status
       if (strcmp(status, "error") == 0)
       {
+        //these two messages happen too often and is handled already by status manager
         if (strcmp(msg, "Camera already stopped") == 0)
         {
           slave_status = 0;
           updateActualMode(0); // Sync actual mode
           updateStatusMsg("Doorbell Off", true, "Standing by");
           sendDoorbellStatus(false, false); // Camera inactive
+          return;
+        }
+        if (strcmp(msg, "Camera already running") == 0)
+        {
+          slave_status = 1;
+          updateActualMode(1); // Sync actual mode
+          updateStatusMsg("Doorbell Active");
+          sendDoorbellStatus(true, false); // Camera active
+          return;
         }
         Serial.printf("❌ Cam Slave Error: %s\n", msg);
         sendUART2Command("play", "error"); // Play error sound
