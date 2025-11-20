@@ -31,6 +31,7 @@ void create_uart_commands();
 bool exit_standby_mode();
 bool enter_standby_mode();
 void start_camera_task(void *pvParameters);
+void pause_face_detection();
 // static void stats_task(void *pvParameters);
 static void spi_frame_sender_task(void *pvParameters);
 
