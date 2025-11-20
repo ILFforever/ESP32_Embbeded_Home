@@ -745,7 +745,7 @@ export function getDeviceStatusText(online: boolean, lastSeen: string | null): s
 
 // Device history interfaces
 export interface HistoryEvent {
-  type: 'heartbeat' | 'face_detection' | 'command' | 'device_state';
+  type: 'heartbeat' | 'face_detection' | 'command' | 'device_state' | 'device_log';
   id: string;
   timestamp: any;
   data: any;
@@ -759,11 +759,12 @@ export interface DeviceHistory {
     status_events: number;
     face_detections: number;
     commands: number;
+    device_logs: number;
   };
   history: HistoryEvent[];
 }
 
-// Get device history (mixed: heartbeats, face detections, commands)
+// Get device history (mixed: status, face detections, commands, logs)
 export async function getDeviceHistory(deviceId: string, limit: number = 20): Promise<DeviceHistory> {
   try {
     const response = await axios.get<DeviceHistory>(
@@ -780,7 +781,7 @@ export async function getDeviceHistory(deviceId: string, limit: number = 20): Pr
     return {
       status: 'error',
       device_id: deviceId,
-      summary: { total: 0, status_events: 0, face_detections: 0, commands: 0 },
+      summary: { total: 0, status_events: 0, face_detections: 0, commands: 0, device_logs: 0 },
       history: []
     };
   }
