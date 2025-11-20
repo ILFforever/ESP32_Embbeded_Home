@@ -15,6 +15,7 @@
 #include "weather.h"
 #include "heartbeat.h"
 #include "doorbell_mqtt.h"
+#include "logger.h"
 #include <TJpg_Decoder.h>
 #include <cstring>
 #include <esp_system.h>
@@ -333,6 +334,10 @@ void setup()
       "d8ac2f1ee97b4a8b3f299696773e807e735284c47cfc30aadef1287e10a53b6d" // API token (from registration response)
   );
   Serial.println("[MAIN] Heartbeat module initialized");
+
+  // Initialize logger module (must be after heartbeat)
+  initLogger();
+  Serial.println("[MAIN] Logger module initialized");
 
   // Initialize MQTT client (WiFi already initialized by heartbeat module)
   initDoorbellMQTT("db_001"); // Same device ID as heartbeat
@@ -1169,11 +1174,34 @@ void onCardDetected(NFCCardData card)
 // Task: WiFi Watchdog - check connection health
 void wifiWatchdogTask()
 {
+  static bool wasConnected = true;
+
   // Check WiFi connection (HTTP server disabled, but WiFi needed for backend communication)
   if (WiFi.status() != WL_CONNECTED)
   {
     Serial.println("⚠️ WiFi disconnected! Attempting reconnect...");
     WiFi.reconnect();
+
+    // Log WiFi disconnection (only once per disconnect event)
+    if (wasConnected)
+    {
+      StaticJsonDocument<256> meta;
+      JsonObject metadata = meta.to<JsonObject>();
+      metadata["rssi"] = WiFi.RSSI();
+      metadata["uptime_ms"] = millis();
+      logError("network", "WiFi connection lost - attempting reconnect", metadata);
+      wasConnected = false;
+    }
+  }
+  else if (!wasConnected)
+  {
+    // WiFi reconnected
+    StaticJsonDocument<256> meta;
+    JsonObject metadata = meta.to<JsonObject>();
+    metadata["rssi"] = WiFi.RSSI();
+    metadata["ip_address"] = WiFi.localIP().toString();
+    logInfo("network", "WiFi reconnected successfully", metadata);
+    wasConnected = true;
   }
 }
 
@@ -1234,6 +1262,14 @@ void updateButtonState(ButtonState &btn, int pin, const char *buttonName)
             sendUART2Command("play", "error");
             Serial.println("[BTN] Both buttons held - rebooting system!");
             updateStatusMsg("Rebooting system...");
+
+            // Log critical system restart event
+            StaticJsonDocument<256> meta;
+            JsonObject metadata = meta.to<JsonObject>();
+            metadata["reason"] = "button_hold";
+            metadata["uptime_ms"] = millis();
+            metadata["free_heap"] = ESP.getFreeHeap();
+            logCritical("system", "System restart via button hold", metadata);
 
             // Reboot Camera Slave
             Serial.println("[REBOOT] Sending reboot command to Camera...");

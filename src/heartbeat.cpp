@@ -1,6 +1,7 @@
 #include "heartbeat.h"
 #include "face_detection_sender.h"
 #include "uart_commands.h"
+#include "logger.h"
 #include <WiFi.h>
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
@@ -178,6 +179,26 @@ void sendDisconnectWarning(const char *module_name, bool isDisconnected)
   }
 
   http.end();
+
+  // Also log to logging endpoint
+  StaticJsonDocument<256> meta;
+  JsonObject metadata = meta.to<JsonObject>();
+  metadata["module"] = module_name;
+  metadata["status"] = isDisconnected ? "disconnected" : "reconnected";
+  metadata["uptime_ms"] = millis();
+
+  if (isDisconnected)
+  {
+    char msg[128];
+    snprintf(msg, sizeof(msg), "Module %s not responding", module_name);
+    logError("device_monitor", msg, metadata);
+  }
+  else
+  {
+    char msg[128];
+    snprintf(msg, sizeof(msg), "Module %s reconnected", module_name);
+    logInfo("device_monitor", msg, metadata);
+  }
 }
 
 // ============================================================================
@@ -639,6 +660,15 @@ void fetchAndExecuteCommands()
         if (action == "system_restart" || action == "reboot") {
           Serial.println("[Commands] Reboot requested - acknowledging before execution");
           acknowledgeCommand(commandId, true, action);
+
+          // Log critical reboot event
+          StaticJsonDocument<256> meta;
+          JsonObject metadata = meta.to<JsonObject>();
+          metadata["reason"] = "remote_command";
+          metadata["uptime_ms"] = millis();
+          metadata["free_heap"] = ESP.getFreeHeap();
+          logCritical("system", "System restart via remote command", metadata);
+
           Serial.println("[Commands] Rebooting system in 3 seconds...");
           delay(3000);
           ESP.restart();
