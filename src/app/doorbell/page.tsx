@@ -76,6 +76,10 @@ export default function DoorbellControlPage() {
   // Latest visitors
   const [latestVisitors, setLatestVisitors] = useState<Visitor[]>([]);
 
+  // Visitor details modal
+  const [selectedVisitor, setSelectedVisitor] = useState<Visitor | null>(null);
+  const [showVisitorDetails, setShowVisitorDetails] = useState(false);
+
   // Settings modal
   const [showSettings, setShowSettings] = useState(false);
   const [customDeviceId, setCustomDeviceId] = useState("");
@@ -452,6 +456,12 @@ export default function DoorbellControlPage() {
     }
   };
 
+  // Visitor details handler
+  const handleVisitorClick = (visitor: Visitor) => {
+    setSelectedVisitor(visitor);
+    setShowVisitorDetails(true);
+  };
+
   const formatActivityTime = (timestamp: any) => {
     // Handle Firestore timestamp or ISO string
     let date: Date;
@@ -605,11 +615,20 @@ export default function DoorbellControlPage() {
                     latestVisitors.map((visitor) => (
                       <div
                         key={visitor.id}
+                        onClick={() => handleVisitorClick(visitor)}
                         style={{
                           display: "flex",
                           flexDirection: "column",
                           alignItems: "center",
                           gap: "8px",
+                          cursor: "pointer",
+                          transition: "transform 0.2s ease",
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.transform = "scale(1.05)";
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.transform = "scale(1)";
                         }}
                       >
                         <div
@@ -1520,6 +1539,273 @@ export default function DoorbellControlPage() {
                   }}
                 >
                   CANCEL
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Visitor Details Modal */}
+      {showVisitorDetails && selectedVisitor && (
+        <div
+          onClick={() => setShowVisitorDetails(false)}
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: "rgba(0, 0, 0, 0.7)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 1000,
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              backgroundColor: "white",
+              borderRadius: "12px",
+              padding: "24px",
+              maxWidth: "600px",
+              width: "90%",
+              boxShadow: "0 8px 24px rgba(0, 0, 0, 0.2)",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                gap: "24px",
+                flexWrap: "wrap",
+              }}
+            >
+              {/* Image on the left */}
+              <div
+                style={{
+                  flex: "0 0 200px",
+                  minWidth: "200px",
+                }}
+              >
+                <div
+                  style={{
+                    width: "200px",
+                    height: "200px",
+                    borderRadius: "16px",
+                    overflow: "hidden",
+                    border: selectedVisitor.recognized
+                      ? "4px solid #4CAF50"
+                      : "4px solid #FF9800",
+                    boxShadow: "0 4px 12px rgba(0, 0, 0, 0.15)",
+                    backgroundColor: "#f0f0f0",
+                  }}
+                >
+                  {selectedVisitor.image ? (
+                    <img
+                      src={selectedVisitor.image}
+                      alt={selectedVisitor.name}
+                      style={{
+                        width: "100%",
+                        height: "100%",
+                        objectFit: "cover",
+                      }}
+                    />
+                  ) : (
+                    <div
+                      style={{
+                        width: "100%",
+                        height: "100%",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        fontSize: "96px",
+                        color: "#999",
+                      }}
+                    >
+                      👤
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Information on the right */}
+              <div
+                style={{
+                  flex: "1 1 300px",
+                  minWidth: "250px",
+                }}
+              >
+                <h2
+                  style={{
+                    marginTop: 0,
+                    marginBottom: "20px",
+                    color: selectedVisitor.recognized ? "#4CAF50" : "#FF9800",
+                    fontSize: "24px",
+                    fontWeight: "700",
+                  }}
+                >
+                  {selectedVisitor.name}
+                </h2>
+
+                <div
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: "16px",
+                  }}
+                >
+                  {/* Recognition Status */}
+                  <div>
+                    <div
+                      style={{
+                        fontSize: "12px",
+                        fontWeight: "600",
+                        color: "#666",
+                        textTransform: "uppercase",
+                        marginBottom: "4px",
+                      }}
+                    >
+                      Status
+                    </div>
+                    <div
+                      style={{
+                        display: "inline-block",
+                        padding: "6px 12px",
+                        borderRadius: "20px",
+                        backgroundColor: selectedVisitor.recognized
+                          ? "rgba(76, 175, 80, 0.1)"
+                          : "rgba(255, 152, 0, 0.1)",
+                        color: selectedVisitor.recognized
+                          ? "#4CAF50"
+                          : "#FF9800",
+                        fontWeight: "600",
+                        fontSize: "14px",
+                      }}
+                    >
+                      {selectedVisitor.recognized ? "✓ Recognized" : "⚠ Unknown"}
+                    </div>
+                  </div>
+
+                  {/* Confidence */}
+                  {selectedVisitor.confidence > 0 && (
+                    <div>
+                      <div
+                        style={{
+                          fontSize: "12px",
+                          fontWeight: "600",
+                          color: "#666",
+                          textTransform: "uppercase",
+                          marginBottom: "4px",
+                        }}
+                      >
+                        Confidence
+                      </div>
+                      <div
+                        style={{
+                          fontSize: "18px",
+                          fontWeight: "700",
+                          color: "#333",
+                        }}
+                      >
+                        {(selectedVisitor.confidence * 100).toFixed(1)}%
+                      </div>
+                      <div
+                        style={{
+                          marginTop: "4px",
+                          height: "8px",
+                          backgroundColor: "#e0e0e0",
+                          borderRadius: "4px",
+                          overflow: "hidden",
+                        }}
+                      >
+                        <div
+                          style={{
+                            height: "100%",
+                            width: `${selectedVisitor.confidence * 100}%`,
+                            backgroundColor: selectedVisitor.recognized
+                              ? "#4CAF50"
+                              : "#FF9800",
+                            transition: "width 0.3s ease",
+                          }}
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Detection Time */}
+                  <div>
+                    <div
+                      style={{
+                        fontSize: "12px",
+                        fontWeight: "600",
+                        color: "#666",
+                        textTransform: "uppercase",
+                        marginBottom: "4px",
+                      }}
+                    >
+                      Detected At
+                    </div>
+                    <div
+                      style={{
+                        fontSize: "14px",
+                        color: "#333",
+                      }}
+                    >
+                      {selectedVisitor.detected_at
+                        ? new Date(
+                            selectedVisitor.detected_at._seconds
+                              ? selectedVisitor.detected_at._seconds * 1000
+                              : selectedVisitor.detected_at
+                          ).toLocaleString("en-US", {
+                            dateStyle: "medium",
+                            timeStyle: "short",
+                          })
+                        : "N/A"}
+                    </div>
+                  </div>
+
+                  {/* Visitor ID */}
+                  <div>
+                    <div
+                      style={{
+                        fontSize: "12px",
+                        fontWeight: "600",
+                        color: "#666",
+                        textTransform: "uppercase",
+                        marginBottom: "4px",
+                      }}
+                    >
+                      Detection ID
+                    </div>
+                    <div
+                      style={{
+                        fontSize: "12px",
+                        color: "#999",
+                        fontFamily: "monospace",
+                        wordBreak: "break-all",
+                      }}
+                    >
+                      {selectedVisitor.id}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Close Button */}
+                <button
+                  onClick={() => setShowVisitorDetails(false)}
+                  className="btn-control"
+                  style={{
+                    marginTop: "24px",
+                    width: "100%",
+                    backgroundColor: "#6c757d",
+                    borderColor: "#6c757d",
+                    padding: "12px",
+                    fontSize: "14px",
+                    fontWeight: "600",
+                  }}
+                >
+                  CLOSE
                 </button>
               </div>
             </div>
