@@ -13,6 +13,9 @@ export interface Device {
   expireAt: any; // Firebase Timestamp - used by backend to compute online status
 }
 
+// Backend device type alias (same as Device)
+export type BackendDevice = Device;
+
 export interface DevicesStatus {
   status: string;
   timestamp: string;
