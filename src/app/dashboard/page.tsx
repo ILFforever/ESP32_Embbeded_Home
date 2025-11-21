@@ -9,7 +9,7 @@ import { TemperatureCard } from '@/components/dashboard/TemperatureCard';
 import { GasReadingsCard } from '@/components/dashboard/GasReadingsCard';
 import { DoorsWindowsCard } from '@/components/dashboard/DoorsWindowsCard';
 import { DoorbellControlCard } from '@/components/dashboard/DoorbellControlCard';
-import { SecurityCard } from '@/components/dashboard/SecurityCard';
+import { AdminManagementCard } from '@/components/dashboard/AdminManagementCard';
 import { SystemStatusCard } from '@/components/dashboard/SystemStatusCard';
 import {
   getAllDevices,
@@ -18,7 +18,6 @@ import {
   generateMockGasReadings,
   generateMockDoorsWindows,
   getDoorbellControlStatus,
-  generateMockSecurityDevices,
   findDoorbellDevice
 } from '@/services/devices.service';
 import type { DevicesStatus } from '@/types/dashboard';
@@ -102,7 +101,6 @@ export default function DashboardPage() {
   const temperatureData = generateMockTemperatureData();
   const gasReadings = generateMockGasReadings();
   const doorsWindows = generateMockDoorsWindows();
-  const securityDevices = generateMockSecurityDevices();
 
   // Use real doorbell control data (fetched from state)
   const doorbellControlData = doorbellControl || {
@@ -146,8 +144,8 @@ export default function DashboardPage() {
       case 'doorbell':
         content = <DoorbellControlCard doorbellControl={doorbellControlData} deviceId={doorbellDeviceId || undefined} isExpanded={true} />;
         break;
-      case 'security':
-        content = <SecurityCard securityDevices={securityDevices} isExpanded={true} />;
+      case 'admin':
+        content = <AdminManagementCard devices={devicesStatus?.devices || []} isExpanded={true} />;
         break;
       default:
         content = null;
@@ -350,15 +348,15 @@ export default function DashboardPage() {
 
             <div
               className="card-row3-4"
-              onClick={() => openExpandedCard('security')}
+              onClick={() => openExpandedCard('admin')}
             >
-              <button className="card-eye-icon" onClick={(e) => { e.stopPropagation(); openExpandedCard('security'); }}>
+              <button className="card-eye-icon" onClick={(e) => { e.stopPropagation(); openExpandedCard('admin'); }}>
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
                   <circle cx="12" cy="12" r="3"></circle>
                 </svg>
               </button>
-              <SecurityCard securityDevices={securityDevices} />
+              <AdminManagementCard devices={devicesStatus?.devices || []} />
             </div>
           </div>
 
