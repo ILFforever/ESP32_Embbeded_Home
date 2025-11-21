@@ -1885,6 +1885,68 @@ const getDeviceInfo = async (req, res) => {
   }
 };
 
+// ============================================================================
+// @route   GET /api/v1/devices/:device_id/visitors/latest
+// @desc    Get latest visitors (face detections) with images
+// ============================================================================
+const getLatestVisitors = async (req, res) => {
+  try {
+    const { device_id } = req.params;
+    const limit = parseInt(req.query.limit) || 20;
+
+    console.log(`[LatestVisitors] ${device_id} - Fetching ${limit} latest visitors`);
+
+    const db = getFirestore();
+    const deviceRef = db.collection('devices').doc(device_id);
+
+    // Query face_detections collection ordered by detected_at (most recent first)
+    const visitorsSnapshot = await deviceRef
+      .collection('face_detections')
+      .orderBy('detected_at', 'desc')
+      .limit(limit)
+      .get();
+
+    if (visitorsSnapshot.empty) {
+      return res.json({
+        status: 'ok',
+        device_id,
+        count: 0,
+        visitors: []
+      });
+    }
+
+    // Transform Firestore documents to visitor objects
+    const visitors = visitorsSnapshot.docs.map(doc => {
+      const data = doc.data();
+      return {
+        id: doc.id,
+        name: data.name || 'Unknown',
+        image: data.image || null,
+        recognized: data.recognized || false,
+        confidence: data.confidence || 0,
+        timestamp: data.timestamp || data.detected_at,
+        detected_at: data.detected_at
+      };
+    });
+
+    console.log(`[LatestVisitors] ${device_id} - Found ${visitors.length} visitors`);
+
+    res.json({
+      status: 'ok',
+      device_id,
+      count: visitors.length,
+      visitors
+    });
+
+  } catch (error) {
+    console.error('[LatestVisitors] Error fetching visitors:', error);
+    res.status(500).json({
+      status: 'error',
+      message: error.message
+    });
+  }
+};
+
 module.exports = {
   registerDevice,
   handleHeartbeat,
@@ -1926,5 +1988,7 @@ module.exports = {
   // System control
   restartSystem,
   // Device info
-  getDeviceInfo
+  getDeviceInfo,
+  // Visitors
+  getLatestVisitors
 };
