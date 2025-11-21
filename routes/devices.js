@@ -42,7 +42,9 @@ const {
   // System control
   restartSystem,
   // Device info
-  getDeviceInfo
+  getDeviceInfo,
+  // Visitors
+  getLatestVisitors
 } = require('../controllers/devices');
 const { authenticateDevice } = require('../middleware/deviceAuth');
 const { protect } = require('../middleware/auth');
@@ -270,5 +272,14 @@ router.post('/:device_id/system/restart', protect, restartSystem);
 // @desc    Get device info (similar to HTML controller /info endpoint)
 // @access  Private (requires user token)
 router.get('/:device_id/info', protect, getDeviceInfo);
+
+// ============================================================================
+// Visitors Route
+// ============================================================================
+
+// @route   GET /api/v1/devices/:device_id/visitors/latest
+// @desc    Get latest visitors (face detections) with images
+// @access  Private (requires user token)
+router.get('/:device_id/visitors/latest', protect, getLatestVisitors);
 
 module.exports = router;
