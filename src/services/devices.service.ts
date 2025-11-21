@@ -922,3 +922,44 @@ export function getAQICategory(aqi: number): { category: string; color: string; 
   if (aqi <= 300) return { category: 'Very Unhealthy', color: '#9C27B0', status: 'status-offline' };
   return { category: 'Hazardous', color: '#880E4F', status: 'status-offline' };
 }
+
+// Visitor interface
+export interface Visitor {
+  id: string;
+  name: string;
+  image: string | null;
+  recognized: boolean;
+  confidence: number;
+  timestamp: any;
+  detected_at: any;
+}
+
+export interface LatestVisitorsResponse {
+  status: string;
+  device_id: string;
+  count: number;
+  visitors: Visitor[];
+}
+
+// Get latest visitors (face detections) with images
+export async function getLatestVisitors(deviceId: string, limit: number = 20): Promise<LatestVisitorsResponse> {
+  try {
+    const response = await axios.get<LatestVisitorsResponse>(
+      `${API_URL}/api/v1/devices/${deviceId}/visitors/latest?limit=${limit}`,
+      {
+        timeout: 10000,
+        headers: getAuthHeaders()
+      }
+    );
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching latest visitors:', error);
+    // Return empty response on error
+    return {
+      status: 'error',
+      device_id: deviceId,
+      count: 0,
+      visitors: []
+    };
+  }
+}

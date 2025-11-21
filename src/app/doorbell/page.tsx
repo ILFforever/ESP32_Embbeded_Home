@@ -14,7 +14,7 @@ import {
   ArrowLeft,
 } from "lucide-react";
 import ProtectedRoute from "@/components/auth/ProtectedRoute";
-import { getAllDevices, getDeviceHistory } from "@/services/devices.service";
+import { getAllDevices, getDeviceHistory, getLatestVisitors } from "@/services/devices.service";
 import { getCookie } from "@/utils/cookies";
 import {
   startCamera,
@@ -33,7 +33,7 @@ import {
   getFaceDatabaseInfo,
   restartSystem,
 } from "@/services/devices.service";
-import type { FaceDatabaseInfo } from "@/services/devices.service";
+import type { FaceDatabaseInfo, Visitor } from "@/services/devices.service";
 import type { Device } from "@/types/dashboard";
 
 interface ActivityEvent {
@@ -72,6 +72,9 @@ export default function DoorbellControlPage() {
   // Face database info
   const [faceDatabaseInfo, setFaceDatabaseInfo] =
     useState<FaceDatabaseInfo | null>(null);
+
+  // Latest visitors
+  const [latestVisitors, setLatestVisitors] = useState<Visitor[]>([]);
 
   // Settings modal
   const [showSettings, setShowSettings] = useState(false);
@@ -116,6 +119,12 @@ export default function DoorbellControlPage() {
             // Fetch face database info
             const faceDbInfo = await getFaceDatabaseInfo(deviceIdToUse);
             setFaceDatabaseInfo(faceDbInfo);
+
+            // Fetch latest visitors
+            const visitorsData = await getLatestVisitors(deviceIdToUse, 20);
+            if (visitorsData.status === 'ok') {
+              setLatestVisitors(visitorsData.visitors);
+            }
 
             // Fetch actual camera/mic status from backend
             try {
@@ -576,16 +585,115 @@ export default function DoorbellControlPage() {
           </header>
 
           <div className="control-page-grid">
-            {/* Live Feed */}
+            {/* Latest Visitors */}
             <div className="card control-card-large">
               <div className="card-header">
-                <h3>LIVE CAMERA FEED</h3>
+                <h3>LATEST VISITORS</h3>
               </div>
               <div className="card-content">
-                <div className="camera-feed-placeholder">
-                  <div className="camera-icon">📹</div>
-                  <p>Camera feed will appear here</p>
-                  <p className="text-muted">Resolution: 1080p | FPS: 30</p>
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(auto-fill, minmax(120px, 1fr))",
+                    gap: "16px",
+                    padding: "8px",
+                    maxHeight: "600px",
+                    overflowY: "auto",
+                  }}
+                >
+                  {latestVisitors.length > 0 ? (
+                    latestVisitors.map((visitor) => (
+                      <div
+                        key={visitor.id}
+                        style={{
+                          display: "flex",
+                          flexDirection: "column",
+                          alignItems: "center",
+                          gap: "8px",
+                        }}
+                      >
+                        <div
+                          style={{
+                            width: "100px",
+                            height: "100px",
+                            borderRadius: "16px",
+                            overflow: "hidden",
+                            border: visitor.recognized
+                              ? "3px solid #4CAF50"
+                              : "3px solid #FF9800",
+                            boxShadow: "0 2px 8px rgba(0, 0, 0, 0.15)",
+                            backgroundColor: "#f0f0f0",
+                          }}
+                        >
+                          {visitor.image ? (
+                            <img
+                              src={visitor.image}
+                              alt={visitor.name}
+                              style={{
+                                width: "100%",
+                                height: "100%",
+                                objectFit: "cover",
+                              }}
+                              onError={(e) => {
+                                (e.target as HTMLImageElement).style.display =
+                                  "none";
+                              }}
+                            />
+                          ) : (
+                            <div
+                              style={{
+                                width: "100%",
+                                height: "100%",
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                fontSize: "48px",
+                                color: "#999",
+                              }}
+                            >
+                              👤
+                            </div>
+                          )}
+                        </div>
+                        <div
+                          style={{
+                            textAlign: "center",
+                            fontSize: "12px",
+                            fontWeight: "600",
+                            color: visitor.recognized ? "#4CAF50" : "#FF9800",
+                            maxWidth: "100px",
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          {visitor.name}
+                        </div>
+                        {visitor.confidence > 0 && (
+                          <div
+                            style={{
+                              fontSize: "10px",
+                              color: "#666",
+                            }}
+                          >
+                            {(visitor.confidence * 100).toFixed(0)}%
+                          </div>
+                        )}
+                      </div>
+                    ))
+                  ) : (
+                    <div
+                      style={{
+                        gridColumn: "1 / -1",
+                        textAlign: "center",
+                        padding: "40px 20px",
+                        color: "#6c757d",
+                        fontSize: "14px",
+                      }}
+                    >
+                      No visitors detected yet
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
