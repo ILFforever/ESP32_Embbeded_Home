@@ -1565,8 +1565,8 @@ export default function DoorbellControlPage() {
         >
           <div
             onClick={(e) => e.stopPropagation()}
+            className="card"
             style={{
-              backgroundColor: "white",
               borderRadius: "12px",
               padding: "24px",
               maxWidth: "600px",
@@ -1705,7 +1705,6 @@ export default function DoorbellControlPage() {
                         style={{
                           fontSize: "18px",
                           fontWeight: "700",
-                          color: "#333",
                         }}
                       >
                         {(selectedVisitor.confidence * 100).toFixed(1)}%
@@ -1749,7 +1748,6 @@ export default function DoorbellControlPage() {
                     <div
                       style={{
                         fontSize: "14px",
-                        color: "#333",
                       }}
                     >
                       {selectedVisitor.detected_at

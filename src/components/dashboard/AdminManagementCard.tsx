@@ -148,14 +148,12 @@ export function AdminManagementCard({ isExpanded = false, devices = [] }: AdminM
             <div className="security-overview">
               <div className="overview-item">
                 <Users size={20} />
-                <span>ADMINS</span>
                 <span className="status-indicator">
                   {admins.length}
                 </span>
               </div>
               <div className="overview-item">
                 <User size={20} />
-                <span>USERS</span>
                 <span className="status-indicator">
                   {users.length}
                 </span>
