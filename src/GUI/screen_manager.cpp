@@ -371,27 +371,50 @@ void updateContent()
       contentArea.setFont(&fonts::Orbitron_Light_24);
       contentArea.setTextSize(3);
       contentArea.drawString("Room List", 10, 10);
-      contentArea.fillSmoothRoundRect(10, 100, 250, 320, 10, TFT_WHITE);
-      contentArea.fillSmoothRoundRect(270, 100, 250, 320, 10, TFT_WHITE);
-      contentArea.fillSmoothRoundRect(530, 100, 250, 320, 10, TFT_WHITE);
+      contentArea.fillSmoothRoundRect(780, 100, 10, 180, 3, TFT_WHITE);
+
+      contentArea.fillSmoothRoundRect(10, 100, 740, 120, 15, TFT_WHITE);
+      contentArea.setFont(&fonts::DejaVu12);
       contentArea.setTextColor(TFT_BLACK);
       contentArea.setTextSize(2);
-      contentArea.drawString("Bed", 15, 100);
-      contentArea.drawString("Room", 15, 140);
-      contentArea.drawString("Bath", 275, 100);
-      contentArea.drawString("Room", 275, 140);
-      contentArea.drawString("Dining", 535, 100);
-      contentArea.drawString("Room", 535, 140);
-      contentArea.setTextSize(1);
-      contentArea.fillSmoothRoundRect(30, 355, 210, 50, 10, TFT_BLACK);
-      contentArea.fillSmoothRoundRect(35, 360, 200, 40, 10, TFT_CYAN);
-      contentArea.drawString("View Room", 55, 365);
-      contentArea.fillSmoothRoundRect(290, 355, 210, 50, 10, TFT_BLACK);
-      contentArea.fillSmoothRoundRect(295, 360, 200, 40, 10, TFT_CYAN);
-      contentArea.drawString("View Room", 315, 365);
-      contentArea.fillSmoothRoundRect(550, 355, 210, 50, 10, TFT_BLACK);
-      contentArea.fillSmoothRoundRect(555, 360, 200, 40, 10, TFT_CYAN);
-      contentArea.drawString("View Room", 575, 365);
+      contentArea.drawString("LIVING ROOM", 20, 110);
+      
+      contentArea.drawString("Temp:", 20, 140);
+      contentArea.drawString("Light:", 180, 140);
+      contentArea.drawString("Humidity:", 350, 140);
+      contentArea.drawString("Gas:", 570, 140);
+      contentArea.setTextSize(3);
+      contentArea.drawString("27", 110, 140);
+      contentArea.drawString("40", 270, 140);
+      contentArea.drawString("47", 490, 140);
+      contentArea.drawString("200", 640, 140);
+
+      contentArea.setTextSize(2);
+      
+      contentArea.fillSmoothRoundRect(10, 230, 740, 120, 15, TFT_WHITE);
+      contentArea.drawString("BEDROOM", 20, 240);
+      contentArea.drawString("Temp:", 20, 270);
+      contentArea.drawString("Light:", 180, 270);
+      contentArea.drawString("Humidity:", 350, 270);
+      contentArea.drawString("Gas:", 570, 270);
+      contentArea.setTextSize(3);
+      contentArea.drawString("30", 110, 270);
+      contentArea.drawString("51", 270, 270);
+      contentArea.drawString("76", 490, 270);
+      contentArea.drawString("809", 640, 270);
+
+      contentArea.setTextSize(2);
+      contentArea.fillSmoothRoundRect(10, 360, 740, 120, 15, TFT_WHITE);
+      contentArea.drawString("KITCHEN", 20, 370);
+      contentArea.drawString("Temp:", 20, 400);
+      contentArea.drawString("Light:", 180, 400);
+      contentArea.drawString("Humidity:", 350, 400);
+      contentArea.drawString("Gas:", 570, 400);
+      contentArea.setTextSize(3);
+      contentArea.drawString("19", 110, 400);
+      contentArea.drawString("88", 270, 400);
+      contentArea.drawString("26", 490, 400);
+      contentArea.drawString("67", 640, 400);
     }
     else if (cur_Screen == 7) //Room Detail Gas Page
     {
@@ -418,6 +441,15 @@ void updateContent()
       contentArea.drawString("2", 370, 330);
       contentArea.setTextSize(5);
       contentArea.drawString("4", 600, 190);
+    }
+    else if (cur_Screen == 8) 
+    {
+      contentArea.fillScreen(TFT_BLACK);
+      contentArea.setTextColor(TFT_WHITE);
+      contentArea.setFont(&fonts::Orbitron_Light_24);
+      contentArea.setTextSize(3);
+      contentArea.drawString("Bed Room", 10, 10);
+      
     }
   }
 
