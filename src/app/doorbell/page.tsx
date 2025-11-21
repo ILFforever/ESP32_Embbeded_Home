@@ -1,11 +1,21 @@
-'use client';
+"use client";
 
-import React, { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
-import { Camera, Mic, Volume2, RotateCw, Power, Users, Settings, Database, ArrowLeft } from 'lucide-react';
-import ProtectedRoute from '@/components/auth/ProtectedRoute';
-import { getAllDevices, getDeviceHistory } from '@/services/devices.service';
-import { getCookie } from '@/utils/cookies';
+import React, { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
+import {
+  Camera,
+  Mic,
+  Volume2,
+  RotateCw,
+  Power,
+  Users,
+  Settings,
+  Database,
+  ArrowLeft,
+} from "lucide-react";
+import ProtectedRoute from "@/components/auth/ProtectedRoute";
+import { getAllDevices, getDeviceHistory } from "@/services/devices.service";
+import { getCookie } from "@/utils/cookies";
 import {
   startCamera,
   stopCamera,
@@ -21,15 +31,20 @@ import {
   setAmplifierWifi,
   syncFaceDatabase,
   getFaceDatabaseInfo,
-  restartSystem
-} from '@/services/devices.service';
-import type { FaceDatabaseInfo } from '@/services/devices.service';
-import type { Device } from '@/types/dashboard';
+  restartSystem,
+} from "@/services/devices.service";
+import type { FaceDatabaseInfo } from "@/services/devices.service";
+import type { Device } from "@/types/dashboard";
 
 interface ActivityEvent {
   id: string;
-  type: 'heartbeat' | 'face_detection' | 'command' | 'device_state' | 'device_log';
-  timestamp: any;  // Firestore timestamp or ISO string
+  type:
+    | "heartbeat"
+    | "face_detection"
+    | "command"
+    | "device_state"
+    | "device_log";
+  timestamp: any; // Firestore timestamp or ISO string
   data: any;
 }
 
@@ -43,26 +58,29 @@ export default function DoorbellControlPage() {
   const [cameraActive, setCameraActive] = useState(false);
   const [micActive, setMicActive] = useState(false);
   const [faceRecognition, setFaceRecognition] = useState(false);
-  const [ampUrl, setAmpUrl] = useState('http://stream.radioparadise.com/aac-320');
+  const [ampUrl, setAmpUrl] = useState(
+    "http://stream.radioparadise.com/aac-320"
+  );
   const [ampVolume, setAmpVolume] = useState(10);
-  const [wifiSsid, setWifiSsid] = useState('');
-  const [wifiPassword, setWifiPassword] = useState('');
+  const [wifiSsid, setWifiSsid] = useState("");
+  const [wifiPassword, setWifiPassword] = useState("");
   const [showWifiSettings, setShowWifiSettings] = useState(false);
 
   // Activity history
   const [recentActivity, setRecentActivity] = useState<ActivityEvent[]>([]);
 
   // Face database info
-  const [faceDatabaseInfo, setFaceDatabaseInfo] = useState<FaceDatabaseInfo | null>(null);
+  const [faceDatabaseInfo, setFaceDatabaseInfo] =
+    useState<FaceDatabaseInfo | null>(null);
 
   // Settings modal
   const [showSettings, setShowSettings] = useState(false);
-  const [customDeviceId, setCustomDeviceId] = useState('');
+  const [customDeviceId, setCustomDeviceId] = useState("");
   const [savedDeviceId, setSavedDeviceId] = useState<string | null>(null);
 
   // Load saved device_id from localStorage on mount
   useEffect(() => {
-    const saved = localStorage.getItem('doorbell_device_id');
+    const saved = localStorage.getItem("doorbell_device_id");
     if (saved) {
       setSavedDeviceId(saved);
       setCustomDeviceId(saved);
@@ -78,12 +96,14 @@ export default function DoorbellControlPage() {
     const fetchDeviceStatus = async () => {
       try {
         const devicesStatus = await getAllDevices();
-        const doorbell = devicesStatus.devices.find(d => d.type === 'doorbell');
+        const doorbell = devicesStatus.devices.find(
+          (d) => d.type === "doorbell"
+        );
 
         if (doorbell) {
           setDoorbellDevice(doorbell);
 
-        // Use custom device_id if set, otherwise use the one from backend
+          // Use custom device_id if set, otherwise use the one from backend
           const deviceIdToUse = savedDeviceId || doorbell.device_id;
 
           // Fetch recent activity
@@ -99,33 +119,43 @@ export default function DoorbellControlPage() {
 
             // Fetch actual camera/mic status from backend
             try {
-              const authToken = getCookie('auth_token');
+              const authToken = getCookie("auth_token");
               const statusResponse = await fetch(
-                `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'}/api/v1/devices/doorbell/${deviceIdToUse}/status`,
+                `${
+                  process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000"
+                }/api/v1/devices/doorbell/${deviceIdToUse}/status`,
                 {
                   headers: {
-                    'Authorization': `Bearer ${authToken || ''}`,
+                    Authorization: `Bearer ${authToken || ""}`,
                   },
                 }
               );
 
               if (statusResponse.ok) {
                 const statusData = await statusResponse.json();
-                console.log('Doorbell status fetched:', statusData); // Debug log
-                if (statusData.status === 'ok' && statusData.data) {
+                console.log("Doorbell status fetched:", statusData); // Debug log
+                if (statusData.status === "ok" && statusData.data) {
                   // Update local state with backend values
                   setCameraActive(statusData.data.camera_active || false);
                   setMicActive(statusData.data.mic_active || false);
-                  console.log('Camera active:', statusData.data.camera_active, 'Mic active:', statusData.data.mic_active); // Debug log
+                  console.log(
+                    "Camera active:",
+                    statusData.data.camera_active,
+                    "Mic active:",
+                    statusData.data.mic_active
+                  ); // Debug log
                 }
               }
             } catch (statusError) {
-              console.error('Error fetching doorbell camera/mic status:', statusError);
+              console.error(
+                "Error fetching doorbell camera/mic status:",
+                statusError
+              );
             }
           }
         }
       } catch (error) {
-        console.error('Error fetching doorbell status:', error);
+        console.error("Error fetching doorbell status:", error);
       } finally {
         setLoading(false);
       }
@@ -138,47 +168,49 @@ export default function DoorbellControlPage() {
   }, [savedDeviceId]);
 
   const getStatusClass = () => {
-    if (!doorbellDevice || !doorbellDevice.last_seen) return 'status-offline';
+    if (!doorbellDevice || !doorbellDevice.last_seen) return "status-offline";
 
     const lastSeenDate = new Date(doorbellDevice.last_seen);
     const now = new Date();
     const diffMinutes = (now.getTime() - lastSeenDate.getTime()) / 60000;
 
-    if (diffMinutes < 2) return 'status-online';
-    if (diffMinutes < 5) return 'status-warning';
-    return 'status-offline';
+    if (diffMinutes < 2) return "status-online";
+    if (diffMinutes < 5) return "status-warning";
+    return "status-offline";
   };
 
   const getStatusText = () => {
-    if (!doorbellDevice || !doorbellDevice.last_seen) return 'OFFLINE';
+    if (!doorbellDevice || !doorbellDevice.last_seen) return "OFFLINE";
 
     const lastSeenDate = new Date(doorbellDevice.last_seen);
     const now = new Date();
-    const diffMinutes = Math.floor((now.getTime() - lastSeenDate.getTime()) / 60000);
+    const diffMinutes = Math.floor(
+      (now.getTime() - lastSeenDate.getTime()) / 60000
+    );
 
-    if (diffMinutes < 2) return 'ONLINE';
+    if (diffMinutes < 2) return "ONLINE";
     if (diffMinutes < 5) return `LAST SEEN ${diffMinutes}M AGO`;
-    return 'OFFLINE';
+    return "OFFLINE";
   };
 
   // Settings handlers
   const handleSaveSettings = () => {
     if (customDeviceId.trim()) {
-      localStorage.setItem('doorbell_device_id', customDeviceId.trim());
+      localStorage.setItem("doorbell_device_id", customDeviceId.trim());
       setSavedDeviceId(customDeviceId.trim());
       setShowSettings(false);
-      alert('Device ID saved successfully!');
+      alert("Device ID saved successfully!");
     } else {
-      alert('Please enter a valid device ID');
+      alert("Please enter a valid device ID");
     }
   };
 
   const handleClearSettings = () => {
-    localStorage.removeItem('doorbell_device_id');
+    localStorage.removeItem("doorbell_device_id");
     setSavedDeviceId(null);
-    setCustomDeviceId('');
+    setCustomDeviceId("");
     setShowSettings(false);
-    alert('Device ID cleared. Using backend default.');
+    alert("Device ID cleared. Using backend default.");
   };
 
   // Camera control handlers
@@ -186,7 +218,7 @@ export default function DoorbellControlPage() {
     const deviceId = getEffectiveDeviceId();
     if (!deviceId) return;
 
-    setCommandLoading('camera');
+    setCommandLoading("camera");
     try {
       if (cameraActive) {
         await stopCamera(deviceId);
@@ -195,8 +227,8 @@ export default function DoorbellControlPage() {
       }
       setCameraActive(!cameraActive);
     } catch (error) {
-      console.error('Error toggling camera:', error);
-      alert('Failed to toggle camera');
+      console.error("Error toggling camera:", error);
+      alert("Failed to toggle camera");
     } finally {
       setCommandLoading(null);
     }
@@ -206,13 +238,13 @@ export default function DoorbellControlPage() {
     const deviceId = getEffectiveDeviceId();
     if (!deviceId) return;
 
-    setCommandLoading('camera_restart');
+    setCommandLoading("camera_restart");
     try {
       await restartCamera(deviceId);
-      alert('Camera restart command sent');
+      alert("Camera restart command sent");
     } catch (error) {
-      console.error('Error restarting camera:', error);
-      alert('Failed to restart camera');
+      console.error("Error restarting camera:", error);
+      alert("Failed to restart camera");
     } finally {
       setCommandLoading(null);
     }
@@ -223,7 +255,7 @@ export default function DoorbellControlPage() {
     const deviceId = getEffectiveDeviceId();
     if (!deviceId) return;
 
-    setCommandLoading('mic');
+    setCommandLoading("mic");
     try {
       if (micActive) {
         await stopMicrophone(deviceId);
@@ -232,8 +264,8 @@ export default function DoorbellControlPage() {
       }
       setMicActive(!micActive);
     } catch (error) {
-      console.error('Error toggling mic:', error);
-      alert('Failed to toggle microphone');
+      console.error("Error toggling mic:", error);
+      alert("Failed to toggle microphone");
     } finally {
       setCommandLoading(null);
     }
@@ -244,18 +276,18 @@ export default function DoorbellControlPage() {
     const deviceId = getEffectiveDeviceId();
     if (!deviceId || !ampUrl) return;
 
-    setCommandLoading('amp_play');
+    setCommandLoading("amp_play");
     try {
       const response = await playAmplifier(deviceId, ampUrl);
-      if (response.status === 'ok') {
-        alert('Amplifier play command sent');
+      if (response.status === "ok") {
+        alert("Amplifier play command sent");
       } else {
-        console.error('Failed to play amplifier:', response);
-        alert('Failed to play amplifier');
+        console.error("Failed to play amplifier:", response);
+        alert("Failed to play amplifier");
       }
     } catch (error) {
-      console.error('Error playing amplifier:', error);
-      alert('Failed to play amplifier');
+      console.error("Error playing amplifier:", error);
+      alert("Failed to play amplifier");
     } finally {
       setCommandLoading(null);
     }
@@ -265,18 +297,18 @@ export default function DoorbellControlPage() {
     const deviceId = getEffectiveDeviceId();
     if (!deviceId) return;
 
-    setCommandLoading('amp_stop');
+    setCommandLoading("amp_stop");
     try {
       const response = await stopAmplifier(deviceId);
-      if (response.status === 'ok') {
-        alert('Amplifier stopped');
+      if (response.status === "ok") {
+        alert("Amplifier stopped");
       } else {
-        console.error('Failed to stop amplifier:', response);
-        alert('Failed to stop amplifier');
+        console.error("Failed to stop amplifier:", response);
+        alert("Failed to stop amplifier");
       }
     } catch (error) {
-      console.error('Error stopping amplifier:', error);
-      alert('Failed to stop amplifier');
+      console.error("Error stopping amplifier:", error);
+      alert("Failed to stop amplifier");
     } finally {
       setCommandLoading(null);
     }
@@ -286,18 +318,18 @@ export default function DoorbellControlPage() {
     const deviceId = getEffectiveDeviceId();
     if (!deviceId) return;
 
-    setCommandLoading('amp_restart');
+    setCommandLoading("amp_restart");
     try {
       const response = await restartAmplifier(deviceId);
-      if (response.status === 'ok') {
-        alert('Amplifier restart command sent');
+      if (response.status === "ok") {
+        alert("Amplifier restart command sent");
       } else {
-        console.error('Failed to restart amplifier:', response);
-        alert('Failed to restart amplifier');
+        console.error("Failed to restart amplifier:", response);
+        alert("Failed to restart amplifier");
       }
     } catch (error) {
-      console.error('Error restarting amplifier:', error);
-      alert('Failed to restart amplifier');
+      console.error("Error restarting amplifier:", error);
+      alert("Failed to restart amplifier");
     } finally {
       setCommandLoading(null);
     }
@@ -317,15 +349,15 @@ export default function DoorbellControlPage() {
       const response = await setAmplifierVolume(deviceId, finalVolume);
 
       // Check backend response
-      if (response.status === 'ok') {
+      if (response.status === "ok") {
         console.log(`Volume set to ${finalVolume}: ${response.message}`);
       } else {
-        console.error('Failed to set volume:', response);
-        alert('Failed to set amplifier volume');
+        console.error("Failed to set volume:", response);
+        alert("Failed to set amplifier volume");
       }
     } catch (error) {
-      console.error('Error setting amplifier volume:', error);
-      alert('Failed to set amplifier volume');
+      console.error("Error setting amplifier volume:", error);
+      alert("Failed to set amplifier volume");
     }
   };
 
@@ -334,25 +366,27 @@ export default function DoorbellControlPage() {
     if (!deviceId) return;
 
     if (!wifiSsid || !wifiPassword) {
-      alert('Please enter both SSID and password');
+      alert("Please enter both SSID and password");
       return;
     }
 
-    setCommandLoading('amp_wifi');
+    setCommandLoading("amp_wifi");
     try {
       const response = await setAmplifierWifi(deviceId, wifiSsid, wifiPassword);
-      if (response.status === 'ok') {
-        alert('WiFi credentials saved. Amplifier will use new credentials on next stream.');
-        setWifiSsid('');
-        setWifiPassword('');
+      if (response.status === "ok") {
+        alert(
+          "WiFi credentials saved. Amplifier will use new credentials on next stream."
+        );
+        setWifiSsid("");
+        setWifiPassword("");
         setShowWifiSettings(false);
       } else {
-        console.error('Failed to set WiFi:', response);
-        alert('Failed to set amplifier WiFi');
+        console.error("Failed to set WiFi:", response);
+        alert("Failed to set amplifier WiFi");
       }
     } catch (error) {
-      console.error('Error setting amplifier WiFi:', error);
-      alert('Failed to set amplifier WiFi');
+      console.error("Error setting amplifier WiFi:", error);
+      alert("Failed to set amplifier WiFi");
     } finally {
       setCommandLoading(null);
     }
@@ -367,16 +401,18 @@ export default function DoorbellControlPage() {
     const deviceId = getEffectiveDeviceId();
     if (!deviceId) return;
 
-    setCommandLoading('sync_database');
+    setCommandLoading("sync_database");
     try {
       // Call single sync endpoint - backend/ESP32 handles all three operations
       await syncFaceDatabase(deviceId);
-      console.log('✓ Face database sync command queued');
+      console.log("✓ Face database sync command queued");
 
-      alert('Database sync command queued!\n\nThe device will execute:\n• Face count\n• Database check\n• Face list\n\nCheck device serial output for results.');
+      alert(
+        "Database sync command queued!\n\nThe device will execute:\n• Face count\n• Database check\n• Face list\n\nCheck device serial output for results."
+      );
     } catch (error) {
-      console.error('Error syncing database:', error);
-      alert('Failed to sync database.');
+      console.error("Error syncing database:", error);
+      alert("Failed to sync database.");
     } finally {
       setCommandLoading(null);
     }
@@ -387,17 +423,21 @@ export default function DoorbellControlPage() {
     const deviceId = getEffectiveDeviceId();
     if (!deviceId) return;
 
-    if (!confirm('Are you sure you want to restart the doorbell system? It will be offline for about 30 seconds.')) {
+    if (
+      !confirm(
+        "Are you sure you want to restart the doorbell system? It will be offline for about 30 seconds."
+      )
+    ) {
       return;
     }
 
-    setCommandLoading('system_restart');
+    setCommandLoading("system_restart");
     try {
       await restartSystem(deviceId);
-      alert('System restart command sent. Device will reboot shortly.');
+      alert("System restart command sent. Device will reboot shortly.");
     } catch (error) {
-      console.error('Error restarting system:', error);
-      alert('Failed to restart system');
+      console.error("Error restarting system:", error);
+      alert("Failed to restart system");
     } finally {
       setCommandLoading(null);
     }
@@ -408,96 +448,103 @@ export default function DoorbellControlPage() {
     let date: Date;
     if (timestamp?.toDate) {
       date = timestamp.toDate();
-    } else if (typeof timestamp === 'string') {
+    } else if (typeof timestamp === "string") {
       date = new Date(timestamp);
     } else if (timestamp?._seconds) {
       // Handle Firestore timestamp object with _seconds
       date = new Date(timestamp._seconds * 1000);
-    } else if (typeof timestamp === 'number') {
+    } else if (typeof timestamp === "number") {
       // Handle Unix timestamp (milliseconds)
       date = new Date(timestamp);
     } else {
       // If no valid timestamp, return 'N/A' instead of current time
-      return 'N/A';
+      return "N/A";
     }
-    return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+    return date.toLocaleTimeString("en-US", {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
   };
 
   const getActivityDescription = (event: ActivityEvent) => {
-    if (event.type === 'face_detection') {
+    if (event.type === "face_detection") {
       const recognized = event.data?.recognized || false;
-      const name = event.data?.name || 'Unknown';
+      const name = event.data?.name || "Unknown";
       const confidence = event.data?.confidence * 100 || 0;
-      if (recognized && name !== 'Unknown') {
+      if (recognized && name !== "Unknown") {
         return `Face recognized: ${name} (CFD : ${confidence.toFixed(0)}%)`;
       }
-      return 'Unknown face detected';
+      return "Unknown face detected";
     }
-    if (event.type === 'command') {
-      const action = event.data?.action || 'unknown';
+    if (event.type === "command") {
+      const action = event.data?.action || "unknown";
       return `Command: ${action}`;
     }
-    if (event.type === 'heartbeat') {
-      const uptime = event.data?.uptime_ms ? Math.floor(event.data.uptime_ms / 60000) : 0;
+    if (event.type === "heartbeat") {
+      const uptime = event.data?.uptime_ms
+        ? Math.floor(event.data.uptime_ms / 60000)
+        : 0;
       return `Heartbeat (uptime: ${uptime}m)`;
     }
-    if (event.type === 'device_state') {
-      const ip = event.data?.ip_address || 'N/A';
-      const heap = event.data?.free_heap ? Math.floor(event.data.free_heap / 1024) : 0;
+    if (event.type === "device_state") {
+      const ip = event.data?.ip_address || "N/A";
+      const heap = event.data?.free_heap
+        ? Math.floor(event.data.free_heap / 1024)
+        : 0;
       return `Device state (IP: ${ip}, Heap: ${heap}KB)`;
     }
-    if (event.type === 'device_log') {
-      const message = event.data?.message || 'Log entry';
+    if (event.type === "device_log") {
+      const message = event.data?.message || "Log entry";
       const errorMsg = event.data?.error_message;
       if (errorMsg) {
         return `${message}: ${errorMsg}`;
       }
       return message;
     }
-    return 'Activity detected';
+    return "Activity detected";
   };
 
   const getActivityStatus = (event: ActivityEvent) => {
-    if (event.type === 'face_detection') {
-      return event.data?.recognized ? 'Known' : 'Unknown';
+    if (event.type === "face_detection") {
+      return event.data?.recognized ? "Known" : "Unknown";
     }
-    if (event.type === 'command') {
-      const status = event.data?.status || 'pending';
+    if (event.type === "command") {
+      const status = event.data?.status || "pending";
       return status.charAt(0).toUpperCase() + status.slice(1);
     }
-    if (event.type === 'heartbeat') {
-      return 'Active';
+    if (event.type === "heartbeat") {
+      return "Active";
     }
-    if (event.type === 'device_state') {
-      return 'Online';
+    if (event.type === "device_state") {
+      return "Online";
     }
-    if (event.type === 'device_log') {
-      const level = event.data?.level || 'INFO';
+    if (event.type === "device_log") {
+      const level = event.data?.level || "INFO";
       return level.charAt(0).toUpperCase() + level.slice(1).toLowerCase();
     }
-    return 'Event';
+    return "Event";
   };
 
   const getActivityStatusClass = (event: ActivityEvent) => {
-    if (event.type === 'face_detection') {
-      return event.data?.recognized ? 'status-safe' : 'status-warning';
+    if (event.type === "face_detection") {
+      return event.data?.recognized ? "status-safe" : "status-warning";
     }
-    if (event.type === 'command') {
-      const status = event.data?.status || 'pending';
-      if (status === 'completed') return 'status-safe';
-      if (status === 'failed') return 'status-danger';
-      return 'status-warning';
+    if (event.type === "command") {
+      const status = event.data?.status || "pending";
+      if (status === "completed") return "status-safe";
+      if (status === "failed") return "status-danger";
+      return "status-warning";
     }
-    if (event.type === 'heartbeat' || event.type === 'device_state') {
-      return 'status-safe';
+    if (event.type === "heartbeat" || event.type === "device_state") {
+      return "status-safe";
     }
-    if (event.type === 'device_log') {
-      const level = event.data?.level?.toUpperCase() || 'INFO';
-      if (level === 'ERROR' || level === 'CRITICAL') return 'status-danger';
-      if (level === 'WARNING' || level === 'WARN') return 'status-warning';
-      return 'status-safe';
+    if (event.type === "device_log") {
+      const level = event.data?.level?.toUpperCase() || "INFO";
+      if (level === "ERROR" || level === "CRITICAL") return "status-danger";
+      if (level === "WARNING" || level === "WARN") return "status-warning";
+      return "status-safe";
     }
-    return 'status-safe';
+    return "status-safe";
   };
 
   return (
@@ -506,7 +553,16 @@ export default function DoorbellControlPage() {
         <div className="dashboard-container">
           <header className="dashboard-header">
             <div className="dashboard-header-left">
-              <button className="sidebar-toggle" onClick={() => router.push('/dashboard')} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }} title="Back to Dashboard">
+              <button
+                className="sidebar-toggle"
+                onClick={() => router.push("/dashboard")}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+                title="Back to Dashboard"
+              >
                 <ArrowLeft size={20} />
               </button>
               <h1>DOORBELL CONTROL</h1>
@@ -542,46 +598,80 @@ export default function DoorbellControlPage() {
               <div className="card-content">
                 <div className="control-panel">
                   <div className="control-status">
-                    <Camera size={48} className={cameraActive ? 'status-active-large' : 'status-inactive-large'} />
+                    <Camera
+                      size={48}
+                      className={
+                        cameraActive
+                          ? "status-active-large"
+                          : "status-inactive-large"
+                      }
+                    />
                     <div className="status-label">
-                      <span className="status-text">{cameraActive ? 'ACTIVE' : 'INACTIVE'}</span>
+                      <span className="status-text">
+                        {cameraActive ? "ACTIVE" : "INACTIVE"}
+                      </span>
                       <span className="status-description">
-                        {cameraActive ? 'Camera is streaming video' : 'Camera is off'}
+                        {cameraActive
+                          ? "Camera is streaming video"
+                          : "Camera is off"}
                       </span>
                     </div>
                   </div>
                   <button
-                    className={`btn-control ${cameraActive ? 'btn-stop' : 'btn-start'}`}
+                    className={`btn-control ${
+                      cameraActive ? "btn-stop" : "btn-start"
+                    }`}
                     onClick={handleCameraToggle}
-                    disabled={commandLoading === 'camera'}
-                    style={{ marginTop: '12px' }}
+                    disabled={commandLoading === "camera"}
+                    style={{ marginTop: "12px" }}
                   >
-                    {commandLoading === 'camera' ? 'PROCESSING...' : cameraActive ? 'STOP CAMERA' : 'START CAMERA'}
+                    {commandLoading === "camera"
+                      ? "PROCESSING..."
+                      : cameraActive
+                      ? "STOP CAMERA"
+                      : "START CAMERA"}
                   </button>
                 </div>
 
                 <div className="control-divider"></div>
 
-                <div className="card-header" style={{ paddingTop: '8px' }}>
+                <div className="card-header" style={{ paddingTop: "8px" }}>
                   <h3>MICROPHONE CONTROL</h3>
                 </div>
                 <div className="control-panel">
                   <div className="control-status">
-                    <Mic size={48} className={micActive ? 'status-active-large' : 'status-inactive-large'} />
+                    <Mic
+                      size={48}
+                      className={
+                        micActive
+                          ? "status-active-large"
+                          : "status-inactive-large"
+                      }
+                    />
                     <div className="status-label">
-                      <span className="status-text">{micActive ? 'ACTIVE' : 'INACTIVE'}</span>
+                      <span className="status-text">
+                        {micActive ? "ACTIVE" : "INACTIVE"}
+                      </span>
                       <span className="status-description">
-                        {micActive ? 'Microphone is listening' : 'Microphone is muted'}
+                        {micActive
+                          ? "Microphone is listening"
+                          : "Microphone is muted"}
                       </span>
                     </div>
                   </div>
                   <button
-                    className={`btn-control ${micActive ? 'btn-stop' : 'btn-start'}`}
+                    className={`btn-control ${
+                      micActive ? "btn-stop" : "btn-start"
+                    }`}
                     onClick={handleMicToggle}
-                    disabled={commandLoading === 'mic'}
-                    style={{ marginTop: '12px' }}
+                    disabled={commandLoading === "mic"}
+                    style={{ marginTop: "12px" }}
                   >
-                    {commandLoading === 'mic' ? 'PROCESSING...' : micActive ? 'STOP MIC' : 'START MIC'}
+                    {commandLoading === "mic"
+                      ? "PROCESSING..."
+                      : micActive
+                      ? "STOP MIC"
+                      : "START MIC"}
                   </button>
                 </div>
               </div>
@@ -598,33 +688,72 @@ export default function DoorbellControlPage() {
                     <Volume2 size={48} className="status-info-large" />
                     <div className="status-label">
                       <span className="status-text">AMPLIFIER</span>
-                      <span className="status-description">Stream audio to amplifier</span>
+                      <span className="status-description">
+                        Stream audio to amplifier
+                      </span>
                     </div>
                   </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', width: '100%', marginTop: '12px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                      <label style={{ fontSize: '13px', fontWeight: '600', color: '#555', minWidth: '80px' }}>VOLUME: {ampVolume}</label>
+                  <div
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: "8px",
+                      width: "100%",
+                      marginTop: "12px",
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "12px",
+                      }}
+                    >
+                      <label
+                        style={{
+                          fontSize: "13px",
+                          fontWeight: "600",
+                          color: "#555",
+                          minWidth: "80px",
+                        }}
+                      >
+                        VOLUME: {ampVolume}
+                      </label>
                       <input
                         type="range"
                         min="0"
                         max="21"
                         value={ampVolume}
-                        onChange={(e) => handleVolumeChange(parseInt(e.target.value))}
-                        onMouseUp={(e) => handleVolumeSend(parseInt((e.target as HTMLInputElement).value))}
-                        onTouchEnd={(e) => handleVolumeSend(parseInt((e.target as HTMLInputElement).value))}
+                        onChange={(e) =>
+                          handleVolumeChange(parseInt(e.target.value))
+                        }
+                        onMouseUp={(e) =>
+                          handleVolumeSend(
+                            parseInt((e.target as HTMLInputElement).value)
+                          )
+                        }
+                        onTouchEnd={(e) =>
+                          handleVolumeSend(
+                            parseInt((e.target as HTMLInputElement).value)
+                          )
+                        }
                         className="volume-slider"
                         style={{
                           flex: 1,
-                          height: '6px',
-                          borderRadius: '3px',
-                          background: `linear-gradient(to right, #4CAF50 0%, #4CAF50 ${(ampVolume / 21) * 100}%, #e0e0e0 ${(ampVolume / 21) * 100}%, #e0e0e0 100%)`,
-                          outline: 'none',
-                          cursor: 'pointer',
-                          transition: 'background 0.15s ease'
+                          height: "6px",
+                          borderRadius: "3px",
+                          background: `linear-gradient(to right, #4CAF50 0%, #4CAF50 ${
+                            (ampVolume / 21) * 100
+                          }%, #e0e0e0 ${
+                            (ampVolume / 21) * 100
+                          }%, #e0e0e0 100%)`,
+                          outline: "none",
+                          cursor: "pointer",
+                          transition: "background 0.15s ease",
                         }}
                       />
                     </div>
-                    <div style={{ position: 'relative', width: '100%' }}>
+                    <div style={{ position: "relative", width: "100%" }}>
                       <input
                         type="text"
                         value={ampUrl}
@@ -632,23 +761,23 @@ export default function DoorbellControlPage() {
                         placeholder="Enter stream URL (e.g., http://stream.example.com/audio)"
                         className="control-input"
                         style={{
-                          width: '100%',
-                          padding: '10px 45px 10px 12px',
-                          borderRadius: '6px',
-                          border: '2px solid #e0e0e0',
-                          fontSize: '13px',
-                          fontFamily: 'monospace',
-                          transition: 'all 0.2s ease',
-                          outline: 'none',
-                          backgroundColor: '#f8f9fa'
+                          width: "100%",
+                          padding: "10px 45px 10px 12px",
+                          borderRadius: "6px",
+                          border: "2px solid #e0e0e0",
+                          fontSize: "13px",
+                          fontFamily: "monospace",
+                          transition: "all 0.2s ease",
+                          outline: "none",
+                          backgroundColor: "#f8f9fa",
                         }}
                         onFocus={(e) => {
-                          e.target.style.borderColor = '#2196F3';
-                          e.target.style.backgroundColor = '#fff';
+                          e.target.style.borderColor = "#2196F3";
+                          e.target.style.backgroundColor = "#fff";
                         }}
                         onBlur={(e) => {
-                          e.target.style.borderColor = '#e0e0e0';
-                          e.target.style.backgroundColor = '#f8f9fa';
+                          e.target.style.borderColor = "#e0e0e0";
+                          e.target.style.backgroundColor = "#f8f9fa";
                         }}
                       />
                       <select
@@ -656,58 +785,80 @@ export default function DoorbellControlPage() {
                         value=""
                         className="stream-selector"
                         style={{
-                          position: 'absolute',
-                          right: '4px',
-                          top: '50%',
-                          transform: 'translateY(-50%)',
-                          padding: '6px 8px',
-                          borderRadius: '4px',
-                          border: '1px solid #e0e0e0',
-                          fontSize: '13px',
-                          backgroundColor: '#fff',
-                          cursor: 'pointer',
-                          outline: 'none',
-                          transition: 'all 0.2s ease',
-                          appearance: 'none',
-                          WebkitAppearance: 'none',
-                          MozAppearance: 'none',
-                          backgroundImage: 'url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 24 24\' fill=\'none\' stroke=\'%23333\' stroke-width=\'2\' stroke-linecap=\'round\' stroke-linejoin=\'round\'%3e%3cpolyline points=\'6 9 12 15 18 9\'%3e%3c/polyline%3e%3c/svg%3e")',
-                          backgroundRepeat: 'no-repeat',
-                          backgroundPosition: 'center',
-                          backgroundSize: '18px',
-                          width: '32px',
-                          height: '32px',
-                          color: 'transparent'
+                          position: "absolute",
+                          right: "4px",
+                          top: "50%",
+                          transform: "translateY(-50%)",
+                          padding: "6px 8px",
+                          borderRadius: "4px",
+                          border: "1px solid #e0e0e0",
+                          fontSize: "13px",
+                          backgroundColor: "#fff",
+                          cursor: "pointer",
+                          outline: "none",
+                          transition: "all 0.2s ease",
+                          appearance: "none",
+                          WebkitAppearance: "none",
+                          MozAppearance: "none",
+                          backgroundImage:
+                            "url(\"data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23333' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e\")",
+                          backgroundRepeat: "no-repeat",
+                          backgroundPosition: "center",
+                          backgroundSize: "18px",
+                          width: "32px",
+                          height: "32px",
+                          color: "transparent",
                         }}
                         onMouseEnter={(e) => {
-                          (e.target as HTMLSelectElement).style.backgroundColor = '#f0f0f0';
+                          (
+                            e.target as HTMLSelectElement
+                          ).style.backgroundColor = "#f0f0f0";
                         }}
                         onMouseLeave={(e) => {
-                          (e.target as HTMLSelectElement).style.backgroundColor = '#fff';
+                          (
+                            e.target as HTMLSelectElement
+                          ).style.backgroundColor = "#fff";
                         }}
                       >
-                        <option value="" style={{ color: '#000' }}>Select Station</option>
-                        <option value="https://stream.live.vc.bbcmedia.co.uk/bbc_world_service_east_asia" style={{ color: '#000' }}>BBC World Service</option>
-                        <option value="https://play.streamafrica.net/japancitypop" style={{ color: '#000' }}>Japan City Pop</option>
-                        <option value="http://stream.radioparadise.com/aac-128" style={{ color: '#000' }}>Radio Paradise</option>
+                        <option value="" style={{ color: "#000" }}>
+                          Select Station
+                        </option>
+                        <option
+                          value="https://stream.live.vc.bbcmedia.co.uk/bbc_world_service_east_asia"
+                          style={{ color: "#000" }}
+                        >
+                          BBC World Service
+                        </option>
+                        <option
+                          value="https://play.streamafrica.net/japancitypop"
+                          style={{ color: "#000" }}
+                        >
+                          Japan City Pop
+                        </option>
+                        <option
+                          value="http://stream.radioparadise.com/aac-128"
+                          style={{ color: "#000" }}
+                        >
+                          Radio Paradise
+                        </option>
                       </select>
                     </div>
-                    <div style={{ display: 'flex', gap: '8px' }}>
+                    <div style={{ display: "flex", gap: "8px" }}>
                       <button
                         className="btn-control btn-start"
                         onClick={handlePlayAmplifier}
-                        disabled={commandLoading === 'amp_play'}
+                        disabled={commandLoading === "amp_play"}
                         style={{ flex: 1 }}
                       >
-                        {commandLoading === 'amp_play' ? 'SENDING...' : 'PLAY'}
+                        {commandLoading === "amp_play" ? "SENDING..." : "PLAY"}
                       </button>
                       <button
                         className="btn-control btn-stop"
                         onClick={handleStopAmplifier}
-                        disabled={commandLoading === 'amp_stop'}
+                        disabled={commandLoading === "amp_stop"}
                         style={{ flex: 1 }}
                       >
-                        {commandLoading === 'amp_stop' ? 'STOPPING...' : 'STOP'}
+                        {commandLoading === "amp_stop" ? "STOPPING..." : "STOP"}
                       </button>
                     </div>
                   </div>
@@ -715,98 +866,178 @@ export default function DoorbellControlPage() {
 
                 <div className="control-divider"></div>
 
-                <div className="card-header" style={{ paddingTop: '8px' }}>
+                <div className="card-header" style={{ paddingTop: "8px" }}>
                   <h3>FACE RECOGNITION</h3>
                 </div>
                 <div className="control-panel">
                   <div className="control-status">
-                    <Users size={48} className={faceRecognition ? 'status-active-large' : 'status-inactive-large'} />
+                    <Users
+                      size={48}
+                      className={
+                        faceRecognition
+                          ? "status-active-large"
+                          : "status-inactive-large"
+                      }
+                    />
                     <div className="status-label">
-                      <span className="status-text">{faceRecognition ? 'TRIGGERED' : 'IDLE'}</span>
+                      <span className="status-text">
+                        {faceRecognition ? "TRIGGERED" : "IDLE"}
+                      </span>
                       <span className="status-description">
-                        {faceRecognition ? 'Identifying visitors' : 'Face recognition idle'}
+                        {faceRecognition
+                          ? "Identifying visitors"
+                          : "Face recognition idle"}
                       </span>
                     </div>
                   </div>
-                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '12px' }}>
+                  <div
+                    style={{
+                      display: "flex",
+                      gap: "8px",
+                      flexWrap: "wrap",
+                      marginTop: "12px",
+                    }}
+                  >
                     <button
-                      className={`btn-control ${faceRecognition ? 'btn-stop' : 'btn-start'}`}
+                      className={`btn-control ${
+                        faceRecognition ? "btn-stop" : "btn-start"
+                      }`}
                       onClick={handleFaceRecognitionToggle}
                     >
-                      {faceRecognition ? 'IDLE' : 'TRIGGER'}
+                      {faceRecognition ? "IDLE" : "TRIGGER"}
                     </button>
                     <button
                       className="btn-control btn-warning"
                       onClick={handleSyncDatabase}
-                      disabled={commandLoading === 'sync_database'}
-                      style={{ display: 'flex', alignItems: 'center', gap: '6px', flex: '1 1 auto' }}
+                      disabled={commandLoading === "sync_database"}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "6px",
+                        flex: "1 1 auto",
+                      }}
                     >
                       <Database size={16} />
-                      {commandLoading === 'sync_database' ? 'SYNCING...' : 'SYNC DATABASE'}
+                      {commandLoading === "sync_database"
+                        ? "SYNCING..."
+                        : "SYNC DATABASE"}
                     </button>
                   </div>
 
                   {/* Face Database Info Display */}
                   {faceDatabaseInfo && (
-                    <div style={{
-                      marginTop: '16px',
-                      padding: '12px',
-                      background: 'linear-gradient(135deg, rgba(156, 39, 176, 0.1) 0%, rgba(123, 31, 162, 0.1) 100%)',
-                      borderRadius: '8px',
-                      border: '1px solid rgba(156, 39, 176, 0.3)'
-                    }}>
-                      <div style={{ fontSize: '12px', fontWeight: '600', color: '#9c27b0', marginBottom: '8px' }}>
+                    <div
+                      style={{
+                        marginTop: "16px",
+                        padding: "12px",
+                        background:
+                          "linear-gradient(135deg, rgba(156, 39, 176, 0.1) 0%, rgba(123, 31, 162, 0.1) 100%)",
+                        borderRadius: "8px",
+                        border: "1px solid rgba(156, 39, 176, 0.3)",
+                      }}
+                    >
+                      <div
+                        style={{
+                          fontSize: "12px",
+                          fontWeight: "600",
+                          color: "#9c27b0",
+                          marginBottom: "8px",
+                        }}
+                      >
                         DATABASE STATUS
                       </div>
-                      <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
-                        <div style={{ flex: '1', minWidth: '120px' }}>
-                          <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.6)', marginBottom: '4px' }}>
+                      <div
+                        style={{
+                          display: "flex",
+                          gap: "16px",
+                          flexWrap: "wrap",
+                        }}
+                      >
+                        <div style={{ flex: "1", minWidth: "120px" }}>
+                          <div
+                            style={{
+                              fontSize: "11px",
+                              color: "rgba(255,255,255,0.6)",
+                              marginBottom: "4px",
+                            }}
+                          >
                             Face Count
                           </div>
-                          <div style={{ fontSize: '18px', fontWeight: '700', color: '#fff' }}>
+                          <div
+                            style={{
+                              fontSize: "18px",
+                              fontWeight: "700",
+                              color: "#fff",
+                            }}
+                          >
                             {faceDatabaseInfo.count}
                           </div>
                         </div>
-                        <div style={{ flex: '1', minWidth: '120px' }}>
-                          <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.6)', marginBottom: '4px' }}>
+                        <div style={{ flex: "1", minWidth: "120px" }}>
+                          <div
+                            style={{
+                              fontSize: "11px",
+                              color: "rgba(255,255,255,0.6)",
+                              marginBottom: "4px",
+                            }}
+                          >
                             DB Health
                           </div>
-                          <div style={{
-                            fontSize: '14px',
-                            fontWeight: '600',
-                            color: faceDatabaseInfo.db_status === 'valid' ? '#4caf50' : '#f44336'
-                          }}>
-                            {faceDatabaseInfo.db_status?.toUpperCase() || 'UNKNOWN'}
+                          <div
+                            style={{
+                              fontSize: "14px",
+                              fontWeight: "600",
+                              color:
+                                faceDatabaseInfo.db_status === "valid"
+                                  ? "#4caf50"
+                                  : "#f44336",
+                            }}
+                          >
+                            {faceDatabaseInfo.db_status?.toUpperCase() ||
+                              "UNKNOWN"}
                           </div>
                         </div>
                       </div>
 
                       {/* Face List */}
-                      {faceDatabaseInfo.faces && faceDatabaseInfo.faces.length > 0 && (
-                        <div style={{ marginTop: '12px' }}>
-                          <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.6)', marginBottom: '6px' }}>
-                            Enrolled Faces
+                      {faceDatabaseInfo.faces &&
+                        faceDatabaseInfo.faces.length > 0 && (
+                          <div style={{ marginTop: "12px" }}>
+                            <div
+                              style={{
+                                fontSize: "11px",
+                                color: "rgba(255,255,255,0.6)",
+                                marginBottom: "6px",
+                              }}
+                            >
+                              Enrolled Faces
+                            </div>
+                            <div
+                              style={{
+                                display: "flex",
+                                gap: "6px",
+                                flexWrap: "wrap",
+                              }}
+                            >
+                              {faceDatabaseInfo.faces.map((face) => (
+                                <div
+                                  key={face.id}
+                                  style={{
+                                    padding: "4px 10px",
+                                    background: "rgba(156, 39, 176, 0.2)",
+                                    borderRadius: "12px",
+                                    fontSize: "11px",
+                                    fontWeight: "500",
+                                    color: "#e1bee7",
+                                    border: "1px solid rgba(156, 39, 176, 0.4)",
+                                  }}
+                                >
+                                  ID {face.id}: {face.name}
+                                </div>
+                              ))}
+                            </div>
                           </div>
-                          <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                            {faceDatabaseInfo.faces.map((face) => (
-                              <div
-                                key={face.id}
-                                style={{
-                                  padding: '4px 10px',
-                                  background: 'rgba(156, 39, 176, 0.2)',
-                                  borderRadius: '12px',
-                                  fontSize: '11px',
-                                  fontWeight: '500',
-                                  color: '#e1bee7',
-                                  border: '1px solid rgba(156, 39, 176, 0.4)'
-                                }}
-                              >
-                                ID {face.id}: {face.name}
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
+                        )}
                     </div>
                   )}
                 </div>
@@ -820,67 +1051,126 @@ export default function DoorbellControlPage() {
               </div>
               <div className="card-content">
                 <div className="control-panel">
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                    <div style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '12px',
-                      padding: '12px',
-                      background: 'linear-gradient(135deg, rgba(255, 193, 7, 0.1) 0%, rgba(255, 152, 0, 0.1) 100%)',
-                      borderRadius: '8px',
-                      border: '1px solid rgba(255, 193, 7, 0.3)'
-                    }}>
-                      <Camera size={32} className="status-warning-large" style={{ flexShrink: 0 }} />
+                  <div
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: "12px",
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "12px",
+                        padding: "12px",
+                        background:
+                          "linear-gradient(135deg, rgba(255, 193, 7, 0.1) 0%, rgba(255, 152, 0, 0.1) 100%)",
+                        borderRadius: "8px",
+                        border: "1px solid rgba(255, 193, 7, 0.3)",
+                      }}
+                    >
+                      <Camera
+                        size={32}
+                        className="status-warning-large"
+                        style={{ flexShrink: 0 }}
+                      />
                       <button
-                        className="btn-control btn-warning"
+                        className="btn-control"
                         onClick={handleCameraRestart}
-                        disabled={commandLoading === 'camera_restart'}
+                        disabled={commandLoading === "camera_restart"}
                         style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          gap: '8px',
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          gap: "8px",
                           flex: 1,
-                          fontWeight: 'bold'
+                          fontWeight: "bold",
+                          background: "rgba(0, 0, 0, 0.4)",
+                          border: "1px solid rgba(255, 255, 255, 0.2)",
+                          color: "#fff",
                         }}
                       >
-                        <RotateCw size={18} className={commandLoading === 'camera_restart' ? 'rotating' : ''} />
-                        {commandLoading === 'camera_restart' ? 'RESTARTING...' : 'RESTART CAMERA'}
+                        <RotateCw
+                          size={18}
+                          className={
+                            commandLoading === "camera_restart"
+                              ? "rotating"
+                              : ""
+                          }
+                        />
+                        {commandLoading === "camera_restart"
+                          ? "RESTARTING..."
+                          : "RESTART CAMERA"}
                       </button>
                     </div>
-                    <div style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '12px',
-                      padding: '12px',
-                      background: 'linear-gradient(135deg, rgba(33, 150, 243, 0.1) 0%, rgba(21, 101, 192, 0.1) 100%)',
-                      borderRadius: '8px',
-                      border: '1px solid rgba(33, 150, 243, 0.3)'
-                    }}>
-                      <Volume2 size={32} className="status-info-large" style={{ flexShrink: 0 }} />
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: 1 }}>
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "12px",
+                        padding: "12px",
+                        background:
+                          "linear-gradient(135deg, rgba(243, 33, 33, 0.1) 0%, rgba(192, 44, 21, 0.1) 100%)",
+                        borderRadius: "8px",
+                        border: "1px solid rgba(243, 79, 33, 0.3)",
+                      }}
+                    >
+                      <Volume2
+                        size={32}
+                        className="status-info-large"
+                        style={{ flexShrink: 0 }}
+                      />
+                      <div
+                        style={{
+                          display: "flex",
+                          flexDirection: "column",
+                          gap: "8px",
+                          flex: 1,
+                        }}
+                      >
                         <button
-                          className="btn-control btn-warning"
+                          className="btn-control"
                           onClick={handleRestartAmplifier}
-                          disabled={commandLoading === 'amp_restart'}
+                          disabled={commandLoading === "amp_restart"}
                           style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            gap: '8px',
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            gap: "8px",
                             flex: 1,
-                            fontWeight: 'bold'
+                            fontWeight: "bold",
+                            background: "rgba(0, 0, 0, 0.4)",
+                            border: "1px solid rgba(255, 255, 255, 0.2)",
+                            color: "#fff",
                           }}
                         >
-                          <RotateCw size={18} className={commandLoading === 'amp_restart' ? 'rotating' : ''} />
-                          {commandLoading === 'amp_restart' ? 'RESTARTING...' : 'RESTART AMPLIFIER'}
+                          <RotateCw
+                            size={18}
+                            className={
+                              commandLoading === "amp_restart" ? "rotating" : ""
+                            }
+                          />
+                          {commandLoading === "amp_restart"
+                            ? "RESTARTING..."
+                            : "RESTART AMPLIFIER"}
                         </button>
 
                         <button
                           className="btn-control btn-info"
                           onClick={() => setShowWifiSettings(true)}
-                          disabled={commandLoading === 'amp_wifi'}
-                          style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}
+                          disabled={commandLoading === "amp_wifi"}
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            gap: "8px",
+                            flex: 1,
+                            fontWeight: "bold",
+                            background: "rgba(0, 0, 0, 0.4)",
+                            border: "1px solid rgba(255, 255, 255, 0.2)",
+                            color: "#fff",
+                          }}
                         >
                           <Settings size={14} />
                           WIFI
@@ -891,26 +1181,38 @@ export default function DoorbellControlPage() {
                 </div>
                 <div className="control-divider"></div>
 
-                <div className="card-header" style={{ paddingTop: '8px' }}>
+                <div className="card-header" style={{ paddingTop: "8px" }}>
                   <h3>RECENT ACTIVITY</h3>
                 </div>
                 <div className="activity-list">
                   {recentActivity.length > 0 ? (
                     recentActivity.map((event, index) => (
                       <div key={event.id || index} className="activity-item">
-                        <span className="activity-time">{formatActivityTime(event.timestamp)}</span>
-                        <span className="activity-desc">{getActivityDescription(event)}</span>
-                        <span className={`activity-status ${getActivityStatusClass(event)}`}>{getActivityStatus(event)}</span>
+                        <span className="activity-time">
+                          {formatActivityTime(event.timestamp)}
+                        </span>
+                        <span className="activity-desc">
+                          {getActivityDescription(event)}
+                        </span>
+                        <span
+                          className={`activity-status ${getActivityStatusClass(
+                            event
+                          )}`}
+                        >
+                          {getActivityStatus(event)}
+                        </span>
                       </div>
                     ))
                   ) : (
-                    <div style={{
-                      textAlign: 'center',
-                      padding: '40px 20px',
-                      color: '#6c757d',
-                      fontSize: '14px',
-                      fontStyle: 'italic'
-                    }}>
+                    <div
+                      style={{
+                        textAlign: "center",
+                        padding: "40px 20px",
+                        color: "#6c757d",
+                        fontSize: "14px",
+                        fontStyle: "italic",
+                      }}
+                    >
                       No recent activity
                     </div>
                   )}
@@ -928,17 +1230,27 @@ export default function DoorbellControlPage() {
                     <Power size={48} className="status-danger-large" />
                     <div className="status-label">
                       <span className="status-text">SYSTEM POWER</span>
-                      <span className="status-description">Restart the doorbell device</span>
+                      <span className="status-description">
+                        Restart the doorbell device
+                      </span>
                     </div>
                   </div>
                   <button
                     className="btn-control btn-danger"
                     onClick={handleSystemRestart}
-                    disabled={commandLoading === 'system_restart'}
-                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', marginTop: '12px' }}
+                    disabled={commandLoading === "system_restart"}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: "6px",
+                      marginTop: "12px",
+                    }}
                   >
                     <RotateCw size={16} />
-                    {commandLoading === 'system_restart' ? 'RESTARTING...' : 'RESTART SYSTEM'}
+                    {commandLoading === "system_restart"
+                      ? "RESTARTING..."
+                      : "RESTART SYSTEM"}
                   </button>
                 </div>
 
@@ -949,7 +1261,9 @@ export default function DoorbellControlPage() {
                   <div className="info-grid">
                     <div className="info-item">
                       <span className="info-label">Device ID:</span>
-                      <span className="info-value">{doorbellDevice?.device_id || 'N/A'}</span>
+                      <span className="info-value">
+                        {doorbellDevice?.device_id || "N/A"}
+                      </span>
                     </div>
                     <div className="info-item">
                       <span className="info-label">Status:</span>
@@ -957,30 +1271,44 @@ export default function DoorbellControlPage() {
                     </div>
                     <div className="info-item">
                       <span className="info-label">IP Address:</span>
-                      <span className="info-value">{doorbellDevice?.ip_address || 'N/A'}</span>
+                      <span className="info-value">
+                        {doorbellDevice?.ip_address || "N/A"}
+                      </span>
                     </div>
                     <div className="info-item">
                       <span className="info-label">Last Seen:</span>
                       <span className="info-value">
-                        {doorbellDevice?.last_seen ? new Date(doorbellDevice.last_seen).toLocaleString() : 'Never'}
+                        {doorbellDevice?.last_seen
+                          ? new Date(doorbellDevice.last_seen).toLocaleString()
+                          : "Never"}
                       </span>
                     </div>
                     <div className="info-item">
                       <span className="info-label">WiFi Signal:</span>
                       <span className="info-value">
-                        {doorbellDevice?.wifi_rssi ? `${doorbellDevice.wifi_rssi} dBm` : 'N/A'}
+                        {doorbellDevice?.wifi_rssi
+                          ? `${doorbellDevice.wifi_rssi} dBm`
+                          : "N/A"}
                       </span>
                     </div>
                     <div className="info-item">
                       <span className="info-label">Free Heap:</span>
                       <span className="info-value">
-                        {doorbellDevice?.free_heap ? `${(doorbellDevice.free_heap / 1024).toFixed(1)} KB` : 'N/A'}
+                        {doorbellDevice?.free_heap
+                          ? `${(doorbellDevice.free_heap / 1024).toFixed(1)} KB`
+                          : "N/A"}
                       </span>
                     </div>
                     <div className="info-item">
                       <span className="info-label">Uptime:</span>
                       <span className="info-value">
-                        {doorbellDevice?.uptime_ms ? `${Math.floor(doorbellDevice.uptime_ms / 3600000)}h ${Math.floor((doorbellDevice.uptime_ms % 3600000) / 60000)}m` : 'N/A'}
+                        {doorbellDevice?.uptime_ms
+                          ? `${Math.floor(
+                              doorbellDevice.uptime_ms / 3600000
+                            )}h ${Math.floor(
+                              (doorbellDevice.uptime_ms % 3600000) / 60000
+                            )}m`
+                          : "N/A"}
                       </span>
                     </div>
                   </div>
@@ -988,12 +1316,12 @@ export default function DoorbellControlPage() {
                     className="btn-control btn-info"
                     onClick={() => setShowSettings(true)}
                     style={{
-                      marginTop: '16px',
-                      width: '100%',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: '6px'
+                      marginTop: "16px",
+                      width: "100%",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: "6px",
                     }}
                   >
                     ⚙️ PAIR DEVICE
@@ -1001,42 +1329,54 @@ export default function DoorbellControlPage() {
                 </div>
               </div>
             </div>
-
           </div>
         </div>
       </div>
 
       {/* WiFi Settings Modal */}
       {showWifiSettings && (
-        <div style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          backgroundColor: 'rgba(0, 0, 0, 0.5)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 1000
-        }}>
-          <div style={{
-            backgroundColor: 'white',
-            borderRadius: '8px',
-            padding: '24px',
-            maxWidth: '400px',
-            width: '90%',
-            boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)'
-          }}>
-            <h3 style={{ marginTop: 0, marginBottom: '16px', color: '#333' }}>Amplifier WiFi Settings</h3>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+        <div
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: "rgba(0, 0, 0, 0.5)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 1000,
+          }}
+        >
+          <div
+            style={{
+              backgroundColor: "white",
+              borderRadius: "8px",
+              padding: "24px",
+              maxWidth: "400px",
+              width: "90%",
+              boxShadow: "0 4px 6px rgba(0, 0, 0, 0.1)",
+            }}
+          >
+            <h3 style={{ marginTop: 0, marginBottom: "16px", color: "#333" }}>
+              Amplifier WiFi Settings
+            </h3>
+            <div
+              style={{ display: "flex", flexDirection: "column", gap: "12px" }}
+            >
               <input
                 type="text"
                 value={wifiSsid}
                 onChange={(e) => setWifiSsid(e.target.value)}
                 placeholder="WiFi SSID"
                 className="control-input"
-                style={{ padding: '10px', fontSize: '14px', borderRadius: '4px', border: '1px solid #ddd' }}
+                style={{
+                  padding: "10px",
+                  fontSize: "14px",
+                  borderRadius: "4px",
+                  border: "1px solid #ddd",
+                }}
               />
               <input
                 type="password"
@@ -1044,21 +1384,32 @@ export default function DoorbellControlPage() {
                 onChange={(e) => setWifiPassword(e.target.value)}
                 placeholder="WiFi Password"
                 className="control-input"
-                style={{ padding: '10px', fontSize: '14px', borderRadius: '4px', border: '1px solid #ddd' }}
+                style={{
+                  padding: "10px",
+                  fontSize: "14px",
+                  borderRadius: "4px",
+                  border: "1px solid #ddd",
+                }}
               />
-              <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
+              <div style={{ display: "flex", gap: "8px", marginTop: "8px" }}>
                 <button
                   className="btn-control btn-warning"
                   onClick={handleSetAmplifierWifi}
-                  disabled={commandLoading === 'amp_wifi'}
-                  style={{ flex: 1, fontSize: '14px', padding: '10px' }}
+                  disabled={commandLoading === "amp_wifi"}
+                  style={{ flex: 1, fontSize: "14px", padding: "10px" }}
                 >
-                  {commandLoading === 'amp_wifi' ? 'SAVING...' : 'SAVE'}
+                  {commandLoading === "amp_wifi" ? "SAVING..." : "SAVE"}
                 </button>
                 <button
                   className="btn-control"
                   onClick={() => setShowWifiSettings(false)}
-                  style={{ flex: 1, fontSize: '14px', padding: '10px', backgroundColor: '#6c757d', borderColor: '#6c757d' }}
+                  style={{
+                    flex: 1,
+                    fontSize: "14px",
+                    padding: "10px",
+                    backgroundColor: "#6c757d",
+                    borderColor: "#6c757d",
+                  }}
                 >
                   CANCEL
                 </button>
@@ -1075,7 +1426,7 @@ export default function DoorbellControlPage() {
           width: 18px;
           height: 18px;
           border-radius: 50%;
-          background: #4CAF50;
+          background: #4caf50;
           cursor: pointer;
           box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
           transition: all 0.2s ease;
@@ -1097,7 +1448,7 @@ export default function DoorbellControlPage() {
           width: 18px;
           height: 18px;
           border-radius: 50%;
-          background: #4CAF50;
+          background: #4caf50;
           cursor: pointer;
           border: none;
           box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
