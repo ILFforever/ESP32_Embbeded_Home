@@ -392,8 +392,8 @@ export function AdminManagementCard({ isExpanded = false, devices = [] }: AdminM
                     <div className="device-header">
                       <Cpu className="device-icon" size={24} />
                       <div className="device-info-header">
-                        <h5>{device.device_name}</h5>
-                        <span className="device-location">{device.device_type}</span>
+                        <h5>{device.name}</h5>
+                        <span className="device-location">{device.type}</span>
                       </div>
                     </div>
                     <div className="device-status-badge" style={{ borderColor: device.online ? '#00FF88' : '#FF6600' }}>
