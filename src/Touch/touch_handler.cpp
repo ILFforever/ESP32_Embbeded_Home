@@ -13,6 +13,20 @@ TouchButton QuickButton2;
 TouchButton QuickButton3;
 TouchButton moreAlter;
 
+// screen 4
+TouchButton PIN_1;
+TouchButton PIN_2;
+TouchButton PIN_3;
+TouchButton PIN_4;
+TouchButton PIN_5;
+TouchButton PIN_6;
+TouchButton PIN_7;
+TouchButton PIN_8;
+TouchButton PIN_9;
+TouchButton PIN_0;
+TouchButton PIN_del;
+TouchButton PIN_en;
+
 // Touch handling for all screens
 void handleTouchInput()
 {
@@ -233,5 +247,200 @@ void handleTouchInput()
         Serial.println("Button 3 clicked!");
       }
     }
+    
   }
+  else if (cur_Screen == 4)
+  {
+    {
+      // Initialize buttons on first entry
+      static bool buttonsInitialized = false;
+      if (!buttonsInitialized)
+      {
+
+        PIN_1.x = 205;
+        PIN_1.y = 190+40;
+        PIN_1.width = 90;
+        PIN_1.height = 60;
+
+        PIN_2.x = 305;
+        PIN_2.y = 190+40;
+        PIN_2.width = 90;
+        PIN_2.height = 60;
+        
+        PIN_3.x = 405;
+        PIN_3.y = 190+40;
+        PIN_3.width = 90;
+        PIN_3.height = 60;
+        
+        PIN_del.x = 505;
+        PIN_del.y = 190+40;
+        PIN_del.width = 90;
+        PIN_del.height = 60;
+        
+        PIN_4.x = 205;
+        PIN_4.y = 190+110;
+        PIN_4.width = 90;
+        PIN_4.height = 60;
+        
+        PIN_5.x = 305;
+        PIN_5.y = 190+110;
+        PIN_5.width = 90;
+        PIN_5.height = 60;
+        
+        PIN_6.x = 405;
+        PIN_6.y = 190+110;
+        PIN_6.width = 90;
+        PIN_6.height = 60;
+        
+        PIN_0.x = 505;
+        PIN_0.y = 190+110;
+        PIN_0.width = 90;
+        PIN_0.height = 60;
+        
+        PIN_7.x = 205;
+        PIN_7.y = 190+180;
+        PIN_7.width = 90;
+        PIN_7.height = 60;
+        
+        PIN_8.x = 305;
+        PIN_8.y = 190+180;
+        PIN_8.width = 90;
+        PIN_8.height = 60;
+        
+        PIN_9.x = 405;
+        PIN_9.y = 190+180;
+        PIN_9.width = 90;
+        PIN_9.height = 60;
+        
+        PIN_en.x = 505;
+        PIN_en.y = 190+180;
+        PIN_en.width = 90;
+        PIN_en.height = 60;
+        
+        
+
+        buttonsInitialized = true;
+      }
+
+      if (currentTouch.isPressed) {
+        Serial.printf("Touch: (%d,%d) in touchArea coords: (%d,%d)\n",
+          currentTouch.x, currentTouch.y, currentTouch.x, currentTouch.y);
+      }
+
+      bool PIN_1_cl = updateTouchButton(&PIN_1, currentTouch.x, currentTouch.y, currentTouch.isPressed);
+      bool PIN_2_cl = updateTouchButton(&PIN_2, currentTouch.x, currentTouch.y, currentTouch.isPressed);
+      bool PIN_3_cl = updateTouchButton(&PIN_3, currentTouch.x, currentTouch.y, currentTouch.isPressed);
+      bool PIN_4_cl = updateTouchButton(&PIN_4, currentTouch.x, currentTouch.y, currentTouch.isPressed);
+      bool PIN_5_cl = updateTouchButton(&PIN_5, currentTouch.x, currentTouch.y, currentTouch.isPressed);
+      bool PIN_6_cl = updateTouchButton(&PIN_6, currentTouch.x, currentTouch.y, currentTouch.isPressed);
+      bool PIN_7_cl = updateTouchButton(&PIN_7, currentTouch.x, currentTouch.y, currentTouch.isPressed);
+      bool PIN_8_cl = updateTouchButton(&PIN_8, currentTouch.x, currentTouch.y, currentTouch.isPressed);
+      bool PIN_9_cl = updateTouchButton(&PIN_9, currentTouch.x, currentTouch.y, currentTouch.isPressed);
+      bool PIN_0_cl = updateTouchButton(&PIN_0, currentTouch.x, currentTouch.y, currentTouch.isPressed);
+      bool PIN_del_cl = updateTouchButton(&PIN_del, currentTouch.x, currentTouch.y, currentTouch.isPressed);
+      bool PIN_en_cl = updateTouchButton(&PIN_en, currentTouch.x, currentTouch.y, currentTouch.isPressed);
+
+      uint16_t PIN_1_color = TFT_LIGHTGREY;
+      uint16_t PIN_2_color = TFT_LIGHTGREY;
+      uint16_t PIN_3_color = TFT_LIGHTGREY;
+      uint16_t PIN_4_color = TFT_LIGHTGREY;
+      uint16_t PIN_5_color = TFT_LIGHTGREY;
+      uint16_t PIN_6_color = TFT_LIGHTGREY;
+      uint16_t PIN_7_color = TFT_LIGHTGREY;
+      uint16_t PIN_8_color = TFT_LIGHTGREY;
+      uint16_t PIN_9_color = TFT_LIGHTGREY;
+      uint16_t PIN_0_color = TFT_LIGHTGREY;
+      uint16_t PIN_del_color = TFT_LIGHTGREY;
+      uint16_t PIN_en_color = TFT_LIGHTGREY;
+
+
+      if (PIN_1.isPressed && !PIN_1.isDragging)
+      {
+        PIN_1_color = TFT_DARKGRAY;
+      }
+      if (PIN_2.isPressed && !PIN_2.isDragging)
+      {
+        PIN_2_color = TFT_DARKGRAY;
+      }
+      if (PIN_3.isPressed && !PIN_3.isDragging)
+      PIN_3_color = TFT_DARKGRAY;
+      if (PIN_4.isPressed && !PIN_4.isDragging)
+        PIN_4_color = TFT_DARKGRAY;
+      if (PIN_5.isPressed && !PIN_5.isDragging)
+        PIN_5_color = TFT_DARKGRAY;
+      if (PIN_6.isPressed && !PIN_6.isDragging)
+        PIN_6_color = TFT_DARKGRAY;
+      if (PIN_7.isPressed && !PIN_7.isDragging)
+        PIN_7_color = TFT_DARKGRAY;
+      if (PIN_8.isPressed && !PIN_8.isDragging)
+        PIN_8_color = TFT_DARKGRAY;
+      if (PIN_9.isPressed && !PIN_9.isDragging)
+        PIN_9_color = TFT_DARKGRAY;
+      if (PIN_0.isPressed && !PIN_0.isDragging)
+        PIN_0_color = TFT_DARKGRAY;
+
+      if (PIN_del.isPressed && !PIN_del.isDragging)
+        PIN_del_color = TFT_DARKGRAY;
+
+      if (PIN_en.isPressed && !PIN_en.isDragging)
+        PIN_en_color = TFT_DARKGRAY;
+
+
+
+      // ใส่ font ก่อนวาด
+      touchArea.setTextColor(TFT_WHITE);
+      touchArea.setTextSize(2);
+
+      // ---- Row 1 ----
+      touchArea.fillSmoothRoundRect(PIN_1.x, PIN_1.y, PIN_1.width, PIN_1.height, 10, PIN_1_color);
+      touchArea.drawCenterString("1", PIN_1.x + PIN_1.width/2, PIN_1.y + PIN_1.height/2 - 8);
+
+      touchArea.fillSmoothRoundRect(PIN_2.x, PIN_2.y, PIN_2.width, PIN_2.height, 10, PIN_2_color);
+      touchArea.drawCenterString("2", PIN_2.x + PIN_2.width/2, PIN_2.y + PIN_2.height/2 - 8);
+
+      touchArea.fillSmoothRoundRect(PIN_3.x, PIN_3.y, PIN_3.width, PIN_3.height, 10, PIN_3_color);
+      touchArea.drawCenterString("3", PIN_3.x + PIN_3.width/2, PIN_3.y + PIN_3.height/2 - 8);
+
+      touchArea.fillSmoothRoundRect(PIN_del.x, PIN_del.y, PIN_del.width, PIN_del.height, 10, PIN_del_color);
+      touchArea.drawCenterString("DEL", PIN_del.x + PIN_del.width/2, PIN_del.y + PIN_del.height/2 - 8);
+
+
+      // ---- Row 2 ----
+      touchArea.fillSmoothRoundRect(PIN_4.x, PIN_4.y, PIN_4.width, PIN_4.height, 10, PIN_4_color);
+      touchArea.drawCenterString("4", PIN_4.x + PIN_4.width/2, PIN_4.y + PIN_4.height/2 - 8);
+
+      touchArea.fillSmoothRoundRect(PIN_5.x, PIN_5.y, PIN_5.width, PIN_5.height, 10, PIN_5_color);
+      touchArea.drawCenterString("5", PIN_5.x + PIN_5.width/2, PIN_5.y + PIN_5.height/2 - 8);
+
+      touchArea.fillSmoothRoundRect(PIN_6.x, PIN_6.y, PIN_6.width, PIN_6.height, 10, PIN_6_color);
+      touchArea.drawCenterString("6", PIN_6.x + PIN_6.width/2, PIN_6.y + PIN_6.height/2 - 8);
+
+      touchArea.fillSmoothRoundRect(PIN_0.x, PIN_0.y, PIN_0.width, PIN_0.height, 10, PIN_0_color);
+      touchArea.drawCenterString("0", PIN_0.x + PIN_0.width/2, PIN_0.y + PIN_0.height/2 - 8);
+
+
+      // ---- Row 3 ----
+      touchArea.fillSmoothRoundRect(PIN_7.x, PIN_7.y, PIN_7.width, PIN_7.height, 10, PIN_7_color);
+      touchArea.drawCenterString("7", PIN_7.x + PIN_7.width/2, PIN_7.y + PIN_7.height/2 - 8);
+
+      touchArea.fillSmoothRoundRect(PIN_8.x, PIN_8.y, PIN_8.width, PIN_8.height, 10, PIN_8_color);
+      touchArea.drawCenterString("8", PIN_8.x + PIN_8.width/2, PIN_8.y + PIN_8.height/2 - 8);
+
+      touchArea.fillSmoothRoundRect(PIN_9.x, PIN_9.y, PIN_9.width, PIN_9.height, 10, PIN_9_color);
+      touchArea.drawCenterString("9", PIN_9.x + PIN_9.width/2, PIN_9.y + PIN_9.height/2 - 8);
+
+      touchArea.fillSmoothRoundRect(PIN_en.x, PIN_en.y, PIN_en.width, PIN_en.height, 10, PIN_en_color);
+      touchArea.drawCenterString("EN", PIN_en.x + PIN_en.width/2, PIN_en.y + PIN_en.height/2 - 8);
+
+
+      touchArea.setTextSize(1);
+      touchArea.setFont(&fonts::DejaVu18);
+      int feedbackY = 250;
+    }
+
+      
+      
+    
+  }
+  
 }

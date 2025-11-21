@@ -317,16 +317,34 @@ void updateContent()
       contentArea.drawWideLine(450, 240, 320, 240, 3, TFT_BLACK);
       contentArea.drawWideLine(345, 265, 320, 240, 3, TFT_BLACK);
     }
-    else if (cur_Screen == 4) // Login Page
+    else if (cur_Screen == 4) // Enter Pin
     {
       contentArea.fillScreen(TFT_BLACK);
       contentArea.setTextColor(TFT_WHITE);
       contentArea.setFont(&fonts::Orbitron_Light_24);
-      contentArea.setTextSize(3);
-      contentArea.drawString("Hello! User", 180, 70);
       contentArea.setTextSize(2);
-      contentArea.fillSmoothRoundRect(250, 240, 300, 80, 10, TFT_GREEN);
-      contentArea.drawString("Login", 320, 250);
+      contentArea.drawCenterString("PlEASE ENTER PIN", 400, 20);
+      contentArea.setTextSize(2);
+      contentArea.drawWideLine(250, 180,310,180,3,TFT_WHITE);
+      contentArea.drawWideLine(330, 180,390,180,3,TFT_WHITE);
+      contentArea.drawWideLine(410, 180,470,180,3,TFT_WHITE);
+      contentArea.drawWideLine(490, 180,550,180,3,TFT_WHITE);
+      // Row 1
+      // contentArea.fillSmoothRoundRect(190, 190, 90, 60, 5, TFT_LIGHTGRAY);
+      // contentArea.fillSmoothRoundRect(300, 190, 90, 60, 5, TFT_LIGHTGRAY);
+      // contentArea.fillSmoothRoundRect(410, 190, 90, 60, 5, TFT_LIGHTGRAY);
+      // contentArea.fillSmoothRoundRect(520, 190, 90, 60, 5, TFT_LIGHTGRAY);
+      // // Row 2
+      // contentArea.fillSmoothRoundRect(190, 190+70, 90, 60, 5, TFT_LIGHTGRAY);
+      // contentArea.fillSmoothRoundRect(300, 190+70, 90, 60, 5, TFT_LIGHTGRAY);
+      // contentArea.fillSmoothRoundRect(410, 190+70, 90, 60, 5, TFT_LIGHTGRAY);
+      // contentArea.fillSmoothRoundRect(520, 190+70, 90, 60, 5, TFT_LIGHTGRAY);
+      // // Row 3 
+      // contentArea.fillSmoothRoundRect(190, 190+140, 90, 60, 5, TFT_LIGHTGRAY);
+      // contentArea.fillSmoothRoundRect(300, 190+140, 90, 60, 5, TFT_LIGHTGRAY);
+      // contentArea.fillSmoothRoundRect(410, 190+140, 90, 60, 5, TFT_LIGHTGRAY);
+      // contentArea.fillSmoothRoundRect(520, 190+140, 90, 60, 5, TFT_LIGHTGRAY);
+
     }
     else if (cur_Screen == 5) // Information Page
     {
