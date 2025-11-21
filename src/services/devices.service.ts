@@ -10,7 +10,8 @@ import type {
   SecurityDevice,
   SensorReading,
   SensorData,
-  HubSensorData
+  HubSensorData,
+  BackendDevice
 } from '@/types/dashboard';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
@@ -29,20 +30,7 @@ const getAuthHeaders = () => {
   return token ? { Authorization: `Bearer ${token}` } : {};
 };
 
-// Backend device interface
-interface BackendDevice {
-  device_id: string;
-  type: string;
-  name: string;
-  online: boolean; // Computed by backend from expireAt
-  last_seen: string | null;
-  uptime_ms: number;
-  free_heap: number;
-  wifi_rssi: number;
-  ip_address: string | null;
-  expireAt: any; // Firebase Timestamp - used by backend to compute online status
-}
-
+// Backend devices response interface
 interface BackendDevicesResponse {
   status: string;
   timestamp: string;
