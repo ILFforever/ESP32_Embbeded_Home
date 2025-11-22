@@ -186,12 +186,18 @@ export default function HubControlPage() {
     }
   };
 
-  const handleVolumeChange = async (newVolume: number) => {
+  const handleVolumeChange = (newVolume: number) => {
+    // Update local state immediately for responsive UI
+    setVolume(newVolume);
+  };
+
+  const handleVolumeSend = async (finalVolume: number) => {
     if (!hubDevice) return;
 
+    // Send volume command to backend when user releases slider
     try {
-      setVolume(newVolume);
-      await setHubAmplifierVolume(hubDevice.device_id, newVolume);
+      await setHubAmplifierVolume(hubDevice.device_id, finalVolume);
+      console.log(`Volume set to ${finalVolume}`);
     } catch (error) {
       console.error('Error setting volume:', error);
       alert('Failed to set volume. Please try again.');
@@ -584,7 +590,7 @@ export default function HubControlPage() {
               </div>
             </div>
 
-            {/* Amplifier On/Off Control Card */}
+            {/* Amplifier Control Card */}
             <div className="card">
               <div className="card-header">
                 <div className="card-title-group">
@@ -624,56 +630,6 @@ export default function HubControlPage() {
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '16px' }}>
                     <div>
                       <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', color: 'var(--text-secondary)' }}>
-                        Volume: {volume} / 21
-                      </label>
-                      <input
-                        type="range"
-                        min={0}
-                        max={21}
-                        value={volume}
-                        onChange={(e) => handleVolumeChange(parseInt(e.target.value))}
-                        disabled={!hubDevice?.online || ampLoading}
-                        style={{ width: '100%' }}
-                      />
-                    </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px' }}>
-                      <button
-                        className="btn-action"
-                        onClick={handleStopStream}
-                        disabled={ampLoading || !hubDevice?.online}
-                        style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
-                      >
-                        <Square size={18} />
-                        <span>Stop</span>
-                      </button>
-                      <button
-                        className="btn-action"
-                        onClick={handleRestartAmp}
-                        disabled={ampLoading || !hubDevice?.online}
-                        style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
-                      >
-                        <RefreshCw size={18} />
-                        <span>Restart</span>
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Submodule Command Card */}
-            <div className="card">
-              <div className="card-header">
-                <div className="card-title-group">
-                  <Activity size={24} />
-                  <h3>SUBMODULE COMMANDS</h3>
-                </div>
-              </div>
-              <div className="card-content">
-                <div className="control-panel">
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                    <div>
-                      <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', color: 'var(--text-secondary)' }}>
                         Stream URL
                       </label>
                       <input
@@ -693,15 +649,97 @@ export default function HubControlPage() {
                         }}
                       />
                     </div>
-                    <button
-                      className="btn-action"
-                      onClick={handlePlayStream}
-                      disabled={ampLoading || !hubDevice?.online || !streamUrl.trim()}
-                      style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
+                    <div>
+                      <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', color: 'var(--text-secondary)' }}>
+                        Volume: {volume} / 21
+                      </label>
+                      <input
+                        type="range"
+                        min={0}
+                        max={21}
+                        value={volume}
+                        onChange={(e) => handleVolumeChange(parseInt(e.target.value))}
+                        onMouseUp={(e) => handleVolumeSend(parseInt((e.target as HTMLInputElement).value))}
+                        onTouchEnd={(e) => handleVolumeSend(parseInt((e.target as HTMLInputElement).value))}
+                        disabled={!hubDevice?.online}
+                        style={{ width: '100%' }}
+                      />
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px' }}>
+                      <button
+                        className="btn-action"
+                        onClick={handlePlayStream}
+                        disabled={ampLoading || !hubDevice?.online || !streamUrl.trim()}
+                        style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
+                      >
+                        <Play size={18} />
+                        <span>Play</span>
+                      </button>
+                      <button
+                        className="btn-action"
+                        onClick={handleStopStream}
+                        disabled={ampLoading || !hubDevice?.online}
+                        style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
+                      >
+                        <Square size={18} />
+                        <span>Stop</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Submodule Command Card */}
+            <div className="card">
+              <div className="card-header">
+                <div className="card-title-group">
+                  <Activity size={24} />
+                  <h3>SUBMODULE COMMANDS</h3>
+                </div>
+              </div>
+              <div className="card-content">
+                <div className="control-panel">
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    <div
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '12px',
+                        padding: '12px',
+                        background: 'linear-gradient(135deg, rgba(243, 33, 33, 0.1) 0%, rgba(192, 44, 21, 0.1) 100%)',
+                        borderRadius: '8px',
+                        border: '1px solid rgba(243, 79, 33, 0.3)',
+                      }}
                     >
-                      <Play size={18} />
-                      <span>Play Stream</span>
-                    </button>
+                      <Volume2
+                        size={32}
+                        className="status-info-large"
+                        style={{ flexShrink: 0 }}
+                      />
+                      <button
+                        className="btn-control"
+                        onClick={handleRestartAmp}
+                        disabled={ampLoading || !hubDevice?.online}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '8px',
+                          flex: 1,
+                          fontWeight: 'bold',
+                          background: 'rgba(0, 0, 0, 0.4)',
+                          border: '1px solid rgba(255, 255, 255, 0.2)',
+                          color: '#fff',
+                        }}
+                      >
+                        <RotateCw
+                          size={18}
+                          className={ampLoading ? 'rotating' : ''}
+                        />
+                        {ampLoading ? 'RESTARTING...' : 'RESTART AMPLIFIER'}
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
