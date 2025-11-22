@@ -951,3 +951,221 @@ export async function getLatestVisitors(deviceId: string, limit: number = 20): P
     };
   }
 }
+
+// ============================================================================
+// Hub-Specific API Calls
+// ============================================================================
+
+// Hub sensor data interface
+export interface HubSensorResponse {
+  status: string;
+  device_id: string;
+  sensors: {
+    temperature: number | null;
+    humidity: number | null;
+    pm25: number | null;
+    aqi: number | null;
+    timestamp: any;
+    device_id: string;
+  };
+}
+
+// Get Hub sensor data (DHT11 + PM2.5)
+export async function getHubSensors(deviceId: string): Promise<HubSensorResponse | null> {
+  try {
+    const response = await axios.get<HubSensorResponse>(
+      `${API_URL}/api/v1/devices/${deviceId}/hub/sensors`,
+      {
+        timeout: 5000,
+        headers: getAuthHeaders()
+      }
+    );
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching Hub sensors:', error);
+    return null;
+  }
+}
+
+// Hub alert interface
+export interface HubAlertParams {
+  message: string;
+  level?: 'info' | 'warning' | 'error' | 'critical';
+  duration?: number; // seconds, 1-300
+}
+
+export interface HubAlertResponse {
+  status: string;
+  message: string;
+  command_id: string;
+  alert: {
+    message: string;
+    level: string;
+    duration: number;
+  };
+}
+
+// Send alert to Hub LCD display
+export async function sendHubAlert(deviceId: string, params: HubAlertParams): Promise<HubAlertResponse | null> {
+  try {
+    const response = await axios.post<HubAlertResponse>(
+      `${API_URL}/api/v1/devices/${deviceId}/hub/alert`,
+      {
+        message: params.message,
+        level: params.level || 'info',
+        duration: params.duration || 10
+      },
+      {
+        timeout: 5000,
+        headers: getAuthHeaders()
+      }
+    );
+    return response.data;
+  } catch (error) {
+    console.error('Error sending Hub alert:', error);
+    return null;
+  }
+}
+
+// Hub amplifier streaming status interface
+export interface HubAmpStreamingResponse {
+  status: string;
+  device_id: string;
+  amplifier: {
+    is_streaming: boolean;
+    current_url: string | null;
+    volume_level: number;
+    is_playing: boolean;
+    timestamp: any;
+    device_id: string;
+  };
+}
+
+// Get Hub amplifier streaming status
+export async function getHubAmpStreaming(deviceId: string): Promise<HubAmpStreamingResponse | null> {
+  try {
+    const response = await axios.get<HubAmpStreamingResponse>(
+      `${API_URL}/api/v1/devices/${deviceId}/hub/amp/streaming`,
+      {
+        timeout: 5000,
+        headers: getAuthHeaders()
+      }
+    );
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching Hub amp streaming status:', error);
+    return null;
+  }
+}
+
+// Hub amplifier play
+export async function playHubAmplifier(deviceId: string, url: string) {
+  try {
+    const response = await axios.post(
+      `${API_URL}/api/v1/devices/${deviceId}/amp/play`,
+      {},
+      {
+        timeout: 5000,
+        headers: getAuthHeaders(),
+        params: { url }
+      }
+    );
+    return response.data;
+  } catch (error) {
+    console.error('Error playing Hub amplifier:', error);
+    throw error;
+  }
+}
+
+// Hub amplifier stop
+export async function stopHubAmplifier(deviceId: string) {
+  try {
+    const response = await axios.post(
+      `${API_URL}/api/v1/devices/${deviceId}/amp/stop`,
+      {},
+      {
+        timeout: 5000,
+        headers: getAuthHeaders()
+      }
+    );
+    return response.data;
+  } catch (error) {
+    console.error('Error stopping Hub amplifier:', error);
+    throw error;
+  }
+}
+
+// Hub amplifier restart
+export async function restartHubAmplifier(deviceId: string) {
+  try {
+    const response = await axios.post(
+      `${API_URL}/api/v1/devices/${deviceId}/amp/restart`,
+      {},
+      {
+        timeout: 5000,
+        headers: getAuthHeaders()
+      }
+    );
+    return response.data;
+  } catch (error) {
+    console.error('Error restarting Hub amplifier:', error);
+    throw error;
+  }
+}
+
+// Hub amplifier set volume
+export async function setHubAmplifierVolume(deviceId: string, level: number) {
+  try {
+    if (level < 0 || level > 21) {
+      throw new Error('Volume level must be between 0 and 21');
+    }
+    const response = await axios.post(
+      `${API_URL}/api/v1/devices/${deviceId}/amp/volume`,
+      {},
+      {
+        timeout: 5000,
+        headers: getAuthHeaders(),
+        params: { level }
+      }
+    );
+    return response.data;
+  } catch (error) {
+    console.error('Error setting Hub amplifier volume:', error);
+    throw error;
+  }
+}
+
+// Hub amplifier get status
+export async function getHubAmplifierStatus(deviceId: string) {
+  try {
+    const response = await axios.get(
+      `${API_URL}/api/v1/devices/${deviceId}/amp/status`,
+      {
+        timeout: 5000,
+        headers: getAuthHeaders()
+      }
+    );
+    return response.data;
+  } catch (error) {
+    console.error('Error getting Hub amplifier status:', error);
+    throw error;
+  }
+}
+
+// Hub system restart
+export async function restartHubSystem(deviceId: string) {
+  try {
+    const response = await axios.post(
+      `${API_URL}/api/v1/devices/${deviceId}/system/restart`,
+      {},
+      {
+        timeout: 5000,
+        headers: getAuthHeaders()
+      }
+    );
+    return response.data;
+  } catch (error) {
+    console.error('Error restarting Hub system:', error);
+    throw error;
+  }
+}
