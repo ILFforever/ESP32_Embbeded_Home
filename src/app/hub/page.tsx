@@ -645,7 +645,10 @@ export default function HubControlPage() {
                           border: '1px solid rgba(var(--primary-color-rgb), 0.3)',
                           borderRadius: '4px',
                           color: '#FFF',
-                          fontSize: '14px'
+                          fontSize: '14px',
+                          pointerEvents: 'auto',
+                          zIndex: 1,
+                          position: 'relative'
                         }}
                       />
                     </div>
@@ -662,7 +665,13 @@ export default function HubControlPage() {
                         onMouseUp={(e) => handleVolumeSend(parseInt((e.target as HTMLInputElement).value))}
                         onTouchEnd={(e) => handleVolumeSend(parseInt((e.target as HTMLInputElement).value))}
                         disabled={!hubDevice?.online}
-                        style={{ width: '100%' }}
+                        style={{
+                          width: '100%',
+                          pointerEvents: 'auto',
+                          zIndex: 1,
+                          position: 'relative',
+                          cursor: 'pointer'
+                        }}
                       />
                     </div>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px' }}>
@@ -690,8 +699,8 @@ export default function HubControlPage() {
               </div>
             </div>
 
-            {/* Submodule Command Card */}
-            <div className="card">
+            {/* Submodule Command Card - Half Height */}
+            <div className="card" style={{ gridRow: 'auto', height: 'fit-content' }}>
               <div className="card-header">
                 <div className="card-title-group">
                   <Activity size={24} />
@@ -699,54 +708,50 @@ export default function HubControlPage() {
                 </div>
               </div>
               <div className="card-content">
-                <div className="control-panel">
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                    <div
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '12px',
-                        padding: '12px',
-                        background: 'linear-gradient(135deg, rgba(243, 33, 33, 0.1) 0%, rgba(192, 44, 21, 0.1) 100%)',
-                        borderRadius: '8px',
-                        border: '1px solid rgba(243, 79, 33, 0.3)',
-                      }}
-                    >
-                      <Volume2
-                        size={32}
-                        className="status-info-large"
-                        style={{ flexShrink: 0 }}
-                      />
-                      <button
-                        className="btn-control"
-                        onClick={handleRestartAmp}
-                        disabled={ampLoading || !hubDevice?.online}
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          gap: '8px',
-                          flex: 1,
-                          fontWeight: 'bold',
-                          background: 'rgba(0, 0, 0, 0.4)',
-                          border: '1px solid rgba(255, 255, 255, 0.2)',
-                          color: '#fff',
-                        }}
-                      >
-                        <RotateCw
-                          size={18}
-                          className={ampLoading ? 'rotating' : ''}
-                        />
-                        {ampLoading ? 'RESTARTING...' : 'RESTART AMPLIFIER'}
-                      </button>
-                    </div>
-                  </div>
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '12px',
+                    padding: '12px',
+                    background: 'linear-gradient(135deg, rgba(243, 33, 33, 0.1) 0%, rgba(192, 44, 21, 0.1) 100%)',
+                    borderRadius: '8px',
+                    border: '1px solid rgba(243, 79, 33, 0.3)',
+                  }}
+                >
+                  <Volume2
+                    size={32}
+                    className="status-info-large"
+                    style={{ flexShrink: 0 }}
+                  />
+                  <button
+                    className="btn-control"
+                    onClick={handleRestartAmp}
+                    disabled={ampLoading || !hubDevice?.online}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '8px',
+                      flex: 1,
+                      fontWeight: 'bold',
+                      background: 'rgba(0, 0, 0, 0.4)',
+                      border: '1px solid rgba(255, 255, 255, 0.2)',
+                      color: '#fff',
+                    }}
+                  >
+                    <RotateCw
+                      size={18}
+                      className={ampLoading ? 'rotating' : ''}
+                    />
+                    {ampLoading ? 'RESTARTING...' : 'RESTART AMPLIFIER'}
+                  </button>
                 </div>
               </div>
             </div>
 
-            {/* Send Alert to Hub Card */}
-            <div className="card">
+            {/* Send Alert to Hub Card - Half Height */}
+            <div className="card" style={{ gridRow: 'auto', height: 'fit-content' }}>
               <div className="card-header">
                 <div className="card-title-group">
                   <AlertTriangle size={24} />
@@ -754,9 +759,9 @@ export default function HubControlPage() {
                 </div>
               </div>
               <div className="card-content">
-                <form onSubmit={handleSendAlert} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                <form onSubmit={handleSendAlert} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                   <div>
-                    <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', color: 'var(--text-secondary)' }}>
+                    <label style={{ display: 'block', marginBottom: '6px', fontSize: '13px', color: 'var(--text-secondary)' }}>
                       Alert Message
                     </label>
                     <input
@@ -769,19 +774,21 @@ export default function HubControlPage() {
                       disabled={!hubDevice?.online}
                       style={{
                         width: '100%',
-                        padding: '12px',
+                        padding: '10px',
                         background: 'rgba(0,0,0,0.3)',
                         border: '1px solid rgba(var(--primary-color-rgb), 0.3)',
                         borderRadius: '4px',
                         color: '#FFF',
-                        fontSize: '14px'
+                        fontSize: '13px',
+                        pointerEvents: 'auto',
+                        zIndex: 1
                       }}
                     />
                   </div>
 
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                     <div>
-                      <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', color: 'var(--text-secondary)' }}>
+                      <label style={{ display: 'block', marginBottom: '6px', fontSize: '12px', color: 'var(--text-secondary)' }}>
                         Level
                       </label>
                       <select
@@ -790,12 +797,14 @@ export default function HubControlPage() {
                         disabled={!hubDevice?.online}
                         style={{
                           width: '100%',
-                          padding: '12px',
+                          padding: '8px',
                           background: 'rgba(0,0,0,0.3)',
                           border: '1px solid rgba(var(--primary-color-rgb), 0.3)',
                           borderRadius: '4px',
                           color: '#FFF',
-                          fontSize: '14px'
+                          fontSize: '12px',
+                          pointerEvents: 'auto',
+                          zIndex: 1
                         }}
                       >
                         <option value="info">Info</option>
@@ -806,8 +815,8 @@ export default function HubControlPage() {
                     </div>
 
                     <div>
-                      <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', color: 'var(--text-secondary)' }}>
-                        Duration (seconds)
+                      <label style={{ display: 'block', marginBottom: '6px', fontSize: '12px', color: 'var(--text-secondary)' }}>
+                        Duration (sec)
                       </label>
                       <input
                         type="number"
@@ -818,12 +827,14 @@ export default function HubControlPage() {
                         disabled={!hubDevice?.online}
                         style={{
                           width: '100%',
-                          padding: '12px',
+                          padding: '8px',
                           background: 'rgba(0,0,0,0.3)',
                           border: '1px solid rgba(var(--primary-color-rgb), 0.3)',
                           borderRadius: '4px',
                           color: '#FFF',
-                          fontSize: '14px'
+                          fontSize: '12px',
+                          pointerEvents: 'auto',
+                          zIndex: 1
                         }}
                       />
                     </div>
@@ -833,10 +844,10 @@ export default function HubControlPage() {
                     type="submit"
                     className="btn-action"
                     disabled={sendingAlert || !hubDevice?.online || !alertMessage.trim()}
-                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
+                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', marginTop: '4px' }}
                   >
-                    <Send size={18} />
-                    <span>{sendingAlert ? 'Sending...' : 'Send Alert'}</span>
+                    <Send size={16} />
+                    <span style={{ fontSize: '13px' }}>{sendingAlert ? 'Sending...' : 'Send Alert'}</span>
                   </button>
                 </form>
               </div>
