@@ -1,0 +1,640 @@
+/**
+ * ESP32 Battery-Optimized Room Sensor
+ *
+ * Purpose:
+ * - Read environmental sensors (VEML7700, MICS5524, AHT25)
+ * - Transmit data via PainlessMesh to Main_mesh hub
+ * - Optimize battery life using deep sleep
+ *
+ * Target Battery Life: 24-48 hours on 400mAh LiPo
+ *
+ * Features:
+ * - Deep sleep between readings (60s default)
+ * - Intermittent gas sensor heating (20s only when measuring)
+ * - Conditional transmission (only on significant changes)
+ * - Battery voltage monitoring with low-power warnings
+ * - Automatic retry on mesh connection failure
+ *
+ * Hardware:
+ * - ESP32-DevKitC or ESP32-S3-DevKitC
+ * - VEML7700 Ambient Light Sensor (I2C)
+ * - MICS5524 Gas Sensor (Analog + heater control)
+ * - AHT25 Temperature/Humidity Sensor (I2C)
+ * - 400mAh LiPo Battery with charger module
+ */
+
+#include <Arduino.h>
+#include <painlessMesh.h>
+#include <Adafruit_VEML7700.h>
+#include <Adafruit_AHTX0.h>
+#include <ArduinoJson.h>
+
+// ============================================================================
+// MESH CONFIGURATION (Must match Main_mesh settings)
+// ============================================================================
+#define MESH_PREFIX     "Arduino_888_home"
+#define MESH_PASSWORD   "19283746"
+#define MESH_PORT       5555
+
+// ============================================================================
+// DEVICE IDENTIFICATION
+// ============================================================================
+// Change these for each room sensor deployment
+const char* DEVICE_ID = "room_sensor_bedroom_01";
+const char* DEVICE_TYPE = "environmental_sensor";
+const char* ROOM_NAME = "Bedroom";
+
+// ============================================================================
+// GPIO PIN CONFIGURATION
+// ============================================================================
+#define MICS5524_HEATER_PIN  25  // Control heater power (HIGH=ON, LOW=OFF)
+#define MICS5524_ANALOG_PIN  34  // Read gas sensor output (ADC)
+#define BATTERY_PIN          35  // Battery voltage divider (ADC)
+#define STATUS_LED_PIN       2   // Status LED (built-in on most ESP32)
+
+// I2C Pins (Default for ESP32)
+#define I2C_SDA_PIN          21
+#define I2C_SCL_PIN          22
+
+// ============================================================================
+// POWER OPTIMIZATION SETTINGS
+// ============================================================================
+#define SLEEP_DURATION_S     60     // Sleep 60 seconds between readings
+#define GAS_HEAT_TIME_MS     20000  // Heat gas sensor for 20s before reading
+#define MESH_CONNECT_TIMEOUT 5000   // Try to connect to mesh for 5 seconds
+#define MAX_RETRY_ATTEMPTS   3      // Retry failed transmissions 3 times
+
+// ============================================================================
+// SENSOR THRESHOLDS (for conditional transmission)
+// ============================================================================
+#define TEMP_THRESHOLD       0.5    // 0.5°C change triggers transmission
+#define HUMIDITY_THRESHOLD   2.0    // 2% change triggers transmission
+#define LIGHT_THRESHOLD      50.0   // 50 lux change triggers transmission
+#define GAS_THRESHOLD        100    // 100 ADC units change triggers transmission
+
+// ============================================================================
+// BATTERY MANAGEMENT
+// ============================================================================
+#define BATTERY_LOW_PERCENT      20  // Warn at 20%
+#define BATTERY_CRITICAL_PERCENT 5   // Extended sleep at 5%
+#define VOLTAGE_DIVIDER_RATIO    2.0 // Adjust based on your voltage divider
+
+// ============================================================================
+// GLOBAL OBJECTS
+// ============================================================================
+Scheduler userScheduler;
+painlessMesh mesh;
+Adafruit_VEML7700 veml = Adafruit_VEML7700();
+Adafruit_AHTX0 aht;
+
+// ============================================================================
+// SENSOR DATA STRUCTURE
+// ============================================================================
+struct SensorData {
+  float temperature = 0.0;
+  float humidity = 0.0;
+  float lightLevel = 0.0;
+  uint16_t gasLevel = 0;
+  float batteryVoltage = 0.0;
+  uint8_t batteryPercent = 0;
+  bool temperatureValid = false;
+  bool humidityValid = false;
+  bool lightValid = false;
+  bool gasValid = false;
+} currentData;
+
+// ============================================================================
+// RTC MEMORY (survives deep sleep)
+// ============================================================================
+RTC_DATA_ATTR uint32_t bootCount = 0;
+RTC_DATA_ATTR float lastTemp = 0.0;
+RTC_DATA_ATTR float lastHumidity = 0.0;
+RTC_DATA_ATTR float lastLight = 0.0;
+RTC_DATA_ATTR uint16_t lastGas = 0;
+RTC_DATA_ATTR uint32_t totalTransmissions = 0;
+RTC_DATA_ATTR uint32_t failedTransmissions = 0;
+
+// ============================================================================
+// FUNCTION PROTOTYPES
+// ============================================================================
+void setupPins();
+void setupSensors();
+void setupMesh();
+bool readAllSensors();
+bool readAHT25();
+bool readVEML7700();
+bool readMICS5524();
+float readBatteryVoltage();
+uint8_t calculateBatteryPercent(float voltage);
+void heatGasSensor(uint32_t duration_ms);
+void stopGasHeating();
+bool hasSignificantChange();
+bool sendDataToMesh();
+void enterDeepSleep(uint32_t seconds);
+void blinkLED(int times, int delayMs);
+void handleCriticalBattery();
+
+// Mesh callbacks
+void receivedCallback(uint32_t from, String &msg);
+void newConnectionCallback(uint32_t nodeId);
+
+// ============================================================================
+// SETUP
+// ============================================================================
+void setup() {
+  Serial.begin(115200);
+  delay(1000);
+
+  bootCount++;
+
+  Serial.println("\n\n========================================");
+  Serial.printf("  %s - Boot #%d\n", DEVICE_ID, bootCount);
+  Serial.println("  Battery-Optimized Room Sensor");
+  Serial.println("========================================");
+
+  setupPins();
+  setupSensors();
+  setupMesh();
+
+  Serial.println("[SETUP] ✓ All systems initialized\n");
+}
+
+// ============================================================================
+// MAIN LOOP (Executes once per wake cycle)
+// ============================================================================
+void loop() {
+  Serial.println("\n========================================");
+  Serial.printf("WAKE CYCLE #%d START\n", bootCount);
+  Serial.println("========================================");
+
+  // Step 1: Read all sensors
+  bool sensorsOk = readAllSensors();
+
+  if (!sensorsOk) {
+    Serial.println("[ERROR] ⚠ Sensor reading failed");
+    failedTransmissions++;
+  }
+
+  // Step 2: Check battery status
+  if (currentData.batteryPercent <= BATTERY_CRITICAL_PERCENT) {
+    handleCriticalBattery();
+    return; // Will enter extended sleep
+  }
+
+  if (currentData.batteryPercent <= BATTERY_LOW_PERCENT) {
+    Serial.printf("[BATTERY] ⚠ Low battery: %d%%\n", currentData.batteryPercent);
+  }
+
+  // Step 3: Determine if transmission is needed
+  bool shouldTransmit = (bootCount == 1) ||  // Always send on first boot
+                        hasSignificantChange() ||
+                        (bootCount % 10 == 0);  // Force send every 10th cycle
+
+  if (!shouldTransmit) {
+    Serial.println("[SKIP] No significant change - skipping transmission");
+    enterDeepSleep(SLEEP_DURATION_S);
+    return;
+  }
+
+  // Step 4: Attempt to transmit via mesh
+  Serial.println("[MESH] Attempting transmission...");
+  bool transmitted = false;
+  int attempts = 0;
+
+  while (attempts < MAX_RETRY_ATTEMPTS && !transmitted) {
+    attempts++;
+    Serial.printf("[MESH] Attempt %d/%d\n", attempts, MAX_RETRY_ATTEMPTS);
+
+    transmitted = sendDataToMesh();
+
+    if (!transmitted && attempts < MAX_RETRY_ATTEMPTS) {
+      Serial.println("[MESH] Retry in 2 seconds...");
+      delay(2000);
+    }
+  }
+
+  if (transmitted) {
+    Serial.println("[MESH] ✓ Data transmitted successfully");
+    totalTransmissions++;
+    blinkLED(2, 100);  // Success indication
+
+    // Update last sent values
+    lastTemp = currentData.temperature;
+    lastHumidity = currentData.humidity;
+    lastLight = currentData.lightLevel;
+    lastGas = currentData.gasLevel;
+  } else {
+    Serial.println("[MESH] ✗ All transmission attempts failed");
+    failedTransmissions++;
+    blinkLED(5, 50);  // Error indication
+  }
+
+  // Step 5: Print statistics
+  Serial.println("\n========================================");
+  Serial.println("CYCLE STATISTICS:");
+  Serial.printf("  Total boots: %d\n", bootCount);
+  Serial.printf("  Successful TX: %d\n", totalTransmissions);
+  Serial.printf("  Failed TX: %d\n", failedTransmissions);
+  Serial.printf("  Success rate: %.1f%%\n",
+                (totalTransmissions * 100.0) / (totalTransmissions + failedTransmissions));
+  Serial.printf("  Battery: %.2fV (%d%%)\n",
+                currentData.batteryVoltage, currentData.batteryPercent);
+  Serial.println("========================================");
+
+  // Step 6: Enter deep sleep
+  enterDeepSleep(SLEEP_DURATION_S);
+}
+
+// ============================================================================
+// INITIALIZATION FUNCTIONS
+// ============================================================================
+
+void setupPins() {
+  Serial.println("[SETUP] Configuring GPIO pins...");
+
+  // Gas sensor heater control
+  pinMode(MICS5524_HEATER_PIN, OUTPUT);
+  digitalWrite(MICS5524_HEATER_PIN, LOW);  // OFF by default
+
+  // Status LED
+  pinMode(STATUS_LED_PIN, OUTPUT);
+  digitalWrite(STATUS_LED_PIN, LOW);
+
+  // Configure ADC
+  analogReadResolution(12);         // 0-4095
+  analogSetAttenuation(ADC_11db);   // 0-3.3V range
+
+  Serial.println("[SETUP] ✓ GPIO configured");
+}
+
+void setupSensors() {
+  Serial.println("[SETUP] Initializing sensors...");
+
+  // Initialize I2C
+  Wire.begin(I2C_SDA_PIN, I2C_SCL_PIN);
+
+  // Initialize AHT25
+  if (!aht.begin()) {
+    Serial.println("[AHT25] ✗ Failed to initialize!");
+  } else {
+    Serial.println("[AHT25] ✓ Initialized");
+  }
+
+  // Initialize VEML7700
+  if (!veml.begin()) {
+    Serial.println("[VEML7700] ✗ Failed to initialize!");
+  } else {
+    veml.setGain(VEML7700_GAIN_1);
+    veml.setIntegrationTime(VEML7700_IT_100MS);
+    Serial.println("[VEML7700] ✓ Initialized");
+  }
+
+  Serial.println("[SETUP] ✓ Sensors ready");
+}
+
+void setupMesh() {
+  Serial.println("[SETUP] Initializing PainlessMesh...");
+
+  // Reduce debug output to save power
+  mesh.setDebugMsgTypes(ERROR | STARTUP | CONNECTION);
+
+  // Initialize mesh
+  mesh.init(MESH_PREFIX, MESH_PASSWORD, &userScheduler, MESH_PORT);
+
+  // Set callbacks
+  mesh.onReceive(&receivedCallback);
+  mesh.onNewConnection(&newConnectionCallback);
+
+  Serial.printf("[MESH] ✓ Node ID: %u\n", mesh.getNodeId());
+  Serial.printf("[MESH] ✓ Device: %s\n", DEVICE_ID);
+
+  // Brief delay to allow mesh to stabilize
+  delay(1000);
+  mesh.update();
+}
+
+// ============================================================================
+// SENSOR READING FUNCTIONS
+// ============================================================================
+
+bool readAllSensors() {
+  Serial.println("\n[SENSORS] Reading all sensors...");
+  bool allSuccess = true;
+
+  // Read AHT25 (Temperature & Humidity)
+  if (!readAHT25()) {
+    Serial.println("[AHT25] ✗ Reading failed");
+    allSuccess = false;
+  }
+
+  // Read VEML7700 (Ambient Light)
+  if (!readVEML7700()) {
+    Serial.println("[VEML7700] ✗ Reading failed");
+    allSuccess = false;
+  }
+
+  // Read MICS5524 (Gas Sensor)
+  if (!readMICS5524()) {
+    Serial.println("[MICS5524] ✗ Reading failed");
+    allSuccess = false;
+  }
+
+  // Read Battery
+  currentData.batteryVoltage = readBatteryVoltage();
+  currentData.batteryPercent = calculateBatteryPercent(currentData.batteryVoltage);
+  Serial.printf("[BATTERY] ✓ %.2fV (%d%%)\n",
+                currentData.batteryVoltage, currentData.batteryPercent);
+
+  return allSuccess;
+}
+
+bool readAHT25() {
+  sensors_event_t humidity_event, temp_event;
+
+  if (aht.getEvent(&humidity_event, &temp_event)) {
+    currentData.temperature = temp_event.temperature;
+    currentData.humidity = humidity_event.relative_humidity;
+    currentData.temperatureValid = true;
+    currentData.humidityValid = true;
+
+    Serial.printf("[AHT25] ✓ Temp: %.2f°C | Humidity: %.2f%%\n",
+                  currentData.temperature, currentData.humidity);
+    return true;
+  }
+
+  currentData.temperatureValid = false;
+  currentData.humidityValid = false;
+  return false;
+}
+
+bool readVEML7700() {
+  currentData.lightLevel = veml.readLux();
+
+  if (currentData.lightLevel >= 0) {
+    currentData.lightValid = true;
+    Serial.printf("[VEML7700] ✓ Light: %.2f lux\n", currentData.lightLevel);
+    return true;
+  }
+
+  currentData.lightValid = false;
+  return false;
+}
+
+bool readMICS5524() {
+  Serial.println("[MICS5524] Heating sensor...");
+  heatGasSensor(GAS_HEAT_TIME_MS);
+
+  // Take multiple readings and average
+  uint32_t sum = 0;
+  const int numReadings = 10;
+
+  for (int i = 0; i < numReadings; i++) {
+    sum += analogRead(MICS5524_ANALOG_PIN);
+    delay(10);
+  }
+
+  currentData.gasLevel = sum / numReadings;
+  stopGasHeating();
+
+  currentData.gasValid = true;
+  Serial.printf("[MICS5524] ✓ Gas level: %d (ADC)\n", currentData.gasLevel);
+
+  return true;
+}
+
+void heatGasSensor(uint32_t duration_ms) {
+  digitalWrite(MICS5524_HEATER_PIN, HIGH);
+  Serial.printf("[MICS5524] Heating for %d seconds...\n", duration_ms / 1000);
+  delay(duration_ms);
+}
+
+void stopGasHeating() {
+  digitalWrite(MICS5524_HEATER_PIN, LOW);
+  Serial.println("[MICS5524] Heater OFF");
+}
+
+// ============================================================================
+// BATTERY MONITORING
+// ============================================================================
+
+float readBatteryVoltage() {
+  // Read ADC value
+  uint16_t adcValue = analogRead(BATTERY_PIN);
+
+  // Convert to voltage (assuming 2:1 voltage divider)
+  float voltage = (adcValue / 4095.0) * 3.3 * VOLTAGE_DIVIDER_RATIO;
+
+  return voltage;
+}
+
+uint8_t calculateBatteryPercent(float voltage) {
+  // LiPo voltage range: 3.0V (empty) to 4.2V (full)
+  if (voltage >= 4.2) return 100;
+  if (voltage <= 3.0) return 0;
+
+  return (uint8_t)((voltage - 3.0) / 1.2 * 100.0);
+}
+
+void handleCriticalBattery() {
+  Serial.println("\n========================================");
+  Serial.println("🔴 CRITICAL BATTERY LEVEL!");
+  Serial.printf("Battery: %.2fV (%d%%)\n",
+                currentData.batteryVoltage, currentData.batteryPercent);
+  Serial.println("Entering extended sleep mode (5 minutes)");
+  Serial.println("========================================\n");
+
+  blinkLED(10, 100);  // Warning blinks
+
+  // Extended sleep to preserve battery
+  enterDeepSleep(300);  // 5 minutes
+}
+
+// ============================================================================
+// CHANGE DETECTION
+// ============================================================================
+
+bool hasSignificantChange() {
+  bool tempChanged = abs(currentData.temperature - lastTemp) > TEMP_THRESHOLD;
+  bool humidityChanged = abs(currentData.humidity - lastHumidity) > HUMIDITY_THRESHOLD;
+  bool lightChanged = abs(currentData.lightLevel - lastLight) > LIGHT_THRESHOLD;
+  bool gasChanged = abs((int)currentData.gasLevel - (int)lastGas) > GAS_THRESHOLD;
+
+  if (tempChanged) {
+    Serial.printf("[CHANGE] Temperature: %.2f°C -> %.2f°C (Δ%.2f°C)\n",
+                  lastTemp, currentData.temperature,
+                  abs(currentData.temperature - lastTemp));
+  }
+
+  if (humidityChanged) {
+    Serial.printf("[CHANGE] Humidity: %.2f%% -> %.2f%% (Δ%.2f%%)\n",
+                  lastHumidity, currentData.humidity,
+                  abs(currentData.humidity - lastHumidity));
+  }
+
+  if (lightChanged) {
+    Serial.printf("[CHANGE] Light: %.2f lux -> %.2f lux (Δ%.2f lux)\n",
+                  lastLight, currentData.lightLevel,
+                  abs(currentData.lightLevel - lastLight));
+  }
+
+  if (gasChanged) {
+    Serial.printf("[CHANGE] Gas: %d -> %d (Δ%d)\n",
+                  lastGas, currentData.gasLevel,
+                  abs((int)currentData.gasLevel - (int)lastGas));
+  }
+
+  return (tempChanged || humidityChanged || lightChanged || gasChanged);
+}
+
+// ============================================================================
+// MESH TRANSMISSION
+// ============================================================================
+
+bool sendDataToMesh() {
+  // Create JSON document
+  StaticJsonDocument<512> doc;
+
+  doc["device_id"] = DEVICE_ID;
+  doc["device_type"] = DEVICE_TYPE;
+  doc["room"] = ROOM_NAME;
+  doc["boot_count"] = bootCount;
+
+  // Add sensor data
+  JsonObject data = doc.createNestedObject("data");
+
+  if (currentData.temperatureValid) {
+    data["temperature"] = serialized(String(currentData.temperature, 2));
+  }
+
+  if (currentData.humidityValid) {
+    data["humidity"] = serialized(String(currentData.humidity, 2));
+  }
+
+  if (currentData.lightValid) {
+    data["light_lux"] = serialized(String(currentData.lightLevel, 2));
+  }
+
+  if (currentData.gasValid) {
+    data["gas_level"] = currentData.gasLevel;
+  }
+
+  data["battery_voltage"] = serialized(String(currentData.batteryVoltage, 2));
+  data["battery_percent"] = currentData.batteryPercent;
+
+  // Serialize to string
+  String jsonStr;
+  serializeJson(doc, jsonStr);
+
+  Serial.printf("[MESH] Payload (%d bytes): %s\n", jsonStr.length(), jsonStr.c_str());
+
+  // Wait for mesh connection
+  unsigned long startTime = millis();
+  bool connected = false;
+
+  while (millis() - startTime < MESH_CONNECT_TIMEOUT) {
+    mesh.update();
+
+    // Check if we have any connections
+    if (mesh.getNodeList().size() > 0) {
+      connected = true;
+      Serial.printf("[MESH] ✓ Connected to %d nodes\n", mesh.getNodeList().size());
+      break;
+    }
+
+    delay(100);
+  }
+
+  if (!connected) {
+    Serial.println("[MESH] ✗ No mesh nodes found");
+    return false;
+  }
+
+  // Send broadcast
+  mesh.sendBroadcast(jsonStr);
+
+  // Allow time for transmission
+  delay(500);
+  mesh.update();
+
+  return true;
+}
+
+// ============================================================================
+// MESH CALLBACKS
+// ============================================================================
+
+void receivedCallback(uint32_t from, String &msg) {
+  Serial.printf("[MESH] ← Received from %u: %s\n", from, msg.c_str());
+}
+
+void newConnectionCallback(uint32_t nodeId) {
+  Serial.printf("[MESH] ✓ New connection: %u\n", nodeId);
+}
+
+// ============================================================================
+// POWER MANAGEMENT
+// ============================================================================
+
+void enterDeepSleep(uint32_t seconds) {
+  Serial.printf("\n[SLEEP] Entering deep sleep for %d seconds...\n", seconds);
+  Serial.printf("[SLEEP] Wake time: %d seconds from now\n", seconds);
+  Serial.printf("[SLEEP] Boot count: %d\n", bootCount);
+  Serial.flush();
+
+  // Configure wake-up timer
+  esp_sleep_enable_timer_wakeup(seconds * 1000000ULL);
+
+  // Enter deep sleep
+  esp_deep_sleep_start();
+
+  // Code never reaches here
+}
+
+// ============================================================================
+// UTILITY FUNCTIONS
+// ============================================================================
+
+void blinkLED(int times, int delayMs) {
+  for (int i = 0; i < times; i++) {
+    digitalWrite(STATUS_LED_PIN, HIGH);
+    delay(delayMs);
+    digitalWrite(STATUS_LED_PIN, LOW);
+    delay(delayMs);
+  }
+}
+
+// ============================================================================
+// POWER CONSUMPTION ESTIMATE
+// ============================================================================
+/*
+ * BATTERY LIFE CALCULATION (400mAh LiPo):
+ *
+ * Active Phase (per 60s cycle):
+ * ================================
+ * ESP32 WiFi mesh: 120mA × 3s = 0.100 mAh
+ * VEML7700:        0.3mA × 1s = 0.0003 mAh
+ * AHT25:           0.55mA × 1s = 0.0002 mAh
+ * MICS5524 heat:   30mA × 20s = 0.167 mAh
+ * Total active: 0.267 mAh
+ *
+ * Sleep Phase (per 60s cycle):
+ * ================================
+ * ESP32 deep sleep: 0.05mA × 57s = 0.0008 mAh
+ * All sensors off: 0 mA
+ * Total sleep: 0.0008 mAh
+ *
+ * Per Cycle Total: 0.2678 mAh
+ * Per Hour (60 cycles): 16.07 mAh
+ *
+ * EXPECTED BATTERY LIFE:
+ * Usable capacity: 400mAh × 0.8 = 320mAh
+ * Battery life: 320 ÷ 16.07 = 19.9 hours
+ *
+ * With conditional TX (50% skip): 320 ÷ 8.03 = 39.8 hours (~1.7 days)
+ *
+ * OPTIMIZATION RECOMMENDATIONS:
+ * 1. Increase sleep to 120s: ~40-48 hours
+ * 2. Replace MICS5524 with BME680: ~3-5 days
+ * 3. Larger battery (1000mAh): ~2.5-5 days
+ * 4. Solar panel (100mA): Indefinite
+ */
