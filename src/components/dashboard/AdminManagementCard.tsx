@@ -290,11 +290,7 @@ export function AdminManagementCard({ isExpanded = false, devices = [] }: AdminM
                         <span className="device-location">{admin.email}</span>
                       </div>
                     </div>
-                    <div className="device-status-badge" style={{ borderColor: '#00FF88' }}>
-                      <span style={{ color: '#00FF88' }}>
-                        ADMIN
-                      </span>
-                    </div>
+                    
                     <div className="admin-info">
                       <span className="info-label">Phone:</span>
                       <span className="info-value">{admin.telephone_number}</span>
@@ -343,11 +339,7 @@ export function AdminManagementCard({ isExpanded = false, devices = [] }: AdminM
                         <span className="device-location">{user.email}</span>
                       </div>
                     </div>
-                    <div className="device-status-badge" style={{ borderColor: '#FFAA00' }}>
-                      <span style={{ color: '#FFAA00' }}>
-                        USER
-                      </span>
-                    </div>
+                    
                     <div className="admin-info">
                       <span className="info-label">Phone:</span>
                       <span className="info-value">{user.telephone_number}</span>
