@@ -264,6 +264,91 @@ export default function HubControlPage() {
           </header>
 
           <div className="control-page-grid">
+            {/* Hub Information Card - Spans 2 rows */}
+            <div className="card" style={{ gridRow: 'span 2' }}>
+              <div className="card-header">
+                <div className="card-title-group">
+                  <Activity size={24} />
+                  <h3>HUB INFORMATION</h3>
+                </div>
+              </div>
+              <div className="card-content">
+                {hubDevice ? (
+                  <>
+                    <div className="info-grid">
+                      <div className="info-item">
+                        <span className="info-label">Device ID:</span>
+                        <span className="info-value">{hubDevice.device_id}</span>
+                      </div>
+                      <div className="info-item">
+                        <span className="info-label">Status:</span>
+                        <span className={`info-value status-indicator ${statusClass}`}>
+                          {hubDevice.online ? 'Online' : 'Offline'}
+                        </span>
+                      </div>
+                      <div className="info-item">
+                        <span className="info-label">Type:</span>
+                        <span className="info-value">{hubDevice.type}</span>
+                      </div>
+                      <div className="info-item">
+                        <span className="info-label">IP Address:</span>
+                        <span className="info-value">{hubDevice.ip_address || 'N/A'}</span>
+                      </div>
+                      <div className="info-item">
+                        <span className="info-label">Last Seen:</span>
+                        <span className="info-value">
+                          {hubDevice.last_seen ? new Date(hubDevice.last_seen).toLocaleString() : 'Never'}
+                        </span>
+                      </div>
+                      <div className="info-item">
+                        <span className="info-label">WiFi Signal:</span>
+                        <span className="info-value">
+                          {hubDevice.wifi_rssi ? `${hubDevice.wifi_rssi} dBm` : 'N/A'}
+                        </span>
+                      </div>
+                      <div className="info-item">
+                        <span className="info-label">Uptime:</span>
+                        <span className="info-value">
+                          {hubDevice.uptime_ms ? `${Math.floor(hubDevice.uptime_ms / 3600000)}h ${Math.floor((hubDevice.uptime_ms % 3600000) / 60000)}m` : 'N/A'}
+                        </span>
+                      </div>
+                      <div className="info-item">
+                        <span className="info-label">Free Heap:</span>
+                        <span className="info-value">
+                          {hubDevice.free_heap ? `${(hubDevice.free_heap / 1024).toFixed(1)} KB` : 'N/A'}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="action-buttons" style={{ marginTop: '20px' }}>
+                      <button
+                        className="btn-action"
+                        onClick={handleRestart}
+                        disabled={restarting || !hubDevice.online}
+                        style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
+                      >
+                        {restarting ? (
+                          <>
+                            <RefreshCw size={18} className="rotating" />
+                            <span>Restarting...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Power size={18} />
+                            <span>Restart Hub</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <div className="no-alerts">
+                    <p>No hub device found</p>
+                  </div>
+                )}
+              </div>
+            </div>
+
             {/* Temperature Card (DHT11) */}
             <div className="card">
               <div className="card-header">
@@ -622,7 +707,7 @@ export default function HubControlPage() {
               </div>
             </div>
 
-            {/* Hub Alert Control Card */}
+            {/* Send Alert to Hub Card */}
             <div className="card">
               <div className="card-header">
                 <div className="card-title-group">
@@ -716,192 +801,6 @@ export default function HubControlPage() {
                     <span>{sendingAlert ? 'Sending...' : 'Send Alert'}</span>
                   </button>
                 </form>
-              </div>
-            </div>
-
-            {/* Amplifier Control Card */}
-            <div className="card control-card-large">
-              <div className="card-header">
-                <div className="card-title-group">
-                  <Volume2 size={24} />
-                  <h3>AMPLIFIER CONTROL</h3>
-                </div>
-                {ampStreaming && (
-                  <span className={`status-indicator ${ampStreaming.is_playing ? 'status-online' : 'status-offline'}`}>
-                    {ampStreaming.is_playing ? 'PLAYING' : 'STOPPED'}
-                  </span>
-                )}
-              </div>
-              <div className="card-content">
-                {ampStreaming && ampStreaming.is_streaming && ampStreaming.current_url && (
-                  <div style={{
-                    marginBottom: '16px',
-                    padding: '12px',
-                    background: 'rgba(0,255,136,0.1)',
-                    border: '1px solid var(--success)',
-                    borderRadius: '4px',
-                    fontSize: '14px'
-                  }}>
-                    <div style={{ color: 'var(--success)', marginBottom: '4px' }}>Now Streaming:</div>
-                    <div style={{ color: '#FFF', wordBreak: 'break-all' }}>{ampStreaming.current_url}</div>
-                  </div>
-                )}
-
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                  <div>
-                    <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', color: 'var(--text-secondary)' }}>
-                      Stream URL
-                    </label>
-                    <input
-                      type="url"
-                      value={streamUrl}
-                      onChange={(e) => setStreamUrl(e.target.value)}
-                      placeholder="http://stream.url/audio.mp3"
-                      disabled={!hubDevice?.online}
-                      style={{
-                        width: '100%',
-                        padding: '12px',
-                        background: 'rgba(0,0,0,0.3)',
-                        border: '1px solid rgba(var(--primary-color-rgb), 0.3)',
-                        borderRadius: '4px',
-                        color: '#FFF',
-                        fontSize: '14px'
-                      }}
-                    />
-                  </div>
-
-                  <div>
-                    <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', color: 'var(--text-secondary)' }}>
-                      Volume: {volume} / 21
-                    </label>
-                    <input
-                      type="range"
-                      min={0}
-                      max={21}
-                      value={volume}
-                      onChange={(e) => handleVolumeChange(parseInt(e.target.value))}
-                      disabled={!hubDevice?.online || ampLoading}
-                      style={{ width: '100%' }}
-                    />
-                  </div>
-
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px' }}>
-                    <button
-                      className="btn-action"
-                      onClick={handlePlayStream}
-                      disabled={ampLoading || !hubDevice?.online || !streamUrl.trim()}
-                      style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
-                    >
-                      <Play size={18} />
-                      <span>Play</span>
-                    </button>
-
-                    <button
-                      className="btn-action"
-                      onClick={handleStopStream}
-                      disabled={ampLoading || !hubDevice?.online}
-                      style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
-                    >
-                      <Square size={18} />
-                      <span>Stop</span>
-                    </button>
-
-                    <button
-                      className="btn-action"
-                      onClick={handleRestartAmp}
-                      disabled={ampLoading || !hubDevice?.online}
-                      style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', gridColumn: 'span 2' }}
-                    >
-                      <RefreshCw size={18} />
-                      <span>Restart Amplifier</span>
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Hub Information Card */}
-            <div className="card">
-              <div className="card-header">
-                <div className="card-title-group">
-                  <Activity size={24} />
-                  <h3>HUB INFORMATION</h3>
-                </div>
-              </div>
-              <div className="card-content">
-                {hubDevice ? (
-                  <>
-                    <div className="info-grid">
-                      <div className="info-item">
-                        <span className="info-label">Device ID:</span>
-                        <span className="info-value">{hubDevice.device_id}</span>
-                      </div>
-                      <div className="info-item">
-                        <span className="info-label">Status:</span>
-                        <span className={`info-value status-indicator ${statusClass}`}>
-                          {hubDevice.online ? 'Online' : 'Offline'}
-                        </span>
-                      </div>
-                      <div className="info-item">
-                        <span className="info-label">Type:</span>
-                        <span className="info-value">{hubDevice.type}</span>
-                      </div>
-                      <div className="info-item">
-                        <span className="info-label">IP Address:</span>
-                        <span className="info-value">{hubDevice.ip_address || 'N/A'}</span>
-                      </div>
-                      <div className="info-item">
-                        <span className="info-label">Last Seen:</span>
-                        <span className="info-value">
-                          {hubDevice.last_seen ? new Date(hubDevice.last_seen).toLocaleString() : 'Never'}
-                        </span>
-                      </div>
-                      <div className="info-item">
-                        <span className="info-label">WiFi Signal:</span>
-                        <span className="info-value">
-                          {hubDevice.wifi_rssi ? `${hubDevice.wifi_rssi} dBm` : 'N/A'}
-                        </span>
-                      </div>
-                      <div className="info-item">
-                        <span className="info-label">Uptime:</span>
-                        <span className="info-value">
-                          {hubDevice.uptime_ms ? `${Math.floor(hubDevice.uptime_ms / 3600000)}h ${Math.floor((hubDevice.uptime_ms % 3600000) / 60000)}m` : 'N/A'}
-                        </span>
-                      </div>
-                      <div className="info-item">
-                        <span className="info-label">Free Heap:</span>
-                        <span className="info-value">
-                          {hubDevice.free_heap ? `${(hubDevice.free_heap / 1024).toFixed(1)} KB` : 'N/A'}
-                        </span>
-                      </div>
-                    </div>
-
-                    <div className="action-buttons" style={{ marginTop: '20px' }}>
-                      <button
-                        className="btn-action"
-                        onClick={handleRestart}
-                        disabled={restarting || !hubDevice.online}
-                        style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
-                      >
-                        {restarting ? (
-                          <>
-                            <RefreshCw size={18} className="rotating" />
-                            <span>Restarting...</span>
-                          </>
-                        ) : (
-                          <>
-                            <Power size={18} />
-                            <span>Restart Hub</span>
-                          </>
-                        )}
-                      </button>
-                    </div>
-                  </>
-                ) : (
-                  <div className="no-alerts">
-                    <p>No hub device found</p>
-                  </div>
-                )}
               </div>
             </div>
           </div>
