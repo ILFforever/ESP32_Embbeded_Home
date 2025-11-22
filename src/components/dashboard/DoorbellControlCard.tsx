@@ -18,9 +18,10 @@ interface DoorbellControlCardProps {
   doorbellControl: DoorbellControl;
   deviceId?: string;
   isExpanded?: boolean;
+  isOnline?: boolean;
 }
 
-export function DoorbellControlCard({ doorbellControl, deviceId, isExpanded = false }: DoorbellControlCardProps) {
+export function DoorbellControlCard({ doorbellControl, deviceId, isExpanded = false, isOnline = true }: DoorbellControlCardProps) {
   const [cameraActive, setCameraActive] = useState(doorbellControl.camera_active);
   const [micActive, setMicActive] = useState(doorbellControl.mic_active);
   const [faceRecognition, setFaceRecognition] = useState(doorbellControl.face_recognition);
@@ -199,16 +200,18 @@ export function DoorbellControlCard({ doorbellControl, deviceId, isExpanded = fa
               </div>
             </div>
             <div className="doorbell-stats">
-              <p>VISITORS TODAY: {doorbellControl.visitor_count_today}</p>
+              <p>VISITORS TODAY: {isOnline ? doorbellControl.visitor_count_today : '-'}</p>
               <p>
-                LAST ACTIVITY: {doorbellControl.last_activity
-                  ? new Date(doorbellControl.last_activity).toLocaleString('en-US', {
-                      month: 'short',
-                      day: 'numeric',
-                      hour: '2-digit',
-                      minute: '2-digit'
-                    })
-                  : 'No Activity'}
+                LAST ACTIVITY: {isOnline
+                  ? (doorbellControl.last_activity
+                      ? new Date(doorbellControl.last_activity).toLocaleString('en-US', {
+                          month: 'short',
+                          day: 'numeric',
+                          hour: '2-digit',
+                          minute: '2-digit'
+                        })
+                      : 'No Activity')
+                  : '-'}
               </p>
             </div>
           </div>
@@ -379,19 +382,21 @@ export function DoorbellControlCard({ doorbellControl, deviceId, isExpanded = fa
               <div className="activity-stats">
                 <div className="stat-item">
                   <span className="stat-label">VISITORS TODAY:</span>
-                  <span className="stat-value">{doorbellControl.visitor_count_today}</span>
+                  <span className="stat-value">{isOnline ? doorbellControl.visitor_count_today : '-'}</span>
                 </div>
                 <div className="stat-item">
                   <span className="stat-label">LAST ACTIVITY:</span>
                   <span className="stat-value">
-                    {doorbellControl.last_activity
-                      ? new Date(doorbellControl.last_activity).toLocaleString('en-US', {
-                          month: 'short',
-                          day: 'numeric',
-                          hour: '2-digit',
-                          minute: '2-digit'
-                        })
-                      : 'No Activity'}
+                    {isOnline
+                      ? (doorbellControl.last_activity
+                          ? new Date(doorbellControl.last_activity).toLocaleString('en-US', {
+                              month: 'short',
+                              day: 'numeric',
+                              hour: '2-digit',
+                              minute: '2-digit'
+                            })
+                          : 'No Activity')
+                      : '-'}
                   </span>
                 </div>
                 {faceCount !== null && (

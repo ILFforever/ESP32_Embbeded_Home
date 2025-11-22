@@ -28,6 +28,7 @@ export default function DashboardPage() {
   const [devicesStatus, setDevicesStatus] = useState<DevicesStatus | null>(null);
   const [doorbellControl, setDoorbellControl] = useState<any>(null);
   const [doorbellDeviceId, setDoorbellDeviceId] = useState<string | null>(null);
+  const [doorbellOnline, setDoorbellOnline] = useState<boolean>(false);
   const [loading, setLoading] = useState(true);
   const [theme, setTheme] = useState<'purple' | 'green'>('purple');
   const [expandedCard, setExpandedCard] = useState<string | null>(null);
@@ -44,11 +45,13 @@ export default function DashboardPage() {
         const doorbellDevice = findDoorbellDevice(devices.devices);
         if (doorbellDevice) {
           setDoorbellDeviceId(doorbellDevice.device_id);
+          setDoorbellOnline(doorbellDevice.online);
           const doorbell = await getDoorbellControlStatus(doorbellDevice.device_id);
           setDoorbellControl(doorbell);
         } else {
           // No doorbell found, set default state
           setDoorbellDeviceId(null);
+          setDoorbellOnline(false);
           setDoorbellControl({
             camera_active: false,
             mic_active: false,
@@ -142,7 +145,7 @@ export default function DashboardPage() {
         content = <DoorsWindowsCard doorsWindows={doorsWindows} isExpanded={true} />;
         break;
       case 'doorbell':
-        content = <DoorbellControlCard doorbellControl={doorbellControlData} deviceId={doorbellDeviceId || undefined} isExpanded={true} />;
+        content = <DoorbellControlCard doorbellControl={doorbellControlData} deviceId={doorbellDeviceId || undefined} isOnline={doorbellOnline} isExpanded={true} />;
         break;
       case 'admin':
         content = <AdminManagementCard devices={devicesStatus?.devices || []} isExpanded={true} />;
@@ -343,7 +346,7 @@ export default function DashboardPage() {
                   <circle cx="12" cy="12" r="3"></circle>
                 </svg>
               </button>
-              <DoorbellControlCard doorbellControl={doorbellControlData} deviceId={doorbellDeviceId || undefined} />
+              <DoorbellControlCard doorbellControl={doorbellControlData} deviceId={doorbellDeviceId || undefined} isOnline={doorbellOnline} />
             </div>
 
             <div

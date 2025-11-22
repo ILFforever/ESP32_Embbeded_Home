@@ -61,9 +61,9 @@ export function SystemStatusCard({ devicesStatus, isExpanded = false }: SystemSt
                 <p>Device ID: {doorbellDevice.device_id || 'N/A'}</p>
                 {isExpanded && (
                   <>
-                    <p>IP Address: {doorbellDevice.ip_address || 'N/A'}</p>
-                    <p>WiFi Signal: {doorbellDevice.wifi_rssi ? `${doorbellDevice.wifi_rssi} dBm` : 'N/A'}</p>
-                    <p>Free Heap: {doorbellDevice.free_heap ? `${(doorbellDevice.free_heap / 1024).toFixed(1)} KB` : 'N/A'}</p>
+                    <p>IP Address: {doorbellDevice.online ? (doorbellDevice.ip_address || 'N/A') : '-'}</p>
+                    <p>WiFi Signal: {doorbellDevice.online ? (doorbellDevice.wifi_rssi ? `${doorbellDevice.wifi_rssi} dBm` : 'N/A') : '-'}</p>
+                    <p>Free Heap: {doorbellDevice.online ? (doorbellDevice.free_heap ? `${(doorbellDevice.free_heap / 1024).toFixed(1)} KB` : 'N/A') : '-'}</p>
                   </>
                 )}
               </div>
@@ -94,9 +94,9 @@ export function SystemStatusCard({ devicesStatus, isExpanded = false }: SystemSt
                 <p>Device ID: {hubDevice.device_id || 'N/A'}</p>
                 {isExpanded && (
                   <>
-                    <p>IP Address: {hubDevice.ip_address || 'N/A'}</p>
-                    <p>WiFi Signal: {hubDevice.wifi_rssi ? `${hubDevice.wifi_rssi} dBm` : 'N/A'}</p>
-                    <p>Free Heap: {hubDevice.free_heap ? `${(hubDevice.free_heap / 1024).toFixed(1)} KB` : 'N/A'}</p>
+                    <p>IP Address: {hubDevice.online ? (hubDevice.ip_address || 'N/A') : '-'}</p>
+                    <p>WiFi Signal: {hubDevice.online ? (hubDevice.wifi_rssi ? `${hubDevice.wifi_rssi} dBm` : 'N/A') : '-'}</p>
+                    <p>Free Heap: {hubDevice.online ? (hubDevice.free_heap ? `${(hubDevice.free_heap / 1024).toFixed(1)} KB` : 'N/A') : '-'}</p>
                   </>
                 )}
               </div>
