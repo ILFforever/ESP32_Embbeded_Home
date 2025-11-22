@@ -104,7 +104,7 @@ export function generateMockAlerts(): Alert[] {
 }
 
 export function generateMockTemperatureData(): TemperatureData[] {
-  const rooms = ['Living Room', 'Bedroom', 'Kitchen', 'Bathroom'];
+  const rooms = ['Hub', 'Living Room', 'Bedroom', 'Kitchen'];
   const now = Date.now();
 
   return rooms.map((room, idx) => {
