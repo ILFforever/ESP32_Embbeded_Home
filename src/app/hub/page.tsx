@@ -186,12 +186,18 @@ export default function HubControlPage() {
     }
   };
 
-  const handleVolumeChange = async (newVolume: number) => {
+  const handleVolumeChange = (newVolume: number) => {
+    // Update local state immediately for responsive UI
+    setVolume(newVolume);
+  };
+
+  const handleVolumeSend = async (finalVolume: number) => {
     if (!hubDevice) return;
 
+    // Send volume command to backend when user releases slider
     try {
-      setVolume(newVolume);
-      await setHubAmplifierVolume(hubDevice.device_id, newVolume);
+      await setHubAmplifierVolume(hubDevice.device_id, finalVolume);
+      console.log(`Volume set to ${finalVolume}`);
     } catch (error) {
       console.error('Error setting volume:', error);
       alert('Failed to set volume. Please try again.');
@@ -653,7 +659,9 @@ export default function HubControlPage() {
                         max={21}
                         value={volume}
                         onChange={(e) => handleVolumeChange(parseInt(e.target.value))}
-                        disabled={!hubDevice?.online || ampLoading}
+                        onMouseUp={(e) => handleVolumeSend(parseInt((e.target as HTMLInputElement).value))}
+                        onTouchEnd={(e) => handleVolumeSend(parseInt((e.target as HTMLInputElement).value))}
+                        disabled={!hubDevice?.online}
                         style={{ width: '100%' }}
                       />
                     </div>
