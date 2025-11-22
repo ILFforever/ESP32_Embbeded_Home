@@ -6,21 +6,53 @@ import ProtectedRoute from '@/components/auth/ProtectedRoute';
 import {
   getAllDevices,
   findHubDevice,
-  getHubSensorData,
-  restartSystem,
+  getHubSensors,
+  sendHubAlert,
+  getHubAmpStreaming,
+  playHubAmplifier,
+  stopHubAmplifier,
+  restartHubAmplifier,
+  setHubAmplifierVolume,
+  getHubAmplifierStatus,
+  restartHubSystem,
   getDeviceStatusClass,
   getDeviceStatusText,
   getAQICategory
 } from '@/services/devices.service';
-import type { Device, HubSensorData } from '@/types/dashboard';
-import { Thermometer, Droplets, Wind, Activity, Power, RefreshCw, ArrowLeft } from 'lucide-react';
+import type { BackendDevice } from '@/types/dashboard';
+import {
+  Thermometer,
+  Droplets,
+  Wind,
+  Activity,
+  Power,
+  RefreshCw,
+  ArrowLeft,
+  Volume2,
+  Play,
+  Square,
+  AlertTriangle,
+  Send
+} from 'lucide-react';
 
 export default function HubControlPage() {
   const router = useRouter();
-  const [hubDevice, setHubDevice] = useState<Device | null>(null);
-  const [sensorData, setSensorData] = useState<HubSensorData | null>(null);
+  const [hubDevice, setHubDevice] = useState<BackendDevice | null>(null);
+  const [sensorData, setSensorData] = useState<any | null>(null);
+  const [ampStreaming, setAmpStreaming] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
   const [restarting, setRestarting] = useState(false);
+
+  // Alert form state
+  const [alertMessage, setAlertMessage] = useState('');
+  const [alertLevel, setAlertLevel] = useState<'info' | 'warning' | 'error' | 'critical'>('info');
+  const [alertDuration, setAlertDuration] = useState(10);
+  const [sendingAlert, setSendingAlert] = useState(false);
+
+  // Amplifier state
+  const [streamUrl, setStreamUrl] = useState('');
+  const [volume, setVolume] = useState(10);
+  const [ampLoading, setAmpLoading] = useState(false);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -31,9 +63,18 @@ export default function HubControlPage() {
         if (hub) {
           setHubDevice(hub);
 
-          // Fetch sensor data
-          const sensors = await getHubSensorData(hub.device_id);
-          setSensorData(sensors);
+          // Fetch sensor data using NEW API
+          const sensors = await getHubSensors(hub.device_id);
+          if (sensors) {
+            setSensorData(sensors.sensors);
+          }
+
+          // Fetch amplifier streaming status using NEW API
+          const streaming = await getHubAmpStreaming(hub.device_id);
+          if (streaming) {
+            setAmpStreaming(streaming.amplifier);
+            setVolume(streaming.amplifier.volume_level || 10);
+          }
         }
       } catch (error) {
         console.error('Error fetching hub data:', error);
@@ -56,13 +97,96 @@ export default function HubControlPage() {
 
     try {
       setRestarting(true);
-      await restartSystem(hubDevice.device_id);
+      await restartHubSystem(hubDevice.device_id);
       alert('Hub restart command sent successfully!');
     } catch (error) {
       console.error('Error restarting hub:', error);
       alert('Failed to restart hub. Please try again.');
     } finally {
       setRestarting(false);
+    }
+  };
+
+  const handleSendAlert = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!hubDevice || !alertMessage.trim()) return;
+
+    try {
+      setSendingAlert(true);
+      const result = await sendHubAlert(hubDevice.device_id, {
+        message: alertMessage,
+        level: alertLevel,
+        duration: alertDuration
+      });
+
+      if (result) {
+        alert(`Alert sent successfully! Command ID: ${result.command_id}`);
+        setAlertMessage('');
+      } else {
+        alert('Failed to send alert. Please try again.');
+      }
+    } catch (error) {
+      console.error('Error sending alert:', error);
+      alert('Failed to send alert. Please try again.');
+    } finally {
+      setSendingAlert(false);
+    }
+  };
+
+  const handlePlayStream = async () => {
+    if (!hubDevice || !streamUrl.trim()) return;
+
+    try {
+      setAmpLoading(true);
+      await playHubAmplifier(hubDevice.device_id, streamUrl);
+      alert('Play command sent to Hub amplifier!');
+    } catch (error) {
+      console.error('Error playing stream:', error);
+      alert('Failed to play stream. Please try again.');
+    } finally {
+      setAmpLoading(false);
+    }
+  };
+
+  const handleStopStream = async () => {
+    if (!hubDevice) return;
+
+    try {
+      setAmpLoading(true);
+      await stopHubAmplifier(hubDevice.device_id);
+      alert('Stop command sent to Hub amplifier!');
+    } catch (error) {
+      console.error('Error stopping stream:', error);
+      alert('Failed to stop stream. Please try again.');
+    } finally {
+      setAmpLoading(false);
+    }
+  };
+
+  const handleRestartAmp = async () => {
+    if (!hubDevice) return;
+
+    try {
+      setAmpLoading(true);
+      await restartHubAmplifier(hubDevice.device_id);
+      alert('Restart command sent to Hub amplifier!');
+    } catch (error) {
+      console.error('Error restarting amplifier:', error);
+      alert('Failed to restart amplifier. Please try again.');
+    } finally {
+      setAmpLoading(false);
+    }
+  };
+
+  const handleVolumeChange = async (newVolume: number) => {
+    if (!hubDevice) return;
+
+    try {
+      setVolume(newVolume);
+      await setHubAmplifierVolume(hubDevice.device_id, newVolume);
+    } catch (error) {
+      console.error('Error setting volume:', error);
+      alert('Failed to set volume. Please try again.');
     }
   };
 
@@ -92,9 +216,9 @@ export default function HubControlPage() {
 
   const statusClass = hubDevice ? getDeviceStatusClass(hubDevice.online, hubDevice.last_seen) : 'status-offline';
   const statusText = hubDevice ? getDeviceStatusText(hubDevice.online, hubDevice.last_seen) : 'OFFLINE';
-  const tempStatus = sensorData?.dht11 ? getTemperatureStatus(sensorData.dht11.temperature) : null;
-  const humidityStatus = sensorData?.dht11 ? getHumidityStatus(sensorData.dht11.humidity) : null;
-  const aqiData = sensorData?.pm25?.aqi ? getAQICategory(sensorData.pm25.aqi) : null;
+  const tempStatus = sensorData?.temperature != null ? getTemperatureStatus(sensorData.temperature) : null;
+  const humidityStatus = sensorData?.humidity != null ? getHumidityStatus(sensorData.humidity) : null;
+  const aqiData = sensorData?.aqi ? getAQICategory(sensorData.aqi) : null;
 
   return (
     <ProtectedRoute>
@@ -130,7 +254,7 @@ export default function HubControlPage() {
                 )}
               </div>
               <div className="card-content">
-                {sensorData?.dht11 ? (
+                {sensorData?.temperature != null ? (
                   <>
                     <div
                       className="card-value"
@@ -141,7 +265,7 @@ export default function HubControlPage() {
                         margin: '20px 0'
                       }}
                     >
-                      {sensorData.dht11.temperature.toFixed(1)}°C
+                      {sensorData.temperature.toFixed(1)}°C
                     </div>
                     <div style={{ textAlign: 'center', color: 'var(--text-secondary)' }}>
                       <p style={{ fontSize: '14px', marginBottom: '8px' }}>
@@ -189,7 +313,7 @@ export default function HubControlPage() {
                 )}
               </div>
               <div className="card-content">
-                {sensorData?.dht11 ? (
+                {sensorData?.humidity != null ? (
                   <>
                     <div
                       className="card-value"
@@ -200,7 +324,7 @@ export default function HubControlPage() {
                         margin: '20px 0'
                       }}
                     >
-                      {sensorData.dht11.humidity.toFixed(1)}%
+                      {sensorData.humidity.toFixed(1)}%
                     </div>
                     <div style={{ textAlign: 'center', color: 'var(--text-secondary)' }}>
                       <p style={{ fontSize: '14px', marginBottom: '8px' }}>
@@ -210,7 +334,7 @@ export default function HubControlPage() {
                         <div
                           className="progress-fill"
                           style={{
-                            width: `${Math.min(sensorData.dht11.humidity, 100)}%`,
+                            width: `${Math.min(sensorData.humidity, 100)}%`,
                             background: humidityStatus?.color
                           }}
                         ></div>
@@ -257,7 +381,7 @@ export default function HubControlPage() {
                 )}
               </div>
               <div className="card-content">
-                {sensorData?.pm25 ? (
+                {sensorData?.pm25 != null ? (
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '20px' }}>
                     <div style={{ textAlign: 'center' }}>
                       <div style={{ fontSize: '14px', color: 'var(--text-muted)', marginBottom: '8px' }}>PM2.5</div>
@@ -268,25 +392,12 @@ export default function HubControlPage() {
                           color: aqiData?.color
                         }}
                       >
-                        {sensorData.pm25.pm25.toFixed(1)}
+                        {sensorData.pm25.toFixed(1)}
                       </div>
                       <div style={{ fontSize: '14px', color: 'var(--text-secondary)' }}>μg/m³</div>
                     </div>
 
-                    {sensorData.pm25.pm10 !== undefined && (
-                      <div style={{ textAlign: 'center' }}>
-                        <div style={{ fontSize: '14px', color: 'var(--text-muted)', marginBottom: '8px' }}>PM10</div>
-                        <div
-                          className="card-value"
-                          style={{ fontSize: '48px' }}
-                        >
-                          {sensorData.pm25.pm10.toFixed(1)}
-                        </div>
-                        <div style={{ fontSize: '14px', color: 'var(--text-secondary)' }}>μg/m³</div>
-                      </div>
-                    )}
-
-                    {sensorData.pm25.aqi !== undefined && (
+                    {sensorData.aqi !== undefined && (
                       <div style={{ textAlign: 'center' }}>
                         <div style={{ fontSize: '14px', color: 'var(--text-muted)', marginBottom: '8px' }}>AQI</div>
                         <div
@@ -296,7 +407,7 @@ export default function HubControlPage() {
                             color: aqiData?.color
                           }}
                         >
-                          {sensorData.pm25.aqi}
+                          {sensorData.aqi}
                         </div>
                         <div style={{ fontSize: '14px', color: aqiData?.color, fontWeight: 'bold' }}>
                           {aqiData?.category}
@@ -311,7 +422,7 @@ export default function HubControlPage() {
                   </div>
                 )}
 
-                {sensorData?.pm25 && (
+                {sensorData?.pm25 != null && (
                   <div style={{
                     marginTop: '24px',
                     padding: '16px',
@@ -341,10 +452,208 @@ export default function HubControlPage() {
                       </div>
                     </div>
                     <p style={{ marginTop: '12px', fontSize: '12px', color: 'var(--text-secondary)' }}>
-                      Last updated: {new Date(sensorData.timestamp).toLocaleString()}
+                      Last updated: {sensorData.timestamp ? new Date(sensorData.timestamp).toLocaleString() : 'N/A'}
                     </p>
                   </div>
                 )}
+              </div>
+            </div>
+
+            {/* Hub Alert Control Card */}
+            <div className="card">
+              <div className="card-header">
+                <div className="card-title-group">
+                  <AlertTriangle size={24} />
+                  <h3>SEND ALERT TO HUB</h3>
+                </div>
+              </div>
+              <div className="card-content">
+                <form onSubmit={handleSendAlert} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                  <div>
+                    <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', color: 'var(--text-secondary)' }}>
+                      Alert Message
+                    </label>
+                    <input
+                      type="text"
+                      value={alertMessage}
+                      onChange={(e) => setAlertMessage(e.target.value)}
+                      placeholder="Enter alert message..."
+                      maxLength={200}
+                      required
+                      disabled={!hubDevice?.online}
+                      style={{
+                        width: '100%',
+                        padding: '12px',
+                        background: 'rgba(0,0,0,0.3)',
+                        border: '1px solid rgba(var(--primary-color-rgb), 0.3)',
+                        borderRadius: '4px',
+                        color: '#FFF',
+                        fontSize: '14px'
+                      }}
+                    />
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                    <div>
+                      <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', color: 'var(--text-secondary)' }}>
+                        Level
+                      </label>
+                      <select
+                        value={alertLevel}
+                        onChange={(e) => setAlertLevel(e.target.value as any)}
+                        disabled={!hubDevice?.online}
+                        style={{
+                          width: '100%',
+                          padding: '12px',
+                          background: 'rgba(0,0,0,0.3)',
+                          border: '1px solid rgba(var(--primary-color-rgb), 0.3)',
+                          borderRadius: '4px',
+                          color: '#FFF',
+                          fontSize: '14px'
+                        }}
+                      >
+                        <option value="info">Info</option>
+                        <option value="warning">Warning</option>
+                        <option value="error">Error</option>
+                        <option value="critical">Critical</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', color: 'var(--text-secondary)' }}>
+                        Duration (seconds)
+                      </label>
+                      <input
+                        type="number"
+                        value={alertDuration}
+                        onChange={(e) => setAlertDuration(parseInt(e.target.value))}
+                        min={1}
+                        max={300}
+                        disabled={!hubDevice?.online}
+                        style={{
+                          width: '100%',
+                          padding: '12px',
+                          background: 'rgba(0,0,0,0.3)',
+                          border: '1px solid rgba(var(--primary-color-rgb), 0.3)',
+                          borderRadius: '4px',
+                          color: '#FFF',
+                          fontSize: '14px'
+                        }}
+                      />
+                    </div>
+                  </div>
+
+                  <button
+                    type="submit"
+                    className="btn-action"
+                    disabled={sendingAlert || !hubDevice?.online || !alertMessage.trim()}
+                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
+                  >
+                    <Send size={18} />
+                    <span>{sendingAlert ? 'Sending...' : 'Send Alert'}</span>
+                  </button>
+                </form>
+              </div>
+            </div>
+
+            {/* Amplifier Control Card */}
+            <div className="card control-card-large">
+              <div className="card-header">
+                <div className="card-title-group">
+                  <Volume2 size={24} />
+                  <h3>AMPLIFIER CONTROL</h3>
+                </div>
+                {ampStreaming && (
+                  <span className={`status-indicator ${ampStreaming.is_playing ? 'status-online' : 'status-offline'}`}>
+                    {ampStreaming.is_playing ? 'PLAYING' : 'STOPPED'}
+                  </span>
+                )}
+              </div>
+              <div className="card-content">
+                {ampStreaming && ampStreaming.is_streaming && ampStreaming.current_url && (
+                  <div style={{
+                    marginBottom: '16px',
+                    padding: '12px',
+                    background: 'rgba(0,255,136,0.1)',
+                    border: '1px solid var(--success)',
+                    borderRadius: '4px',
+                    fontSize: '14px'
+                  }}>
+                    <div style={{ color: 'var(--success)', marginBottom: '4px' }}>Now Streaming:</div>
+                    <div style={{ color: '#FFF', wordBreak: 'break-all' }}>{ampStreaming.current_url}</div>
+                  </div>
+                )}
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                  <div>
+                    <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', color: 'var(--text-secondary)' }}>
+                      Stream URL
+                    </label>
+                    <input
+                      type="url"
+                      value={streamUrl}
+                      onChange={(e) => setStreamUrl(e.target.value)}
+                      placeholder="http://stream.url/audio.mp3"
+                      disabled={!hubDevice?.online}
+                      style={{
+                        width: '100%',
+                        padding: '12px',
+                        background: 'rgba(0,0,0,0.3)',
+                        border: '1px solid rgba(var(--primary-color-rgb), 0.3)',
+                        borderRadius: '4px',
+                        color: '#FFF',
+                        fontSize: '14px'
+                      }}
+                    />
+                  </div>
+
+                  <div>
+                    <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', color: 'var(--text-secondary)' }}>
+                      Volume: {volume} / 21
+                    </label>
+                    <input
+                      type="range"
+                      min={0}
+                      max={21}
+                      value={volume}
+                      onChange={(e) => handleVolumeChange(parseInt(e.target.value))}
+                      disabled={!hubDevice?.online || ampLoading}
+                      style={{ width: '100%' }}
+                    />
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px' }}>
+                    <button
+                      className="btn-action"
+                      onClick={handlePlayStream}
+                      disabled={ampLoading || !hubDevice?.online || !streamUrl.trim()}
+                      style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
+                    >
+                      <Play size={18} />
+                      <span>Play</span>
+                    </button>
+
+                    <button
+                      className="btn-action"
+                      onClick={handleStopStream}
+                      disabled={ampLoading || !hubDevice?.online}
+                      style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
+                    >
+                      <Square size={18} />
+                      <span>Stop</span>
+                    </button>
+
+                    <button
+                      className="btn-action"
+                      onClick={handleRestartAmp}
+                      disabled={ampLoading || !hubDevice?.online}
+                      style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', gridColumn: 'span 2' }}
+                    >
+                      <RefreshCw size={18} />
+                      <span>Restart Amplifier</span>
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
 
