@@ -1947,6 +1947,194 @@ const getLatestVisitors = async (req, res) => {
   }
 };
 
+// ============================================================================
+// Hub-Specific Endpoints
+// ============================================================================
+
+// @desc    Get Hub sensor data (DHT11 temperature/humidity + PM2.5 air quality)
+// @route   GET /api/v1/devices/:device_id/hub/sensors
+// @access  Protected
+const getHubSensors = async (req, res) => {
+  try {
+    const { device_id } = req.params;
+
+    const db = getFirestore();
+    const deviceRef = db.collection('devices').doc(device_id);
+
+    // Get the latest status document which should contain sensor data
+    const statusDoc = await deviceRef
+      .collection('status')
+      .orderBy('timestamp', 'desc')
+      .limit(1)
+      .get();
+
+    if (statusDoc.empty) {
+      return res.status(404).json({
+        status: 'error',
+        message: 'No sensor data found. Hub may not have sent data yet.'
+      });
+    }
+
+    const statusData = statusDoc.docs[0].data();
+
+    // Extract sensor data (assuming Hub sends this in heartbeat/sensor data)
+    const sensorData = {
+      temperature: statusData.temperature || null,
+      humidity: statusData.humidity || null,
+      pm25: statusData.pm25 || null,
+      aqi: statusData.aqi || null,
+      timestamp: statusData.timestamp,
+      device_id
+    };
+
+    console.log(`[HubSensors] ${device_id} - Retrieved sensor data:`, sensorData);
+
+    res.json({
+      status: 'ok',
+      device_id,
+      sensors: sensorData
+    });
+
+  } catch (error) {
+    console.error('[HubSensors] Error:', error);
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+};
+
+// @desc    Send alert to Hub LCD display
+// @route   POST /api/v1/devices/:device_id/hub/alert
+// @access  Protected
+const sendHubAlert = async (req, res) => {
+  try {
+    const { device_id } = req.params;
+    const { message, level, duration } = req.body;
+
+    // Validate message
+    if (!message) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'Alert message is required'
+      });
+    }
+
+    // Validate level (info, warning, error, critical)
+    const validLevels = ['info', 'warning', 'error', 'critical'];
+    const alertLevel = level || 'info';
+
+    if (!validLevels.includes(alertLevel)) {
+      return res.status(400).json({
+        status: 'error',
+        message: `Invalid alert level. Must be one of: ${validLevels.join(', ')}`
+      });
+    }
+
+    // Validate duration (seconds to display alert, default 10)
+    const alertDuration = duration || 10;
+    if (isNaN(alertDuration) || alertDuration < 1 || alertDuration > 300) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'Duration must be between 1 and 300 seconds'
+      });
+    }
+
+    const db = getFirestore();
+    const deviceRef = db.collection('devices').doc(device_id);
+
+    // Verify device exists and is a Hub
+    const deviceDoc = await deviceRef.get();
+    if (!deviceDoc.exists) {
+      return res.status(404).json({
+        status: 'error',
+        message: 'Device not found'
+      });
+    }
+
+    // Queue hub_alert command
+    const commandRef = await deviceRef.collection('commands').add({
+      action: 'hub_alert',
+      params: {
+        message: message.substring(0, 200), // Limit message length for LCD
+        level: alertLevel,
+        duration: alertDuration
+      },
+      status: 'pending',
+      created_at: admin.firestore.FieldValue.serverTimestamp(),
+      executed_at: null,
+      result: null
+    });
+
+    console.log(`[HubAlert] ${device_id} - Alert queued (ID: ${commandRef.id}, Level: ${alertLevel})`);
+
+    // Notify device via MQTT
+    await publishDeviceCommand(device_id, commandRef.id, 'hub_alert');
+
+    res.json({
+      status: 'ok',
+      message: 'Alert sent to Hub and device notified via MQTT',
+      command_id: commandRef.id,
+      alert: {
+        message,
+        level: alertLevel,
+        duration: alertDuration
+      }
+    });
+
+  } catch (error) {
+    console.error('[HubAlert] Error:', error);
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+};
+
+// @desc    Get Hub amplifier streaming status
+// @route   GET /api/v1/devices/:device_id/hub/amp/streaming
+// @access  Protected
+const getHubAmpStreaming = async (req, res) => {
+  try {
+    const { device_id } = req.params;
+
+    const db = getFirestore();
+    const deviceRef = db.collection('devices').doc(device_id);
+
+    // Get the latest status document which should contain amp streaming status
+    const statusDoc = await deviceRef
+      .collection('status')
+      .orderBy('timestamp', 'desc')
+      .limit(1)
+      .get();
+
+    if (statusDoc.empty) {
+      return res.status(404).json({
+        status: 'error',
+        message: 'No amplifier status found. Hub may not have sent data yet.'
+      });
+    }
+
+    const statusData = statusDoc.docs[0].data();
+
+    // Extract amplifier streaming data
+    const ampData = {
+      is_streaming: statusData.amp_streaming || false,
+      current_url: statusData.amp_url || null,
+      volume_level: statusData.amp_volume || 0,
+      is_playing: statusData.amp_playing || false,
+      timestamp: statusData.timestamp,
+      device_id
+    };
+
+    console.log(`[HubAmpStreaming] ${device_id} - Retrieved amp status:`, ampData);
+
+    res.json({
+      status: 'ok',
+      device_id,
+      amplifier: ampData
+    });
+
+  } catch (error) {
+    console.error('[HubAmpStreaming] Error:', error);
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+};
+
 module.exports = {
   registerDevice,
   handleHeartbeat,
@@ -1990,5 +2178,9 @@ module.exports = {
   // Device info
   getDeviceInfo,
   // Visitors
-  getLatestVisitors
+  getLatestVisitors,
+  // Hub-specific endpoints
+  getHubSensors,
+  sendHubAlert,
+  getHubAmpStreaming
 };
