@@ -44,7 +44,11 @@ const {
   // Device info
   getDeviceInfo,
   // Visitors
-  getLatestVisitors
+  getLatestVisitors,
+  // Hub-specific
+  getHubSensors,
+  sendHubAlert,
+  getHubAmpStreaming
 } = require('../controllers/devices');
 const { authenticateDevice } = require('../middleware/deviceAuth');
 const { protect } = require('../middleware/auth');
@@ -281,5 +285,36 @@ router.get('/:device_id/info', protect, getDeviceInfo);
 // @desc    Get latest visitors (face detections) with images
 // @access  Private (requires user token)
 router.get('/:device_id/visitors/latest', protect, getLatestVisitors);
+
+// ============================================================================
+// Hub-Specific Routes
+// ============================================================================
+
+// @route   GET /api/v1/devices/:device_id/hub/sensors
+// @desc    Get Hub sensor data (DHT11 temperature/humidity + PM2.5 air quality)
+// @access  Private (requires user token)
+router.get('/:device_id/hub/sensors', protect, getHubSensors);
+
+// @route   POST /api/v1/devices/:device_id/hub/alert
+// @desc    Send alert to Hub LCD display
+// @access  Private (requires user token)
+router.post('/:device_id/hub/alert', protect, sendHubAlert);
+
+// @route   GET /api/v1/devices/:device_id/hub/amp/streaming
+// @desc    Get Hub amplifier streaming status
+// @access  Private (requires user token)
+router.get('/:device_id/hub/amp/streaming', protect, getHubAmpStreaming);
+
+// ============================================================================
+// Note: Hub also uses the following generic endpoints:
+// - POST /:device_id/amp/play - Play audio on Hub amplifier
+// - POST /:device_id/amp/stop - Stop Hub amplifier
+// - POST /:device_id/amp/restart - Restart Hub amplifier
+// - POST /:device_id/amp/volume - Set Hub amplifier volume
+// - GET  /:device_id/amp/status - Get Hub amplifier status
+// - POST /:device_id/system/restart - Restart Hub system
+// - POST /commands/pending - Hub fetches pending commands (generic)
+// - POST /commands/ack - Hub acknowledges command execution (generic)
+// ============================================================================
 
 module.exports = router;
