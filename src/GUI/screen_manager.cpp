@@ -472,16 +472,14 @@ void updateContent()
       contentArea.drawCenterString("Graph", 380, 250);
       
     }
-    else if (cur_Screen == 8) //temp
+    else if (cur_Screen == 9) //temp
     {
       contentArea.fillScreen(TFT_BLACK);
       contentArea.setTextColor(TFT_WHITE);
       contentArea.setFont(&fonts::Orbitron_Light_24);
       contentArea.setTextSize(3);
-      contentArea.drawString("temperature", 10, 10);
-      contentArea.fillSmoothRoundRect(10, 100,740, 300, 10, TFT_WHITE);
-      contentArea.setTextColor(TFT_BLACK);
-      contentArea.drawCenterString("Graph", 380, 250);
+      contentArea.drawString("CALLING", 10, 10);
+      contentArea.fillSmoothRoundRect(10, 100,590, 300, 10, TFT_WHITE);
       
     }
   }

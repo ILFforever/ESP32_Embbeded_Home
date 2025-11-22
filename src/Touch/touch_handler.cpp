@@ -27,6 +27,11 @@ TouchButton PIN_0;
 TouchButton PIN_del;
 TouchButton PIN_en;
 
+// screen 9
+TouchButton CALL_end;
+TouchButton CALL_mute;
+TouchButton CALL_cmic;
+
 // Touch handling for all screens
 void handleTouchInput()
 {
@@ -437,6 +442,94 @@ void handleTouchInput()
       touchArea.setFont(&fonts::DejaVu18);
       int feedbackY = 250;
     }
+
+
+      
+      
+    
+  }
+  else if (cur_Screen == 9)
+  {
+    {
+      // Initialize buttons on first entry
+      static bool buttonsInitialized = false;
+      if (!buttonsInitialized)
+      {
+
+        CALL_cmic.x = 620;
+        CALL_cmic.y = 150;
+        CALL_cmic.width = 90;
+        CALL_cmic.height = 80;
+
+        CALL_end.x = 620;
+        CALL_end.y = 240;
+        CALL_end.width = 90;
+        CALL_end.height = 80;
+        
+        CALL_mute.x = 620;
+        CALL_mute.y = 330;
+        CALL_mute.width = 90;
+        CALL_mute.height = 80;
+
+        buttonsInitialized = true;
+      }
+
+      if (currentTouch.isPressed) {
+        Serial.printf("Touch: (%d,%d) in touchArea coords: (%d,%d)\n",
+          currentTouch.x, currentTouch.y, currentTouch.x, currentTouch.y);
+      }
+
+      bool CALL_cmic_cl = updateTouchButton(&CALL_cmic, currentTouch.x, currentTouch.y, currentTouch.isPressed);
+      bool CALL_end_cl = updateTouchButton(&CALL_end, currentTouch.x, currentTouch.y, currentTouch.isPressed);
+      bool CALL_mute_cl = updateTouchButton(&CALL_mute, currentTouch.x, currentTouch.y, currentTouch.isPressed);
+
+
+
+      
+      uint16_t CALL_cmic_color = TFT_LIGHTGREY;
+      uint16_t CALL_end_color = TFT_RED;
+      uint16_t CALL_mute_color = TFT_LIGHTGREY;
+      
+
+
+      if (CALL_cmic.isPressed && !CALL_cmic.isDragging)
+      {
+        CALL_cmic_color = TFT_DARKGRAY;
+      }
+      if (CALL_end.isPressed && !CALL_end.isDragging)
+      {
+        CALL_end_color = TFT_DARKGRAY;
+      }
+      if (CALL_mute.isPressed && !CALL_mute.isDragging)
+      {
+        CALL_mute_color = TFT_DARKGRAY;
+      }
+      
+
+
+
+      // ใส่ font ก่อนวาด
+      touchArea.setTextColor(TFT_WHITE);
+      touchArea.setTextSize(2);
+
+      // ---- Row 1 ----
+      touchArea.fillSmoothRoundRect(CALL_cmic.x, CALL_cmic.y, CALL_cmic.width, CALL_cmic.height, 10, CALL_cmic_color);
+      touchArea.drawCenterString("mic", CALL_cmic.x + CALL_cmic.width/2, CALL_cmic.y + CALL_cmic.height/2 - 8);
+
+      touchArea.fillSmoothRoundRect(CALL_end.x, CALL_end.y, CALL_end.width, CALL_end.height, 10, CALL_end_color);
+      touchArea.drawCenterString("end", CALL_end.x + CALL_end.width/2, CALL_end.y + CALL_end.height/2 - 8);
+
+      touchArea.fillSmoothRoundRect(CALL_mute.x, CALL_mute.y, CALL_mute.width, CALL_mute.height, 10, CALL_mute_color);
+      touchArea.drawCenterString("vol", CALL_mute.x + CALL_mute.width/2, CALL_mute.y + CALL_mute.height/2 - 8);
+
+      
+
+
+      touchArea.setTextSize(1);
+      touchArea.setFont(&fonts::DejaVu18);
+      int feedbackY = 250;
+    }
+    
 
       
       
