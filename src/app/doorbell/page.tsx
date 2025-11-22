@@ -206,6 +206,10 @@ export default function DoorbellControlPage() {
     return "OFFLINE";
   };
 
+  const isDeviceOffline = () => {
+    return getStatusClass() === "status-offline";
+  };
+
   // Settings handlers
   const handleSaveSettings = () => {
     if (customDeviceId.trim()) {
@@ -1399,7 +1403,9 @@ export default function DoorbellControlPage() {
                     <div className="info-item">
                       <span className="info-label">IP Address:</span>
                       <span className="info-value">
-                        {doorbellDevice?.ip_address || "N/A"}
+                        {isDeviceOffline()
+                          ? "-"
+                          : (doorbellDevice?.ip_address || "N/A")}
                       </span>
                     </div>
                     <div className="info-item">
@@ -1413,29 +1419,35 @@ export default function DoorbellControlPage() {
                     <div className="info-item">
                       <span className="info-label">WiFi Signal:</span>
                       <span className="info-value">
-                        {doorbellDevice?.wifi_rssi
-                          ? `${doorbellDevice.wifi_rssi} dBm`
-                          : "N/A"}
+                        {isDeviceOffline()
+                          ? "-"
+                          : (doorbellDevice?.wifi_rssi
+                              ? `${doorbellDevice.wifi_rssi} dBm`
+                              : "N/A")}
                       </span>
                     </div>
                     <div className="info-item">
                       <span className="info-label">Free Heap:</span>
                       <span className="info-value">
-                        {doorbellDevice?.free_heap
-                          ? `${(doorbellDevice.free_heap / 1024).toFixed(1)} KB`
-                          : "N/A"}
+                        {isDeviceOffline()
+                          ? "-"
+                          : (doorbellDevice?.free_heap
+                              ? `${(doorbellDevice.free_heap / 1024).toFixed(1)} KB`
+                              : "N/A")}
                       </span>
                     </div>
                     <div className="info-item">
                       <span className="info-label">Uptime:</span>
                       <span className="info-value">
-                        {doorbellDevice?.uptime_ms
-                          ? `${Math.floor(
-                              doorbellDevice.uptime_ms / 3600000
-                            )}h ${Math.floor(
-                              (doorbellDevice.uptime_ms % 3600000) / 60000
-                            )}m`
-                          : "N/A"}
+                        {isDeviceOffline()
+                          ? "-"
+                          : (doorbellDevice?.uptime_ms
+                              ? `${Math.floor(
+                                  doorbellDevice.uptime_ms / 3600000
+                                )}h ${Math.floor(
+                                  (doorbellDevice.uptime_ms % 3600000) / 60000
+                                )}m`
+                              : "N/A")}
                       </span>
                     </div>
                   </div>
