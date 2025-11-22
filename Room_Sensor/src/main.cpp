@@ -604,37 +604,71 @@ void blinkLED(int times, int delayMs) {
 }
 
 // ============================================================================
-// POWER CONSUMPTION ESTIMATE
+// POWER CONSUMPTION ESTIMATE (CORRECTED WITH DATASHEET VALUES)
 // ============================================================================
 /*
  * BATTERY LIFE CALCULATION (400mAh LiPo):
+ * ⚠️ Values corrected based on actual sensor datasheets
  *
  * Active Phase (per 60s cycle):
  * ================================
  * ESP32 WiFi mesh: 120mA × 3s = 0.100 mAh
- * VEML7700:        0.3mA × 1s = 0.0003 mAh
- * AHT25:           0.55mA × 1s = 0.0002 mAh
- * MICS5524 heat:   30mA × 20s = 0.167 mAh
+ * VEML7700:        0.005mA × 3s = 0.000015 mAh (datasheet: 4.5µA typical)
+ * AHT25:           0.3mA × 1s = 0.0003 mAh (datasheet: 300µA measurement)
+ * MICS5524 heat:   30mA × 20s = 0.167 mAh (datasheet: 28-32mA heater)
  * Total active: 0.267 mAh
  *
  * Sleep Phase (per 60s cycle):
  * ================================
- * ESP32 deep sleep: 0.05mA × 57s = 0.0008 mAh
+ * ESP32 deep sleep (DevKit): 0.5mA × 57s = 0.008 mAh
+ *   NOTE: Datasheet specs 10-150µA for bare module
+ *   Real DevKit boards: 0.5-5mA due to:
+ *   - Voltage regulator quiescent current (AMS1117: 5-10mA)
+ *   - USB-UART chip (CP2102/CH340: 1-5mA)
+ *   - Power LED (1-5mA)
+ *   Custom PCB with MCP1700 regulator: 0.01-0.05mA achievable
  * All sensors off: 0 mA
- * Total sleep: 0.0008 mAh
+ * Total sleep: 0.008 mAh (DevKit) or 0.0008 mAh (optimized PCB)
  *
- * Per Cycle Total: 0.2678 mAh
- * Per Hour (60 cycles): 16.07 mAh
- *
- * EXPECTED BATTERY LIFE:
+ * BATTERY LIFE - DEVKIT BOARD:
+ * ================================
+ * Per Cycle Total: 0.275 mAh
+ * Per Hour (60 cycles): 16.5 mAh
  * Usable capacity: 400mAh × 0.8 = 320mAh
- * Battery life: 320 ÷ 16.07 = 19.9 hours
+ * Battery life: 320 ÷ 16.5 = 19.4 hours
+ * With conditional TX (50% skip): 320 ÷ 8.25 = 38.8 hours (~1.6 days)
  *
- * With conditional TX (50% skip): 320 ÷ 8.03 = 39.8 hours (~1.7 days)
+ * BATTERY LIFE - EXTENDED SLEEP (5 minutes):
+ * ================================
+ * Active: 0.267 mAh, Sleep: 0.038 mAh (277s × 0.5mA)
+ * Per cycle: 0.305 mAh
+ * Per hour: 3.66 mAh (12 cycles)
+ * Battery life: 320 ÷ 3.66 = 87.4 hours (~3.6 days)
+ *
+ * BATTERY LIFE - BME680 REPLACEMENT (RECOMMENDED):
+ * ================================
+ * Replace MICS5524 (30mA × 20s) + AHT25 with BME680 (3.7mA × 2s)
+ * Active: 0.102 mAh (saves 0.165 mAh per cycle!)
+ * Per hour: 6.6 mAh (60s intervals) or 1.32 mAh (300s intervals)
+ * Battery life (60s): 48.5 hours (~2 days)
+ * Battery life (300s): 242 hours (~10 days)
  *
  * OPTIMIZATION RECOMMENDATIONS:
- * 1. Increase sleep to 120s: ~40-48 hours
- * 2. Replace MICS5524 with BME680: ~3-5 days
- * 3. Larger battery (1000mAh): ~2.5-5 days
- * 4. Solar panel (100mA): Indefinite
+ * ================================
+ * 1. Remove DevKit power LED: saves 1-5mA → +50-200 hours
+ * 2. Use BME680 instead of MICS5524: saves 0.165 mAh/cycle → +2-8 days
+ * 3. Increase sleep to 300s (5min): 4× longer battery life
+ * 4. Custom PCB with MCP1700 regulator: saves 0.45mA → +50 hours
+ * 5. Larger battery (1000mAh): 2.5× longer (50-100 hours standard)
+ * 6. Solar panel (100mA @ 5V): Potentially indefinite
+ *
+ * REALISTIC EXPECTATIONS:
+ * ================================
+ * DevKit + MICS5524 + 60s sleep:  19-39 hours
+ * DevKit + MICS5524 + 300s sleep: 87 hours (3.6 days)
+ * DevKit + BME680 + 60s sleep:    48-97 hours (2-4 days)
+ * DevKit + BME680 + 300s sleep:   242 hours (10 days)
+ * Custom PCB + BME680 + 300s:     ~2 weeks
+ *
+ * See docs/BATTERY_LIFE_CORRECTED.md for detailed analysis and measurements.
  */
