@@ -284,7 +284,7 @@ export default function HubControlPage() {
                     <div className="info-grid">
                       <div className="info-item">
                         <span className="info-label">Device ID:</span>
-                        <span className="info-value">{hubDevice.device_id}</span>
+                        <span className="info-value">{hubDevice.online ? hubDevice.device_id : '-'}</span>
                       </div>
                       <div className="info-item">
                         <span className="info-label">Status:</span>
@@ -294,34 +294,34 @@ export default function HubControlPage() {
                       </div>
                       <div className="info-item">
                         <span className="info-label">Type:</span>
-                        <span className="info-value">{hubDevice.type}</span>
+                        <span className="info-value">{hubDevice.online ? hubDevice.type : '-'}</span>
                       </div>
                       <div className="info-item">
                         <span className="info-label">IP Address:</span>
-                        <span className="info-value">{hubDevice.ip_address || 'N/A'}</span>
+                        <span className="info-value">{hubDevice.online ? (hubDevice.ip_address || '-') : '-'}</span>
                       </div>
                       <div className="info-item">
                         <span className="info-label">Last Seen:</span>
                         <span className="info-value">
-                          {hubDevice.last_seen ? new Date(hubDevice.last_seen).toLocaleString() : 'Never'}
+                          {hubDevice.online ? (hubDevice.last_seen ? new Date(hubDevice.last_seen).toLocaleString() : '-') : '-'}
                         </span>
                       </div>
                       <div className="info-item">
                         <span className="info-label">WiFi Signal:</span>
                         <span className="info-value">
-                          {hubDevice.wifi_rssi ? `${hubDevice.wifi_rssi} dBm` : 'N/A'}
+                          {hubDevice.online ? (hubDevice.wifi_rssi ? `${hubDevice.wifi_rssi} dBm` : '-') : '-'}
                         </span>
                       </div>
                       <div className="info-item">
                         <span className="info-label">Uptime:</span>
                         <span className="info-value">
-                          {hubDevice.uptime_ms ? `${Math.floor(hubDevice.uptime_ms / 3600000)}h ${Math.floor((hubDevice.uptime_ms % 3600000) / 60000)}m` : 'N/A'}
+                          {hubDevice.online ? (hubDevice.uptime_ms ? `${Math.floor(hubDevice.uptime_ms / 3600000)}h ${Math.floor((hubDevice.uptime_ms % 3600000) / 60000)}m` : '-') : '-'}
                         </span>
                       </div>
                       <div className="info-item">
                         <span className="info-label">Free Heap:</span>
                         <span className="info-value">
-                          {hubDevice.free_heap ? `${(hubDevice.free_heap / 1024).toFixed(1)} KB` : 'N/A'}
+                          {hubDevice.online ? (hubDevice.free_heap ? `${(hubDevice.free_heap / 1024).toFixed(1)} KB` : '-') : '-'}
                         </span>
                       </div>
                     </div>
