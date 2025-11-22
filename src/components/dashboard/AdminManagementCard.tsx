@@ -35,6 +35,11 @@ export function AdminManagementCard({ isExpanded = false, devices = [] }: AdminM
 
   // Fetch admins and users on component mount
   React.useEffect(() => {
+    fetchData();
+  }, []);
+
+  // Refresh data when expanded
+  React.useEffect(() => {
     if (isExpanded) {
       fetchData();
     }
