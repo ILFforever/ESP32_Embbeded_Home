@@ -17,7 +17,10 @@ import {
   restartHubSystem,
   getDeviceStatusClass,
   getDeviceStatusText,
-  getAQICategory
+  getAQICategory,
+  startMicrophone,
+  stopMicrophone,
+  getMicrophoneStatus
 } from '@/services/devices.service';
 import type { BackendDevice } from '@/types/dashboard';
 import {
@@ -32,7 +35,9 @@ import {
   Play,
   Square,
   AlertTriangle,
-  Send
+  Send,
+  Mic,
+  RotateCw
 } from 'lucide-react';
 
 export default function HubControlPage() {
@@ -53,6 +58,9 @@ export default function HubControlPage() {
   const [streamUrl, setStreamUrl] = useState('');
   const [volume, setVolume] = useState(10);
   const [ampLoading, setAmpLoading] = useState(false);
+
+  // Microphone state
+  const [micActive, setMicActive] = useState(false);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -187,6 +195,22 @@ export default function HubControlPage() {
     } catch (error) {
       console.error('Error setting volume:', error);
       alert('Failed to set volume. Please try again.');
+    }
+  };
+
+  const handleMicToggle = async () => {
+    if (!hubDevice) return;
+
+    try {
+      if (micActive) {
+        await stopMicrophone(hubDevice.device_id);
+      } else {
+        await startMicrophone(hubDevice.device_id);
+      }
+      setMicActive(!micActive);
+    } catch (error) {
+      console.error('Error toggling mic:', error);
+      alert('Failed to toggle microphone');
     }
   };
 
@@ -368,7 +392,7 @@ export default function HubControlPage() {
             </div>
 
             {/* Air Quality Card (PM2.5) */}
-            <div className="card control-card-large">
+            <div className="card">
               <div className="card-header">
                 <div className="card-title-group">
                   <Wind size={24} />
@@ -382,80 +406,219 @@ export default function HubControlPage() {
               </div>
               <div className="card-content">
                 {sensorData?.pm25 != null ? (
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '20px' }}>
-                    <div style={{ textAlign: 'center' }}>
-                      <div style={{ fontSize: '14px', color: 'var(--text-muted)', marginBottom: '8px' }}>PM2.5</div>
-                      <div
-                        className="card-value"
-                        style={{
-                          fontSize: '48px',
-                          color: aqiData?.color
-                        }}
-                      >
-                        {sensorData.pm25.toFixed(1)}
-                      </div>
-                      <div style={{ fontSize: '14px', color: 'var(--text-secondary)' }}>μg/m³</div>
+                  <>
+                    <div
+                      className="card-value"
+                      style={{
+                        fontSize: '56px',
+                        color: aqiData?.color,
+                        textAlign: 'center',
+                        margin: '20px 0'
+                      }}
+                    >
+                      {sensorData.pm25.toFixed(1)}
                     </div>
-
-                    {sensorData.aqi !== undefined && (
-                      <div style={{ textAlign: 'center' }}>
-                        <div style={{ fontSize: '14px', color: 'var(--text-muted)', marginBottom: '8px' }}>AQI</div>
-                        <div
-                          className="card-value"
-                          style={{
-                            fontSize: '48px',
-                            color: aqiData?.color
-                          }}
-                        >
-                          {sensorData.aqi}
+                    <div style={{ textAlign: 'center', color: 'var(--text-secondary)', fontSize: '14px', marginBottom: '8px' }}>
+                      μg/m³
+                    </div>
+                    <div style={{ textAlign: 'center', color: 'var(--text-secondary)' }}>
+                      <p style={{ fontSize: '14px', marginBottom: '8px' }}>
+                        Last updated: {new Date(sensorData.timestamp).toLocaleTimeString()}
+                      </p>
+                      {sensorData.aqi !== undefined && (
+                        <div style={{
+                          display: 'flex',
+                          justifyContent: 'space-around',
+                          marginTop: '16px',
+                          padding: '12px',
+                          background: 'rgba(0,0,0,0.3)',
+                          borderRadius: '8px'
+                        }}>
+                          <div>
+                            <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>AQI</div>
+                            <div style={{ fontSize: '14px', fontWeight: 'bold', color: aqiData?.color }}>{sensorData.aqi}</div>
+                          </div>
+                          <div>
+                            <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Category</div>
+                            <div style={{ fontSize: '14px', fontWeight: 'bold' }}>{aqiData?.category}</div>
+                          </div>
                         </div>
-                        <div style={{ fontSize: '14px', color: aqiData?.color, fontWeight: 'bold' }}>
-                          {aqiData?.category}
-                        </div>
-                      </div>
-                    )}
-                  </div>
+                      )}
+                    </div>
+                  </>
                 ) : (
                   <div className="no-alerts">
-                    <Wind size={64} style={{ margin: '0 auto 16px', opacity: 0.3 }} />
+                    <Activity size={48} style={{ margin: '0 auto 16px', opacity: 0.3 }} />
                     <p>No air quality data available</p>
                   </div>
                 )}
+              </div>
+            </div>
 
-                {sensorData?.pm25 != null && (
-                  <div style={{
-                    marginTop: '24px',
-                    padding: '16px',
-                    background: 'rgba(0,0,0,0.3)',
-                    borderRadius: '8px',
-                    borderLeft: `4px solid ${aqiData?.color}`
-                  }}>
-                    <h4 style={{ marginBottom: '12px', color: 'var(--primary)' }}>AQI Information</h4>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '8px', fontSize: '12px' }}>
-                      <div>
-                        <span style={{ color: 'var(--success)' }}>● 0-50:</span> Good
-                      </div>
-                      <div>
-                        <span style={{ color: 'var(--warning)' }}>● 51-100:</span> Moderate
-                      </div>
-                      <div>
-                        <span style={{ color: '#FF9800' }}>● 101-150:</span> Unhealthy for Sensitive
-                      </div>
-                      <div>
-                        <span style={{ color: 'var(--danger)' }}>● 151-200:</span> Unhealthy
-                      </div>
-                      <div>
-                        <span style={{ color: '#9C27B0' }}>● 201-300:</span> Very Unhealthy
-                      </div>
-                      <div>
-                        <span style={{ color: '#880E4F' }}>● 301+:</span> Hazardous
-                      </div>
+            {/* Microphone Control Card */}
+            <div className="card">
+              <div className="card-header">
+                <div className="card-title-group">
+                  <Mic size={24} />
+                  <h3>MICROPHONE CONTROL</h3>
+                </div>
+              </div>
+              <div className="card-content">
+                <div className="control-panel">
+                  <div className="control-status">
+                    <Mic
+                      size={48}
+                      className={
+                        micActive
+                          ? "status-active-large"
+                          : "status-inactive-large"
+                      }
+                    />
+                    <div className="status-label">
+                      <span className="status-text">
+                        {micActive ? "ACTIVE" : "INACTIVE"}
+                      </span>
+                      <span className="status-description">
+                        {micActive
+                          ? "Microphone is listening"
+                          : "Microphone is muted"}
+                      </span>
                     </div>
-                    <p style={{ marginTop: '12px', fontSize: '12px', color: 'var(--text-secondary)' }}>
-                      Last updated: {sensorData.timestamp ? new Date(sensorData.timestamp).toLocaleString() : 'N/A'}
-                    </p>
                   </div>
+                  <button
+                    className={`btn-control ${
+                      micActive ? "btn-stop" : "btn-start"
+                    }`}
+                    onClick={handleMicToggle}
+                    disabled={!hubDevice?.online}
+                    style={{ marginTop: "12px" }}
+                  >
+                    {micActive ? "STOP MIC" : "START MIC"}
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Amplifier On/Off Control Card */}
+            <div className="card">
+              <div className="card-header">
+                <div className="card-title-group">
+                  <Volume2 size={24} />
+                  <h3>AMPLIFIER CONTROL</h3>
+                </div>
+                {ampStreaming && (
+                  <span className={`status-indicator ${ampStreaming.is_playing ? 'status-online' : 'status-offline'}`}>
+                    {ampStreaming.is_playing ? 'PLAYING' : 'STOPPED'}
+                  </span>
                 )}
+              </div>
+              <div className="card-content">
+                <div className="control-panel">
+                  <div className="control-status">
+                    <Volume2 size={48} className="status-info-large" />
+                    <div className="status-label">
+                      <span className="status-text">AMPLIFIER</span>
+                      <span className="status-description">
+                        Stream audio to amplifier
+                      </span>
+                    </div>
+                  </div>
+                  {ampStreaming && ampStreaming.is_streaming && ampStreaming.current_url && (
+                    <div style={{
+                      marginTop: '12px',
+                      padding: '12px',
+                      background: 'rgba(0,255,136,0.1)',
+                      border: '1px solid var(--success)',
+                      borderRadius: '4px',
+                      fontSize: '14px'
+                    }}>
+                      <div style={{ color: 'var(--success)', marginBottom: '4px' }}>Now Streaming:</div>
+                      <div style={{ color: '#FFF', wordBreak: 'break-all' }}>{ampStreaming.current_url}</div>
+                    </div>
+                  )}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '16px' }}>
+                    <div>
+                      <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', color: 'var(--text-secondary)' }}>
+                        Volume: {volume} / 21
+                      </label>
+                      <input
+                        type="range"
+                        min={0}
+                        max={21}
+                        value={volume}
+                        onChange={(e) => handleVolumeChange(parseInt(e.target.value))}
+                        disabled={!hubDevice?.online || ampLoading}
+                        style={{ width: '100%' }}
+                      />
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px' }}>
+                      <button
+                        className="btn-action"
+                        onClick={handleStopStream}
+                        disabled={ampLoading || !hubDevice?.online}
+                        style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
+                      >
+                        <Square size={18} />
+                        <span>Stop</span>
+                      </button>
+                      <button
+                        className="btn-action"
+                        onClick={handleRestartAmp}
+                        disabled={ampLoading || !hubDevice?.online}
+                        style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
+                      >
+                        <RefreshCw size={18} />
+                        <span>Restart</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Submodule Command Card */}
+            <div className="card">
+              <div className="card-header">
+                <div className="card-title-group">
+                  <Activity size={24} />
+                  <h3>SUBMODULE COMMANDS</h3>
+                </div>
+              </div>
+              <div className="card-content">
+                <div className="control-panel">
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                    <div>
+                      <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', color: 'var(--text-secondary)' }}>
+                        Stream URL
+                      </label>
+                      <input
+                        type="url"
+                        value={streamUrl}
+                        onChange={(e) => setStreamUrl(e.target.value)}
+                        placeholder="http://stream.url/audio.mp3"
+                        disabled={!hubDevice?.online}
+                        style={{
+                          width: '100%',
+                          padding: '12px',
+                          background: 'rgba(0,0,0,0.3)',
+                          border: '1px solid rgba(var(--primary-color-rgb), 0.3)',
+                          borderRadius: '4px',
+                          color: '#FFF',
+                          fontSize: '14px'
+                        }}
+                      />
+                    </div>
+                    <button
+                      className="btn-action"
+                      onClick={handlePlayStream}
+                      disabled={ampLoading || !hubDevice?.online || !streamUrl.trim()}
+                      style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
+                    >
+                      <Play size={18} />
+                      <span>Play Stream</span>
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
 
