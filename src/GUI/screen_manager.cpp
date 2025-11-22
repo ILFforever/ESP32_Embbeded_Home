@@ -4,6 +4,12 @@
 #include <Touch.h>
 
 #define RING_NOTIFICATION_DURATION 3000 // Show notification for 3 seconds
+void drawTemperatureIcon(int cx, int cy);
+void drawHumidityIcon(int cx, int cy);
+void drawLightIcon(int cx, int cy);
+void drawGasIcon(int cx, int cy);
+void drawRoomIcon(int cx, int cy);
+void drawGearIcon(int cx, int cy);
 
 void updateTopBar()
 {
@@ -482,6 +488,59 @@ void updateContent()
       contentArea.fillSmoothRoundRect(10, 100,590, 300, 10, TFT_WHITE);
       
     }
+    else if (cur_Screen == 10) // MASTER MENU PAGE
+    {
+      contentArea.fillScreen(TFT_BLACK);
+
+      contentArea.setFont(&fonts::Orbitron_Light_24);
+      contentArea.setTextColor(TFT_WHITE);
+      contentArea.setTextSize(3);
+      contentArea.fillSmoothRoundRect(780, 100, 10, 180, 3, TFT_WHITE);
+      contentArea.drawString("Smart Home Menu", 20, 20);
+
+      int boxW = 220;
+      int boxH = 160;
+
+      int x1 = 20;
+      int x2 = 260;
+      int x3 = 500;
+
+      int y1 = 110;
+      int y2 = 300;
+
+      // ==== TEMPERATURE ====
+      contentArea.setTextSize(1);
+      contentArea.fillSmoothRoundRect(x1, y1, boxW, boxH, 15, TFT_WHITE);
+      drawTemperatureIcon(x1 + boxW/2, y1 + 55);
+      contentArea.setTextColor(TFT_BLACK);
+      contentArea.drawCenterString("Temperature", x1 + boxW/2, y1 + 120);
+
+      // ==== HUMIDITY ====
+      contentArea.fillSmoothRoundRect(x2, y1, boxW, boxH, 15, TFT_WHITE);
+      drawHumidityIcon(x2 + boxW/2, y1 + 55);
+      contentArea.drawCenterString("Humidity", x2 + boxW/2, y1 + 120);
+
+      // ==== LIGHT ====
+      contentArea.fillSmoothRoundRect(x3, y1, boxW, boxH, 15, TFT_WHITE);
+      drawLightIcon(x3 + boxW/2, y1 + 55);
+      contentArea.drawCenterString("Light", x3 + boxW/2, y1 + 120);
+
+      // ==== GAS ====
+      contentArea.fillSmoothRoundRect(x1, y2, boxW, boxH, 15, TFT_WHITE);
+      drawGasIcon(x1 + boxW/2, y2 + 55);
+      contentArea.drawCenterString("Gas / Air", x1 + boxW/2, y2 + 120);
+
+      // ==== ROOMS ====
+      contentArea.fillSmoothRoundRect(x2, y2, boxW, boxH, 15, TFT_WHITE);
+      drawRoomIcon(x2 + boxW/2, y2 + 55);
+      contentArea.drawCenterString("Rooms", x2 + boxW/2, y2 + 120);
+
+      // ==== SETTINGS ====
+      contentArea.fillSmoothRoundRect(x3, y2, boxW, boxH, 15, TFT_WHITE);
+      drawGearIcon(x3 + boxW/2, y2 + 55);
+      contentArea.drawCenterString("Settings", x3 + boxW/2, y2 + 120);
+    }
+
   }
 
   static bool prevDoorbellRinging = false;
@@ -725,3 +784,62 @@ void drawTransparentText(LGFX_Sprite *sprite, const char *text, int x, int y, ui
   sprite->setTextColor(textColor); // Only set foreground color, no background
   sprite->drawString(text, x, y);
 }
+void drawTemperatureIcon(int cx, int cy)
+{
+    contentArea.fillSmoothCircle(cx, cy + 20, 20, TFT_RED);
+    contentArea.fillRect(cx - 8, cy - 30, 16, 50, TFT_RED);
+    contentArea.drawCircle(cx, cy + 20, 20, TFT_BLACK);
+    contentArea.drawRect(cx - 8, cy - 30, 16, 50, TFT_BLACK);
+}
+void drawHumidityIcon(int cx, int cy)
+{
+    // drop
+    contentArea.fillSmoothCircle(cx, cy, 20, TFT_CYAN);
+    contentArea.fillTriangle(cx, cy - 28, cx - 18, cy, cx + 18, cy, TFT_CYAN);
+
+    // outline
+    contentArea.drawTriangle(cx, cy - 28, cx - 18, cy, cx + 18, cy, TFT_BLACK);
+    contentArea.drawCircle(cx, cy, 20, TFT_BLACK);
+
+    // humidity lines
+    contentArea.drawWideLine(cx - 12, cy + 22, cx + 12, cy + 22, 3, TFT_BLUE);
+    contentArea.drawWideLine(cx - 8, cy + 32, cx + 8, cy + 32, 3, TFT_BLUE);
+}
+void drawLightIcon(int cx, int cy)
+{
+    contentArea.fillSmoothCircle(cx, cy - 10, 22, TFT_YELLOW);
+    contentArea.fillRect(cx - 12, cy + 10, 24, 20, TFT_YELLOW);
+
+    contentArea.drawCircle(cx, cy - 10, 22, TFT_BLACK);
+    contentArea.drawRect(cx - 12, cy + 10, 24, 20, TFT_BLACK);
+}
+void drawGasIcon(int cx, int cy)
+{
+    contentArea.fillSmoothCircle(cx, cy, 20, TFT_CYAN);
+    contentArea.drawCircle(cx, cy, 20, TFT_BLACK);
+
+    contentArea.fillSmoothCircle(cx - 15, cy + 22, 12, TFT_CYAN);
+    contentArea.fillSmoothCircle(cx + 15, cy + 22, 12, TFT_CYAN);
+
+    contentArea.drawCircle(cx - 15, cy + 22, 12, TFT_BLACK);
+    contentArea.drawCircle(cx + 15, cy + 22, 12, TFT_BLACK);
+}
+void drawRoomIcon(int cx, int cy)
+{
+    contentArea.drawTriangle(cx - 30, cy, cx, cy - 30, cx + 30, cy, TFT_BLACK);
+    contentArea.drawRect(cx - 22, cy, 44, 40, TFT_BLACK);
+}
+void drawGearIcon(int cx, int cy)
+{
+    contentArea.fillSmoothCircle(cx, cy, 14, TFT_DARKGREY);
+
+    for (int i = 0; i < 8; i++)
+    {
+        float a = i * 45 * 0.01745;
+        int x = cx + cos(a) * 22;
+        int y = cy + sin(a) * 22;
+        contentArea.fillRect(x - 4, y - 4, 8, 8, TFT_DARKGREY);
+    }
+}
+
+
