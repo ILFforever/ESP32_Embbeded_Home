@@ -10,6 +10,7 @@ void drawLightIcon(int cx, int cy);
 void drawGasIcon(int cx, int cy);
 void drawRoomIcon(int cx, int cy);
 void drawGearIcon(int cx, int cy);
+void drawNotifyCard(int x, int y, int w, int h, uint32_t iconColor,const char *title, const char *detail, const char *timeStr);
 
 void updateTopBar()
 {
@@ -540,6 +541,26 @@ void updateContent()
       drawGearIcon(x3 + boxW/2, y2 + 55);
       contentArea.drawCenterString("Settings", x3 + boxW/2, y2 + 120);
     }
+    else if (cur_Screen == 11) // Notification Log
+    {
+
+      contentArea.fillScreen(TFT_BLACK);
+      contentArea.fillSmoothRoundRect(790, 100, 10, 180, 3, TFT_WHITE);
+      // Title
+      contentArea.setFont(&fonts::Orbitron_Light_24);
+      contentArea.setTextColor(TFT_WHITE);
+      contentArea.setTextSize(3);
+      contentArea.drawString("Notifications", 20, 20);
+
+      int x = 20;
+      int y = 100;
+      int w = 760;
+      int h = 90;
+
+      drawNotifyCard(x, y, w, h, TFT_YELLOW, "Doorbell", "Someone pressed the bell", "14:22");
+      drawNotifyCard(x, y + 110, w, h, TFT_BLUE, "Call Received", "Front Gate Camera calling", "13:58");
+      drawNotifyCard(x, y + 220, w, h, TFT_RED, "Gas Alert", "Kitchen gas spike detected", "12:49");
+    }
 
   }
 
@@ -842,4 +863,29 @@ void drawGearIcon(int cx, int cy)
     }
 }
 
+void drawNotifyCard(int x, int y, int w, int h, uint32_t iconColor,
+                    const char *title, const char *detail, const char *timeStr)
+{
+    // Card background
+    contentArea.fillSmoothRoundRect(x, y, w, h, 20, TFT_WHITE);
 
+    // Icon Circle
+    contentArea.fillSmoothCircle(x + 45, y + h/2 - 5, 25, iconColor);
+    contentArea.drawCircle(x + 45, y + h/2 - 5, 25, TFT_BLACK);
+
+    // Title
+    contentArea.setTextColor(TFT_BLACK);
+    contentArea.setFont(&fonts::DejaVu12);
+    contentArea.setTextSize(2);
+    contentArea.drawString(title, x + 90, y + 18);
+
+    // Detail small text
+    contentArea.setTextColor(TFT_DARKGREY);
+    contentArea.setTextSize(1);
+    contentArea.drawString(detail, x + 90, y + 55);
+
+    // Time (right side)
+    contentArea.setTextColor(TFT_DARKGREY);
+    contentArea.setTextSize(1);
+    contentArea.drawRightString(timeStr, x + w - 20, y + 55);
+}
