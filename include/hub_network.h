@@ -33,4 +33,14 @@ bool getLastHeartbeatSuccess();
 // Send log/error to backend
 void sendLogToBackend(const char* level, const char* message, const char* data = nullptr);
 
+
+// Fetch and execute pending commands from backend (MQTT triggered)
+void fetchAndExecuteCommands();
+
+// Acknowledge command execution to backend
+void acknowledgeCommand(String commandId, bool success, String action);
+
+// Execute a command
+bool executeCommand(String action, JsonObject params);
+
 #endif
