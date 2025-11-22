@@ -441,32 +441,47 @@ void updateContent()
       contentArea.setFont(&fonts::Orbitron_Light_24);
       contentArea.setTextSize(3);
       contentArea.drawString("Bed Room", 10, 10);
-      contentArea.fillSmoothRoundRect(10, 100, 250, 150, 15, TFT_WHITE);
-      contentArea.fillSmoothRoundRect(10, 260, 250, 150, 15, TFT_WHITE);
-      contentArea.fillSmoothRoundRect(270, 100, 250, 150, 15, TFT_WHITE);
-      contentArea.fillSmoothRoundRect(270, 260, 250, 150, 15, TFT_WHITE);
+      contentArea.fillSmoothRoundRect(790, 100, 10, 180, 3, TFT_WHITE);
+      contentArea.fillSmoothRoundRect(530-520, 100, 250, 310, 10, TFT_WHITE);
+      contentArea.fillSmoothRoundRect(530-260, 100, 250, 310, 10, TFT_WHITE);
       contentArea.fillSmoothRoundRect(530, 100, 250, 310, 10, TFT_WHITE);
       contentArea.setTextColor(TFT_BLACK);
       contentArea.setTextSize(2);
-      contentArea.drawString("Gas1", 15, 100);
-      contentArea.drawString("Gas2", 275, 100);
-      contentArea.drawString("Gas3", 15, 260);
-      contentArea.drawString("Gas4", 275, 260);
-      contentArea.drawString("PM 2.5", 535, 100);
-      contentArea.drawString("3", 110, 170);
-      contentArea.drawString("1", 370, 170);
-      contentArea.drawString("7", 110, 330);
-      contentArea.drawString("2", 370, 330);
-      contentArea.setTextSize(5);
-      contentArea.drawString("4", 600, 190);
+      contentArea.drawCenterString("Gas", 135, 100);
+      contentArea.drawCenterString("Humidity", 135+260, 100);
+      contentArea.drawCenterString("LIGHT", 135+520, 100);
+
+      contentArea.setTextSize(4);
+      contentArea.drawCenterString("4", 135, 190);
+      contentArea.drawCenterString("57", 135+250, 190);
+      contentArea.drawCenterString("38", 135+500, 190);
+      contentArea.setTextSize(1);
+      contentArea.drawCenterString("more information", 135, 360);
+      contentArea.drawCenterString("more information", 135+260, 360);
+      contentArea.drawCenterString("more information", 135+520, 360);
     }
-    else if (cur_Screen == 8) 
+    else if (cur_Screen == 8) //temp
     {
       contentArea.fillScreen(TFT_BLACK);
       contentArea.setTextColor(TFT_WHITE);
       contentArea.setFont(&fonts::Orbitron_Light_24);
       contentArea.setTextSize(3);
-      contentArea.drawString("Bed Room", 10, 10);
+      contentArea.drawString("temperature", 10, 10);
+      contentArea.fillSmoothRoundRect(10, 100,740, 300, 10, TFT_WHITE);
+      contentArea.setTextColor(TFT_BLACK);
+      contentArea.drawCenterString("Graph", 380, 250);
+      
+    }
+    else if (cur_Screen == 8) //temp
+    {
+      contentArea.fillScreen(TFT_BLACK);
+      contentArea.setTextColor(TFT_WHITE);
+      contentArea.setFont(&fonts::Orbitron_Light_24);
+      contentArea.setTextSize(3);
+      contentArea.drawString("temperature", 10, 10);
+      contentArea.fillSmoothRoundRect(10, 100,740, 300, 10, TFT_WHITE);
+      contentArea.setTextColor(TFT_BLACK);
+      contentArea.drawCenterString("Graph", 380, 250);
       
     }
   }

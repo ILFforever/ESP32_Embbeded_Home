@@ -11,7 +11,7 @@ void updateCapSensor()
   {
     sendAmpCommand("play", "click");
     Serial.println("Button 0 pressed!");
-    if (cur_Screen < 8)
+    if (cur_Screen < 9)
     {
       cur_Screen++;
       Serial.printf("Switched to screen %d\n", cur_Screen);
