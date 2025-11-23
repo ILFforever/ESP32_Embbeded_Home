@@ -98,8 +98,8 @@ function updateCache(deviceId, data, dataType) {
   deviceCache.set(deviceId, cached);
 }
 
-// History write interval (30 minutes in milliseconds)
-const HISTORY_WRITE_INTERVAL_MS = 30 * 60 * 1000;
+// History write interval (5 minutes in milliseconds)
+const HISTORY_WRITE_INTERVAL_MS = 5 * 60 * 1000;
 
 // Cache for tracking last history write time per device
 const historyWriteCache = new Map(); // { device_id: lastHistoryWriteTime }
