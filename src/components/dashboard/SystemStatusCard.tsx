@@ -1,6 +1,6 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Battery } from 'lucide-react';
+import { Battery, Info, List } from 'lucide-react';
 import type { DevicesStatus, Device } from '@/types/dashboard';
 import { getDeviceStatusClass as getStatusClass, getDeviceStatusText as getStatusText } from '@/services/devices.service';
 
@@ -11,6 +11,7 @@ interface SystemStatusCardProps {
 
 export function SystemStatusCard({ devicesStatus, isExpanded = false }: SystemStatusCardProps) {
   const router = useRouter();
+  const [showFullInfo, setShowFullInfo] = useState(false);
 
   // Extract doorbell and hub devices from the devices array
   const doorbellDevice = devicesStatus?.devices?.find(d => d.type === 'doorbell');
@@ -68,8 +69,40 @@ export function SystemStatusCard({ devicesStatus, isExpanded = false }: SystemSt
   if (isExpanded) {
     return (
       <div className="card card-large">
-        <div className="card-header">
+        <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <h2>SYSTEM STATUS</h2>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setShowFullInfo(!showFullInfo);
+            }}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              padding: '8px 16px',
+              background: showFullInfo ? 'rgba(0, 212, 170, 0.2)' : 'rgba(255, 255, 255, 0.1)',
+              border: showFullInfo ? '1px solid rgba(0, 212, 170, 0.5)' : '1px solid rgba(255, 255, 255, 0.2)',
+              borderRadius: '6px',
+              color: 'var(--text-primary)',
+              cursor: 'pointer',
+              fontSize: '14px',
+              fontWeight: '600',
+              transition: 'all 0.2s ease',
+            }}
+          >
+            {showFullInfo ? (
+              <>
+                <List size={16} />
+                COMPACT VIEW
+              </>
+            ) : (
+              <>
+                <Info size={16} />
+                FULL INFO
+              </>
+            )}
+          </button>
         </div>
         <div className="card-content">
           <div className="system-status-grid">
@@ -96,18 +129,20 @@ export function SystemStatusCard({ devicesStatus, isExpanded = false }: SystemSt
                   </div>
                 </div>
 
-                {/* Expanded view details */}
-                <div className="device-info">
-                  <p>Last Heartbeat: {device.last_seen ? new Date(device.last_seen).toLocaleString() : 'Never'}</p>
-                  <p>Device ID: {device.device_id || 'N/A'}</p>
-                  <p>IP Address: {isDeviceOffline(device) ? '-' : (device.ip_address || 'N/A')}</p>
-                  <p>WiFi Signal: {isDeviceOffline(device) ? '-' : (device.wifi_rssi ? `${device.wifi_rssi} dBm` : 'N/A')}</p>
-                  <p>Free Heap: {isDeviceOffline(device) ? '-' : (device.free_heap ? `${(device.free_heap / 1024).toFixed(1)} KB` : 'N/A')}</p>
-                  <p>Uptime: {isDeviceOffline(device) ? '-' : (device.uptime_ms ? `${Math.floor(device.uptime_ms / 3600000)}h ${Math.floor((device.uptime_ms % 3600000) / 60000)}m` : 'N/A')}</p>
-                  {device.battery !== undefined && (
-                    <p>Battery: {device.battery}%</p>
-                  )}
-                </div>
+                {/* Conditionally show full info or compact */}
+                {showFullInfo && (
+                  <div className="device-info">
+                    <p>Last Heartbeat: {device.last_seen ? new Date(device.last_seen).toLocaleString() : 'Never'}</p>
+                    <p>Device ID: {device.device_id || 'N/A'}</p>
+                    <p>IP Address: {isDeviceOffline(device) ? '-' : (device.ip_address || 'N/A')}</p>
+                    <p>WiFi Signal: {isDeviceOffline(device) ? '-' : (device.wifi_rssi ? `${device.wifi_rssi} dBm` : 'N/A')}</p>
+                    <p>Free Heap: {isDeviceOffline(device) ? '-' : (device.free_heap ? `${(device.free_heap / 1024).toFixed(1)} KB` : 'N/A')}</p>
+                    <p>Uptime: {isDeviceOffline(device) ? '-' : (device.uptime_ms ? `${Math.floor(device.uptime_ms / 3600000)}h ${Math.floor((device.uptime_ms % 3600000) / 60000)}m` : 'N/A')}</p>
+                    {device.battery !== undefined && (
+                      <p>Battery: {device.battery}%</p>
+                    )}
+                  </div>
+                )}
 
                 {/* Show hint for clickable devices */}
                 {(device.type === 'doorbell' || device.type === 'hub' || device.type === 'main_lcd') && (
@@ -115,31 +150,6 @@ export function SystemStatusCard({ devicesStatus, isExpanded = false }: SystemSt
                 )}
               </div>
             ))}
-
-            {/* System Overview */}
-            <div className="device-status-item system-overview">
-              <h3 style={{ marginBottom: 'var(--spacing-sm)' }}>SYSTEM HEALTH</h3>
-              <div className="health-metrics">
-                <div className="health-metric">
-                  <span className="metric-label">DEVICES ONLINE:</span>
-                  <span className="metric-value">
-                    {devicesStatus?.summary?.online || 0} / {devicesStatus?.summary?.total || 0}
-                  </span>
-                </div>
-                <div className="health-metric">
-                  <span className="metric-label">DEVICES OFFLINE:</span>
-                  <span className="metric-value">
-                    {devicesStatus?.summary?.offline || 0}
-                  </span>
-                </div>
-                <div className="health-metric">
-                  <span className="metric-label">LAST SYNC:</span>
-                  <span className="metric-value">
-                    {devicesStatus ? new Date().toLocaleTimeString() : 'N/A'}
-                  </span>
-                </div>
-              </div>
-            </div>
           </div>
         </div>
       </div>
