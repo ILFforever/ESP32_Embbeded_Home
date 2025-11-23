@@ -41,13 +41,13 @@
 // DEVICE IDENTIFICATION
 // ============================================================================
 #ifndef DEVICE_ID
-#define DEVICE_ID "room_sensor_default"
+#define DEVICE_ID "ss_01"
 #endif
 #ifndef DEVICE_TYPE
-#define DEVICE_TYPE "environmental_sensor"
+#define DEVICE_TYPE "sensor"
 #endif
 #ifndef ROOM_NAME
-#define ROOM_NAME "Unknown"
+#define ROOM_NAME "Living Room"
 #endif
 
 // ============================================================================
@@ -56,7 +56,7 @@
 // API Token for backend authentication
 // This token is sent with sensor data to authenticate with the backend server
 // IMPORTANT: Change this to match the token configured in your backend for this device
-const char* DEVICE_API_TOKEN = "your_secure_api_token_here";
+const char* DEVICE_API_TOKEN = "4d5c3d05ccfcaecdc30e2f8e38b55207cd7f9054b2db7b6bf8e47813dd0c9d87";
 
 // ============================================================================
 // GPIO PIN CONFIGURATION
@@ -78,7 +78,7 @@ const char* DEVICE_API_TOKEN = "your_secure_api_token_here";
 #define MESH_CONNECT_TIMEOUT 5000   // 5 seconds to connect
 
 // ============================================================================
-// ALERT THRESHOLDS (for immediate transmission)
+// ALERT THRESHOLDS (for immediate transmission on anomalies)
 // ============================================================================
 #define TEMP_ALERT_THRESHOLD      2.0    // 2°C change = alert
 #define HUMIDITY_ALERT_THRESHOLD  10.0   // 10% change = alert
@@ -250,7 +250,6 @@ void loop() {
   StaticJsonDocument<512> doc;
   doc["device_id"] = DEVICE_ID;
   doc["device_type"] = DEVICE_TYPE;
-  doc["room"] = ROOM_NAME;
   doc["boot_count"] = bootCount;
 
   // Add API token for backend authentication

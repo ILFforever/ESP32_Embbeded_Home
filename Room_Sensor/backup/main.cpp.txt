@@ -41,15 +41,10 @@
 // ============================================================================
 // These are defined in platformio.ini build_flags for each environment
 // Example: -D DEVICE_ID=\"room_sensor_bedroom_01\"
-#ifndef DEVICE_ID
-#define DEVICE_ID "room_sensor_default"
-#endif
-#ifndef DEVICE_TYPE
-#define DEVICE_TYPE "environmental_sensor"
-#endif
-#ifndef ROOM_NAME
-#define ROOM_NAME "Unknown"
-#endif
+#define DEVICE_ID "ss_001"
+#define DEVICE_TYPE "sensor"
+#define ROOM_NAME "Bedroom"
+
 
 // ============================================================================
 // SECURITY CONFIGURATION
@@ -57,7 +52,7 @@
 // API Token for backend authentication
 // This token is sent with sensor data to authenticate with the backend server
 // IMPORTANT: Change this to match the token configured in your backend for this device
-const char* DEVICE_API_TOKEN = "your_secure_api_token_here";
+const char* DEVICE_API_TOKEN = "4d5c3d05ccfcaecdc30e2f8e38b55207cd7f9054b2db7b6bf8e47813dd0c9d87";
 
 // ============================================================================
 // GPIO PIN CONFIGURATION
@@ -83,7 +78,7 @@ const char* DEVICE_API_TOKEN = "your_secure_api_token_here";
 // SENSOR THRESHOLDS (for conditional transmission)
 // ============================================================================
 #define TEMP_THRESHOLD       0.5    // 0.5°C change triggers transmission
-#define HUMIDITY_THRESHOLD   2.0    // 2% change triggers transmission
+#define HUMIDITY_THRESHOLD   20.0    // 20% change triggers transmission
 #define LIGHT_THRESHOLD      50.0   // 50 lux change triggers transmission
 #define GAS_THRESHOLD        100    // 100 ADC units change triggers transmission
 
