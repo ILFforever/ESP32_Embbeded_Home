@@ -185,9 +185,11 @@ void setupSensors() {
 
 void setupUART() {
   Serial.println("[SETUP] Initializing UART to Main LCD...");
+  // Increase TX buffer to handle large JSON messages with mesh sensor data
+  LcdSerial.setTxBufferSize(2048);
   LcdSerial.begin(115200, SERIAL_8N1, LCD_RX_PIN, LCD_TX_PIN);
   delay(100);
-  Serial.println("[SETUP] ✓ UART2 initialized on GPIO16/18");
+  Serial.println("[SETUP] ✓ UART2 initialized on GPIO16/18, TxBuffer=2048");
   Serial.println("[SETUP] ✓ Main LCD communication ready");
 }
 
@@ -420,15 +422,11 @@ void handleLcdUartMessages() {
 
     // Handle different message types
     if (strcmp(msgType, "ping") == 0) {
-      // Respond with pong
-      StaticJsonDocument<256> pongDoc;
+      // Respond with simplified pong (just ping counter and uptime)
+      StaticJsonDocument<128> pongDoc;
       pongDoc["type"] = "pong";
-      pongDoc["device_id"] = DEVICE_ID;
-      pongDoc["device_type"] = DEVICE_TYPE;
-      pongDoc["mesh_node_id"] = meshHandler.getNodeId();
+      pongDoc["seq"] = cmdDoc["seq"] | 0;  // Echo back ping counter
       pongDoc["uptime_ms"] = millis();
-      pongDoc["mesh_nodes_connected"] = meshHandler.getConnectedNodeCount();
-      pongDoc["mesh_data_stored"] = meshHandler.getStoredNodeCount();
 
       String pongStr;
       serializeJson(pongDoc, pongStr);
