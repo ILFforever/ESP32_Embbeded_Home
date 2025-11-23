@@ -130,7 +130,7 @@ DeviceStatus checkDoorbellStatus() {
   }
 
   HTTPClient http;
-  String url = String(BACKEND_SERVER_URL) + "/api/v1/devices/" + String(DOORBELL_DEVICE_ID) + "/status";
+  String url = String(BACKEND_SERVER_URL) + "/api/v1/devices/doorbell/" + String(DOORBELL_DEVICE_ID) + "/status";
 
   http.begin(url);  // Plain HTTP, no auth needed for status check
   http.setTimeout(5000);
@@ -603,6 +603,10 @@ void sendMainMeshLocalData(const char* jsonData) {
   HTTPClient http;
   String url = String(BACKEND_SERVER_URL) + "/api/v1/devices/sensor-data";
 
+  Serial.printf("[MainMeshLocal] DEBUG: URL = %s\n", url.c_str());
+  Serial.printf("[MainMeshLocal] DEBUG: Device ID = %s\n", deviceId);
+  Serial.printf("[MainMeshLocal] DEBUG: Device Type = %s\n", deviceType);
+
   http.begin(url);
   http.addHeader("Content-Type", "application/json");
 
@@ -612,6 +616,9 @@ void sendMainMeshLocalData(const char* jsonData) {
   if (HUB_API_TOKEN && strlen(HUB_API_TOKEN) > 0) {
     String authHeader = String("Bearer ") + HUB_API_TOKEN;
     http.addHeader("Authorization", authHeader.c_str());
+    Serial.printf("[MainMeshLocal] DEBUG: Auth token = %s\n", HUB_API_TOKEN && strlen(HUB_API_TOKEN) > 0 ? "***SET***" : "MISSING");
+  } else {
+    Serial.println("[MainMeshLocal] DEBUG: ⚠ WARNING - No API token set!");
   }
 
   http.setTimeout(5000);
@@ -631,6 +638,8 @@ void sendMainMeshLocalData(const char* jsonData) {
 
   String jsonString;
   serializeJson(doc, jsonString);
+
+  Serial.printf("[MainMeshLocal] DEBUG: JSON payload = %s\n", jsonString.c_str());
 
   // Send POST
   int httpResponseCode = http.POST(jsonString);
@@ -653,6 +662,10 @@ void sendMainMeshLocalData(const char* jsonData) {
       }
     } else {
       Serial.printf("[MainMeshLocal] ✗ Failed to forward (code: %d)\n", httpResponseCode);
+      String response = http.getString();
+      if (response.length() > 0) {
+        Serial.printf("[MainMeshLocal] DEBUG: Error response = %s\n", response.c_str());
+      }
     }
   } else {
     Serial.printf("[MainMeshLocal] ✗ Connection failed: %s\n",
