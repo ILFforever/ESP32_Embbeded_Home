@@ -52,6 +52,14 @@
 #endif
 
 // ============================================================================
+// SECURITY CONFIGURATION
+// ============================================================================
+// API Token for backend authentication
+// This token is sent with sensor data to authenticate with the backend server
+// IMPORTANT: Change this to match the token configured in your backend for this device
+const char* DEVICE_API_TOKEN = "your_secure_api_token_here";
+
+// ============================================================================
 // GPIO PIN CONFIGURATION
 // ============================================================================
 #define MICS5524_HEATER_PIN  25  // Control heater power (HIGH=ON, LOW=OFF)
@@ -314,6 +322,8 @@ void setupMesh() {
 
   Serial.printf("[MESH] ✓ Node ID: %u\n", mesh.getNodeId());
   Serial.printf("[MESH] ✓ Device: %s\n", DEVICE_ID);
+  Serial.printf("[MESH] ✓ API Token: %s\n",
+                DEVICE_API_TOKEN && strlen(DEVICE_API_TOKEN) > 0 ? "***configured***" : "NOT SET");
 
   // Brief delay to allow mesh to stabilize
   delay(1000);
@@ -505,6 +515,9 @@ bool sendDataToMesh() {
   doc["device_type"] = DEVICE_TYPE;
   doc["room"] = ROOM_NAME;
   doc["boot_count"] = bootCount;
+
+  // Add API token for backend authentication
+  doc["api_token"] = DEVICE_API_TOKEN;
 
   // Add sensor data
   JsonObject data = doc.createNestedObject("data");

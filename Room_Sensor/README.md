@@ -11,6 +11,7 @@ Battery-powered environmental sensor node for ESP32 smart home mesh network.
 - ✅ **Deep sleep** power optimization
 - ✅ **Battery monitoring** with low-power warnings
 - ✅ **Conditional transmission** (only on changes)
+- ✅ **API token authentication** for secure backend communication
 
 ### Hardware Requirements
 - ESP32-DevKitC or ESP32-S3-DevKitC
@@ -52,7 +53,20 @@ build_flags =
     -D ROOM_NAME=\"Bedroom\"                 # Change this
 ```
 
-### 4. Build and Upload
+### 4. Configure Security (API Token)
+Edit `src/main.cpp` to set your device's API token for backend authentication:
+```cpp
+// SECURITY CONFIGURATION
+const char* DEVICE_API_TOKEN = "your_secure_api_token_here";
+```
+
+**IMPORTANT:**
+- This token must match the one configured in your backend for this specific device
+- The token is sent with all mesh transmissions to authenticate with the backend
+- Keep this token secure and unique per device
+- The hub will forward this token when sending room sensor data to the backend
+
+### 5. Build and Upload
 ```bash
 # Build for default ESP32
 pio run -e esp32-room-sensor
