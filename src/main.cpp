@@ -236,16 +236,19 @@ void setup(void)
   contentArea.pushSprite(0, 40); // Below top bar
 
   // Initialize UART for Main Mesh (UART1: RX=26, TX=25)
+  // Increase RX buffer to handle large JSON messages from mesh sensors
+  MeshSerial.setRxBufferSize(2048);
   MeshSerial.begin(UART_BAUD, SERIAL_8N1, MESH_RX, MESH_TX);
-  Serial.printf("Main Mesh UART initialized: RX=GPIO%d, TX=GPIO%d, Baud=%d\n", MESH_RX, MESH_TX, UART_BAUD);
+  Serial.printf("Main Mesh UART initialized: RX=GPIO%d, TX=GPIO%d, Baud=%d, RxBuffer=2048\n", MESH_RX, MESH_TX, UART_BAUD);
   delay(100);
 
   drawProgressBar(&contentArea, 180, 220, 440, 70, 60, getProgressColor(60), TFT_BLACK, TFT_WHITE, 5);
   contentArea.pushSprite(0, 40); // Below top bar
 
   // Initialize UART for Main Amp (UART2: RX=4, TX=33)
+  AmpSerial.setRxBufferSize(1024);
   AmpSerial.begin(UART_BAUD, SERIAL_8N1, AMP_RX, AMP_TX);
-  Serial.printf("Main Amp UART initialized: RX=GPIO%d, TX=GPIO%d, Baud=%d\n", AMP_RX, AMP_TX, UART_BAUD);
+  Serial.printf("Main Amp UART initialized: RX=GPIO%d, TX=GPIO%d, Baud=%d, RxBuffer=1024\n", AMP_RX, AMP_TX, UART_BAUD);
   delay(100);
 
   // Initialize ping-pong timestamps

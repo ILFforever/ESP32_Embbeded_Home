@@ -59,7 +59,7 @@ void handleMeshResponse(String line)
   }
 
   // Parse JSON response
-  StaticJsonDocument<2048> doc;
+  StaticJsonDocument<4096> doc;
   DeserializationError error = deserializeJson(doc, line);
   if (error)
   {
@@ -176,7 +176,7 @@ void handleAmpResponse(String line)
   }
 
   // Parse JSON response
-  StaticJsonDocument<2048> doc;
+  StaticJsonDocument<4096> doc;
   DeserializationError error = deserializeJson(doc, line);
   if (error)
   {
