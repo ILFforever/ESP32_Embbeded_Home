@@ -269,7 +269,6 @@ void sendLocalSensorDataToLCD() {
   localDoc["device_id"] = DEVICE_ID;
   localDoc["device_type"] = DEVICE_TYPE;
   localDoc["mesh_node_id"] = meshHandler.getNodeId();
-  localDoc["timestamp"] = millis();
 
   JsonObject sensors = localDoc.createNestedObject("sensors");
   if (localSensors.dhtValid) {
@@ -347,8 +346,6 @@ void forwardMeshDataToLCD(uint32_t nodeId, StaticJsonDocument<512>& doc) {
   nodeDoc["device_id"] = deviceId;
   nodeDoc["device_type"] = deviceType;
   nodeDoc["mesh_node_id"] = nodeId;
-  nodeDoc["timestamp"] = millis();
-  nodeDoc["data_age_ms"] = 0;  // Fresh data
 
   // Copy all relevant fields from the received mesh data
   nodeDoc["sensors"] = doc["sensors"];
