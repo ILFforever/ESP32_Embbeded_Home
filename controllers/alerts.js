@@ -75,16 +75,19 @@ const getAlerts = async (req, res) => {
     for (const device of devices) {
       const deviceId = device.id;
 
-      // Get device logs (error and warning only)
+      // Get device logs - query without filter first, then filter in memory to avoid index requirement
       const logsSnapshot = await db.collection('devices').doc(deviceId)
         .collection('device_logs')
-        .where('level', 'in', ['error', 'warning'])
-        .orderBy('timestamp', 'desc')
-        .limit(limitNum)
+        .orderBy('created_at', 'desc')
+        .limit(limitNum * 2) // Get more to account for filtering
         .get();
 
       logsSnapshot.docs.forEach(doc => {
         const logData = doc.data();
+
+        // Only include error and warning logs
+        if (logData.level !== 'error' && logData.level !== 'warning') return;
+
         const alertLevel = mapLogLevelToAlertLevel(logData.level);
 
         // Apply level filter
