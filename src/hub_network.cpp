@@ -119,9 +119,9 @@ DeviceStatus checkDoorbellStatus() {
   }
 
   HTTPClient http;
-  String url = String(BACKEND_SERVER_URL) + "/api/v1/devices/" + String(DOORBELL_DEVICE_ID) + "/status";
+  String url = String(BACKEND_SERVER_URL) + "/api/v1/devices/doorbell/" + String(DOORBELL_DEVICE_ID) + "/status";
 
-  http.begin(url);  // Plain HTTP, no auth needed for status check
+  http.begin(url);  // Plain HTTP, no auth needed for doorbell status (public endpoint)
   http.setTimeout(5000);
 
   int httpResponseCode = http.GET();
@@ -175,11 +175,16 @@ void sendLogToBackend(const char* level, const char* message, const char* data) 
   }
 
   HTTPClient http;
-  String url = String(BACKEND_SERVER_URL) + "/api/v1/devices/hub/log";
+  String url = String(BACKEND_SERVER_URL) + "/api/v1/devices/" + String(HUB_DEVICE_ID) + "/log";
 
   http.begin(url);
   http.addHeader("Content-Type", "application/json");
-  http.addHeader("X-Device-Token", HUB_API_TOKEN);
+
+  // Add Authorization header with Bearer token
+  if (HUB_API_TOKEN && strlen(HUB_API_TOKEN) > 0) {
+    String authHeader = String("Bearer ") + HUB_API_TOKEN;
+    http.addHeader("Authorization", authHeader.c_str());
+  }
 
   // Create JSON payload
   JsonDocument doc;
