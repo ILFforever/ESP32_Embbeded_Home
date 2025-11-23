@@ -233,6 +233,37 @@ export default function HubControlPage() {
     return { text: 'Humid', color: 'var(--warning)', status: 'status-warning' };
   };
 
+  const formatTimestamp = (timestamp: any): string => {
+    if (!timestamp) return 'Never';
+
+    try {
+      let date: Date;
+
+      // Check if it's a Firestore Timestamp object with _seconds
+      if (timestamp._seconds !== undefined) {
+        date = new Date(timestamp._seconds * 1000);
+      }
+      // Check if it's already a Date object
+      else if (timestamp instanceof Date) {
+        date = timestamp;
+      }
+      // Check if it's a string or number
+      else {
+        date = new Date(timestamp);
+      }
+
+      // Validate the date
+      if (isNaN(date.getTime())) {
+        return 'Invalid Date';
+      }
+
+      return date.toLocaleTimeString();
+    } catch (error) {
+      console.error('Error formatting timestamp:', error);
+      return 'Invalid Date';
+    }
+  };
+
   if (loading) {
     return (
       <ProtectedRoute>
@@ -386,7 +417,7 @@ export default function HubControlPage() {
                     </div>
                     <div style={{ textAlign: 'center', color: 'var(--text-secondary)' }}>
                       <p style={{ fontSize: '14px', marginBottom: '8px' }}>
-                        Last updated: {new Date(sensorData.timestamp).toLocaleTimeString()}
+                        Last updated: {formatTimestamp(sensorData.timestamp)}
                       </p>
                       <div className="temp-ranges" style={{
                         display: 'flex',
@@ -445,7 +476,7 @@ export default function HubControlPage() {
                     </div>
                     <div style={{ textAlign: 'center', color: 'var(--text-secondary)' }}>
                       <p style={{ fontSize: '14px', marginBottom: '8px' }}>
-                        Last updated: {new Date(sensorData.timestamp).toLocaleTimeString()}
+                        Last updated: {formatTimestamp(sensorData.timestamp)}
                       </p>
                       <div className="progress-bar" style={{ marginTop: '16px' }}>
                         <div
@@ -516,7 +547,7 @@ export default function HubControlPage() {
                     </div>
                     <div style={{ textAlign: 'center', color: 'var(--text-secondary)' }}>
                       <p style={{ fontSize: '14px', marginBottom: '8px' }}>
-                        Last updated: {new Date(sensorData.timestamp).toLocaleTimeString()}
+                        Last updated: {formatTimestamp(sensorData.timestamp)}
                       </p>
                       {sensorData.aqi !== undefined && (
                         <div style={{
