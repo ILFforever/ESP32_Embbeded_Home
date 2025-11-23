@@ -1169,3 +1169,62 @@ export async function restartHubSystem(deviceId: string) {
     throw error;
   }
 }
+
+// ============================================================================
+// Device Management Functions
+// ============================================================================
+
+// Register a new device
+export interface RegisterDeviceParams {
+  device_id: string;
+  device_type: string;
+  name?: string;
+}
+
+export interface RegisterDeviceResponse {
+  status: string;
+  message: string;
+  device_id: string;
+  api_token: string;
+  warning: string;
+}
+
+export async function registerDevice(params: RegisterDeviceParams): Promise<RegisterDeviceResponse> {
+  try {
+    const response = await axios.post<RegisterDeviceResponse>(
+      `${API_URL}/api/v1/devices/register`,
+      params,
+      {
+        timeout: 10000,
+        headers: getAuthHeaders()
+      }
+    );
+    return response.data;
+  } catch (error: any) {
+    console.error('Error registering device:', error);
+    throw new Error(error.response?.data?.message || 'Failed to register device');
+  }
+}
+
+// Delete a device
+export interface DeleteDeviceResponse {
+  status: string;
+  message: string;
+  device_id: string;
+}
+
+export async function deleteDevice(deviceId: string): Promise<DeleteDeviceResponse> {
+  try {
+    const response = await axios.delete<DeleteDeviceResponse>(
+      `${API_URL}/api/v1/devices/${deviceId}`,
+      {
+        timeout: 10000,
+        headers: getAuthHeaders()
+      }
+    );
+    return response.data;
+  } catch (error: any) {
+    console.error('Error deleting device:', error);
+    throw new Error(error.response?.data?.message || 'Failed to delete device');
+  }
+}
