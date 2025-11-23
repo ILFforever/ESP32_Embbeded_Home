@@ -8,7 +8,6 @@ import { AlertsCard } from '@/components/dashboard/AlertsCard';
 import { TemperatureCard } from '@/components/dashboard/TemperatureCard';
 import { GasReadingsCard } from '@/components/dashboard/GasReadingsCard';
 import { DoorsWindowsCard } from '@/components/dashboard/DoorsWindowsCard';
-import { DoorbellControlCard } from '@/components/dashboard/DoorbellControlCard';
 import { AdminManagementCard } from '@/components/dashboard/AdminManagementCard';
 import { SystemStatusCard } from '@/components/dashboard/SystemStatusCard';
 import {
@@ -16,9 +15,7 @@ import {
   generateMockAlerts,
   generateMockTemperatureData,
   generateMockGasReadings,
-  generateMockDoorsWindows,
-  getDoorbellControlStatus,
-  findDoorbellDevice
+  generateMockDoorsWindows
 } from '@/services/devices.service';
 import type { DevicesStatus } from '@/types/dashboard';
 
@@ -26,8 +23,6 @@ export default function DashboardPage() {
   const router = useRouter();
   const { logout } = useAuth();
   const [devicesStatus, setDevicesStatus] = useState<DevicesStatus | null>(null);
-  const [doorbellControl, setDoorbellControl] = useState<any>(null);
-  const [doorbellDeviceId, setDoorbellDeviceId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [theme, setTheme] = useState<'purple' | 'green'>('purple');
   const [expandedCard, setExpandedCard] = useState<string | null>(null);
@@ -36,27 +31,9 @@ export default function DashboardPage() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        // Fetch devices status first
+        // Fetch devices status
         const devices = await getAllDevices();
         setDevicesStatus(devices);
-
-        // Find doorbell device and fetch its control status
-        const doorbellDevice = findDoorbellDevice(devices.devices);
-        if (doorbellDevice) {
-          setDoorbellDeviceId(doorbellDevice.device_id);
-          const doorbell = await getDoorbellControlStatus(doorbellDevice.device_id);
-          setDoorbellControl(doorbell);
-        } else {
-          // No doorbell found, set default state
-          setDoorbellDeviceId(null);
-          setDoorbellControl({
-            camera_active: false,
-            mic_active: false,
-            face_recognition: false,
-            last_activity: new Date().toISOString(),
-            visitor_count_today: 0
-          });
-        }
       } catch (error) {
         console.error('Error loading devices:', error);
       } finally {
@@ -102,15 +79,6 @@ export default function DashboardPage() {
   const gasReadings = generateMockGasReadings();
   const doorsWindows = generateMockDoorsWindows();
 
-  // Use real doorbell control data (fetched from state)
-  const doorbellControlData = doorbellControl || {
-    camera_active: false,
-    mic_active: false,
-    face_recognition: false,
-    last_activity: new Date().toISOString(),
-    visitor_count_today: 0
-  };
-
   if (loading) {
     return (
       <div className="dashboard-loading">
@@ -140,9 +108,6 @@ export default function DashboardPage() {
         break;
       case 'doors':
         content = <DoorsWindowsCard doorsWindows={doorsWindows} isExpanded={true} />;
-        break;
-      case 'doorbell':
-        content = <DoorbellControlCard doorbellControl={doorbellControlData} deviceId={doorbellDeviceId || undefined} isExpanded={true} />;
         break;
       case 'admin':
         content = <AdminManagementCard devices={devicesStatus?.devices || []} isExpanded={true} />;
@@ -306,22 +271,9 @@ export default function DashboardPage() {
               <TemperatureCard temperatureData={temperatureData} />
             </div>
 
-            {/* Row 3: 4 cards */}
+            {/* Row 3: 3 cards - Doors/Windows, Admin, Gas (spans 2 columns) */}
             <div
               className="card-row3-1"
-              onClick={() => openExpandedCard('gas')}
-            >
-              <button className="card-eye-icon" onClick={(e) => { e.stopPropagation(); openExpandedCard('gas'); }}>
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
-                  <circle cx="12" cy="12" r="3"></circle>
-                </svg>
-              </button>
-              <GasReadingsCard gasReadings={gasReadings} />
-            </div>
-
-            <div
-              className="card-row3-2"
               onClick={() => openExpandedCard('doors')}
             >
               <button className="card-eye-icon" onClick={(e) => { e.stopPropagation(); openExpandedCard('doors'); }}>
@@ -334,20 +286,7 @@ export default function DashboardPage() {
             </div>
 
             <div
-              className="card-row3-3"
-              onClick={() => openExpandedCard('doorbell')}
-            >
-              <button className="card-eye-icon" onClick={(e) => { e.stopPropagation(); openExpandedCard('doorbell'); }}>
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
-                  <circle cx="12" cy="12" r="3"></circle>
-                </svg>
-              </button>
-              <DoorbellControlCard doorbellControl={doorbellControlData} deviceId={doorbellDeviceId || undefined} />
-            </div>
-
-            <div
-              className="card-row3-4"
+              className="card-row3-2"
               onClick={() => openExpandedCard('admin')}
             >
               <button className="card-eye-icon" onClick={(e) => { e.stopPropagation(); openExpandedCard('admin'); }}>
@@ -357,6 +296,19 @@ export default function DashboardPage() {
                 </svg>
               </button>
               <AdminManagementCard devices={devicesStatus?.devices || []} />
+            </div>
+
+            <div
+              className="card-row3-3-span2"
+              onClick={() => openExpandedCard('gas')}
+            >
+              <button className="card-eye-icon" onClick={(e) => { e.stopPropagation(); openExpandedCard('gas'); }}>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                  <circle cx="12" cy="12" r="3"></circle>
+                </svg>
+              </button>
+              <GasReadingsCard gasReadings={gasReadings} />
             </div>
           </div>
 
