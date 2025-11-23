@@ -381,15 +381,11 @@ void handleLcdUartMessages() {
 
     // Handle different message types
     if (strcmp(msgType, "ping") == 0) {
-      // Respond with pong
-      StaticJsonDocument<256> pongDoc;
+      // Respond with simplified pong (just ping counter and uptime)
+      StaticJsonDocument<128> pongDoc;
       pongDoc["type"] = "pong";
-      pongDoc["device_id"] = DEVICE_ID;
-      pongDoc["device_type"] = DEVICE_TYPE;
-      pongDoc["mesh_node_id"] = meshHandler.getNodeId();
+      pongDoc["seq"] = cmdDoc["seq"] | 0;  // Echo back ping counter
       pongDoc["uptime_ms"] = millis();
-      pongDoc["mesh_nodes_connected"] = meshHandler.getConnectedNodeCount();
-      pongDoc["mesh_data_stored"] = meshHandler.getStoredNodeCount();
 
       String pongStr;
       serializeJson(pongDoc, pongStr);
