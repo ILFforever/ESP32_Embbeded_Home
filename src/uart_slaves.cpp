@@ -1,4 +1,5 @@
 #include "uart_slaves.h"
+#include "hub_network.h"
 
 // UART interfaces
 HardwareSerial MeshSerial(1);  // UART1
@@ -105,7 +106,28 @@ void handleMeshResponse(String line)
       Serial.printf("[MESH]   Mesh nodes: %d\n", nodeCount);
     }
 
-    // TODO: Forward this data to backend or display on screen
+    // Forward Main_mesh local sensor data to backend
+    if (doc.containsKey("local_sensors"))
+    {
+      JsonObject localSensors = doc["local_sensors"];
+      if (localSensors.size() > 0)
+      {
+        Serial.printf("[MESH]   Forwarding Main_mesh local sensors to backend...\n");
+        sendMainMeshLocalData(line.c_str());
+      }
+    }
+
+    // Forward mesh sensor data to backend
+    if (doc.containsKey("mesh_sensors"))
+    {
+      JsonArray meshSensors = doc["mesh_sensors"];
+      if (meshSensors.size() > 0)
+      {
+        Serial.printf("[MESH]   Forwarding %d room sensor(s) to backend...\n", meshSensors.size());
+        sendMeshSensorData(line.c_str());
+      }
+    }
+
     return;
   }
 
