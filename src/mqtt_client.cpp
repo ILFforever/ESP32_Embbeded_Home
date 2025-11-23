@@ -1,4 +1,5 @@
 #include "mqtt_client.h"
+#include "hub_network.h"
 #include <WiFi.h>
 #include <ArduinoJson.h>
 
@@ -8,7 +9,7 @@ const int MQTT_PORT = 1883;
 
 // MQTT Topics
 const char* TOPIC_DOORBELL_RING = "smarthome/doorbell/ring";
-const char* TOPIC_HUB_COMMAND = "smarthome/hub/command";
+const char* TOPIC_HUB_COMMAND_TEMPLATE = "smarthome/device/%s/command"; // %s will be replaced with device ID
 const char* TOPIC_FACE_DETECTION = "smarthome/face/detection";
 
 // Global MQTT objects
@@ -19,6 +20,7 @@ PubSubClient mqttClient(wifiClient);
 static MqttDoorbellCallback doorbellCallback = nullptr;
 static MqttFaceDetectionCallback faceDetectionCallback = nullptr;
 static String clientId = "";
+static String hubDeviceId = "";
 
 // ============================================================================
 // MQTT Message Callback
@@ -60,10 +62,36 @@ void mqttMessageCallback(char* topic, byte* payload, unsigned int length) {
       Serial.printf("[MQTT] ✗ Failed to parse face detection JSON: %s\n", error.c_str());
     }
   }
-  // Handle hub commands
-  else if (strcmp(topic, TOPIC_HUB_COMMAND) == 0) {
-    Serial.printf("[MQTT] Hub command received: %s\n", message.c_str());
-    // Parse JSON command here if needed
+  // Handle hub commands (NEW!)
+  else {
+    // Check if it's a device-specific command topic
+    char expectedTopic[128];
+    snprintf(expectedTopic, sizeof(expectedTopic), TOPIC_HUB_COMMAND_TEMPLATE, hubDeviceId.c_str());
+
+    if (strcmp(topic, expectedTopic) == 0) {
+      Serial.printf("[MQTT] Hub command notification received: %s\n", message.c_str());
+
+      // Parse JSON command notification
+      JsonDocument doc;
+      DeserializationError error = deserializeJson(doc, message);
+
+      if (!error && doc.containsKey("fetch_commands") && doc["fetch_commands"] == true) {
+        String device_id = doc["device_id"] | "";
+        String command_id = doc["command_id"] | "";
+        String action = doc["action"] | "";
+
+        Serial.println("[MQTT] ✓ Command notification received!");
+        Serial.printf("  Device: %s\n", device_id.c_str());
+        Serial.printf("  Command ID: %s\n", command_id.c_str());
+        Serial.printf("  Action: %s\n", action.c_str());
+
+        // Fetch and execute pending commands immediately
+        Serial.println("[MQTT] → Fetching pending commands from server...");
+        fetchAndExecuteCommands();
+      } else {
+        Serial.printf("[MQTT] Hub command message (legacy): %s\n", message.c_str());
+      }
+    }
   }
 }
 
@@ -72,6 +100,7 @@ void mqttMessageCallback(char* topic, byte* payload, unsigned int length) {
 // ============================================================================
 void initMQTT(const char* clientIdParam, MqttDoorbellCallback callback, MqttFaceDetectionCallback faceCallback) {
   clientId = String(clientIdParam);
+  hubDeviceId = String(clientIdParam); // Store device ID for command topic
   doorbellCallback = callback;
   faceDetectionCallback = faceCallback;
 
@@ -106,8 +135,11 @@ bool connectMQTT() {
     mqttClient.subscribe(TOPIC_DOORBELL_RING);
     Serial.printf("[MQTT] Subscribed to: %s\n", TOPIC_DOORBELL_RING);
 
-    mqttClient.subscribe(TOPIC_HUB_COMMAND);
-    Serial.printf("[MQTT] Subscribed to: %s\n", TOPIC_HUB_COMMAND);
+    // Subscribe to device-specific command topic
+    char commandTopic[128];
+    snprintf(commandTopic, sizeof(commandTopic), TOPIC_HUB_COMMAND_TEMPLATE, hubDeviceId.c_str());
+    mqttClient.subscribe(commandTopic);
+    Serial.printf("[MQTT] Subscribed to: %s\n", commandTopic);
 
     mqttClient.subscribe(TOPIC_FACE_DETECTION);
     Serial.printf("[MQTT] Subscribed to: %s\n", TOPIC_FACE_DETECTION);

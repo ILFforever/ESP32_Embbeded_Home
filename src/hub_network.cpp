@@ -91,6 +91,16 @@ void sendHubHeartbeat() {
         } else {
           Serial.println("[Heartbeat] → Throttled (cached)");
         }
+
+        // NEW: Check for pending commands
+        if (responseDoc.containsKey("has_pending_commands")) {
+          bool hasPendingCommands = responseDoc["has_pending_commands"];
+          if (hasPendingCommands) {
+            Serial.println("[Heartbeat] → Server says we have pending commands!");
+            // Immediately fetch and execute commands
+            fetchAndExecuteCommands();
+          }
+        }
       }
     } else {
       Serial.printf("[Heartbeat] ✗ Failed (code: %d)\n", httpResponseCode);
@@ -206,6 +216,181 @@ void sendLogToBackend(const char* level, const char* message, const char* data) 
 }
 
 // ============================================================================
+// Execute a command received from backend
+// ============================================================================
+bool executeCommand(String action, JsonObject params) {
+  Serial.printf("[Commands] Executing action: %s\n", action.c_str());
+
+  // Hub Alert command (NEW!)
+  if (action == "hub_alert") {
+    if (params.containsKey("message")) {
+      const char* message = params["message"];
+      const char* level = params["level"] | "info";
+      int duration = params["duration"] | 10;
+
+      Serial.printf("[Commands] Hub Alert: [%s] %s (duration: %d sec)\n", level, message, duration);
+
+      // TODO: Display alert on LCD screen
+      // You'll need to implement this based on your LCD library
+      // displayAlert(message, level, duration);
+
+      return true;
+    } else {
+      Serial.println("[Commands] hub_alert requires 'message' parameter");
+      return false;
+    }
+  }
+
+  // Amplifier commands
+  else if (action == "amp_play") {
+    if (params.containsKey("url")) {
+      const char* url = params["url"];
+      Serial.printf("[Commands] Playing amplifier URL: %s\n", url);
+      sendAmpCommand("play", url);
+      return true;
+    } else {
+      Serial.println("[Commands] amp_play requires 'url' parameter");
+      return false;
+    }
+  }
+  else if (action == "amp_stop") {
+    Serial.println("[Commands] Stopping amplifier");
+    sendAmpCommand("stop", "");
+    return true;
+  }
+  else if (action == "amp_restart") {
+    Serial.println("[Commands] Restarting amplifier");
+    sendAmpCommand("restart", "");
+    return true;
+  }
+  else if (action == "amp_volume") {
+    if (params.containsKey("level")) {
+      int level = params["level"];
+      Serial.printf("[Commands] Setting amplifier volume to %d\n", level);
+
+      // Send volume command to amplifier
+      JsonDocument doc;
+      doc["cmd"] = "volume";
+      doc["level"] = level;
+      String output;
+      serializeJson(doc, output);
+      AmpSerial.println(output);
+
+      return true;
+    } else {
+      Serial.println("[Commands] amp_volume requires 'level' parameter");
+      return false;
+    }
+  }
+  else if (action == "amp_status") {
+    Serial.println("[Commands] Requesting amplifier status");
+
+    // Send status command to amplifier
+    JsonDocument doc;
+    doc["cmd"] = "status";
+    String output;
+    serializeJson(doc, output);
+    AmpSerial.println(output);
+
+    return true;
+  }
+
+  // Unknown command
+  else {
+    Serial.printf("[Commands] Unknown action: %s\n", action.c_str());
+    return false;
+  }
+}
+
+// ============================================================================
+// Fetch and execute pending commands from backend
+// ============================================================================
+void fetchAndExecuteCommands() {
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("[Commands] WiFi not connected - cannot fetch commands");
+    return;
+  }
+
+  HTTPClient http;
+  String url = String(BACKEND_SERVER_URL) + "/api/v1/devices/commands/pending";
+
+  http.begin(url);
+  http.addHeader("Content-Type", "application/json");
+
+  // Add Authorization header with Bearer token
+  if (HUB_API_TOKEN && strlen(HUB_API_TOKEN) > 0) {
+    String authHeader = String("Bearer ") + HUB_API_TOKEN;
+    http.addHeader("Authorization", authHeader.c_str());
+  }
+
+  http.setTimeout(5000);
+
+  // Build JSON payload
+  JsonDocument doc;
+  doc["device_id"] = HUB_DEVICE_ID;
+
+  String jsonString;
+  serializeJson(doc, jsonString);
+
+  // Send POST request
+  int httpResponseCode = http.POST(jsonString);
+
+  if (httpResponseCode == 200) {
+    String response = http.getString();
+
+    // Parse response
+    JsonDocument responseDoc;
+    DeserializationError error = deserializeJson(responseDoc, response);
+
+    if (!error && responseDoc.containsKey("commands")) {
+      JsonArray commands = responseDoc["commands"];
+      int commandCount = commands.size();
+
+      Serial.printf("[Commands] Fetched %d pending command(s)\n", commandCount);
+
+      for (JsonObject cmd : commands) {
+        String commandId = cmd["id"].as<String>();
+        String action = cmd["action"].as<String>();
+        JsonObject params = cmd["params"];
+
+        Serial.printf("[Commands] Executing: %s (ID: %s)\n", action.c_str(), commandId.c_str());
+
+        // Special handling for system_restart: acknowledge BEFORE executing
+        if (action == "system_restart" || action == "reboot") {
+          Serial.println("[Commands] System restart requested - acknowledging before execution");
+          acknowledgeCommand(commandId, true, action);
+
+          Serial.println("[Commands] Rebooting Hub in 3 seconds...");
+          delay(3000);
+          ESP.restart();
+          // Won't reach here
+        }
+
+        // Execute command
+        bool success = executeCommand(action, params);
+
+        // Acknowledge execution
+        acknowledgeCommand(commandId, success, action);
+      }
+    }
+  } else {
+    Serial.printf("[Commands] Failed to fetch (code: %d)\n", httpResponseCode);
+  }
+
+  http.end();
+}
+
+// ============================================================================
+// Acknowledge command execution to backend
+// ============================================================================
+void acknowledgeCommand(String commandId, bool success, String action) {
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("[Commands] WiFi not connected - cannot acknowledge");
+    return;
+  }
+
+  HTTPClient http;
+  String url = String(BACKEND_SERVER_URL) + "/api/v1/devices/commands/ack";
 // Send mesh sensor data to backend
 // Forwards sensor data from room sensors (received via Main_mesh) to backend
 // ============================================================================
@@ -382,6 +567,7 @@ void sendMainMeshLocalData(const char* jsonData) {
   http.begin(url);
   http.addHeader("Content-Type", "application/json");
 
+  // Add Authorization header with Bearer token
   // Main_mesh doesn't have its own API token since it communicates via UART
   // Use the hub's token for authentication
   if (HUB_API_TOKEN && strlen(HUB_API_TOKEN) > 0) {
@@ -393,6 +579,26 @@ void sendMainMeshLocalData(const char* jsonData) {
 
   // Build JSON payload
   JsonDocument doc;
+  doc["device_id"] = HUB_DEVICE_ID;
+  doc["command_id"] = commandId;
+  doc["success"] = success;
+  if (success) {
+    doc["result"] = "Command executed: " + action;
+  } else {
+    doc["error"] = "Failed to execute: " + action;
+  }
+
+  String jsonString;
+  serializeJson(doc, jsonString);
+
+  // Send POST request
+  int httpResponseCode = http.POST(jsonString);
+
+  if (httpResponseCode == 200) {
+    Serial.printf("[Commands] ✓ Acknowledged command %s (%s)\n",
+                  commandId.c_str(), success ? "success" : "failed");
+  } else {
+    Serial.printf("[Commands] ✗ Failed to acknowledge (code: %d)\n", httpResponseCode);
   doc["device_id"] = deviceId;
   doc["device_type"] = deviceType;
 
