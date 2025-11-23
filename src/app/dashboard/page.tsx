@@ -216,7 +216,7 @@ export default function DashboardPage() {
                   ☰
                 </button>
               )}
-              <h1>SMART HOME CONTROL SYSTEM</h1>
+              <h1>Arduino888 Smart Home</h1>
             </div>
 
             <div className="dashboard-header-right">

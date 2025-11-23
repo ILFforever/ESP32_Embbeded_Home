@@ -1,6 +1,6 @@
-# ESP32 Smart Home - Frontend
+# Arduino888 Smart Home - Frontend
 
-Frontend application for the ESP32 Smart Home system built with React and TypeScript.
+Frontend application for the Arduino888 Smart Home system built with React and TypeScript.
 
 ## Features
 
