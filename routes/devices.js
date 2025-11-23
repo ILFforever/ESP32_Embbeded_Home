@@ -49,7 +49,9 @@ const {
   // Hub-specific
   getHubSensors,
   sendHubAlert,
-  getHubAmpStreaming
+  getHubAmpStreaming,
+  // Sensor readings
+  getSensorReadings
 } = require('../controllers/devices');
 const { authenticateDevice } = require('../middleware/deviceAuth');
 const { protect } = require('../middleware/auth');
@@ -310,6 +312,17 @@ router.post('/:device_id/hub/alert', protect, sendHubAlert);
 // @desc    Get Hub amplifier streaming status
 // @access  Private (requires user token)
 router.get('/:device_id/hub/amp/streaming', protect, getHubAmpStreaming);
+
+// ============================================================================
+// Sensor Readings for Graphing
+// ============================================================================
+
+// @route   GET /api/v1/devices/:device_id/sensors/readings
+// @desc    Get sensor history readings for graphing (30-minute intervals)
+// @query   hours - Number of hours to fetch (default 24, max 720)
+// @query   limit - Max readings to return (default 500)
+// @access  Private (requires user token)
+router.get('/:device_id/sensors/readings', protect, getSensorReadings);
 
 // ============================================================================
 // Note: Hub also uses the following generic endpoints:
