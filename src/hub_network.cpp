@@ -278,6 +278,8 @@ void sendMeshSensorData(const char* jsonData) {
     JsonDocument doc;
     doc["device_id"] = deviceId;
     doc["device_type"] = deviceType;
+    doc["timestamp"] = millis();
+    doc["forwarded_by"] = HUB_DEVICE_ID;
 
     // Copy all sensor data (excluding api_token as it's in header)
     JsonObject data = doc.createNestedObject("data");
@@ -286,10 +288,6 @@ void sendMeshSensorData(const char* jsonData) {
         data[kv.key()] = kv.value();
       }
     }
-
-    // Add metadata
-    doc["timestamp"] = millis();
-    doc["forwarded_by"] = HUB_DEVICE_ID;
 
     String jsonString;
     serializeJson(doc, jsonString);
@@ -395,16 +393,14 @@ void sendMainMeshLocalData(const char* jsonData) {
   JsonDocument doc;
   doc["device_id"] = deviceId;
   doc["device_type"] = deviceType;
+  doc["timestamp"] = millis();
+  doc["forwarded_by"] = HUB_DEVICE_ID;
 
   // Copy all local sensor data
   JsonObject data = doc.createNestedObject("data");
   for (JsonPair kv : localSensors) {
     data[kv.key()] = kv.value();
   }
-
-  // Add metadata
-  doc["timestamp"] = millis();
-  doc["forwarded_by"] = HUB_DEVICE_ID;
 
   String jsonString;
   serializeJson(doc, jsonString);
