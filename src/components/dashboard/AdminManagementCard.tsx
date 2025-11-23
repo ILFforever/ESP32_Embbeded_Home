@@ -1,8 +1,9 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Shield, UserPlus, Trash2, Users, User, Cpu, Plus, X } from 'lucide-react';
+import { Shield, UserPlus, Trash2, Users, User, Cpu, Plus, X, BellRing, Home } from 'lucide-react';
 import { UserData, getAdmins, getUsers, deleteAdmin, deleteUser, registerUser } from '@/services/auth.service';
+import { getDeviceStatusClass, getDeviceStatusText } from '@/services/devices.service';
 import type { BackendDevice } from '@/types/dashboard';
 
 interface AdminManagementCardProps {
@@ -32,6 +33,19 @@ export function AdminManagementCard({ isExpanded = false, devices = [] }: AdminM
     role: 'user'
   });
   const [formError, setFormError] = useState<string | null>(null);
+
+  // Helper function to get the appropriate icon for each device type
+  const getDeviceIcon = (deviceType: string) => {
+    switch (deviceType.toLowerCase()) {
+      case 'doorbell':
+        return BellRing;
+      case 'hub':
+      case 'main_lcd':
+        return Home;
+      default:
+        return Cpu;
+    }
+  };
 
   // Fetch admins and users on component mount
   React.useEffect(() => {
@@ -382,36 +396,39 @@ export function AdminManagementCard({ isExpanded = false, devices = [] }: AdminM
                 {devices.length === 0 && !loading && (
                   <div className="empty-message">No devices found</div>
                 )}
-                {devices.map(device => (
-                  <div key={device.device_id} className="security-device-card">
-                    <div className="device-header">
-                      <Cpu className="device-icon" size={24} />
-                      <div className="device-info-header">
-                        <h5>{device.name}</h5>
-                        <span className="device-location">{device.type}</span>
+                {devices.map(device => {
+                  const DeviceIcon = getDeviceIcon(device.type);
+                  return (
+                    <div key={device.device_id} className="security-device-card">
+                      <div className="device-header">
+                        <DeviceIcon className="device-icon" size={24} />
+                        <div className="device-info-header">
+                          <h5>{device.name}</h5>
+                          <span className="device-location">{device.type}</span>
+                        </div>
+                      </div>
+                      <div className="device-status-container">
+                        <span className={`status-indicator ${getDeviceStatusClass(device.online, device.last_seen)}`}>
+                          {getDeviceStatusText(device.online, device.last_seen)}
+                        </span>
+                      </div>
+                      <div className="admin-info">
+                        <span className="info-label">Device ID:</span>
+                        <span className="info-value" style={{ fontSize: '0.8em' }}>{device.device_id}</span>
+                      </div>
+                      <div className="device-actions">
+                        <button
+                          className="btn-action btn-delete"
+                          disabled
+                          title="Device deletion not implemented yet"
+                        >
+                          <Trash2 size={16} />
+                          REMOVE
+                        </button>
                       </div>
                     </div>
-                    <div className="device-status-badge" style={{ borderColor: device.online ? '#00FF88' : '#FF6600' }}>
-                      <span style={{ color: device.online ? '#00FF88' : '#FF6600' }}>
-                        {device.online ? 'ONLINE' : 'OFFLINE'}
-                      </span>
-                    </div>
-                    <div className="admin-info">
-                      <span className="info-label">Device ID:</span>
-                      <span className="info-value" style={{ fontSize: '0.8em' }}>{device.device_id}</span>
-                    </div>
-                    <div className="device-actions">
-                      <button
-                        className="btn-action btn-delete"
-                        disabled
-                        title="Device deletion not implemented yet"
-                      >
-                        <Trash2 size={16} />
-                        REMOVE
-                      </button>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           </div>
