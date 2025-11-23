@@ -41,7 +41,7 @@
 // DEVICE IDENTIFICATION
 // ============================================================================
 #ifndef DEVICE_ID
-#define DEVICE_ID "ss_01"
+#define DEVICE_ID "ss_001"
 #endif
 #ifndef DEVICE_TYPE
 #define DEVICE_TYPE "sensor"
@@ -75,13 +75,13 @@ const char* DEVICE_API_TOKEN = "4d5c3d05ccfcaecdc30e2f8e38b55207cd7f9054b2db7b6b
 #define WAKE_INTERVAL_S      120    // Wake every 2 minutes
 #define AVERAGING_INTERVAL   5      // Average every 5 wakes (10 minutes)
 #define GAS_HEAT_TIME_MS     20000  // Heat gas sensor for 20s
-#define MESH_CONNECT_TIMEOUT 5000   // 5 seconds to connect
+#define MESH_CONNECT_TIMEOUT 10000  // 10 seconds to connect (increased for reliability)
 
 // ============================================================================
 // ALERT THRESHOLDS (for immediate transmission on anomalies)
 // ============================================================================
-#define TEMP_ALERT_THRESHOLD      2.0    // 2°C change = alert
-#define HUMIDITY_ALERT_THRESHOLD  10.0   // 10% change = alert
+#define TEMP_ALERT_THRESHOLD      10.0    // 2°C change = alert
+#define HUMIDITY_ALERT_THRESHOLD  20.0   // 10% change = alert
 #define LIGHT_ALERT_THRESHOLD     200.0  // 200 lux change = alert
 #define GAS_ALERT_THRESHOLD       300    // 300 ADC units = alert
 
@@ -192,7 +192,7 @@ void setup() {
 
   setupPins();
   setupSensors();
-  setupMesh();
+  // Note: Mesh is initialized only when transmission is needed (saves battery)
 
   Serial.println("[SETUP] ✓ All systems initialized\n");
 }
@@ -246,7 +246,11 @@ void loop() {
     return;
   }
 
-  // Step 7: Prepare JSON data for transmission
+  // Step 7: Initialize mesh (only when transmitting)
+  Serial.println("[MESH] Initializing mesh for transmission...");
+  setupMesh();
+
+  // Step 8: Prepare JSON data for transmission
   StaticJsonDocument<512> doc;
   doc["device_id"] = DEVICE_ID;
   doc["device_type"] = DEVICE_TYPE;
@@ -262,10 +266,10 @@ void loop() {
     // Send immediate alert with current readings
     Serial.println("[TX MODE] ⚠ ALERT - Immediate transmission");
     doc["alert"] = true;
-    doc["data"]["temperature"] = serialized(String(currentData.temperature, 2));
-    doc["data"]["humidity"] = serialized(String(currentData.humidity, 2));
-    doc["data"]["light_lux"] = serialized(String(currentData.lightLevel, 2));
-    doc["data"]["gas_level"] = currentData.gasLevel;
+    doc["sensors"]["temperature"] = serialized(String(currentData.temperature, 2));
+    doc["sensors"]["humidity"] = serialized(String(currentData.humidity, 2));
+    doc["sensors"]["light_lux"] = serialized(String(currentData.lightLevel, 2));
+    doc["sensors"]["gas_level"] = currentData.gasLevel;
     alertTransmissions++;
   } else if (timeToAverage) {
     // Send averaged data
@@ -273,14 +277,14 @@ void loop() {
     AveragedData avg = calculateAverages();
     doc["averaged"] = true;
     doc["sample_count"] = sensorHistory.count;
-    doc["data"]["temperature"] = serialized(String(avg.temperature, 2));
-    doc["data"]["humidity"] = serialized(String(avg.humidity, 2));
-    doc["data"]["light_lux"] = serialized(String(avg.light, 2));
-    doc["data"]["gas_level"] = avg.gas;
+    doc["sensors"]["temperature"] = serialized(String(avg.temperature, 2));
+    doc["sensors"]["humidity"] = serialized(String(avg.humidity, 2));
+    doc["sensors"]["light_lux"] = serialized(String(avg.light, 2));
+    doc["sensors"]["gas_level"] = avg.gas;
     averageTransmissions++;
   }
 
-  // Step 8: Serialize and transmit
+  // Step 9: Serialize and transmit
   String jsonStr;
   serializeJson(doc, jsonStr);
 
@@ -309,7 +313,7 @@ void loop() {
     blinkLED(5, 50);
   }
 
-  // Step 9: Print statistics
+  // Step 10: Print statistics
   Serial.println("\n========================================");
   Serial.println("SESSION STATISTICS:");
   Serial.printf("  Total wakes: %d\n", bootCount);
@@ -324,7 +328,7 @@ void loop() {
                 currentData.batteryVoltage, currentData.batteryPercent);
   Serial.println("========================================");
 
-  // Step 10: Enter deep sleep
+  // Step 11: Enter deep sleep
   enterDeepSleep(WAKE_INTERVAL_S);
 }
 
@@ -579,6 +583,8 @@ bool sendDataToMesh(String jsonStr) {
   unsigned long startTime = millis();
   bool connected = false;
 
+  Serial.println("[MESH] Waiting for mesh connection...");
+
   while (millis() - startTime < MESH_CONNECT_TIMEOUT) {
     mesh.update();
 
@@ -592,12 +598,24 @@ bool sendDataToMesh(String jsonStr) {
   }
 
   if (!connected) {
-    Serial.println("[MESH] ✗ No mesh nodes found");
-    return false;
+    Serial.println("[MESH] ✗ No mesh nodes found within timeout");
+    Serial.println("[MESH] Broadcasting anyway (mesh may still relay)...");
+    // Send broadcast anyway - the mesh might still relay it even if no nodes detected yet
+    mesh.sendBroadcast(jsonStr);
+    delay(1500);
+    mesh.update();
+    return false;  // Mark as failed for statistics
   }
 
+  // Connected successfully, send broadcast
   mesh.sendBroadcast(jsonStr);
+  Serial.println("[MESH] ✓ Broadcast sent");
   delay(500);
+  mesh.update();
+
+  // Allow time for transmission to complete before disconnecting
+  Serial.println("[MESH] Allowing transmission to complete...");
+  delay(1500);
   mesh.update();
 
   return true;
