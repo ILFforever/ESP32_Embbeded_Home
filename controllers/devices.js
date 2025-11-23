@@ -45,9 +45,12 @@ function shouldWriteToFirebase(deviceId, newData, dataType = 'heartbeat') {
   }
 
   const now = Date.now();
-  const timeSinceLastWrite = now - cached.lastWriteTime;
 
-  // Always write if 1+ minute elapsed
+  // Check last write time for THIS specific data type only
+  const lastWriteTime = cached.lastWriteTime?.[dataType] || 0;
+  const timeSinceLastWrite = now - lastWriteTime;
+
+  // Always write if 1+ minute elapsed since last write of this type
   if (timeSinceLastWrite >= WRITE_INTERVAL_MS) {
     return true;
   }
@@ -55,20 +58,24 @@ function shouldWriteToFirebase(deviceId, newData, dataType = 'heartbeat') {
   // Check for status changes (online/offline)
   if (dataType === 'heartbeat') {
     // Status changed - write immediately
-    if (cached.lastData.online !== newData.online) {
+    const lastHeartbeat = cached.lastData?.heartbeat;
+    if (lastHeartbeat && lastHeartbeat.online !== newData.online) {
       return true;
     }
   }
 
   // Check for significant sensor changes
-  if (dataType === 'sensor' && cached.lastData.sensors) {
-    for (const [key, value] of Object.entries(newData.sensors || {})) {
-      const oldValue = cached.lastData.sensors[key];
-      if (oldValue !== undefined) {
-        const percentChange = Math.abs((value - oldValue) / oldValue) * 100;
-        if (percentChange >= SENSOR_DELTA_THRESHOLD) {
-          console.log(`[Throttle] Sensor ${key} changed by ${percentChange.toFixed(1)}% - writing`);
-          return true;
+  if (dataType === 'sensor') {
+    const lastSensor = cached.lastData?.sensor;
+    if (lastSensor && lastSensor.sensors) {
+      for (const [key, value] of Object.entries(newData.sensors || {})) {
+        const oldValue = lastSensor.sensors[key];
+        if (oldValue !== undefined) {
+          const percentChange = Math.abs((value - oldValue) / oldValue) * 100;
+          if (percentChange >= SENSOR_DELTA_THRESHOLD) {
+            console.log(`[Throttle] Sensor ${key} changed by ${percentChange.toFixed(1)}% - writing`);
+            return true;
+          }
         }
       }
     }
@@ -78,13 +85,17 @@ function shouldWriteToFirebase(deviceId, newData, dataType = 'heartbeat') {
   return false;
 }
 
-// Helper: Update cache
+// Helper: Update cache with separate tracking per data type
 function updateCache(deviceId, data, dataType) {
-  deviceCache.set(deviceId, {
-    lastWriteTime: Date.now(),
-    lastData: { ...data, online: true },
-    dataType
-  });
+  const cached = deviceCache.get(deviceId) || { lastWriteTime: {}, lastData: {} };
+
+  // Update write time for this specific data type
+  cached.lastWriteTime[dataType] = Date.now();
+
+  // Update data for this specific data type
+  cached.lastData[dataType] = { ...data, online: true };
+
+  deviceCache.set(deviceId, cached);
 }
 
 // History write interval (30 minutes in milliseconds)
