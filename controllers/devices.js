@@ -2075,33 +2075,47 @@ const getHubSensors = async (req, res) => {
     const db = getFirestore();
     const deviceRef = db.collection('devices').doc(device_id);
 
-    // Get the latest status document which should contain sensor data
-    const statusDoc = await deviceRef
-      .collection('status')
-      .orderBy('timestamp', 'desc')
-      .limit(1)
+    // Get the current sensor data from sensors/current document
+    const sensorDoc = await deviceRef
+      .collection('sensors')
+      .doc('current')
       .get();
 
-    if (statusDoc.empty) {
+    if (!sensorDoc.exists) {
       return res.status(404).json({
         status: 'error',
         message: 'No sensor data found. Hub may not have sent data yet.'
       });
     }
 
-    const statusData = statusDoc.docs[0].data();
+    const data = sensorDoc.data();
 
-    // Extract sensor data (assuming Hub sends this in heartbeat/sensor data)
+    // Helper function to calculate AQI from PM2.5
+    const calculateAQI = (pm25) => {
+      if (pm25 == null) return null;
+
+      // EPA AQI breakpoints for PM2.5
+      if (pm25 <= 12.0) return Math.round((50 / 12.0) * pm25);
+      if (pm25 <= 35.4) return Math.round(((100 - 51) / (35.4 - 12.1)) * (pm25 - 12.1) + 51);
+      if (pm25 <= 55.4) return Math.round(((150 - 101) / (55.4 - 35.5)) * (pm25 - 35.5) + 101);
+      if (pm25 <= 150.4) return Math.round(((200 - 151) / (150.4 - 55.5)) * (pm25 - 55.5) + 151);
+      if (pm25 <= 250.4) return Math.round(((300 - 201) / (250.4 - 150.5)) * (pm25 - 150.5) + 201);
+      return Math.round(((500 - 301) / (500.4 - 250.5)) * (pm25 - 250.5) + 301);
+    };
+
+    // Extract sensor data with correct field names from Firebase
     const sensorData = {
-      temperature: statusData.temperature || null,
-      humidity: statusData.humidity || null,
-      pm25: statusData.pm25 || null,
-      aqi: statusData.aqi || null,
-      timestamp: statusData.timestamp,
+      temperature: data.temperature != null ? data.temperature : null,
+      humidity: data.humidity != null ? data.humidity : null,
+      pm25: data.pm2_5 != null ? data.pm2_5 : null,  // Note: Firebase stores as pm2_5
+      pm10: data.pm10 != null ? data.pm10 : null,
+      pm1_0: data.pm1_0 != null ? data.pm1_0 : null,
+      aqi: data.aqi != null ? data.aqi : calculateAQI(data.pm2_5),  // Calculate if not stored
+      timestamp: data.timestamp,
       device_id
     };
 
-    console.log(`[HubSensors] ${device_id} - Retrieved sensor data:`, sensorData);
+    console.log(`[HubSensors] ${device_id} - Retrieved sensor data from sensors/current:`, sensorData);
 
     res.json({
       status: 'ok',
