@@ -110,9 +110,12 @@ export function SystemStatusCard({ devicesStatus, isExpanded = false }: SystemSt
             {allDevices.map((device) => (
               <div
                 key={device.device_id}
-                className={`device-status-item ${device.type === 'doorbell' || device.type === 'hub' || device.type === 'main_lcd' ? 'device-clickable' : ''}`}
-                onClick={device.type === 'doorbell' || device.type === 'hub' || device.type === 'main_lcd' ? handleDeviceClick(device) : undefined}
-                style={device.type === 'doorbell' || device.type === 'hub' || device.type === 'main_lcd' ? { cursor: 'pointer' } : {}}
+                className="device-status-item device-clickable"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowFullInfo(!showFullInfo);
+                }}
+                style={{ cursor: 'pointer' }}
               >
                 <div className="device-status-header">
                   <h3>{device.name?.toUpperCase() || device.type?.toUpperCase()}</h3>
@@ -146,7 +149,15 @@ export function SystemStatusCard({ devicesStatus, isExpanded = false }: SystemSt
 
                 {/* Show hint for clickable devices */}
                 {(device.type === 'doorbell' || device.type === 'hub' || device.type === 'main_lcd') && (
-                  <p className="device-hint">Click to configure →</p>
+                  <p
+                    className="device-hint"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDeviceClick(device)(e);
+                    }}
+                  >
+                    Click to configure →
+                  </p>
                 )}
               </div>
             ))}
