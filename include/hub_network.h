@@ -33,4 +33,10 @@ bool getLastHeartbeatSuccess();
 // Send log/error to backend
 void sendLogToBackend(const char* level, const char* message, const char* data = nullptr);
 
+// Send mesh sensor data to backend
+void sendMeshSensorData(const char* jsonData);
+
+// Send Main_mesh local sensor data to backend
+void sendMainMeshLocalData(const char* jsonData);
+
 #endif
