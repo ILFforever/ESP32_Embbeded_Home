@@ -12,21 +12,16 @@ import { AdminManagementCard } from '@/components/dashboard/AdminManagementCard'
 import { SystemStatusCard } from '@/components/dashboard/SystemStatusCard';
 import {
   getAllDevices,
-  findHubDevice,
-  getHubSensors,
   generateMockAlerts,
-  generateMockTemperatureData,
   generateMockGasReadings,
   generateMockDoorsWindows
 } from '@/services/devices.service';
-import type { DevicesStatus, TemperatureData } from '@/types/dashboard';
+import type { DevicesStatus } from '@/types/dashboard';
 
 export default function DashboardPage() {
   const router = useRouter();
   const { logout } = useAuth();
   const [devicesStatus, setDevicesStatus] = useState<DevicesStatus | null>(null);
-  const [hubSensorData, setHubSensorData] = useState<TemperatureData[]>([]);
-  const [sensorHistory, setSensorHistory] = useState<{ timestamp: string; value: number }[]>([]);
   const [loading, setLoading] = useState(true);
   const [theme, setTheme] = useState<'purple' | 'green'>('purple');
   const [expandedCard, setExpandedCard] = useState<string | null>(null);
@@ -39,39 +34,6 @@ export default function DashboardPage() {
         // Fetch devices status
         const devices = await getAllDevices();
         setDevicesStatus(devices);
-
-        // Fetch Hub sensor data
-        const hub = findHubDevice(devices.devices);
-        if (hub && hub.online) {
-          const sensors = await getHubSensors(hub.device_id);
-          if (sensors && sensors.sensors) {
-            const temperature = sensors.sensors.temperature || 0;
-            const humidity = sensors.sensors.humidity || 0;
-            const now = new Date().toISOString();
-
-            // Update sensor history (keep last 24 readings for chart)
-            setSensorHistory(prev => {
-              const newHistory = [
-                ...prev,
-                { timestamp: now, value: temperature }
-              ];
-              // Keep only last 24 data points (2 hours at 5-second intervals)
-              return newHistory.slice(-24);
-            });
-
-            // Transform Hub sensor data into TemperatureData format
-            // Use accumulated history for the chart
-            const transformedData: TemperatureData[] = [{
-              room: 'Hub',
-              current: temperature,
-              humidity: humidity,
-              history: sensorHistory.length > 0 ? sensorHistory : [
-                { timestamp: now, value: temperature }
-              ]
-            }];
-            setHubSensorData(transformedData);
-          }
-        }
       } catch (error) {
         console.error('Error loading devices:', error);
       } finally {
@@ -83,7 +45,7 @@ export default function DashboardPage() {
     // Refresh every 5 seconds for more real-time updates
     const interval = setInterval(fetchData, 5000);
     return () => clearInterval(interval);
-  }, [sensorHistory]);
+  }, []);
 
   // Apply theme to document root
   useEffect(() => {
@@ -142,11 +104,6 @@ export default function DashboardPage() {
 
   // Generate mock data for features not yet implemented
   const alerts = generateMockAlerts();
-  // Combine real Hub sensor data with mock data for other rooms
-  const mockRooms = generateMockTemperatureData();
-  const temperatureData = hubSensorData.length > 0
-    ? [...hubSensorData, ...mockRooms]  // Hub real data + mock rooms
-    : mockRooms;  // All mock if Hub offline
   const gasReadings = generateMockGasReadings();
   const doorsWindows = generateMockDoorsWindows();
 
@@ -172,7 +129,7 @@ export default function DashboardPage() {
         content = <AlertsCard alerts={alerts} isExpanded={true} />;
         break;
       case 'temperature':
-        content = <TemperatureCard temperatureData={temperatureData} isExpanded={true} />;
+        content = <TemperatureCard isExpanded={true} />;
         break;
       case 'gas':
         content = <GasReadingsCard gasReadings={gasReadings} isExpanded={true} />;
@@ -353,7 +310,7 @@ export default function DashboardPage() {
                   <circle cx="12" cy="12" r="3"></circle>
                 </svg>
               </button>
-              <TemperatureCard temperatureData={temperatureData} />
+              <TemperatureCard />
             </div>
 
             {/* Row 3: Doors/Windows (1 col), Admin (1 col), Gas (2 cols - same width as Temperature/Alerts) */}

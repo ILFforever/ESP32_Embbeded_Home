@@ -987,6 +987,83 @@ export async function getHubSensors(deviceId: string): Promise<HubSensorResponse
   }
 }
 
+// Device sensor data interface (for non-hub devices)
+export interface DeviceSensorResponse {
+  status: string;
+  device_id: string;
+  sensors: {
+    temperature: number | null;
+    humidity: number | null;
+    timestamp: any;
+    device_id: string;
+  };
+}
+
+// Get individual device sensor data
+export async function getDeviceSensors(deviceId: string): Promise<DeviceSensorResponse | null> {
+  try {
+    const response = await axios.get<DeviceSensorResponse>(
+      `${API_URL}/api/v1/devices/${deviceId}/sensor/sensors`,
+      {
+        timeout: 5000,
+        headers: getAuthHeaders()
+      }
+    );
+    return response.data;
+  } catch (error) {
+    console.error(`Error fetching sensors for device ${deviceId}:`, error);
+    return null;
+  }
+}
+
+// Historical sensor reading interface
+export interface HistoricalSensorReading {
+  id: string;
+  timestamp: {
+    _seconds: number;
+    _nanoseconds: number;
+  };
+  temperature: number;
+  humidity: number;
+  light_lux?: number;
+  gas_level?: number;
+  battery_voltage?: number;
+  battery_percent?: number;
+  averaged?: boolean;
+  sample_count?: number;
+  boot_count?: number;
+  created_at: string;
+}
+
+export interface SensorReadingsResponse {
+  status: string;
+  device_id: string;
+  start: string;
+  end: string;
+  hours: number;
+  count: number;
+  interval_minutes: number;
+  readings: HistoricalSensorReading[];
+}
+
+// Get sensor readings history for charts (works for both hub and sensors)
+export async function getSensorReadings(deviceId: string, hours: number = 24): Promise<SensorReadingsResponse | null> {
+  try {
+    const response = await axios.get<SensorReadingsResponse>(
+      `${API_URL}/api/v1/devices/${deviceId}/sensors/readings`,
+      {
+        params: { hours },
+        timeout: 10000,
+        headers: getAuthHeaders()
+      }
+    );
+    return response.data;
+  } catch (error) {
+    console.error(`Error fetching sensor readings for device ${deviceId}:`, error);
+    return null;
+  }
+}
+
 // Hub alert interface
 export interface HubAlertParams {
   message: string;

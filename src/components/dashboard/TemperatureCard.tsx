@@ -1,28 +1,137 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
-import { Thermometer } from 'lucide-react';
+import { Thermometer, RefreshCw } from 'lucide-react';
 import type { TemperatureData } from '@/types/dashboard';
+import { getHubSensors, getDeviceSensors, getAllDevices, findHubDevice, getSensorReadings } from '@/services/devices.service';
 
 interface TemperatureCardProps {
-  temperatureData: TemperatureData[];
   isExpanded?: boolean;
+  refreshInterval?: number; // in milliseconds, default 5000
 }
 
-export function TemperatureCard({ temperatureData, isExpanded = false }: TemperatureCardProps) {
+export function TemperatureCard({ isExpanded = false, refreshInterval = 5000 }: TemperatureCardProps) {
   const [selectedRoom, setSelectedRoom] = useState<string | null>(null);
+  const [temperatureData, setTemperatureData] = useState<TemperatureData[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refetching, setRefetching] = useState(false);
+
+  const fetchTemperatureData = async () => {
+    try {
+      setRefetching(true);
+      const devicesStatus = await getAllDevices();
+      const devices = devicesStatus.devices;
+
+      // Find hub device
+      const hub = findHubDevice(devices);
+      const allTemperatureData: TemperatureData[] = [];
+
+      // Fetch Hub sensor data with historical readings
+      if (hub && hub.online) {
+        const hubSensors = await getHubSensors(hub.device_id);
+        const hubReadings = await getSensorReadings(hub.device_id, 24);
+
+        if (hubSensors && hubSensors.sensors) {
+          const temperature = hubSensors.sensors.temperature || 0;
+          const humidity = hubSensors.sensors.humidity || 0;
+
+          // Convert historical readings to chart data
+          const history = hubReadings?.readings.map(reading => ({
+            timestamp: new Date(reading.timestamp._seconds * 1000).toISOString(),
+            value: reading.temperature
+          })) || [];
+
+          allTemperatureData.push({
+            room: 'Hub',
+            current: temperature,
+            humidity: humidity,
+            history: history.length > 0 ? history : [{ timestamp: new Date().toISOString(), value: temperature }]
+          });
+        }
+      }
+
+      // Fetch sensor data for specific sensor devices (ss_001, ss_002, ss_003)
+      const sensorIds = ['ss_001', 'ss_002', 'ss_003'];
+
+      for (const sensorId of sensorIds) {
+        const deviceSensors = await getDeviceSensors(sensorId);
+        const sensorReadings = await getSensorReadings(sensorId, 24);
+
+        if (deviceSensors && deviceSensors.sensors) {
+          // Sensor is online and has data
+          const temperature = deviceSensors.sensors.temperature || 0;
+          const humidity = deviceSensors.sensors.humidity || 0;
+
+          // Find device info from devices list if available
+          const deviceInfo = devices.find(d => d.device_id === sensorId);
+          const roomName = deviceInfo?.name || sensorId;
+
+          // Convert historical readings to chart data
+          const history = sensorReadings?.readings.map(reading => ({
+            timestamp: new Date(reading.timestamp._seconds * 1000).toISOString(),
+            value: reading.temperature
+          })) || [];
+
+          allTemperatureData.push({
+            room: roomName,
+            current: temperature,
+            humidity: humidity,
+            history: history.length > 0 ? history : [{ timestamp: new Date().toISOString(), value: temperature }]
+          });
+        } else {
+          // Sensor is offline or returned null (404/400 error)
+          const deviceInfo = devices.find(d => d.device_id === sensorId);
+          const roomName = deviceInfo?.name || sensorId;
+
+          // Create offline entry
+          const offlineHistory = [{ timestamp: new Date().toISOString(), value: 0 }];
+
+          allTemperatureData.push({
+            room: `${roomName} (Offline)`,
+            current: 0,
+            humidity: 0,
+            history: offlineHistory
+          });
+        }
+      }
+
+      setTemperatureData(allTemperatureData);
+    } catch (error) {
+      console.error('Error fetching temperature data:', error);
+    } finally {
+      setLoading(false);
+      setRefetching(false);
+    }
+  };
+
+  // Fetch temperature data from backend API - only on mount, no auto-refresh
+  useEffect(() => {
+    fetchTemperatureData();
+  }, []);
 
   // Prepare data for multi-room chart
   const prepareChartData = () => {
     if (!temperatureData.length) return [];
 
-    // Get all timestamps from first room
-    const timestamps = temperatureData[0].history.map(h => h.timestamp);
+    // Collect all unique timestamps from all rooms
+    const allTimestamps = new Set<string>();
+    temperatureData.forEach(room => {
+      room.history.forEach(h => allTimestamps.add(h.timestamp));
+    });
 
-    return timestamps.map((timestamp, idx) => {
+    // Sort timestamps chronologically
+    const sortedTimestamps = Array.from(allTimestamps).sort();
+
+    return sortedTimestamps.map((timestamp) => {
       const dataPoint: any = { timestamp: new Date(timestamp).toLocaleTimeString() };
 
       temperatureData.forEach(room => {
-        dataPoint[room.room] = room.history[idx]?.value.toFixed(1);
+        // Find matching data point by timestamp
+        const reading = room.history.find(h => h.timestamp === timestamp);
+        if (reading && reading.value !== undefined) {
+          dataPoint[room.room] = reading.value.toFixed(1);
+        } else {
+          dataPoint[room.room] = null; // No data for this timestamp
+        }
       });
 
       return dataPoint;
@@ -39,20 +148,33 @@ export function TemperatureCard({ temperatureData, isExpanded = false }: Tempera
           <Thermometer size={20} />
           <h3>TEMPERATURE</h3>
         </div>
+        <button
+          className="card-refresh-icon"
+          onClick={(e) => { e.stopPropagation(); fetchTemperatureData(); }}
+          disabled={refetching}
+        >
+          <RefreshCw size={20} className={refetching ? 'spinning' : ''} />
+        </button>
       </div>
 
       <div className="card-content">
-        {!isExpanded ? (
+        {loading ? (
+          <div style={{ padding: '20px', textAlign: 'center' }}>Loading temperature data...</div>
+        ) : !isExpanded ? (
           /* Compact view - show current temps */
           <div className="temperature-compact">
             <div className="temp-grid">
-              {temperatureData.map((data, idx) => (
-                <div key={data.room} className="temp-item">
-                  <span className="temp-room">{data.room}</span>
-                  <span className="temp-value">{data.current.toFixed(1)}°C</span>
-                  <span className="temp-humidity">{data.humidity?.toFixed(0) ?? 0}% RH</span>
-                </div>
-              ))}
+              {temperatureData.length > 0 ? (
+                temperatureData.map((data) => (
+                  <div key={data.room} className="temp-item">
+                    <span className="temp-room">{data.room}</span>
+                    <span className="temp-value">{data.current.toFixed(1)}°C</span>
+                    <span className="temp-humidity">{data.humidity?.toFixed(0) ?? 0}% RH</span>
+                  </div>
+                ))
+              ) : (
+                <div style={{ padding: '20px', textAlign: 'center' }}>No temperature data available</div>
+              )}
             </div>
           </div>
         ) : (
@@ -115,8 +237,9 @@ export function TemperatureCard({ temperatureData, isExpanded = false }: Tempera
                         dataKey={room.room}
                         stroke={colors[idx % colors.length]}
                         strokeWidth={2}
-                        dot={false}
+                        dot={{ r: 3 }}
                         activeDot={{ r: 6 }}
+                        connectNulls={true}
                       />
                     ))}
                   </LineChart>
@@ -180,8 +303,9 @@ export function TemperatureCard({ temperatureData, isExpanded = false }: Tempera
                             dataKey="temperature"
                             stroke="#FF6600"
                             strokeWidth={2}
-                            dot={false}
+                            dot={{ r: 3 }}
                             activeDot={{ r: 6 }}
+                            connectNulls={true}
                           />
                         </LineChart>
                       </ResponsiveContainer>

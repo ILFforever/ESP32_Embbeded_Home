@@ -387,6 +387,59 @@ h6 { font-size: var(--font-size-sm); }
   box-shadow: 0 0 20px rgba(16, 185, 129, 0.5);
 }
 
+/* Refresh Icon (positioned next to eye icon) */
+.card-refresh-icon {
+  position: absolute;
+  top: var(--spacing-md);
+  right: calc(var(--spacing-md) + 44px); /* Position to the left of eye icon */
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: var(--text-primary);
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all var(--transition-base);
+  z-index: 10;
+  opacity: 0;
+}
+
+.card:hover .card-refresh-icon {
+  opacity: 1;
+}
+
+.card-refresh-icon:hover {
+  background: var(--primary);
+  border-color: var(--primary);
+  transform: scale(1.1);
+  box-shadow: 0 0 20px rgba(102, 126, 234, 0.5);
+}
+
+:root[data-theme="green"] .card-refresh-icon:hover {
+  box-shadow: 0 0 20px rgba(16, 185, 129, 0.5);
+}
+
+.card-refresh-icon:disabled {
+  cursor: not-allowed;
+  opacity: 0.3 !important;
+}
+
+.card-refresh-icon .spinning {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 @keyframes scaleIn {
   from {
     opacity: 0;
