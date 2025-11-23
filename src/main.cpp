@@ -186,9 +186,11 @@ void setupSensors() {
 
 void setupUART() {
   Serial.println("[SETUP] Initializing UART to Main LCD...");
+  // Increase TX buffer to handle large JSON messages with mesh sensor data
+  LcdSerial.setTxBufferSize(2048);
   LcdSerial.begin(115200, SERIAL_8N1, LCD_RX_PIN, LCD_TX_PIN);
   delay(100);
-  Serial.println("[SETUP] ✓ UART2 initialized on GPIO16/18");
+  Serial.println("[SETUP] ✓ UART2 initialized on GPIO16/18, TxBuffer=2048");
   Serial.println("[SETUP] ✓ Main LCD communication ready");
 }
 
@@ -250,8 +252,8 @@ void readPMS5003() {
 void sendAggregatedDataToLCD() {
   Serial.println("\n[UART] ========== Sending Aggregated Data ==========");
 
-  // Create JSON document (increased size to accommodate mesh data)
-  StaticJsonDocument<2048> doc;
+  // Create JSON document (increased size to accommodate mesh data with API tokens)
+  StaticJsonDocument<4096> doc;
 
   // Add metadata
   doc["source"] = "main_mesh";
