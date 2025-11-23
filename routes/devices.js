@@ -6,6 +6,7 @@ const {
   getDeviceStatus,
   getAllDevicesStatus,
   handleSensorData,
+  handleRoomSensorData,
   getDeviceHistory,
   registerDevice,
   handleDoorbellRing,
@@ -87,6 +88,11 @@ router.post('/heartbeat', authenticateDevice, handleHeartbeat);
 // @desc    Receive sensor data (throttled writes)
 // @access  Private (requires device token)
 router.post('/sensor', authenticateDevice, handleSensorData);
+
+// @route   POST /api/v1/devices/sensor-data
+// @desc    Receive sensor data from room sensors (forwarded by Main_lcd hub)
+// @access  Private (requires device token)
+router.post('/sensor-data', authenticateDevice, handleRoomSensorData);
 
 // @route   POST /api/v1/devices/doorbell/ring
 // @desc    Receive doorbell ring event (notify hub, no Firebase save)
