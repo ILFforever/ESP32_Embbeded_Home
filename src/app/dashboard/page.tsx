@@ -142,8 +142,11 @@ export default function DashboardPage() {
 
   // Generate mock data for features not yet implemented
   const alerts = generateMockAlerts();
-  // Use real Hub sensor data if available, fallback to mock data
-  const temperatureData = hubSensorData.length > 0 ? hubSensorData : generateMockTemperatureData();
+  // Combine real Hub sensor data with mock data for other rooms
+  const mockRooms = generateMockTemperatureData();
+  const temperatureData = hubSensorData.length > 0
+    ? [...hubSensorData, ...mockRooms]  // Hub real data + mock rooms
+    : mockRooms;  // All mock if Hub offline
   const gasReadings = generateMockGasReadings();
   const doorsWindows = generateMockDoorsWindows();
 
