@@ -1,14 +1,37 @@
-const Alert = require('../models/Alert');
+const { getFirestore } = require('../config/firebase');
 const { ALERT_LEVELS } = require('../models/Alert');
+
+// Helper: Map log level to alert level
+function mapLogLevelToAlertLevel(logLevel) {
+  switch (logLevel) {
+    case 'error':
+      return ALERT_LEVELS.IMPORTANT;
+    case 'warning':
+      return ALERT_LEVELS.WARN;
+    case 'info':
+    case 'debug':
+    default:
+      return ALERT_LEVELS.INFO;
+  }
+}
+
+// Helper: Get priority value for sorting
+function getAlertPriority(level) {
+  const priorities = {
+    IMPORTANT: 3,
+    WARN: 2,
+    INFO: 1
+  };
+  return priorities[level] || 0;
+}
 
 // ============================================================================
 // @route   GET /api/v1/alerts
-// @desc    Get alerts with filtering and sorting (for frontend and ESP32 LCD)
-// @access  Public (for ESP32) / Protected (for frontend)
+// @desc    Get alerts by querying device_logs and face_detections in real-time
+// @access  Protected (for frontend and ESP32 LCD)
 // @query   level - Filter by level (INFO, WARN, IMPORTANT)
-// @query   source - Filter by source (system, doorbell, hub, etc.)
+// @query   source - Filter by source device_id
 // @query   tags - Filter by tags (comma-separated)
-// @query   read - Filter by read status (true/false)
 // @query   limit - Max alerts to return (default 50, max 100)
 // ============================================================================
 const getAlerts = async (req, res) => {
@@ -17,7 +40,6 @@ const getAlerts = async (req, res) => {
       level,
       source,
       tags,
-      read,
       limit = 50
     } = req.query;
 
@@ -29,35 +51,123 @@ const getAlerts = async (req, res) => {
       });
     }
 
-    // Parse tags (comma-separated string to array)
-    const tagArray = tags ? tags.split(',').map(t => t.trim()) : null;
-
-    // Parse read filter
-    const readFilter = read === 'true' ? true : read === 'false' ? false : null;
-
     // Parse and validate limit
     const limitNum = Math.min(parseInt(limit) || 50, 100);
 
-    console.log(`[Alerts] Fetching alerts - level: ${level || 'all'}, source: ${source || 'all'}, limit: ${limitNum}`);
+    // Parse tags filter
+    const tagArray = tags ? tags.split(',').map(t => t.trim()) : null;
 
-    // Get alerts with filters
-    const alerts = await Alert.getAlerts({
-      level,
-      source,
-      tags: tagArray,
-      read: readFilter,
-      limit: limitNum,
-      sortBy: 'priority', // Sort by priority (IMPORTANT > WARN > INFO) then timestamp
-      sortOrder: 'desc'
+    console.log(`[Alerts] Querying alerts - level: ${level || 'all'}, source: ${source || 'all'}, limit: ${limitNum}`);
+
+    const db = getFirestore();
+    const alerts = [];
+
+    // Get all devices or specific device
+    const devicesSnapshot = source
+      ? await db.collection('devices').doc(source).get()
+      : await db.collection('devices').get();
+
+    const devices = source
+      ? (devicesSnapshot.exists ? [{ id: source, data: devicesSnapshot.data() }] : [])
+      : devicesSnapshot.docs.map(doc => ({ id: doc.id, data: doc.data() }));
+
+    // Query device_logs (errors and warnings only)
+    for (const device of devices) {
+      const deviceId = device.id;
+
+      // Get device logs (error and warning only)
+      const logsSnapshot = await db.collection('devices').doc(deviceId)
+        .collection('device_logs')
+        .where('level', 'in', ['error', 'warning'])
+        .orderBy('timestamp', 'desc')
+        .limit(limitNum)
+        .get();
+
+      logsSnapshot.docs.forEach(doc => {
+        const logData = doc.data();
+        const alertLevel = mapLogLevelToAlertLevel(logData.level);
+
+        // Apply level filter
+        if (level && alertLevel !== level) return;
+
+        // Apply tags filter (device-log tag)
+        if (tagArray && !tagArray.includes('device-log') && !tagArray.includes(logData.level)) return;
+
+        alerts.push({
+          id: doc.id,
+          level: alertLevel,
+          message: `${deviceId}: ${logData.message}`,
+          source: deviceId,
+          tags: ['device-log', logData.level],
+          metadata: {
+            log_level: logData.level,
+            data: logData.data,
+            error_message: logData.error_message
+          },
+          timestamp: logData.timestamp?.toDate?.() || logData.timestamp,
+          created_at: logData.created_at?.toDate?.() || logData.created_at
+        });
+      });
+
+      // Get face detections
+      const faceSnapshot = await db.collection('devices').doc(deviceId)
+        .collection('face_detections')
+        .orderBy('detected_at', 'desc')
+        .limit(limitNum)
+        .get();
+
+      faceSnapshot.docs.forEach(doc => {
+        const faceData = doc.data();
+        const isRecognized = faceData.recognized;
+        const alertLevel = isRecognized ? ALERT_LEVELS.INFO : ALERT_LEVELS.WARN;
+
+        // Apply level filter
+        if (level && alertLevel !== level) return;
+
+        // Apply tags filter (face-detection tag)
+        if (tagArray && !tagArray.includes('face-detection') &&
+            !tagArray.includes(isRecognized ? 'recognized' : 'unknown')) return;
+
+        alerts.push({
+          id: doc.id,
+          level: alertLevel,
+          message: isRecognized
+            ? `Face detected: ${faceData.name || 'Unknown'}`
+            : 'Unknown person detected at door',
+          source: deviceId,
+          tags: ['face-detection', isRecognized ? 'recognized' : 'unknown'],
+          metadata: {
+            event_id: doc.id,
+            name: faceData.name,
+            confidence: faceData.confidence,
+            image_url: faceData.image
+          },
+          timestamp: faceData.detected_at?.toDate?.() || faceData.detected_at || faceData.timestamp?.toDate?.() || faceData.timestamp,
+          created_at: faceData.detected_at?.toDate?.() || faceData.detected_at
+        });
+      });
+    }
+
+    // Sort by priority (IMPORTANT > WARN > INFO) then by timestamp (newest first)
+    alerts.sort((a, b) => {
+      const priorityDiff = getAlertPriority(b.level) - getAlertPriority(a.level);
+      if (priorityDiff !== 0) return priorityDiff;
+
+      const timeA = a.timestamp instanceof Date ? a.timestamp.getTime() : 0;
+      const timeB = b.timestamp instanceof Date ? b.timestamp.getTime() : 0;
+      return timeB - timeA;
     });
 
-    console.log(`[Alerts] Returning ${alerts.length} alerts`);
+    // Apply limit
+    const limitedAlerts = alerts.slice(0, limitNum);
+
+    console.log(`[Alerts] Returning ${limitedAlerts.length} alerts`);
 
     // Return alerts
     res.json({
       status: 'ok',
-      count: alerts.length,
-      alerts: alerts.map(a => a.toJSON())
+      count: limitedAlerts.length,
+      alerts: limitedAlerts
     });
 
   } catch (error) {

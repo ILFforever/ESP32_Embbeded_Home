@@ -1,8 +1,6 @@
 const { getFirestore, admin } = require('../config/firebase');
 const { publishFaceDetection, publishDeviceCommand } = require('../config/mqtt');
 const crypto = require('crypto');
-const { createDeviceAlert } = require('./alerts');
-const { ALERT_LEVELS } = require('../models/Alert');
 
 // ============================================================================
 // In-Memory Cache for Throttling (reduces Firebase writes by 95%)
@@ -811,31 +809,6 @@ const handleFaceDetection = async (req, res) => {
 
     console.log(`[FaceDetection] ${device_id} - Saved to Firebase with ID: ${eventRef.id}`);
 
-    // Create alert for face detection event
-    try {
-      const isRecognized = faceDetectionEvent.recognized;
-      const personName = name || 'Unknown';
-
-      await createDeviceAlert({
-        level: isRecognized ? ALERT_LEVELS.INFO : ALERT_LEVELS.WARN,
-        message: isRecognized
-          ? `Face detected: ${personName}`
-          : `Unknown person detected at door`,
-        source: device_id,
-        tags: ['face-detection', isRecognized ? 'recognized' : 'unknown'],
-        metadata: {
-          event_id: eventRef.id,
-          name: personName,
-          confidence: faceDetectionEvent.confidence,
-          image_url: imageUrl,
-          timestamp: Date.now()
-        }
-      });
-    } catch (alertError) {
-      console.error('[FaceDetection] Failed to create alert:', alertError);
-      // Non-blocking - event still saved to Firebase
-    }
-
     // Publish to MQTT for instant hub notification
     try {
       await publishFaceDetection({
@@ -916,27 +889,6 @@ const handleDeviceLog = async (req, res) => {
         last_error: message,
         last_error_time: admin.firestore.FieldValue.serverTimestamp()
       }, { merge: true });
-    }
-
-    // Create alert for errors and warnings
-    if (level === 'error' || level === 'warning') {
-      try {
-        await createDeviceAlert({
-          level: level === 'error' ? ALERT_LEVELS.IMPORTANT : ALERT_LEVELS.WARN,
-          message: `${device_id}: ${message}`,
-          source: device_id,
-          tags: ['device-log', level],
-          metadata: {
-            log_level: level,
-            data: data,
-            error_message: metadata?.error_message,
-            timestamp: Date.now()
-          }
-        });
-      } catch (alertError) {
-        console.error('[DeviceLog] Failed to create alert:', alertError);
-        // Non-blocking - log still saved to Firebase
-      }
     }
 
     // Respond to device
