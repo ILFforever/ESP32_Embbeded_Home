@@ -40,9 +40,15 @@
 // ============================================================================
 // DEVICE IDENTIFICATION
 // ============================================================================
-const char* DEVICE_ID = "room_sensor_bedroom_01";
-const char* DEVICE_TYPE = "environmental_sensor";
-const char* ROOM_NAME = "Bedroom";
+#ifndef DEVICE_ID
+#define DEVICE_ID "room_sensor_default"
+#endif
+#ifndef DEVICE_TYPE
+#define DEVICE_TYPE "environmental_sensor"
+#endif
+#ifndef ROOM_NAME
+#define ROOM_NAME "Unknown"
+#endif
 
 // ============================================================================
 // GPIO PIN CONFIGURATION
@@ -52,7 +58,7 @@ const char* ROOM_NAME = "Bedroom";
 #define BATTERY_PIN          35
 #define STATUS_LED_PIN       2
 
-#define I2C_SDA_PIN          21
+#define I2C_SDA_PIN          19
 #define I2C_SCL_PIN          22
 
 // ============================================================================
