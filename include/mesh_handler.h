@@ -51,6 +51,10 @@ public:
   void begin(Scheduler* scheduler);
   void update();
 
+  // Callback for instant data forwarding
+  typedef void (*DataReceivedCallback)(uint32_t nodeId, StaticJsonDocument<512>& doc);
+  void setDataReceivedCallback(DataReceivedCallback callback);
+
   // Mesh info
   uint32_t getNodeId();
   size_t getConnectedNodeCount();
@@ -74,6 +78,9 @@ private:
 
   const char* deviceId;
   const char* deviceType;
+
+  // Instant forwarding callback
+  DataReceivedCallback dataReceivedCallback;
 
   // Callbacks (static to work with C-style function pointers)
   static void receivedCallback(uint32_t from, String &msg);

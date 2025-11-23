@@ -45,14 +45,14 @@
 
 #define DHT_INTERVAL      5000   // Read DHT11 every 5 seconds
 #define PMS_INTERVAL      10000  // Read PMS5003 every 10 seconds
-#define SEND_INTERVAL     15000  // Send aggregated data every 15 seconds
-#define MESH_CLEANUP      60000  // Clean old mesh data every 60 seconds
+#define SEND_INTERVAL     30000  // Send aggregated data every 15 seconds
+#define MESH_CLEANUP      1200000    // Clean old mesh data every 2 minutes
 
 // ============================================================================
 // DEVICE IDENTIFICATION
 // ============================================================================
 
-const char* DEVICE_ID = "main_mesh_001";
+const char* DEVICE_ID = "hb_001";
 const char* DEVICE_TYPE = "mesh_hub";
 
 // ============================================================================
@@ -94,7 +94,8 @@ void setupSensors();
 void setupUART();
 void readDHT11();
 void readPMS5003();
-void sendSensorDataToLCD();
+void sendLocalSensorDataToLCD();
+void forwardMeshDataToLCD(uint32_t nodeId, StaticJsonDocument<512>& doc);
 void blinkLED(int times, int delayMs);
 void printLocalSensorData();
 void handleLcdUartMessages();
@@ -102,7 +103,7 @@ void handleLcdUartMessages();
 // Task declarations
 Task taskReadDHT(DHT_INTERVAL, TASK_FOREVER, &readDHT11);
 Task taskReadPMS(PMS_INTERVAL, TASK_FOREVER, &readPMS5003);
-Task taskSendData(SEND_INTERVAL, TASK_FOREVER, &sendSensorDataToLCD);
+Task taskSendData(SEND_INTERVAL, TASK_FOREVER, &sendLocalSensorDataToLCD);
 
 // Wrapper function for mesh cleanup task
 void cleanupMeshData() {
@@ -129,6 +130,9 @@ void setup() {
 
   // Initialize mesh handler
   meshHandler.begin(&userScheduler);
+
+  // Set up instant forwarding callback for mesh data
+  meshHandler.setDataReceivedCallback(forwardMeshDataToLCD);
 
   // Add tasks to scheduler
   userScheduler.addTask(taskReadDHT);
@@ -245,111 +249,153 @@ void readPMS5003() {
 }
 
 // ============================================================================
-// DATA TRANSMISSION (SENDS EACH DEVICE SEPARATELY)
+// DATA TRANSMISSION
 // ============================================================================
 
-void sendSensorDataToLCD() {
+// Send local sensor data (called periodically every 15 seconds)
+void sendLocalSensorDataToLCD() {
+  if (!(localSensors.dhtValid || localSensors.pmsValid)) {
+    Serial.println("\n[UART] ⚠ No valid local sensor data to send");
+    return;
+  }
+
   Serial.println("\n[UART] ══════════════════════════════════════════════════════════════");
-  Serial.println("[UART] 📤 SENDING SENSOR DATA TO LCD (PER DEVICE)");
+  Serial.println("[UART] 📤 SENDING LOCAL SENSOR DATA TO LCD");
   Serial.println("[UART] ══════════════════════════════════════════════════════════════");
 
-  int totalDevicesSent = 0;
+  StaticJsonDocument<512> localDoc;
 
-  // Send local sensor data as separate message
-  if (localSensors.dhtValid || localSensors.pmsValid) {
-    Serial.println("\n[UART] → Sending LOCAL device data...");
+  localDoc["source"] = "main_mesh";
+  localDoc["device_id"] = DEVICE_ID;
+  localDoc["device_type"] = DEVICE_TYPE;
+  localDoc["mesh_node_id"] = meshHandler.getNodeId();
+  localDoc["timestamp"] = millis();
 
-    StaticJsonDocument<512> localDoc;
-
-    localDoc["source"] = "main_mesh";
-    localDoc["device_id"] = DEVICE_ID;
-    localDoc["device_type"] = DEVICE_TYPE;
-    localDoc["mesh_node_id"] = meshHandler.getNodeId();
-    localDoc["timestamp"] = millis();
-
-    JsonObject sensors = localDoc.createNestedObject("sensors");
-    if (localSensors.dhtValid) {
-      sensors["temperature"] = localSensors.temperature;
-      sensors["humidity"] = localSensors.humidity;
-    }
-
-    if (localSensors.pmsValid) {
-      sensors["pm1_0"] = localSensors.pm1_0;
-      sensors["pm2_5"] = localSensors.pm2_5;
-      sensors["pm10"] = localSensors.pm10;
-    }
-
-    String localJsonString;
-    serializeJson(localDoc, localJsonString);
-
-    Serial.printf("[UART]   JSON: %s\n", localJsonString.c_str());
-    LcdSerial.println(localJsonString);
-
-    Serial.printf("[UART] ✓ Sent local device: %s (%d bytes)\n",
-                  DEVICE_ID, localJsonString.length());
-    if (localSensors.dhtValid) {
-      Serial.printf("[UART]   └─ Temp=%.1f°C, Humidity=%.1f%%\n",
-                    localSensors.temperature, localSensors.humidity);
-    }
-    if (localSensors.pmsValid) {
-      Serial.printf("[UART]   └─ PM1.0=%d, PM2.5=%d, PM10=%d µg/m³\n",
-                    localSensors.pm1_0, localSensors.pm2_5, localSensors.pm10);
-    }
-
-    totalDevicesSent++;
-    delay(10); // Small delay between messages
-  } else {
-    Serial.println("\n[UART] ⚠ No valid local sensor data to send");
+  JsonObject sensors = localDoc.createNestedObject("sensors");
+  if (localSensors.dhtValid) {
+    sensors["temperature"] = localSensors.temperature;
+    sensors["humidity"] = localSensors.humidity;
   }
 
-  // Send each mesh node's data as separate message
-  MeshNodeData* meshNodes = meshHandler.getMeshNodes();
-  int meshNodeCount = meshHandler.getMeshNodeCount();
-
-  if (meshNodeCount > 0) {
-    Serial.printf("\n[UART] → Sending MESH nodes data (%d devices)...\n", meshNodeCount);
-  } else {
-    Serial.println("\n[UART] ℹ No mesh nodes to send");
+  if (localSensors.pmsValid) {
+    sensors["pm1_0"] = localSensors.pm1_0;
+    sensors["pm2_5"] = localSensors.pm2_5;
+    sensors["pm10"] = localSensors.pm10;
   }
 
-  for (int i = 0; i < meshNodeCount; i++) {
-    Serial.printf("\n[UART] → Sending mesh device %d/%d: %s\n",
-                  i + 1, meshNodeCount, meshNodes[i].deviceId.c_str());
+  String localJsonString;
+  serializeJson(localDoc, localJsonString);
 
-    StaticJsonDocument<512> nodeDoc;
+  Serial.printf("[UART]   JSON: %s\n", localJsonString.c_str());
+  LcdSerial.println(localJsonString);
 
-    nodeDoc["source"] = "mesh_node";
-    nodeDoc["device_id"] = meshNodes[i].deviceId;
-    nodeDoc["device_type"] = meshNodes[i].deviceType;
-    nodeDoc["mesh_node_id"] = meshNodes[i].nodeId;
-    nodeDoc["timestamp"] = millis();
-    nodeDoc["data_age_ms"] = millis() - meshNodes[i].lastUpdate;
-
-    // Copy sensor data from the mesh node's data
-    nodeDoc["sensors"] = meshNodes[i].data["sensors"];
-
-    String nodeJsonString;
-    serializeJson(nodeDoc, nodeJsonString);
-
-    Serial.printf("[UART]   JSON: %s\n", nodeJsonString.c_str());
-    LcdSerial.println(nodeJsonString);
-
-    Serial.printf("[UART] ✓ Sent mesh device: %s (Node %u)\n",
-                  meshNodes[i].deviceId.c_str(),
-                  meshNodes[i].nodeId);
-    Serial.printf("[UART]   └─ Size: %d bytes, Age: %lu ms\n",
-                  nodeJsonString.length(),
-                  millis() - meshNodes[i].lastUpdate);
-
-    totalDevicesSent++;
-    delay(10); // Small delay between messages
+  Serial.printf("[UART] ✓ Sent local device: %s (%d bytes)\n",
+                DEVICE_ID, localJsonString.length());
+  if (localSensors.dhtValid) {
+    Serial.printf("[UART]   └─ Temp=%.1f°C, Humidity=%.1f%%\n",
+                  localSensors.temperature, localSensors.humidity);
+  }
+  if (localSensors.pmsValid) {
+    Serial.printf("[UART]   └─ PM1.0=%d, PM2.5=%d, PM10=%d µg/m³\n",
+                  localSensors.pm1_0, localSensors.pm2_5, localSensors.pm10);
   }
 
-  Serial.println("\n[UART] ══════════════════════════════════════════════════════════════");
-  Serial.printf("[UART] ✓ TRANSMISSION COMPLETE - Total devices sent: %d\n", totalDevicesSent);
   Serial.println("[UART] ══════════════════════════════════════════════════════════════\n");
 
   blinkLED(1, 100);
+}
+
+// Forward mesh node data instantly when received
+void forwardMeshDataToLCD(uint32_t nodeId, StaticJsonDocument<512>& doc) {
+  Serial.println("\n[UART] ══════════════════════════════════════════════════════════════");
+  Serial.println("[UART] 📤 FORWARDING MESH DATA INSTANTLY");
+  Serial.println("[UART] ══════════════════════════════════════════════════════════════");
+
+  const char* deviceId = doc["device_id"] | "unknown";
+  const char* deviceType = doc["device_type"] | "sensor";
+
+  Serial.printf("[UART] → Forwarding mesh device: %s (Node %u)\n", deviceId, nodeId);
+
+  // Debug: Print received data structure
+  Serial.println("[DEBUG] Received mesh data:");
+  String receivedJson;
+  serializeJsonPretty(doc, receivedJson);
+  Serial.println(receivedJson);
+
+  // Check if sensors field exists
+  if (!doc.containsKey("sensors")) {
+    Serial.println("[DEBUG] ⚠ WARNING: 'sensors' field not found in received data!");
+    Serial.println("[DEBUG] Available keys:");
+    for (JsonPair kv : doc.as<JsonObject>()) {
+      Serial.printf("[DEBUG]   - %s\n", kv.key().c_str());
+    }
+  } else {
+    Serial.println("[DEBUG] ✓ 'sensors' field found");
+    // Print sensor values
+    JsonObject sensors = doc["sensors"];
+    Serial.println("[DEBUG] Sensor values:");
+    for (JsonPair kv : sensors) {
+      Serial.printf("[DEBUG]   - %s: ", kv.key().c_str());
+      serializeJson(kv.value(), Serial);
+      Serial.println();
+    }
+  }
+
+  StaticJsonDocument<512> nodeDoc;
+
+  nodeDoc["source"] = "mesh_node";
+  nodeDoc["device_id"] = deviceId;
+  nodeDoc["device_type"] = deviceType;
+  nodeDoc["mesh_node_id"] = nodeId;
+  nodeDoc["timestamp"] = millis();
+  nodeDoc["data_age_ms"] = 0;  // Fresh data
+
+  // Copy all relevant fields from the received mesh data
+  nodeDoc["sensors"] = doc["sensors"];
+
+  // Copy battery information if present
+  if (doc.containsKey("battery_voltage")) {
+    nodeDoc["battery_voltage"] = doc["battery_voltage"];
+  }
+  if (doc.containsKey("battery_percent")) {
+    nodeDoc["battery_percent"] = doc["battery_percent"];
+  }
+
+  // Copy API token if present (required for backend authentication)
+  if (doc.containsKey("api_token")) {
+    nodeDoc["api_token"] = doc["api_token"];
+  }
+
+  // Copy alert/averaging flags if present
+  if (doc.containsKey("alert")) {
+    nodeDoc["alert"] = doc["alert"];
+  }
+  if (doc.containsKey("averaged")) {
+    nodeDoc["averaged"] = doc["averaged"];
+  }
+  if (doc.containsKey("sample_count")) {
+    nodeDoc["sample_count"] = doc["sample_count"];
+  }
+
+  // Copy boot count if present
+  if (doc.containsKey("boot_count")) {
+    nodeDoc["boot_count"] = doc["boot_count"];
+  }
+
+  String nodeJsonString;
+  serializeJson(nodeDoc, nodeJsonString);
+
+  Serial.println("[DEBUG] Forwarding JSON:");
+  String forwardedJson;
+  serializeJsonPretty(nodeDoc, forwardedJson);
+  Serial.println(forwardedJson);
+
+  Serial.printf("[UART]   Compact JSON: %s\n", nodeJsonString.c_str());
+  LcdSerial.println(nodeJsonString);
+
+  Serial.printf("[UART] ✓ Forwarded mesh device: %s (%d bytes)\n",
+                deviceId, nodeJsonString.length());
+  Serial.println("[UART] ══════════════════════════════════════════════════════════════\n");
 }
 
 // ============================================================================
@@ -398,7 +444,7 @@ void handleLcdUartMessages() {
       return;
     }
 
-    Serial.printf("\n[UART] ← Received from Main LCD: %s\n", receivedMsg.c_str());
+    //Serial.printf("\n[UART] ← Received from Main LCD: %s\n", receivedMsg.c_str());
 
     // Parse JSON command
     StaticJsonDocument<256> cmdDoc;
@@ -418,7 +464,7 @@ void handleLcdUartMessages() {
     }
 
     const char* msgType = cmdDoc["type"] | "unknown";
-    Serial.printf("[UART]   Message type: %s\n", msgType);
+    // Serial.printf("[UART]   Message type: %s\n", msgType);
 
     // Handle different message types
     if (strcmp(msgType, "ping") == 0) {

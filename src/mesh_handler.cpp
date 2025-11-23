@@ -12,7 +12,7 @@ MeshHandler* MeshHandler::instance = nullptr;
 // ============================================================================
 
 MeshHandler::MeshHandler(const char* deviceId, const char* deviceType)
-  : meshNodeCount(0), deviceId(deviceId), deviceType(deviceType) {
+  : meshNodeCount(0), deviceId(deviceId), deviceType(deviceType), dataReceivedCallback(nullptr) {
   instance = this;  // Set static instance for callbacks
 }
 
@@ -45,6 +45,14 @@ void MeshHandler::begin(Scheduler* scheduler) {
 
 void MeshHandler::update() {
   mesh.update();
+}
+
+// ============================================================================
+// CALLBACK SETUP
+// ============================================================================
+
+void MeshHandler::setDataReceivedCallback(DataReceivedCallback callback) {
+  dataReceivedCallback = callback;
 }
 
 // ============================================================================
@@ -100,10 +108,15 @@ void MeshHandler::receivedCallback(uint32_t from, String &msg) {
 
   Serial.printf("[MESH]   Device: %s (%s)\n", deviceId, deviceType);
 
-  // Store the mesh node data
-  instance->storeNodeData(from, doc);
-
-  Serial.println("[MESH] ✓ Data stored");
+  // Forward data instantly if callback is set
+  if (instance->dataReceivedCallback) {
+    instance->dataReceivedCallback(from, doc);
+    Serial.println("[MESH] ✓ Data forwarded instantly");
+  } else {
+    // Fallback: Store the mesh node data (for backward compatibility)
+    instance->storeNodeData(from, doc);
+    Serial.println("[MESH] ✓ Data stored");
+  }
 }
 
 void MeshHandler::newConnectionCallback(uint32_t nodeId) {
