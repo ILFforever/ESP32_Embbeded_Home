@@ -328,35 +328,32 @@ const handleRoomSensorData = async (req, res) => {
       forwarded_by: forwarded_by || 'unknown'
     };
 
-    // Check if we should write (significant change or time elapsed)
-    const shouldWrite = shouldWriteToFirebase(device_id, sensorData, 'sensor');
+    // Room sensors already throttle on ESP32 side - always write to Firebase
+    const shouldWrite = true;
 
-    if (shouldWrite) {
-      console.log(`[RoomSensor] ${device_id} - Writing to Firebase (forwarded by: ${forwarded_by})`);
+    console.log(`[RoomSensor] ${device_id} - Writing to Firebase (forwarded by: ${forwarded_by})`);
 
-      const db = getFirestore();
-      const deviceRef = db.collection('devices').doc(device_id);
+    const db = getFirestore();
+    const deviceRef = db.collection('devices').doc(device_id);
 
-      // Write sensor data to current sensors document
-      await deviceRef.collection('sensors').doc('current').set({
-        ...data,
-        device_type: device_type || 'environmental_sensor',
-        forwarded_by: forwarded_by || 'unknown',
-        last_updated: admin.firestore.FieldValue.serverTimestamp(),
-      }, { merge: true });
+    // Write sensor data to current sensors document
+    await deviceRef.collection('sensors').doc('current').set({
+      ...data,
+      device_type: device_type || 'environmental_sensor',
+      forwarded_by: forwarded_by || 'unknown',
+      last_updated: admin.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true });
 
-      // Optional: Store history (can be enabled if needed)
-      // await deviceRef.collection('sensor_history').add({
-      //   ...data,
-      //   device_type: device_type,
-      //   forwarded_by: forwarded_by,
-      //   timestamp: admin.firestore.FieldValue.serverTimestamp(),
-      // });
+    // Optional: Store history (can be enabled if needed)
+    // await deviceRef.collection('sensor_history').add({
+    //   ...data,
+    //   device_type: device_type,
+    //   forwarded_by: forwarded_by,
+    //   timestamp: admin.firestore.FieldValue.serverTimestamp(),
+    // });
 
-      updateCache(device_id, sensorData, 'sensor');
-    } else {
-      console.log(`[RoomSensor] ${device_id} - Throttled (no significant change)`);
-    }
+    // Update cache to track last write
+    updateCache(device_id, sensorData, 'sensor');
 
     res.json({
       status: 'ok',
