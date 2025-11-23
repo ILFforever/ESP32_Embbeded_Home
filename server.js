@@ -39,10 +39,12 @@ app.use(cookieParser());
 // Import route files
 const auth = require('./routes/auth');
 const devices = require('./routes/devices');
+const alerts = require('./routes/alerts');
 
 // Mount routers
 app.use('/api/v1/auth', auth);
 app.use('/api/v1/devices', devices);
+app.use('/api/v1/alerts', alerts);
 
 app.get('/info', (req, res) => {
   res.send('Arduino-888-SmartHome is running!');
