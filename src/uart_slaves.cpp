@@ -70,10 +70,18 @@ void handleMeshResponse(String line)
     return;
   }
 
-  // Handle pong response (silently update timestamp)
+  // Handle pong response (update timestamp and optionally log)
   if (doc.containsKey("type") && doc["type"] == "pong")
   {
     last_mesh_pong_time = millis();
+
+    // Optional: Log pong details for debugging
+    #ifdef DEBUG_PING_PONG
+    uint32_t seq = doc["seq"] | 0;
+    unsigned long uptime = doc["uptime_ms"] | 0;
+    Serial.printf("[MESH] PONG: seq=%u, uptime=%lums\n", seq, uptime);
+    #endif
+
     return;
   }
 
@@ -187,10 +195,18 @@ void handleAmpResponse(String line)
     return;
   }
 
-  // Handle pong response (silently update timestamp)
+  // Handle pong response (update timestamp and optionally log)
   if (doc.containsKey("type") && doc["type"] == "pong")
   {
     last_amp_pong_time = millis();
+
+    // Optional: Log pong details for debugging
+    #ifdef DEBUG_PING_PONG
+    uint32_t seq = doc["seq"] | 0;
+    unsigned long uptime = doc["uptime_ms"] | 0;
+    Serial.printf("[AMP] PONG: seq=%u, uptime=%lums\n", seq, uptime);
+    #endif
+
     return;
   }
 
