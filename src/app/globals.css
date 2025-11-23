@@ -301,6 +301,12 @@ h6 { font-size: var(--font-size-sm); }
   grid-row: 3 / 4;
 }
 
+/* Wide card spanning 2 columns in row 3 (same width as top-right cards) */
+.card-row3-3-wide {
+  grid-column: 3 / 5;
+  grid-row: 3 / 4;
+}
+
 /* Remaining cards auto-flow in grid */
 .card-auto {
   grid-column: auto;
@@ -331,6 +337,7 @@ h6 { font-size: var(--font-size-sm); }
 .card-row3-1,
 .card-row3-2,
 .card-row3-3,
+.card-row3-3-wide,
 .card-row3-4,
 .card-auto {
   cursor: pointer;
@@ -364,6 +371,7 @@ h6 { font-size: var(--font-size-sm); }
 .card-row3-1:hover .card-eye-icon,
 .card-row3-2:hover .card-eye-icon,
 .card-row3-3:hover .card-eye-icon,
+.card-row3-3-wide:hover .card-eye-icon,
 .card-row3-4:hover .card-eye-icon {
   opacity: 1;
 }
@@ -1715,6 +1723,7 @@ h6 { font-size: var(--font-size-sm); }
   .card-row3-1,
   .card-row3-2,
   .card-row3-3,
+  .card-row3-3-wide,
   .card-row3-4,
   .card-auto {
     grid-column: span 1;
@@ -1772,6 +1781,7 @@ h6 { font-size: var(--font-size-sm); }
   .card-row3-1,
   .card-row3-2,
   .card-row3-3,
+  .card-row3-3-wide,
   .card-row3-4,
   .card-auto {
     grid-column: 1;
