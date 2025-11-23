@@ -325,10 +325,10 @@ router.get('/:device_id/hub/amp/streaming', protect, getHubAmpStreaming);
 // @access  Private (requires user token)
 router.get('/:device_id/sensors/readings', protect, getSensorReadings);
 
-// @route   GET /api/v1/devices/:device_id/sensors/latest
+// @route   GET /api/v1/devices/:device_id/sensor/sensors
 // @desc    Get the latest raw sensor data for any device
 // @access  Protected
-router.get('/:device_id/sensors/latest', protect, getLatestSensorData);
+router.get('/:device_id/sensor/sensors', protect, getLatestSensorData);
 
 // ============================================================================
 // Note: Hub also uses the following generic endpoints:
