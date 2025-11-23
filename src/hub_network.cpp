@@ -391,11 +391,185 @@ void acknowledgeCommand(String commandId, bool success, String action) {
 
   HTTPClient http;
   String url = String(BACKEND_SERVER_URL) + "/api/v1/devices/commands/ack";
+// Send mesh sensor data to backend
+// Forwards sensor data from room sensors (received via Main_mesh) to backend
+// ============================================================================
+void sendMeshSensorData(const char* jsonData) {
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("[MeshData] WiFi not connected - skipping");
+    return;
+  }
+
+  // Parse the incoming JSON to extract mesh sensors array
+  JsonDocument incomingDoc;
+  DeserializationError error = deserializeJson(incomingDoc, jsonData);
+
+  if (error) {
+    Serial.printf("[MeshData] ✗ JSON parse error: %s\n", error.c_str());
+    return;
+  }
+
+  // Check if we have mesh_sensors array
+  if (!incomingDoc.containsKey("mesh_sensors")) {
+    Serial.println("[MeshData] No mesh_sensors array found in data");
+    return;
+  }
+
+  JsonArray meshSensors = incomingDoc["mesh_sensors"];
+  int sensorCount = meshSensors.size();
+
+  if (sensorCount == 0) {
+    Serial.println("[MeshData] No mesh sensors to forward");
+    return;
+  }
+
+  Serial.printf("[MeshData] Forwarding %d mesh sensor(s) to backend\n", sensorCount);
+
+  // Send each mesh sensor's data to the backend
+  int successCount = 0;
+  int failCount = 0;
+
+  for (JsonObject sensor : meshSensors) {
+    // Extract sensor information
+    const char* deviceId = sensor["device_id"] | "unknown";
+    const char* deviceType = sensor["device_type"] | "sensor";
+
+    // Extract the nested data object
+    JsonObject sensorData = sensor["data"];
+
+    // Extract API token from the sensor data if present
+    const char* apiToken = nullptr;
+    if (sensorData.containsKey("api_token")) {
+      apiToken = sensorData["api_token"];
+    }
+
+    HTTPClient http;
+    String url = String(BACKEND_SERVER_URL) + "/api/v1/devices/sensor-data";
+
+    http.begin(url);
+    http.addHeader("Content-Type", "application/json");
+
+    // Add Authorization header using the sensor's API token
+    if (apiToken && strlen(apiToken) > 0) {
+      String authHeader = String("Bearer ") + apiToken;
+      http.addHeader("Authorization", authHeader.c_str());
+    } else {
+      Serial.printf("[MeshData] ⚠ Warning: No API token for sensor %s\n", deviceId);
+    }
+
+    http.setTimeout(5000);
+
+    // Build JSON payload for this sensor
+    JsonDocument doc;
+    doc["device_id"] = deviceId;
+    doc["device_type"] = deviceType;
+
+    // Copy all sensor data (excluding api_token as it's in header)
+    JsonObject data = doc.createNestedObject("data");
+    for (JsonPair kv : sensorData) {
+      if (strcmp(kv.key().c_str(), "api_token") != 0) {
+        data[kv.key()] = kv.value();
+      }
+    }
+
+    // Add metadata
+    doc["timestamp"] = millis();
+    doc["forwarded_by"] = HUB_DEVICE_ID;
+
+    String jsonString;
+    serializeJson(doc, jsonString);
+
+    // Send POST
+    int httpResponseCode = http.POST(jsonString);
+
+    if (httpResponseCode > 0) {
+      if (httpResponseCode == 200) {
+        Serial.printf("[MeshData] ✓ Sensor %s data forwarded (code: %d)\n",
+                      deviceId, httpResponseCode);
+        successCount++;
+
+        // Parse response
+        String response = http.getString();
+        JsonDocument responseDoc;
+        DeserializationError respError = deserializeJson(responseDoc, response);
+        if (!respError && responseDoc.containsKey("written")) {
+          bool written = responseDoc["written"];
+          if (written) {
+            Serial.printf("[MeshData]   → Written to Firebase\n");
+          } else {
+            Serial.printf("[MeshData]   → Throttled (cached)\n");
+          }
+        }
+      } else {
+        Serial.printf("[MeshData] ✗ Failed to forward sensor %s (code: %d)\n",
+                      deviceId, httpResponseCode);
+        failCount++;
+      }
+    } else {
+      Serial.printf("[MeshData] ✗ Connection failed for sensor %s: %s\n",
+                    deviceId, http.errorToString(httpResponseCode).c_str());
+      failCount++;
+    }
+
+    http.end();
+
+    // Small delay between requests to avoid overwhelming the backend
+    if (sensorCount > 1) {
+      delay(100);
+    }
+  }
+
+  Serial.printf("[MeshData] Summary: %d succeeded, %d failed\n", successCount, failCount);
+}
+
+// ============================================================================
+// Send Main_mesh local sensor data to backend
+// Forwards local sensor data from Main_mesh (DHT11, PMS5003) to backend
+// ============================================================================
+void sendMainMeshLocalData(const char* jsonData) {
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("[MainMeshLocal] WiFi not connected - skipping");
+    return;
+  }
+
+  // Parse the incoming JSON to extract local sensors
+  JsonDocument incomingDoc;
+  DeserializationError error = deserializeJson(incomingDoc, jsonData);
+
+  if (error) {
+    Serial.printf("[MainMeshLocal] ✗ JSON parse error: %s\n", error.c_str());
+    return;
+  }
+
+  // Check if we have local_sensors object
+  if (!incomingDoc.containsKey("local_sensors")) {
+    Serial.println("[MainMeshLocal] No local_sensors found in data");
+    return;
+  }
+
+  JsonObject localSensors = incomingDoc["local_sensors"];
+
+  // Check if there's any data
+  if (localSensors.size() == 0) {
+    Serial.println("[MainMeshLocal] No local sensor data to forward");
+    return;
+  }
+
+  // Extract device info from the message
+  const char* deviceId = incomingDoc["device_id"] | "main_mesh_001";
+  const char* deviceType = incomingDoc["device_type"] | "mesh_hub";
+
+  Serial.printf("[MainMeshLocal] Forwarding Main_mesh local sensors to backend (device: %s)\n", deviceId);
+
+  HTTPClient http;
+  String url = String(BACKEND_SERVER_URL) + "/api/v1/devices/sensor-data";
 
   http.begin(url);
   http.addHeader("Content-Type", "application/json");
 
   // Add Authorization header with Bearer token
+  // Main_mesh doesn't have its own API token since it communicates via UART
+  // Use the hub's token for authentication
   if (HUB_API_TOKEN && strlen(HUB_API_TOKEN) > 0) {
     String authHeader = String("Bearer ") + HUB_API_TOKEN;
     http.addHeader("Authorization", authHeader.c_str());
@@ -425,6 +599,47 @@ void acknowledgeCommand(String commandId, bool success, String action) {
                   commandId.c_str(), success ? "success" : "failed");
   } else {
     Serial.printf("[Commands] ✗ Failed to acknowledge (code: %d)\n", httpResponseCode);
+  doc["device_id"] = deviceId;
+  doc["device_type"] = deviceType;
+
+  // Copy all local sensor data
+  JsonObject data = doc.createNestedObject("data");
+  for (JsonPair kv : localSensors) {
+    data[kv.key()] = kv.value();
+  }
+
+  // Add metadata
+  doc["timestamp"] = millis();
+  doc["forwarded_by"] = HUB_DEVICE_ID;
+
+  String jsonString;
+  serializeJson(doc, jsonString);
+
+  // Send POST
+  int httpResponseCode = http.POST(jsonString);
+
+  if (httpResponseCode > 0) {
+    if (httpResponseCode == 200) {
+      Serial.printf("[MainMeshLocal] ✓ Main_mesh local data forwarded (code: %d)\n", httpResponseCode);
+
+      // Parse response
+      String response = http.getString();
+      JsonDocument responseDoc;
+      DeserializationError respError = deserializeJson(responseDoc, response);
+      if (!respError && responseDoc.containsKey("written")) {
+        bool written = responseDoc["written"];
+        if (written) {
+          Serial.printf("[MainMeshLocal]   → Written to Firebase\n");
+        } else {
+          Serial.printf("[MainMeshLocal]   → Throttled (cached)\n");
+        }
+      }
+    } else {
+      Serial.printf("[MainMeshLocal] ✗ Failed to forward (code: %d)\n", httpResponseCode);
+    }
+  } else {
+    Serial.printf("[MainMeshLocal] ✗ Connection failed: %s\n",
+                  http.errorToString(httpResponseCode).c_str());
   }
 
   http.end();

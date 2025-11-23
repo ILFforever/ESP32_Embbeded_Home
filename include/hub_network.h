@@ -43,4 +43,10 @@ void acknowledgeCommand(String commandId, bool success, String action);
 // Execute a command
 bool executeCommand(String action, JsonObject params);
 
+// Send mesh sensor data to backend
+void sendMeshSensorData(const char* jsonData);
+
+// Send Main_mesh local sensor data to backend
+void sendMainMeshLocalData(const char* jsonData);
+
 #endif
