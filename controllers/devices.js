@@ -2343,6 +2343,56 @@ const getSensorReadings = async (req, res) => {
   }
 };
 
+// ============================================================================
+// @route   GET /api/v1/devices/:device_id/sensors/latest
+// @desc    Get the latest raw sensor data for any device
+// @access  Protected
+// ============================================================================
+const getLatestSensorData = async (req, res) => {
+  try {
+    const { device_id } = req.params;
+
+    const db = getFirestore();
+    const deviceRef = db.collection('devices').doc(device_id);
+
+    // Get the current sensor data from sensors/current document
+    const sensorDoc = await deviceRef
+      .collection('sensors')
+      .doc('current')
+      .get();
+
+    if (!sensorDoc.exists) {
+      return res.status(404).json({
+        status: 'error',
+        message: 'No sensor data found. Device may not have sent data yet.'
+      });
+    }
+
+    const rawData = sensorDoc.data();
+    
+    // Format the data to be consistent with other endpoints
+    const formattedData = { ...rawData };
+    if (rawData.timestamp) {
+      formattedData.timestamp = rawData.timestamp.toDate().toISOString();
+    }
+    if (rawData.last_updated) {
+      formattedData.last_updated = rawData.last_updated.toDate().toISOString();
+    }
+
+    console.log(`[LatestSensor] ${device_id} - Retrieved and formatted raw sensor data from sensors/current:`, formattedData);
+
+    res.json({
+      status: 'ok',
+      device_id,
+      sensors: formattedData // Use the 'sensors' key as requested
+    });
+
+  } catch (error) {
+    console.error('[LatestSensor] Error:', error);
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+};
+
 module.exports = {
   registerDevice,
   handleHeartbeat,
@@ -2393,5 +2443,7 @@ module.exports = {
   sendHubAlert,
   getHubAmpStreaming,
   // Sensor readings
-  getSensorReadings
+  getSensorReadings,
+  // Latest sensor reading
+  getLatestSensorData
 };
