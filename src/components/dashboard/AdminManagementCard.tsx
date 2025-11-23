@@ -1,9 +1,9 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Shield, UserPlus, Trash2, Users, User, Cpu, Plus, X, BellRing, Home } from 'lucide-react';
+import { Shield, UserPlus, Trash2, Users, User, Cpu, Plus, X, BellRing, Home, Copy, CheckCircle } from 'lucide-react';
 import { UserData, getAdmins, getUsers, deleteAdmin, deleteUser, registerUser } from '@/services/auth.service';
-import { getDeviceStatusClass, getDeviceStatusText } from '@/services/devices.service';
+import { getDeviceStatusClass, getDeviceStatusText, registerDevice, deleteDevice } from '@/services/devices.service';
 import type { BackendDevice } from '@/types/dashboard';
 
 interface AdminManagementCardProps {
@@ -17,6 +17,12 @@ interface AddUserFormData {
   email: string;
   password: string;
   role: 'user' | 'admin';
+}
+
+interface AddDeviceFormData {
+  device_id: string;
+  device_type: string;
+  name: string;
 }
 
 export function AdminManagementCard({ isExpanded = false, devices = [] }: AdminManagementCardProps) {
@@ -33,6 +39,17 @@ export function AdminManagementCard({ isExpanded = false, devices = [] }: AdminM
     role: 'user'
   });
   const [formError, setFormError] = useState<string | null>(null);
+
+  // Device registration state
+  const [showAddDeviceForm, setShowAddDeviceForm] = useState(false);
+  const [deviceFormData, setDeviceFormData] = useState<AddDeviceFormData>({
+    device_id: '',
+    device_type: 'sensor',
+    name: ''
+  });
+  const [deviceFormError, setDeviceFormError] = useState<string | null>(null);
+  const [registeredToken, setRegisteredToken] = useState<string | null>(null);
+  const [tokenCopied, setTokenCopied] = useState(false);
 
   // Helper function to get the appropriate icon for each device type
   const getDeviceIcon = (deviceType: string) => {
@@ -149,6 +166,81 @@ export function AdminManagementCard({ isExpanded = false, devices = [] }: AdminM
     } catch (err: any) {
       setFormError(err.message || 'Failed to add user');
     }
+  };
+
+  // Device handlers
+  const handleDeviceFormChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+    const { name, value } = e.target;
+    setDeviceFormData(prev => ({ ...prev, [name]: value }));
+    setDeviceFormError(null);
+  };
+
+  const handleAddDevice = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setDeviceFormError(null);
+
+    // Validate device_id format (alphanumeric and underscores only)
+    if (!/^[a-zA-Z0-9_]+$/.test(deviceFormData.device_id)) {
+      setDeviceFormError('Device ID must contain only letters, numbers, and underscores');
+      return;
+    }
+
+    try {
+      const result = await registerDevice(deviceFormData);
+      if (result.status === 'ok') {
+        // Store the token to display
+        setRegisteredToken(result.api_token);
+        // Reset form (but keep it open to show token)
+        setDeviceFormData({
+          device_id: '',
+          device_type: 'sensor',
+          name: ''
+        });
+        // Trigger refresh of device list (parent component should refetch)
+        window.location.reload();
+      } else {
+        setDeviceFormError(result.message || 'Failed to register device');
+      }
+    } catch (err: any) {
+      setDeviceFormError(err.message || 'Failed to register device');
+    }
+  };
+
+  const handleDeleteDevice = async (deviceId: string, deviceName: string) => {
+    if (!confirm(`Are you sure you want to delete device "${deviceName}"? This action cannot be undone and will remove all device data.`)) {
+      return;
+    }
+
+    try {
+      const result = await deleteDevice(deviceId);
+      if (result.status === 'ok') {
+        // Refresh the page to update the device list
+        window.location.reload();
+      } else {
+        alert(result.message || 'Failed to delete device');
+      }
+    } catch (err: any) {
+      alert(err.message || 'Failed to delete device');
+    }
+  };
+
+  const handleCopyToken = async () => {
+    if (registeredToken) {
+      try {
+        await navigator.clipboard.writeText(registeredToken);
+        setTokenCopied(true);
+        setTimeout(() => setTokenCopied(false), 2000);
+      } catch (err) {
+        console.error('Failed to copy token:', err);
+      }
+    }
+  };
+
+  const handleCloseDeviceForm = () => {
+    setShowAddDeviceForm(false);
+    setDeviceFormError(null);
+    setRegisteredToken(null);
+    setTokenCopied(false);
   };
 
   return (
@@ -384,14 +476,132 @@ export function AdminManagementCard({ isExpanded = false, devices = [] }: AdminM
                 <div className="section-actions">
                   <button
                     className="btn-action-sm btn-add"
-                    disabled
-                    title="Register devices via ESP32 board"
+                    onClick={() => setShowAddDeviceForm(true)}
                   >
                     <Plus size={16} />
                     REGISTER DEVICE
                   </button>
                 </div>
               </div>
+
+              {/* Add Device Form */}
+              {showAddDeviceForm && (
+                <div className="add-user-form-container">
+                  <form onSubmit={handleAddDevice} className="add-user-form">
+                    <div className="form-header">
+                      <h4>REGISTER NEW DEVICE</h4>
+                      <button
+                        type="button"
+                        className="btn-close-form"
+                        onClick={handleCloseDeviceForm}
+                      >
+                        <X size={20} />
+                      </button>
+                    </div>
+
+                    {deviceFormError && <div className="form-error">{deviceFormError}</div>}
+
+                    {registeredToken ? (
+                      /* Show token after successful registration */
+                      <div className="token-display">
+                        <h5 style={{ color: 'var(--success)', marginBottom: '1rem' }}>
+                          <CheckCircle size={20} style={{ display: 'inline', marginRight: '0.5rem' }} />
+                          Device Registered Successfully!
+                        </h5>
+                        <p style={{ color: 'rgba(255, 255, 255, 0.7)', marginBottom: '1rem', fontSize: '0.9rem' }}>
+                          Save this API token securely. It will not be shown again!
+                        </p>
+                        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                          <input
+                            type="text"
+                            value={registeredToken}
+                            readOnly
+                            style={{
+                              flex: 1,
+                              background: 'rgba(0, 0, 0, 0.5)',
+                              border: '1px solid var(--primary-color)',
+                              borderRadius: '4px',
+                              color: '#FFF',
+                              padding: '0.75rem',
+                              fontSize: '0.85rem',
+                              fontFamily: 'monospace'
+                            }}
+                          />
+                          <button
+                            type="button"
+                            onClick={handleCopyToken}
+                            className="btn-action"
+                            style={{ padding: '0.75rem 1rem', background: tokenCopied ? 'var(--success)' : 'var(--primary-color)' }}
+                          >
+                            {tokenCopied ? <CheckCircle size={16} /> : <Copy size={16} />}
+                          </button>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={handleCloseDeviceForm}
+                          className="btn-action btn-submit"
+                          style={{ marginTop: '1rem', width: '100%' }}
+                        >
+                          CLOSE
+                        </button>
+                      </div>
+                    ) : (
+                      /* Show registration form */
+                      <>
+                        <div className="form-group">
+                          <label>Device Type</label>
+                          <select
+                            name="device_type"
+                            value={deviceFormData.device_type}
+                            onChange={handleDeviceFormChange}
+                            required
+                          >
+                            <option value="sensor">Sensor</option>
+                            <option value="doorbell">Doorbell</option>
+                            <option value="hub">Hub</option>
+                            <option value="main_lcd">Main LCD</option>
+                            <option value="main_mesh">Main Mesh</option>
+                          </select>
+                        </div>
+
+                        <div className="form-group">
+                          <label>Device ID</label>
+                          <input
+                            type="text"
+                            name="device_id"
+                            value={deviceFormData.device_id}
+                            onChange={handleDeviceFormChange}
+                            required
+                            placeholder="e.g., db_001, hb_001, ss_001"
+                            pattern="[a-zA-Z0-9_]+"
+                          />
+                          <small style={{ color: 'rgba(255, 255, 255, 0.5)', fontSize: '0.75rem' }}>
+                            Only letters, numbers, and underscores
+                          </small>
+                        </div>
+
+                        <div className="form-group">
+                          <label>Device Name (Optional)</label>
+                          <input
+                            type="text"
+                            name="name"
+                            value={deviceFormData.name}
+                            onChange={handleDeviceFormChange}
+                            placeholder="e.g., My Doorbell, Living Room Sensor"
+                          />
+                        </div>
+
+                        <div className="form-actions">
+                          <button type="submit" className="btn-action btn-submit">
+                            REGISTER DEVICE
+                          </button>
+                        </div>
+                      </>
+                    )}
+                  </form>
+                </div>
+              )}
+
               <div className="devices-grid">
                 {devices.length === 0 && !loading && (
                   <div className="empty-message">No devices found</div>
@@ -419,8 +629,7 @@ export function AdminManagementCard({ isExpanded = false, devices = [] }: AdminM
                       <div className="device-actions">
                         <button
                           className="btn-action btn-delete"
-                          disabled
-                          title="Device deletion not implemented yet"
+                          onClick={() => handleDeleteDevice(device.device_id, device.name)}
                         >
                           <Trash2 size={16} />
                           REMOVE
