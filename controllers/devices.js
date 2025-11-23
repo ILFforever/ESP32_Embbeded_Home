@@ -307,6 +307,70 @@ const handleSensorData = async (req, res) => {
 };
 
 // ============================================================================
+// @route   POST /api/v1/devices/sensor-data
+// @desc    Handle sensor data from room sensors (forwarded by Main_lcd hub)
+// @access  Authenticated devices (requires Bearer token)
+// ============================================================================
+const handleRoomSensorData = async (req, res) => {
+  try {
+    const { device_id, device_type, data, timestamp, forwarded_by } = req.body;
+
+    if (!device_id || !data) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'device_id and data object required'
+      });
+    }
+
+    const sensorData = {
+      ...data,
+      timestamp: timestamp || Date.now(),
+      forwarded_by: forwarded_by || 'unknown'
+    };
+
+    // Check if we should write (significant change or time elapsed)
+    const shouldWrite = shouldWriteToFirebase(device_id, sensorData, 'sensor');
+
+    if (shouldWrite) {
+      console.log(`[RoomSensor] ${device_id} - Writing to Firebase (forwarded by: ${forwarded_by})`);
+
+      const db = getFirestore();
+      const deviceRef = db.collection('devices').doc(device_id);
+
+      // Write sensor data to current sensors document
+      await deviceRef.collection('sensors').doc('current').set({
+        ...data,
+        device_type: device_type || 'environmental_sensor',
+        forwarded_by: forwarded_by || 'unknown',
+        last_updated: admin.firestore.FieldValue.serverTimestamp(),
+      }, { merge: true });
+
+      // Optional: Store history (can be enabled if needed)
+      // await deviceRef.collection('sensor_history').add({
+      //   ...data,
+      //   device_type: device_type,
+      //   forwarded_by: forwarded_by,
+      //   timestamp: admin.firestore.FieldValue.serverTimestamp(),
+      // });
+
+      updateCache(device_id, sensorData, 'sensor');
+    } else {
+      console.log(`[RoomSensor] ${device_id} - Throttled (no significant change)`);
+    }
+
+    res.json({
+      status: 'ok',
+      message: 'Sensor data received',
+      written: shouldWrite
+    });
+
+  } catch (error) {
+    console.error('[RoomSensor] Error:', error);
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+};
+
+// ============================================================================
 // @route   GET /api/v1/devices/:device_id/status
 // @desc    Get current device status (use expireAt to determine online status)
 // ============================================================================
@@ -2141,6 +2205,7 @@ module.exports = {
   getDeviceStatus,
   getAllDevicesStatus,
   handleSensorData,
+  handleRoomSensorData,
   getDeviceHistory,
   handleDoorbellRing,
   handleFaceDetection,
