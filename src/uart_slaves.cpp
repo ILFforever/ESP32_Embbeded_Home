@@ -59,7 +59,7 @@ void handleMeshResponse(String line)
   }
 
   // Parse JSON response
-  StaticJsonDocument<2048> doc;
+  StaticJsonDocument<4096> doc;
   DeserializationError error = deserializeJson(doc, line);
   if (error)
   {
@@ -69,12 +69,19 @@ void handleMeshResponse(String line)
     Serial.println(error.c_str());
     return;
   }
-  Serial.print("[MESH] RX: ");
-  Serial.println(line);
-  // Handle pong response (silently update timestamp)
+
+  // Handle pong response (update timestamp and optionally log)
   if (doc.containsKey("type") && doc["type"] == "pong")
   {
     last_mesh_pong_time = millis();
+
+    // Optional: Log pong details for debugging
+    #ifdef DEBUG_PING_PONG
+    uint32_t seq = doc["seq"] | 0;
+    unsigned long uptime = doc["uptime_ms"] | 0;
+    Serial.printf("[MESH] PONG: seq=%u, uptime=%lums\n", seq, uptime);
+    #endif
+
     return;
   }
 
@@ -215,7 +222,7 @@ void handleAmpResponse(String line)
   }
 
   // Parse JSON response
-  StaticJsonDocument<2048> doc;
+  StaticJsonDocument<4096> doc;
   DeserializationError error = deserializeJson(doc, line);
   if (error)
   {
@@ -226,10 +233,18 @@ void handleAmpResponse(String line)
     return;
   }
 
-  // Handle pong response (silently update timestamp)
+  // Handle pong response (update timestamp and optionally log)
   if (doc.containsKey("type") && doc["type"] == "pong")
   {
     last_amp_pong_time = millis();
+
+    // Optional: Log pong details for debugging
+    #ifdef DEBUG_PING_PONG
+    uint32_t seq = doc["seq"] | 0;
+    unsigned long uptime = doc["uptime_ms"] | 0;
+    Serial.printf("[AMP] PONG: seq=%u, uptime=%lums\n", seq, uptime);
+    #endif
+
     return;
   }
 
