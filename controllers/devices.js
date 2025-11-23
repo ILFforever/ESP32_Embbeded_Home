@@ -131,8 +131,8 @@ async function storeSensorHistory(deviceRef, sensorData, timestamp, deviceId) {
     created_at: admin.firestore.FieldValue.serverTimestamp()
   };
 
-  // Store in history collection
-  await deviceRef.collection('sensors').doc('history').collection('readings').add(historyDoc);
+  // Store directly in sensors/history collection (no intermediate readings folder)
+  await deviceRef.collection('sensors').collection('history').add(historyDoc);
 
   // Update cache
   historyWriteCache.set(deviceId, Date.now());
@@ -2295,11 +2295,10 @@ const getSensorReadings = async (req, res) => {
     const endTime = new Date();
     const startTime = new Date(endTime.getTime() - (hoursInt * 60 * 60 * 1000));
 
-    // Query history collection ordered by timestamp
+    // Query history collection directly (no intermediate readings folder)
     const snapshot = await deviceRef
       .collection('sensors')
-      .doc('history')
-      .collection('readings')
+      .collection('history')
       .where('timestamp', '>=', admin.firestore.Timestamp.fromDate(startTime))
       .where('timestamp', '<=', admin.firestore.Timestamp.fromDate(endTime))
       .orderBy('timestamp', 'asc')
