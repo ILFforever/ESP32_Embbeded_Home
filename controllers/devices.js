@@ -376,9 +376,17 @@ const handleRoomSensorData = async (req, res) => {
       });
     }
 
+    // Convert timestamp from seconds to milliseconds if needed
+    // ESP32 sends Unix timestamp in seconds, JavaScript Date needs milliseconds
+    let timestampMs = timestamp || Date.now();
+    if (timestamp && timestamp < 10000000000) {
+      // If timestamp is less than 10 billion, it's in seconds (before year 2286)
+      timestampMs = timestamp * 1000;
+    }
+
     const sensorData = {
       ...data,
-      timestamp: timestamp || Date.now(),
+      timestamp: timestampMs,
       forwarded_by: forwarded_by || 'unknown'
     };
 
@@ -395,7 +403,7 @@ const handleRoomSensorData = async (req, res) => {
       ...data,
       device_type: device_type || 'environmental_sensor',
       forwarded_by: forwarded_by || 'unknown',
-      timestamp: admin.firestore.Timestamp.fromDate(new Date(sensorData.timestamp)),
+      timestamp: admin.firestore.Timestamp.fromDate(new Date(timestampMs)),
       last_updated: admin.firestore.FieldValue.serverTimestamp(),
     }, { merge: true });
 
