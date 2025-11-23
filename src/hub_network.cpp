@@ -1,4 +1,5 @@
 #include "hub_network.h"
+#include "uart_slaves.h"
 #include <WiFi.h>
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
@@ -391,6 +392,46 @@ void acknowledgeCommand(String commandId, bool success, String action) {
 
   HTTPClient http;
   String url = String(BACKEND_SERVER_URL) + "/api/v1/devices/commands/ack";
+
+  http.begin(url);
+  http.addHeader("Content-Type", "application/json");
+
+  // Add Authorization header with Bearer token
+  if (HUB_API_TOKEN && strlen(HUB_API_TOKEN) > 0) {
+    String authHeader = String("Bearer ") + HUB_API_TOKEN;
+    http.addHeader("Authorization", authHeader.c_str());
+  }
+
+  http.setTimeout(5000);
+
+  // Build JSON payload
+  JsonDocument doc;
+  doc["device_id"] = HUB_DEVICE_ID;
+  doc["command_id"] = commandId;
+  doc["success"] = success;
+  if (success) {
+    doc["result"] = "Command executed: " + action;
+  } else {
+    doc["error"] = "Failed to execute: " + action;
+  }
+
+  String jsonString;
+  serializeJson(doc, jsonString);
+
+  // Send POST request
+  int httpResponseCode = http.POST(jsonString);
+
+  if (httpResponseCode == 200) {
+    Serial.printf("[Commands] ✓ Acknowledged command %s (%s)\n",
+                  commandId.c_str(), success ? "success" : "failed");
+  } else {
+    Serial.printf("[Commands] ✗ Failed to acknowledge (code: %d)\n", httpResponseCode);
+  }
+
+  http.end();
+}
+
+// ============================================================================
 // Send mesh sensor data to backend
 // Forwards sensor data from room sensors (received via Main_mesh) to backend
 // ============================================================================
@@ -579,26 +620,6 @@ void sendMainMeshLocalData(const char* jsonData) {
 
   // Build JSON payload
   JsonDocument doc;
-  doc["device_id"] = HUB_DEVICE_ID;
-  doc["command_id"] = commandId;
-  doc["success"] = success;
-  if (success) {
-    doc["result"] = "Command executed: " + action;
-  } else {
-    doc["error"] = "Failed to execute: " + action;
-  }
-
-  String jsonString;
-  serializeJson(doc, jsonString);
-
-  // Send POST request
-  int httpResponseCode = http.POST(jsonString);
-
-  if (httpResponseCode == 200) {
-    Serial.printf("[Commands] ✓ Acknowledged command %s (%s)\n",
-                  commandId.c_str(), success ? "success" : "failed");
-  } else {
-    Serial.printf("[Commands] ✗ Failed to acknowledge (code: %d)\n", httpResponseCode);
   doc["device_id"] = deviceId;
   doc["device_type"] = deviceType;
 

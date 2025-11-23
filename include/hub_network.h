@@ -2,6 +2,7 @@
 #define HUB_NETWORK_H
 
 #include <Arduino.h>
+#include <ArduinoJson.h>
 
 // Device status structure
 struct DeviceStatus {
