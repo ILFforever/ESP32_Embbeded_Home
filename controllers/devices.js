@@ -87,6 +87,48 @@ function updateCache(deviceId, data, dataType) {
   });
 }
 
+// History write interval (30 minutes in milliseconds)
+const HISTORY_WRITE_INTERVAL_MS = 30 * 60 * 1000;
+
+// Cache for tracking last history write time per device
+const historyWriteCache = new Map(); // { device_id: lastHistoryWriteTime }
+
+// Helper: Check if we should write to history (every 30 minutes)
+function shouldWriteToHistory(deviceId) {
+  const lastWrite = historyWriteCache.get(deviceId);
+
+  if (!lastWrite) {
+    return true; // First time - always write
+  }
+
+  const now = Date.now();
+  const timeSinceLastWrite = now - lastWrite;
+
+  return timeSinceLastWrite >= HISTORY_WRITE_INTERVAL_MS;
+}
+
+// Helper: Store sensor reading in history for graphing (30-minute intervals)
+async function storeSensorHistory(deviceRef, sensorData, timestamp, deviceId) {
+  if (!shouldWriteToHistory(deviceId)) {
+    return false; // Skip history write
+  }
+
+  // Create history document with timestamp and sensor values
+  const historyDoc = {
+    timestamp: admin.firestore.Timestamp.fromDate(new Date(timestamp)),
+    ...sensorData,
+    created_at: admin.firestore.FieldValue.serverTimestamp()
+  };
+
+  // Store in history collection
+  await deviceRef.collection('sensors').doc('history').collection('readings').add(historyDoc);
+
+  // Update cache
+  historyWriteCache.set(deviceId, Date.now());
+
+  return true;
+}
+
 // ============================================================================
 // @route   POST /api/v1/devices/register
 // @desc    Register a new device and generate API token
@@ -277,17 +319,18 @@ const handleSensorData = async (req, res) => {
       const db = getFirestore();
       const deviceRef = db.collection('devices').doc(device_id);
 
-      // Write sensor data
+      // Write sensor data to current (for real-time display)
       await deviceRef.collection('sensors').doc('current').set({
         ...sensors,
+        timestamp: admin.firestore.Timestamp.fromDate(new Date(sensorData.timestamp)),
         last_updated: admin.firestore.FieldValue.serverTimestamp(),
       }, { merge: true });
 
-      // Optional: Store history (disable if not needed to save writes)
-      // await deviceRef.collection('sensor_history').add({
-      //   ...sensors,
-      //   timestamp: admin.firestore.FieldValue.serverTimestamp(),
-      // });
+      // Store in history (30-minute intervals for graphing)
+      const historyWritten = await storeSensorHistory(deviceRef, sensors, sensorData.timestamp, device_id);
+      if (historyWritten) {
+        console.log(`[Sensor] ${device_id} - Stored in history (30min interval)`);
+      }
 
       updateCache(device_id, sensorData, 'sensor');
     } else {
@@ -336,21 +379,20 @@ const handleRoomSensorData = async (req, res) => {
     const db = getFirestore();
     const deviceRef = db.collection('devices').doc(device_id);
 
-    // Write sensor data to current sensors document
+    // Write sensor data to current document (for real-time display)
     await deviceRef.collection('sensors').doc('current').set({
       ...data,
       device_type: device_type || 'environmental_sensor',
       forwarded_by: forwarded_by || 'unknown',
+      timestamp: admin.firestore.Timestamp.fromDate(new Date(sensorData.timestamp)),
       last_updated: admin.firestore.FieldValue.serverTimestamp(),
     }, { merge: true });
 
-    // Optional: Store history (can be enabled if needed)
-    // await deviceRef.collection('sensor_history').add({
-    //   ...data,
-    //   device_type: device_type,
-    //   forwarded_by: forwarded_by,
-    //   timestamp: admin.firestore.FieldValue.serverTimestamp(),
-    // });
+    // Store in history (30-minute intervals for graphing)
+    const historyWritten = await storeSensorHistory(deviceRef, data, sensorData.timestamp, device_id);
+    if (historyWritten) {
+      console.log(`[RoomSensor] ${device_id} - Stored in history (30min interval)`);
+    }
 
     // Update cache to track last write
     updateCache(device_id, sensorData, 'sensor');
@@ -2196,6 +2238,78 @@ const getHubAmpStreaming = async (req, res) => {
   }
 };
 
+// ============================================================================
+// @route   GET /api/v1/devices/:device_id/sensors/readings
+// @desc    Get sensor history readings for graphing (30-minute interval data)
+// @query   hours - Number of hours to fetch (default 24, max 720 = 30 days)
+// @query   limit - Max readings to return (default 500)
+// @access  Protected
+// ============================================================================
+const getSensorReadings = async (req, res) => {
+  try {
+    const { device_id } = req.params;
+    const { hours = 24, limit = 500 } = req.query;
+
+    const hoursInt = parseInt(hours);
+    const limitInt = parseInt(limit);
+
+    // Validate parameters
+    if (hoursInt < 1 || hoursInt > 720) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'hours must be between 1 and 720 (30 days)'
+      });
+    }
+
+    console.log(`[SensorReadings] ${device_id} - Fetching last ${hoursInt} hours of data`);
+
+    const db = getFirestore();
+    const deviceRef = db.collection('devices').doc(device_id);
+
+    // Calculate time range
+    const endTime = new Date();
+    const startTime = new Date(endTime.getTime() - (hoursInt * 60 * 60 * 1000));
+
+    // Query history collection ordered by timestamp
+    const snapshot = await deviceRef
+      .collection('sensors')
+      .doc('history')
+      .collection('readings')
+      .where('timestamp', '>=', admin.firestore.Timestamp.fromDate(startTime))
+      .where('timestamp', '<=', admin.firestore.Timestamp.fromDate(endTime))
+      .orderBy('timestamp', 'asc')
+      .limit(limitInt)
+      .get();
+
+    const readings = snapshot.docs.map(doc => {
+      const data = doc.data();
+      return {
+        id: doc.id,
+        timestamp: data.timestamp.toDate().toISOString(),
+        ...data,
+        created_at: data.created_at ? data.created_at.toDate().toISOString() : null
+      };
+    });
+
+    console.log(`[SensorReadings] ${device_id} - Returning ${readings.length} history readings`);
+
+    res.json({
+      status: 'ok',
+      device_id,
+      start: startTime.toISOString(),
+      end: endTime.toISOString(),
+      hours: hoursInt,
+      count: readings.length,
+      interval_minutes: 30,
+      readings
+    });
+
+  } catch (error) {
+    console.error('[SensorReadings] Error:', error);
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+};
+
 module.exports = {
   registerDevice,
   handleHeartbeat,
@@ -2244,5 +2358,7 @@ module.exports = {
   // Hub-specific endpoints
   getHubSensors,
   sendHubAlert,
-  getHubAmpStreaming
+  getHubAmpStreaming,
+  // Sensor readings
+  getSensorReadings
 };
