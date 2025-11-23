@@ -1,5 +1,6 @@
 import React from 'react';
 import { useRouter } from 'next/navigation';
+import { Battery } from 'lucide-react';
 import type { DevicesStatus } from '@/types/dashboard';
 import { getDeviceStatusClass as getStatusClass, getDeviceStatusText as getStatusText } from '@/services/devices.service';
 
@@ -22,6 +23,20 @@ export function SystemStatusCard({ devicesStatus, isExpanded = false }: SystemSt
 
   const getDeviceStatusText = (online: boolean, lastSeen: string | null | undefined) => {
     return getStatusText(online, lastSeen || null);
+  };
+
+  const getBatteryIcon = (battery: number | undefined) => {
+    if (!battery) return <Battery className="battery-low" size={16} />;
+    if (battery > 60) return <Battery className="battery-good" size={16} />;
+    if (battery > 20) return <Battery className="battery-medium" size={16} />;
+    return <Battery className="battery-low" size={16} />;
+  };
+
+  const getBatteryClass = (battery: number | undefined) => {
+    if (!battery) return 'battery-low';
+    if (battery > 60) return 'battery-good';
+    if (battery > 20) return 'battery-medium';
+    return 'battery-low';
   };
 
   const handleDoorbellClick = (e: React.MouseEvent) => {
@@ -51,14 +66,25 @@ export function SystemStatusCard({ devicesStatus, isExpanded = false }: SystemSt
           >
             <div className="device-status-header">
               <h3>DOORBELL</h3>
-              <span className={`status-indicator ${getDeviceStatusClass(doorbellDevice?.online || false, doorbellDevice?.last_seen)}`}>
-                {getDeviceStatusText(doorbellDevice?.online || false, doorbellDevice?.last_seen)}
-              </span>
+              <div className="status-group">
+                <span className={`status-indicator ${getDeviceStatusClass(doorbellDevice?.online || false, doorbellDevice?.last_seen)}`}>
+                  {getDeviceStatusText(doorbellDevice?.online || false, doorbellDevice?.last_seen)}
+                </span>
+                {doorbellDevice?.battery !== undefined && (
+                  <div className={`battery-indicator ${getBatteryClass(doorbellDevice.battery)}`}>
+                    {getBatteryIcon(doorbellDevice.battery)}
+                    <span>{doorbellDevice.battery}%</span>
+                  </div>
+                )}
+              </div>
             </div>
             {doorbellDevice && (
               <div className="device-info">
                 <p>Last Heartbeat: {doorbellDevice.last_seen ? new Date(doorbellDevice.last_seen).toLocaleString() : 'Never'}</p>
                 <p>Device ID: {doorbellDevice.device_id || 'N/A'}</p>
+                {doorbellDevice.battery !== undefined && (
+                  <p>Battery: {doorbellDevice.battery}%</p>
+                )}
                 {isExpanded && (
                   <>
                     <p>IP Address: {doorbellDevice.ip_address || 'N/A'}</p>
@@ -84,14 +110,25 @@ export function SystemStatusCard({ devicesStatus, isExpanded = false }: SystemSt
           >
             <div className="device-status-header">
               <h3>HUB</h3>
-              <span className={`status-indicator ${getDeviceStatusClass(hubDevice?.online || false, hubDevice?.last_seen)}`}>
-                {getDeviceStatusText(hubDevice?.online || false, hubDevice?.last_seen)}
-              </span>
+              <div className="status-group">
+                <span className={`status-indicator ${getDeviceStatusClass(hubDevice?.online || false, hubDevice?.last_seen)}`}>
+                  {getDeviceStatusText(hubDevice?.online || false, hubDevice?.last_seen)}
+                </span>
+                {hubDevice?.battery !== undefined && (
+                  <div className={`battery-indicator ${getBatteryClass(hubDevice.battery)}`}>
+                    {getBatteryIcon(hubDevice.battery)}
+                    <span>{hubDevice.battery}%</span>
+                  </div>
+                )}
+              </div>
             </div>
             {hubDevice && (
               <div className="device-info">
                 <p>Last Heartbeat: {hubDevice.last_seen ? new Date(hubDevice.last_seen).toLocaleString() : 'Never'}</p>
                 <p>Device ID: {hubDevice.device_id || 'N/A'}</p>
+                {hubDevice.battery !== undefined && (
+                  <p>Battery: {hubDevice.battery}%</p>
+                )}
                 {isExpanded && (
                   <>
                     <p>IP Address: {hubDevice.ip_address || 'N/A'}</p>

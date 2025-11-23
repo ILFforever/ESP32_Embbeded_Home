@@ -10,6 +10,7 @@ export interface Device {
   free_heap: number;
   wifi_rssi: number;
   ip_address: string | null;
+  battery?: number; // Battery percentage (0-100)
   expireAt: any; // Firebase Timestamp - used by backend to compute online status
 }
 

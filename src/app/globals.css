@@ -617,6 +617,12 @@ h6 { font-size: var(--font-size-sm); }
   margin-bottom: var(--spacing-sm);
 }
 
+.status-group {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+
 .device-info {
   margin-top: var(--spacing-sm);
   font-size: var(--font-size-sm);
