@@ -271,7 +271,7 @@ export default function DashboardPage() {
               <TemperatureCard temperatureData={temperatureData} />
             </div>
 
-            {/* Row 3: 3 cards - Doors/Windows, Admin, Gas (same width as other cards) */}
+            {/* Row 3: Doors/Windows (1 col), Admin (1 col), Gas (2 cols - same width as Temperature/Alerts) */}
             <div
               className="card-row3-1"
               onClick={() => openExpandedCard('doors')}
@@ -299,7 +299,7 @@ export default function DashboardPage() {
             </div>
 
             <div
-              className="card-row3-3"
+              className="card-row3-3-wide"
               onClick={() => openExpandedCard('gas')}
             >
               <button className="card-eye-icon" onClick={(e) => { e.stopPropagation(); openExpandedCard('gas'); }}>
