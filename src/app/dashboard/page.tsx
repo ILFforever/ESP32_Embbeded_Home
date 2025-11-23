@@ -27,6 +27,7 @@ export default function DashboardPage() {
   const [theme, setTheme] = useState<'purple' | 'green'>('purple');
   const [expandedCard, setExpandedCard] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [activeView, setActiveView] = useState<string>('dashboard');
 
   useEffect(() => {
     const fetchData = async () => {
@@ -63,6 +64,35 @@ export default function DashboardPage() {
   const handleLogout = () => {
     logout();
     router.push('/login');
+  };
+
+  const handleMenuClick = (menuItem: string) => {
+    setActiveView(menuItem);
+
+    // Handle specific menu actions
+    switch (menuItem) {
+      case 'alerts':
+        openExpandedCard('alerts');
+        break;
+      case 'analytics':
+        // Analytics view - could open a dedicated analytics card in the future
+        openExpandedCard('system-status');
+        break;
+      case 'devices':
+        openExpandedCard('admin');
+        break;
+      case 'settings':
+        openExpandedCard('admin');
+        break;
+      default:
+        // Dashboard view - close any expanded cards
+        closeExpandedCard();
+    }
+
+    // Close sidebar on mobile after selection
+    if (window.innerWidth < 768) {
+      setSidebarOpen(false);
+    }
   };
 
   const openExpandedCard = (cardId: string) => {
@@ -133,7 +163,7 @@ export default function DashboardPage() {
       {/* Sidebar */}
       <aside className={`sidebar ${!sidebarOpen ? 'closed' : ''}`}>
         <div className="sidebar-header">
-          <div className="sidebar-logo">Smart Home</div>
+          <div className="sidebar-logo">Arduino888 Smart Home</div>
           <button className="sidebar-toggle" onClick={toggleSidebar}>
             ☰
           </button>
@@ -141,37 +171,51 @@ export default function DashboardPage() {
         <nav>
           <ul className="sidebar-nav">
             <li className="sidebar-nav-item">
-              <div className="sidebar-nav-link active">
+              <div
+                className={`sidebar-nav-link ${activeView === 'dashboard' ? 'active' : ''}`}
+                onClick={() => handleMenuClick('dashboard')}
+                style={{ cursor: 'pointer' }}
+              >
                 <span className="sidebar-nav-icon">🏠</span>
                 <span>Dashboard</span>
               </div>
             </li>
             <li className="sidebar-nav-item">
-              <div className="sidebar-nav-link">
+              <div
+                className={`sidebar-nav-link ${activeView === 'alerts' ? 'active' : ''}`}
+                onClick={() => handleMenuClick('alerts')}
+                style={{ cursor: 'pointer' }}
+              >
                 <span className="sidebar-nav-icon">🔔</span>
                 <span>Alerts</span>
               </div>
             </li>
             <li className="sidebar-nav-item">
-              <div className="sidebar-nav-link">
+              <div
+                className={`sidebar-nav-link ${activeView === 'analytics' ? 'active' : ''}`}
+                onClick={() => handleMenuClick('analytics')}
+                style={{ cursor: 'pointer' }}
+              >
                 <span className="sidebar-nav-icon">📊</span>
                 <span>Analytics</span>
               </div>
             </li>
             <li className="sidebar-nav-item">
-              <div className="sidebar-nav-link">
+              <div
+                className={`sidebar-nav-link ${activeView === 'devices' ? 'active' : ''}`}
+                onClick={() => handleMenuClick('devices')}
+                style={{ cursor: 'pointer' }}
+              >
                 <span className="sidebar-nav-icon">🔧</span>
                 <span>Devices</span>
               </div>
             </li>
             <li className="sidebar-nav-item">
-              <div className="sidebar-nav-link">
-                <span className="sidebar-nav-icon">📹</span>
-                <span>Cameras</span>
-              </div>
-            </li>
-            <li className="sidebar-nav-item">
-              <div className="sidebar-nav-link">
+              <div
+                className={`sidebar-nav-link ${activeView === 'settings' ? 'active' : ''}`}
+                onClick={() => handleMenuClick('settings')}
+                style={{ cursor: 'pointer' }}
+              >
                 <span className="sidebar-nav-icon">⚙️</span>
                 <span>Settings</span>
               </div>
