@@ -2,8 +2,8 @@
 #include "hub_network.h"
 
 // UART interfaces
-HardwareSerial MeshSerial(1);  // UART1
-HardwareSerial AmpSerial(2);   // UART2
+HardwareSerial MeshSerial(1); // UART1
+HardwareSerial AmpSerial(2);  // UART2
 
 // Main Mesh ping-pong state
 uint32_t mesh_ping_counter = 0;
@@ -69,7 +69,8 @@ void handleMeshResponse(String line)
     Serial.println(error.c_str());
     return;
   }
-
+  Serial.print("[MESH] RX: ");
+  Serial.println(line);
   // Handle pong response (silently update timestamp)
   if (doc.containsKey("type") && doc["type"] == "pong")
   {
@@ -83,9 +84,9 @@ void handleMeshResponse(String line)
     Serial.println("[MESH] ✓ Received sensor data from Main Mesh");
 
     // Extract local sensors
-    if (doc.containsKey("local_sensors"))
+    if (doc.containsKey("sensors"))
     {
-      JsonObject local = doc["local_sensors"];
+      JsonObject local = doc["sensors"];
       if (local.containsKey("temperature"))
       {
         float temp = local["temperature"];
@@ -107,9 +108,9 @@ void handleMeshResponse(String line)
     }
 
     // Forward Main_mesh local sensor data to backend
-    if (doc.containsKey("local_sensors"))
+    if (doc.containsKey("sensors"))
     {
-      JsonObject localSensors = doc["local_sensors"];
+      JsonObject localSensors = doc["sensors"];
       if (localSensors.size() > 0)
       {
         Serial.printf("[MESH]   Forwarding Main_mesh local sensors to backend...\n");
@@ -126,6 +127,44 @@ void handleMeshResponse(String line)
         Serial.printf("[MESH]   Forwarding %d room sensor(s) to backend...\n", meshSensors.size());
         sendMeshSensorData(line.c_str());
       }
+    }
+
+    return;
+  }
+
+  // Handle sensor data from mesh nodes (individual sensor messages)
+  if (doc.containsKey("source") && doc["source"] == "mesh_node")
+  {
+    const char *deviceId = doc["device_id"] | "unknown";
+    const char *deviceType = doc["device_type"] | "sensor";
+
+    Serial.printf("[MESH] ✓ Received sensor data from mesh node: %s\n", deviceId);
+
+    // Extract sensor data if present
+    if (doc.containsKey("sensors") && !doc["sensors"].isNull())
+    {
+      JsonObject sensors = doc["sensors"];
+
+      // Log sensor values
+      if (sensors.containsKey("temperature"))
+      {
+        float temp = sensors["temperature"];
+        float humidity = sensors["humidity"];
+        Serial.printf("[MESH]   %s: Temp=%.1f°C, Humidity=%.1f%%\n", deviceId, temp, humidity);
+      }
+      if (sensors.containsKey("pm2_5"))
+      {
+        int pm25 = sensors["pm2_5"];
+        Serial.printf("[MESH]   %s: PM2.5=%d µg/m³\n", deviceId, pm25);
+      }
+
+      // Forward mesh node sensor data to backend
+      Serial.printf("[MESH]   Forwarding mesh node %s data to backend...\n", deviceId);
+      sendMeshSensorData(line.c_str());
+    }
+    else
+    {
+      Serial.printf("[MESH]   ⚠ No sensor data in message from %s\n", deviceId);
     }
 
     return;

@@ -441,7 +441,7 @@ void sendMeshSensorData(const char* jsonData) {
     return;
   }
 
-  // Parse the incoming JSON to extract mesh sensors array
+  // Parse the incoming JSON
   JsonDocument incomingDoc;
   DeserializationError error = deserializeJson(incomingDoc, jsonData);
 
@@ -450,9 +450,88 @@ void sendMeshSensorData(const char* jsonData) {
     return;
   }
 
-  // Check if we have mesh_sensors array
+  // Check if this is a single mesh_node message (new format)
+  if (incomingDoc.containsKey("source") && incomingDoc["source"] == "mesh_node") {
+    // Single mesh node sensor data
+    const char* deviceId = incomingDoc["device_id"] | "unknown";
+    const char* deviceType = incomingDoc["device_type"] | "sensor";
+
+    // Check if sensors data exists and is not null
+    if (!incomingDoc.containsKey("sensors") || incomingDoc["sensors"].isNull()) {
+      Serial.printf("[MeshData] ⚠ No sensor data from %s\n", deviceId);
+      return;
+    }
+
+    JsonObject sensorData = incomingDoc["sensors"];
+
+    Serial.printf("[MeshData] Forwarding mesh node %s to backend\n", deviceId);
+
+    HTTPClient http;
+    String url = String(BACKEND_SERVER_URL) + "/api/v1/devices/sensor-data";
+
+    http.begin(url);
+    http.addHeader("Content-Type", "application/json");
+
+    // Use hub's token for authentication (mesh nodes don't have their own tokens)
+    if (HUB_API_TOKEN && strlen(HUB_API_TOKEN) > 0) {
+      String authHeader = String("Bearer ") + HUB_API_TOKEN;
+      http.addHeader("Authorization", authHeader.c_str());
+    }
+
+    http.setTimeout(5000);
+
+    // Build JSON payload
+    JsonDocument doc;
+    doc["device_id"] = deviceId;
+    doc["device_type"] = deviceType;
+    doc["timestamp"] = millis();
+    doc["forwarded_by"] = HUB_DEVICE_ID;
+
+    // Copy all sensor data
+    JsonObject data = doc.createNestedObject("data");
+    for (JsonPair kv : sensorData) {
+      data[kv.key()] = kv.value();
+    }
+
+    String jsonString;
+    serializeJson(doc, jsonString);
+
+    // Send POST
+    int httpResponseCode = http.POST(jsonString);
+
+    if (httpResponseCode > 0) {
+      if (httpResponseCode == 200) {
+        Serial.printf("[MeshData] ✓ Mesh node %s data forwarded (code: %d)\n",
+                      deviceId, httpResponseCode);
+
+        // Parse response
+        String response = http.getString();
+        JsonDocument responseDoc;
+        DeserializationError respError = deserializeJson(responseDoc, response);
+        if (!respError && responseDoc.containsKey("written")) {
+          bool written = responseDoc["written"];
+          if (written) {
+            Serial.printf("[MeshData]   → Written to Firebase\n");
+          } else {
+            Serial.printf("[MeshData]   → Throttled (cached)\n");
+          }
+        }
+      } else {
+        Serial.printf("[MeshData] ✗ Failed to forward mesh node %s (code: %d)\n",
+                      deviceId, httpResponseCode);
+      }
+    } else {
+      Serial.printf("[MeshData] ✗ Connection failed: %s\n",
+                    http.errorToString(httpResponseCode).c_str());
+    }
+
+    http.end();
+    return;
+  }
+
+  // Old format: Check if we have mesh_sensors array
   if (!incomingDoc.containsKey("mesh_sensors")) {
-    Serial.println("[MeshData] No mesh_sensors array found in data");
+    Serial.println("[MeshData] No mesh_sensors array or mesh_node data found");
     return;
   }
 
@@ -580,13 +659,13 @@ void sendMainMeshLocalData(const char* jsonData) {
     return;
   }
 
-  // Check if we have local_sensors object
-  if (!incomingDoc.containsKey("local_sensors")) {
-    Serial.println("[MainMeshLocal] No local_sensors found in data");
+  // Check if we have sensors object
+  if (!incomingDoc.containsKey("sensors")) {
+    Serial.println("[MainMeshLocal] No sensors found in data");
     return;
   }
 
-  JsonObject localSensors = incomingDoc["local_sensors"];
+  JsonObject localSensors = incomingDoc["sensors"];
 
   // Check if there's any data
   if (localSensors.size() == 0) {
@@ -595,8 +674,8 @@ void sendMainMeshLocalData(const char* jsonData) {
   }
 
   // Extract device info from the message
-  const char* deviceId = incomingDoc["device_id"] | "main_mesh_001";
-  const char* deviceType = incomingDoc["device_type"] | "mesh_hub";
+  const char* deviceId = incomingDoc["device_id"] | "hb_001";
+  const char* deviceType = incomingDoc["device_type"] | "hub";
 
   Serial.printf("[MainMeshLocal] Forwarding Main_mesh local sensors to backend (device: %s)\n", deviceId);
 
