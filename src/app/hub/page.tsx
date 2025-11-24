@@ -422,7 +422,7 @@ export default function HubControlPage() {
                       <div className="temp-ranges" style={{
                         display: 'flex',
                         justifyContent: 'space-around',
-                        marginTop: '16px',
+                        marginTop: '85px',
                         padding: '12px',
                         background: 'rgba(0,0,0,0.3)',
                         borderRadius: '8px'
@@ -490,7 +490,7 @@ export default function HubControlPage() {
                       <div style={{
                         display: 'flex',
                         justifyContent: 'space-around',
-                        marginTop: '16px',
+                        marginTop: '60px',
                         padding: '12px',
                         background: 'rgba(0,0,0,0.3)',
                         borderRadius: '8px'
@@ -553,7 +553,7 @@ export default function HubControlPage() {
                         <div style={{
                           display: 'flex',
                           justifyContent: 'space-around',
-                          marginTop: '16px',
+                          marginTop: '26px',
                           padding: '12px',
                           background: 'rgba(0,0,0,0.3)',
                           borderRadius: '8px'
