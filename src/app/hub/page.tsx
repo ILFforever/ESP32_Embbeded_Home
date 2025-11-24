@@ -779,7 +779,7 @@ export default function HubControlPage() {
                 </div>
               </div>
 
-              {/* Send Alert to Hub Card - Half Height */}
+              {/* Send Alert to Hub Card - Half Height
               <div className="card" style={{ height: 'fit-content' }}>
                 <div className="card-header">
                   <div className="card-title-group">
@@ -874,7 +874,7 @@ export default function HubControlPage() {
                     </button>
                   </form>
                 </div>
-              </div>
+              </div> */}
             </div>
           </div>
         </div>
