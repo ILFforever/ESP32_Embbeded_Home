@@ -1,4 +1,5 @@
 #include "touch_handler.h"
+#include "screen_definitions.h"
 #include "touch_button.h"
 #include "GUI/screen_manager.h"
 #include <Arduino.h>
@@ -39,7 +40,7 @@ void handleTouchInput()
   touchArea.fillSprite(0);
   touchAreaNeedsUpdate = true; // update touch objects every frame (100ms)
   
-  if (cur_Screen == 0)
+  if (cur_Screen == SCREEN_HOME)
   {
     // Home screen touch handling
     {
@@ -163,7 +164,7 @@ void handleTouchInput()
 
 
   }
-  else if (cur_Screen == 2)
+  else if (cur_Screen == SCREEN_BUTTON_EXAMPLE)
   {
     {
       // Initialize buttons on first entry
@@ -254,7 +255,7 @@ void handleTouchInput()
     }
     
   }
-  else if (cur_Screen == 4)
+  else if (cur_Screen == SCREEN_ENTER_PIN)
   {
     {
       // Initialize buttons on first entry
@@ -448,7 +449,7 @@ void handleTouchInput()
       
     
   }
-  else if (cur_Screen == 9)
+  else if (cur_Screen == SCREEN_TEMP_2)
   {
     {
       // Initialize buttons on first entry

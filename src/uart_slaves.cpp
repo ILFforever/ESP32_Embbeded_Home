@@ -152,12 +152,22 @@ void handleMeshResponse(String line)
     {
       JsonObject sensors = doc["sensors"];
 
-      // Log sensor values
+      // Log sensor values - support multiple sensor types
       if (sensors.containsKey("temperature"))
       {
         float temp = sensors["temperature"];
-        float humidity = sensors["humidity"];
-        Serial.printf("[MESH]   %s: Temp=%.1f°C, Humidity=%.1f%%\n", deviceId, temp, humidity);
+        float humidity = sensors["humidity"] | 0.0;
+        Serial.printf("[MESH]   %s: Temp=%.2f°C, Humidity=%.2f%%\n", deviceId, temp, humidity);
+      }
+      if (sensors.containsKey("light_lux"))
+      {
+        float lightLux = sensors["light_lux"];
+        Serial.printf("[MESH]   %s: Light=%.2f lux\n", deviceId, lightLux);
+      }
+      if (sensors.containsKey("gas_level"))
+      {
+        int gasLevel = sensors["gas_level"];
+        Serial.printf("[MESH]   %s: Gas=%d\n", deviceId, gasLevel);
       }
       if (sensors.containsKey("pm2_5"))
       {

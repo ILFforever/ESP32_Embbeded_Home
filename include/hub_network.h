@@ -50,4 +50,15 @@ void sendMeshSensorData(const char* jsonData);
 // Send Main_mesh local sensor data to backend
 void sendMainMeshLocalData(const char* jsonData);
 
+// Structure for alert data
+struct Alert {
+  char message[100];
+  char level[20];  // "error", "warning", "info"
+  char timestamp[30];
+  bool valid;
+};
+
+// Fetch recent alerts for home screen (limit 5)
+bool fetchHomeAlerts(Alert* alerts, int maxAlerts);
+
 #endif

@@ -18,6 +18,7 @@
 #include "mqtt_client.h"
 #include "GUI/screen_manager.h"
 #include "Capacitive/cap_sensor_manager.h"
+#include "screen_definitions.h"
 
 // ============================================================================
 // UART Pin Configuration
@@ -77,8 +78,9 @@ void IRAM_ATTR touchISR()
 }
 
 // Track screens
-int cur_Screen = 0;
+int cur_Screen = SCREEN_HOME;  // Start at home screen
 int Last_Screen = -1; // so we start with an update
+bool skipPageTransition = false; // Set to true to skip page transition animation
 // ============================================================================
 // Task Definitions
 // ============================================================================

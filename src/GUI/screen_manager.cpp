@@ -1,4 +1,5 @@
 #include "screen_manager.h"
+#include "screen_definitions.h"
 #include "Touch/touch_handler.h"
 #include <WiFi.h>
 #include <Touch.h>
@@ -10,7 +11,9 @@ void drawLightIcon(int cx, int cy);
 void drawGasIcon(int cx, int cy);
 void drawRoomIcon(int cx, int cy);
 void drawGearIcon(int cx, int cy);
-void drawNotifyCard(int x, int y, int w, int h, uint32_t iconColor,const char *title, const char *detail, const char *timeStr);
+void drawNotifyCard(int x, int y, int w, int h, uint32_t iconColor, const char *title, const char *detail, const char *timeStr);
+
+int Device_list_screen_num = 1;
 
 void updateTopBar()
 {
@@ -83,6 +86,7 @@ void updateTopBar()
     }
   }
   drawWifiSymbol(740, 25, wifiStrength);
+  topBar.drawCenterString(getScreenName(cur_Screen), 400, 10);
 
   // Mark that top bar needs update
   topBarNeedsUpdate = true;
@@ -94,36 +98,81 @@ void updateContent()
   if ((Last_Screen != cur_Screen) || contentNeedsUpdate || forcePageUpdate)
   {
     updateBotBar();
+
+    // Play page transition animation on screen change (not on content updates)
+    if (Last_Screen != cur_Screen && !skipPageTransition)
+    {
+      playPageTransition(getScreenName(cur_Screen));
+    }
+
     Last_Screen = cur_Screen;
     contentNeedsUpdate = true;
     forcePageUpdate = false;
+    skipPageTransition = false; // Reset flag after use
 
-    if (cur_Screen == 0) // Home Page
+    if (cur_Screen == SCREEN_HOME) // Home Page
     {
-
       contentArea.fillScreen(TFT_BLACK);
       contentArea.setTextColor(TFT_BLACK);
       contentArea.setTextSize(3);
+
+      // Left side - Alerts section
       contentArea.fillSmoothRoundRect(10, 10, 500, 400, 10, TFT_WHITE);
+      contentArea.setFont(&fonts::Orbitron_Light_24);
+      contentArea.setTextSize(1);
+      contentArea.drawString("Recent Alerts", 30, 25);
+      contentArea.fillSmoothRoundRect(20, 60, 480, 60, 10, TFT_BLACK); // frame
+      contentArea.fillSmoothRoundRect(25, 65, 470, 50, 8, TFT_GREEN);  // internal content
+
+      contentArea.fillSmoothRoundRect(20, 130, 480, 60, 12, TFT_BLACK);
+      contentArea.fillSmoothRoundRect(21, 131, 479, 59, 12, TFT_GREEN);
+      //contentArea.fillSmoothRoundRect(20, 130, 480, 60, 12, TFT_GREEN);
+      //ontentArea.fillSmoothRoundRect(25, 135, 470, 50, 8, TFT_WHITE);
+
+      // Fetch alerts from backend API (limit to 5 to avoid heap issues)
+      // Alert alerts[5];
+      // bool alertsLoaded = fetchHomeAlerts(alerts, 5);
+
+      // contentArea.setFont(&fonts::DejaVu12);
+      // contentArea.setTextSize(1);
+
+      // if (alertsLoaded) {
+      //   // Draw each alert
+      //   int yPos = 80;
+      //   for (int i = 0; i < 5; i++) {
+      //     if (alerts[i].valid) {
+      //       // Color based on alert level
+      //       uint16_t bgColor = TFT_LIGHTGRAY;
+      //       if (strcmp(alerts[i].level, "error") == 0) bgColor = TFT_RED;
+      //       else if (strcmp(alerts[i].level, "warning") == 0) bgColor = TFT_ORANGE;
+      //       else if (strcmp(alerts[i].level, "info") == 0) bgColor = TFT_CYAN;
+
+      //       contentArea.fillSmoothRoundRect(20, yPos, 470, 60, 8, bgColor);
+      //       contentArea.setTextColor(TFT_BLACK);
+      //       contentArea.drawString(alerts[i].message, 30, yPos + 10);
+      //       contentArea.setTextSize(1);
+      //       contentArea.drawString(alerts[i].timestamp, 30, yPos + 35);
+      //     } else {
+      //       // Empty slot
+      //       contentArea.fillSmoothRoundRect(20, yPos, 470, 60, 8, TFT_LIGHTGRAY);
+      //     }
+      //     yPos += 70;
+      //   }
+      // } else {
+      //   // Failed to load alerts
+      //   contentArea.fillSmoothRoundRect(20, 80, 470, 60, 8, TFT_LIGHTGRAY);
+      //   contentArea.setTextColor(TFT_BLACK);
+      //   contentArea.drawString("Failed to load alerts", 40, 100);
+
+      //   contentArea.fillSmoothRoundRect(20, 150, 470, 60, 8, TFT_LIGHTGRAY);
+      //   contentArea.fillSmoothRoundRect(20, 220, 470, 60, 8, TFT_LIGHTGRAY);
+      //   contentArea.fillSmoothRoundRect(20, 290, 470, 60, 8, TFT_LIGHTGRAY);
+      //   contentArea.fillSmoothRoundRect(20, 360, 470, 60, 8, TFT_LIGHTGRAY);
+      // }
+
+      // Right side - Your original layout (restore this)
       contentArea.fillSmoothRoundRect(520, 10, 270, 250, 10, TFT_WHITE);
       contentArea.fillSmoothRoundRect(520, 270, 270, 140, 10, TFT_WHITE);
-
-      // home name
-      contentArea.setFont(&fonts::Orbitron_Light_24);
-      contentArea.setTextSize(2);
-      contentArea.drawCenterString("Hammy home", 260, 40);
-
-      // status
-      contentArea.setFont(&fonts::Orbitron_Light_24);
-      contentArea.setTextSize(2);
-      contentArea.drawCenterString("status", 260, 110);
-
-      contentArea.setFont(&fonts::Orbitron_Light_24);
-      contentArea.setTextSize(3);
-      contentArea.drawCenterString("3", 260, 220);
-      contentArea.setFont(&fonts::Orbitron_Light_24);
-      contentArea.setTextSize(2);
-      contentArea.drawCenterString("rooms", 260, 310);
 
       // Alerts section (Top right)
       contentArea.setFont(&fonts::Orbitron_Light_24);
@@ -143,7 +192,7 @@ void updateContent()
       contentArea.fillSmoothRoundRect(530 + 87, 320, 75, 75, 5, TFT_BLACK);
       contentArea.fillSmoothRoundRect(530 + 174, 320, 75, 75, 5, TFT_BLACK);
     }
-    else if (cur_Screen == 1) // Font Page
+    else if (cur_Screen == SCREEN_FONT) // Font Page
     {
       contentArea.fillScreen(TFT_BLACK);
       contentArea.setTextColor(TFT_WHITE);
@@ -260,8 +309,67 @@ void updateContent()
       // Reset to default
       contentArea.setFont(&fonts::Font0);
     }
+    else if (cur_Screen == SCREEN_DEVICE_LIST) // SCREEN_DEVICE_LIST (room list)
+    {
+      contentArea.fillScreen(TFT_BLACK);
+      contentArea.fillSmoothRoundRect(0, 10, 800, 400, 10, TFT_LIGHTGRAY);
+      contentArea.setFont(&fonts::FreeSansBold9pt7b);
+      contentArea.setTextSize(1);
+      contentArea.setTextColor(TFT_DARKGRAY);
+      if (Device_list_screen_num == 1)
+      {
+        contentArea.drawString("Living Room", 25, 28);
+        contentArea.fillSmoothRoundRect(15, 25 + 25, 770, 150, 15, TFT_WHITE);
+        // contentArea.setFont(&fonts::DejaVu12);
+        // contentArea.setTextColor(TFT_BLACK);
+        // contentArea.setTextSize(2);
+        // contentArea.drawString("LIVING ROOM", 20, 110);
 
-    else if (cur_Screen == 2) // Button example
+        // contentArea.drawString("Temp:", 20, 140);
+        // contentArea.drawString("Light:", 180, 140);
+        // contentArea.drawString("Humidity:", 350, 140);
+        // contentArea.drawString("Gas:", 570, 140);
+        // contentArea.setTextSize(3);
+        // contentArea.drawString("27", 110, 140);
+        // contentArea.drawString("40", 270, 140);
+        // contentArea.drawString("47", 490, 140);
+        // contentArea.drawString("200", 640, 140);
+
+        // contentArea.setTextSize(2);
+        contentArea.drawString("Kitchen", 25, 220);
+        contentArea.fillSmoothRoundRect(15, 185 + 25 + 30, 770, 150, 15, TFT_WHITE);
+        // contentArea.drawString("BEDROOM", 20, 240);
+        // contentArea.drawString("Temp:", 20, 270);
+        // contentArea.drawString("Light:", 180, 270);
+        // contentArea.drawString("Humidity:", 350, 270);
+        // contentArea.drawString("Gas:", 570, 270);
+        // contentArea.setTextSize(3);
+        // contentArea.drawString("30", 110, 270);
+        // contentArea.drawString("51", 270, 270);
+        // contentArea.drawString("76", 490, 270);
+        // contentArea.drawString("809", 640, 270);
+
+        // contentArea.setTextSize(2);
+        // contentArea.fillSmoothRoundRect(15, 340, 770, 150, 15, TFT_WHITE);
+        // contentArea.drawString("KITCHEN", 20, 370);
+        // contentArea.drawString("Temp:", 20, 400);
+        // contentArea.drawString("Light:", 180, 400);
+        // contentArea.drawString("Humidity:", 350, 400);
+        // contentArea.drawString("Gas:", 570, 400);
+        // contentArea.setTextSize(3);
+        // contentArea.drawString("19", 110, 400);
+        // contentArea.drawString("88", 270, 400);
+        // contentArea.drawString("26", 490, 400);
+        // contentArea.drawString("67", 640, 400);
+      }
+      else
+      {
+        contentArea.drawString("Bedroom Room", 25, 28);
+        contentArea.fillSmoothRoundRect(15, 25 + 25, 770, 150, 15, TFT_WHITE);
+      }
+    }
+
+    else if (cur_Screen == SCREEN_BUTTON_EXAMPLE) // Button example
     {
       contentArea.setTextSize(1);
       contentArea.fillScreen(TFT_BLACK);
@@ -282,7 +390,7 @@ void updateContent()
       contentArea.setFont(&fonts::Font0);
       contentArea.setTextSize(1);
     }
-    else if (cur_Screen == 3) // Room Detail Page
+    else if (cur_Screen == SCREEN_ROOM_DETAIL) // Room Detail Page
     {
 
       contentArea.fillScreen(TFT_BLACK);
@@ -324,7 +432,7 @@ void updateContent()
       contentArea.drawWideLine(450, 240, 320, 240, 3, TFT_BLACK);
       contentArea.drawWideLine(345, 265, 320, 240, 3, TFT_BLACK);
     }
-    else if (cur_Screen == 4) // Enter Pin
+    else if (cur_Screen == SCREEN_ENTER_PIN) // Enter Pin
     {
       contentArea.fillScreen(TFT_BLACK);
       contentArea.setTextColor(TFT_WHITE);
@@ -332,10 +440,10 @@ void updateContent()
       contentArea.setTextSize(2);
       contentArea.drawCenterString("PlEASE ENTER PIN", 400, 20);
       contentArea.setTextSize(2);
-      contentArea.drawWideLine(250, 180,310,180,3,TFT_WHITE);
-      contentArea.drawWideLine(330, 180,390,180,3,TFT_WHITE);
-      contentArea.drawWideLine(410, 180,470,180,3,TFT_WHITE);
-      contentArea.drawWideLine(490, 180,550,180,3,TFT_WHITE);
+      contentArea.drawWideLine(250, 180, 310, 180, 3, TFT_WHITE);
+      contentArea.drawWideLine(330, 180, 390, 180, 3, TFT_WHITE);
+      contentArea.drawWideLine(410, 180, 470, 180, 3, TFT_WHITE);
+      contentArea.drawWideLine(490, 180, 550, 180, 3, TFT_WHITE);
       // Row 1
       // contentArea.fillSmoothRoundRect(190, 190, 90, 60, 5, TFT_LIGHTGRAY);
       // contentArea.fillSmoothRoundRect(300, 190, 90, 60, 5, TFT_LIGHTGRAY);
@@ -346,14 +454,13 @@ void updateContent()
       // contentArea.fillSmoothRoundRect(300, 190+70, 90, 60, 5, TFT_LIGHTGRAY);
       // contentArea.fillSmoothRoundRect(410, 190+70, 90, 60, 5, TFT_LIGHTGRAY);
       // contentArea.fillSmoothRoundRect(520, 190+70, 90, 60, 5, TFT_LIGHTGRAY);
-      // // Row 3 
+      // // Row 3
       // contentArea.fillSmoothRoundRect(190, 190+140, 90, 60, 5, TFT_LIGHTGRAY);
       // contentArea.fillSmoothRoundRect(300, 190+140, 90, 60, 5, TFT_LIGHTGRAY);
       // contentArea.fillSmoothRoundRect(410, 190+140, 90, 60, 5, TFT_LIGHTGRAY);
       // contentArea.fillSmoothRoundRect(520, 190+140, 90, 60, 5, TFT_LIGHTGRAY);
-
     }
-    else if (cur_Screen == 5) // Information Page
+    else if (cur_Screen == SCREEN_INFORMATION) // Information Page
     {
       contentArea.fillScreen(TFT_BLACK);
       contentArea.setTextColor(TFT_WHITE);
@@ -389,59 +496,8 @@ void updateContent()
       contentArea.fillSmoothRoundRect(650, 360, 120, 40, 10, TFT_PINK);
       contentArea.drawString("Check", 670, 365);
     }
-    else if (cur_Screen == 6) //Room List Page
-    {
-      contentArea.fillScreen(TFT_BLACK);
-      contentArea.setTextColor(TFT_WHITE);
-      contentArea.setFont(&fonts::Orbitron_Light_24);
-      contentArea.setTextSize(3);
-      contentArea.drawString("Room List", 10, 10);
-      contentArea.fillSmoothRoundRect(780, 100, 10, 180, 3, TFT_WHITE);
 
-      contentArea.fillSmoothRoundRect(10, 100, 740, 120, 15, TFT_WHITE);
-      contentArea.setFont(&fonts::DejaVu12);
-      contentArea.setTextColor(TFT_BLACK);
-      contentArea.setTextSize(2);
-      contentArea.drawString("LIVING ROOM", 20, 110);
-      
-      contentArea.drawString("Temp:", 20, 140);
-      contentArea.drawString("Light:", 180, 140);
-      contentArea.drawString("Humidity:", 350, 140);
-      contentArea.drawString("Gas:", 570, 140);
-      contentArea.setTextSize(3);
-      contentArea.drawString("27", 110, 140);
-      contentArea.drawString("40", 270, 140);
-      contentArea.drawString("47", 490, 140);
-      contentArea.drawString("200", 640, 140);
-
-      contentArea.setTextSize(2);
-      
-      contentArea.fillSmoothRoundRect(10, 230, 740, 120, 15, TFT_WHITE);
-      contentArea.drawString("BEDROOM", 20, 240);
-      contentArea.drawString("Temp:", 20, 270);
-      contentArea.drawString("Light:", 180, 270);
-      contentArea.drawString("Humidity:", 350, 270);
-      contentArea.drawString("Gas:", 570, 270);
-      contentArea.setTextSize(3);
-      contentArea.drawString("30", 110, 270);
-      contentArea.drawString("51", 270, 270);
-      contentArea.drawString("76", 490, 270);
-      contentArea.drawString("809", 640, 270);
-
-      contentArea.setTextSize(2);
-      contentArea.fillSmoothRoundRect(10, 360, 740, 120, 15, TFT_WHITE);
-      contentArea.drawString("KITCHEN", 20, 370);
-      contentArea.drawString("Temp:", 20, 400);
-      contentArea.drawString("Light:", 180, 400);
-      contentArea.drawString("Humidity:", 350, 400);
-      contentArea.drawString("Gas:", 570, 400);
-      contentArea.setTextSize(3);
-      contentArea.drawString("19", 110, 400);
-      contentArea.drawString("88", 270, 400);
-      contentArea.drawString("26", 490, 400);
-      contentArea.drawString("67", 640, 400);
-    }
-    else if (cur_Screen == 7) //Room Detail Gas Page
+    else if (cur_Screen == SCREEN_ROOM_DETAIL_GAS) // Room Detail Gas Page
     {
       contentArea.fillScreen(TFT_BLACK);
       contentArea.setTextColor(TFT_WHITE);
@@ -449,47 +505,45 @@ void updateContent()
       contentArea.setTextSize(3);
       contentArea.drawString("Bed Room", 10, 10);
       contentArea.fillSmoothRoundRect(790, 100, 10, 180, 3, TFT_WHITE);
-      contentArea.fillSmoothRoundRect(530-520, 100, 250, 310, 10, TFT_WHITE);
-      contentArea.fillSmoothRoundRect(530-260, 100, 250, 310, 10, TFT_WHITE);
+      contentArea.fillSmoothRoundRect(530 - 520, 100, 250, 310, 10, TFT_WHITE);
+      contentArea.fillSmoothRoundRect(530 - 260, 100, 250, 310, 10, TFT_WHITE);
       contentArea.fillSmoothRoundRect(530, 100, 250, 310, 10, TFT_WHITE);
       contentArea.setTextColor(TFT_BLACK);
       contentArea.setTextSize(2);
       contentArea.drawCenterString("Gas", 135, 100);
-      contentArea.drawCenterString("Humidity", 135+260, 100);
-      contentArea.drawCenterString("LIGHT", 135+520, 100);
+      contentArea.drawCenterString("Humidity", 135 + 260, 100);
+      contentArea.drawCenterString("LIGHT", 135 + 520, 100);
 
       contentArea.setTextSize(4);
       contentArea.drawCenterString("4", 135, 190);
-      contentArea.drawCenterString("57", 135+250, 190);
-      contentArea.drawCenterString("38", 135+500, 190);
+      contentArea.drawCenterString("57", 135 + 250, 190);
+      contentArea.drawCenterString("38", 135 + 500, 190);
       contentArea.setTextSize(1);
       contentArea.drawCenterString("more information", 135, 360);
-      contentArea.drawCenterString("more information", 135+260, 360);
-      contentArea.drawCenterString("more information", 135+520, 360);
+      contentArea.drawCenterString("more information", 135 + 260, 360);
+      contentArea.drawCenterString("more information", 135 + 520, 360);
     }
-    else if (cur_Screen == 8) //temp
+    else if (cur_Screen == SCREEN_TEMP_1) // temp
     {
       contentArea.fillScreen(TFT_BLACK);
       contentArea.setTextColor(TFT_WHITE);
       contentArea.setFont(&fonts::Orbitron_Light_24);
       contentArea.setTextSize(3);
       contentArea.drawString("temperature", 10, 10);
-      contentArea.fillSmoothRoundRect(10, 100,740, 300, 10, TFT_WHITE);
+      contentArea.fillSmoothRoundRect(10, 100, 740, 300, 10, TFT_WHITE);
       contentArea.setTextColor(TFT_BLACK);
       contentArea.drawCenterString("Graph", 380, 250);
-      
     }
-    else if (cur_Screen == 9) //temp
+    else if (cur_Screen == SCREEN_TEMP_2) // temp
     {
       contentArea.fillScreen(TFT_BLACK);
       contentArea.setTextColor(TFT_WHITE);
       contentArea.setFont(&fonts::Orbitron_Light_24);
       contentArea.setTextSize(3);
       contentArea.drawString("CALLING", 10, 10);
-      contentArea.fillSmoothRoundRect(10, 100,590, 300, 10, TFT_WHITE);
-      
+      contentArea.fillSmoothRoundRect(10, 100, 590, 300, 10, TFT_WHITE);
     }
-    else if (cur_Screen == 10) // MASTER MENU PAGE
+    else if (cur_Screen == SCREEN_MASTER_MENU) // MASTER MENU PAGE
     {
       contentArea.fillScreen(TFT_BLACK);
 
@@ -512,36 +566,36 @@ void updateContent()
       // ==== TEMPERATURE ====
       contentArea.setTextSize(1);
       contentArea.fillSmoothRoundRect(x1, y1, boxW, boxH, 15, TFT_WHITE);
-      drawTemperatureIcon(x1 + boxW/2, y1 + 55);
+      drawTemperatureIcon(x1 + boxW / 2, y1 + 55);
       contentArea.setTextColor(TFT_BLACK);
-      contentArea.drawCenterString("Temperature", x1 + boxW/2, y1 + 120);
+      contentArea.drawCenterString("Temperature", x1 + boxW / 2, y1 + 120);
 
       // ==== HUMIDITY ====
       contentArea.fillSmoothRoundRect(x2, y1, boxW, boxH, 15, TFT_WHITE);
-      drawHumidityIcon(x2 + boxW/2, y1 + 55);
-      contentArea.drawCenterString("Humidity", x2 + boxW/2, y1 + 120);
+      drawHumidityIcon(x2 + boxW / 2, y1 + 55);
+      contentArea.drawCenterString("Humidity", x2 + boxW / 2, y1 + 120);
 
       // ==== LIGHT ====
       contentArea.fillSmoothRoundRect(x3, y1, boxW, boxH, 15, TFT_WHITE);
-      drawLightIcon(x3 + boxW/2, y1 + 55);
-      contentArea.drawCenterString("Light", x3 + boxW/2, y1 + 120);
+      drawLightIcon(x3 + boxW / 2, y1 + 55);
+      contentArea.drawCenterString("Light", x3 + boxW / 2, y1 + 120);
 
       // ==== GAS ====
       contentArea.fillSmoothRoundRect(x1, y2, boxW, boxH, 15, TFT_WHITE);
-      drawGasIcon(x1 + boxW/2, y2 + 55);
-      contentArea.drawCenterString("Gas / Air", x1 + boxW/2, y2 + 120);
+      drawGasIcon(x1 + boxW / 2, y2 + 55);
+      contentArea.drawCenterString("Gas / Air", x1 + boxW / 2, y2 + 120);
 
       // ==== ROOMS ====
       contentArea.fillSmoothRoundRect(x2, y2, boxW, boxH, 15, TFT_WHITE);
-      drawRoomIcon(x2 + boxW/2, y2 + 55);
-      contentArea.drawCenterString("Rooms", x2 + boxW/2, y2 + 120);
+      drawRoomIcon(x2 + boxW / 2, y2 + 55);
+      contentArea.drawCenterString("Rooms", x2 + boxW / 2, y2 + 120);
 
       // ==== SETTINGS ====
       contentArea.fillSmoothRoundRect(x3, y2, boxW, boxH, 15, TFT_WHITE);
-      drawGearIcon(x3 + boxW/2, y2 + 55);
-      contentArea.drawCenterString("Settings", x3 + boxW/2, y2 + 120);
+      drawGearIcon(x3 + boxW / 2, y2 + 55);
+      contentArea.drawCenterString("Settings", x3 + boxW / 2, y2 + 120);
     }
-    else if (cur_Screen == 11) // Notification Log
+    else if (cur_Screen == SCREEN_NOTIFICATION_LOG) // Notification Log
     {
 
       contentArea.fillScreen(TFT_BLACK);
@@ -561,7 +615,6 @@ void updateContent()
       drawNotifyCard(x, y + 110, w, h, TFT_BLUE, "Call Received", "Front Gate Camera calling", "13:58");
       drawNotifyCard(x, y + 220, w, h, TFT_RED, "Gas Alert", "Kitchen gas spike detected", "12:49");
     }
-
   }
 
   static bool prevDoorbellRinging = false;
@@ -626,7 +679,9 @@ void updateContent()
 
 void updateBotBar()
 {
-  if (cur_Screen == 0)
+  botBar.clear();
+
+  if (cur_Screen == SCREEN_HOME)
   {
     // Clear bottom bar
     botBar.setTextColor(TFT_WHITE);
@@ -638,10 +693,18 @@ void updateBotBar()
     botBar.drawCenterString("Information", 500, 5);
     botBar.drawCenterString("Menu", 690, 5);
   }
-  else
+  else if (cur_Screen == SCREEN_DEVICE_LIST)
   {
-    botBar.clear();
+    botBar.setTextColor(TFT_WHITE);
+    botBar.setTextSize(2);
+
+    // Draw menu options
+    botBar.drawCenterString("Home", 120, 5);
+    botBar.drawCenterString("v", 310, 5);
+    botBar.drawCenterString("Refresh", 500, 5);
+    botBar.drawCenterString("Menu", 690, 5);
   }
+
   botBarNeedsUpdate = true;
 }
 
@@ -798,94 +861,136 @@ uint16_t getProgressColor(int progress)
   return TFT_GREEN;
 }
 
-// Draw text with transparent background
-void drawTransparentText(LGFX_Sprite *sprite, const char *text, int x, int y, uint16_t textColor)
-{
-  // Set text datum (alignment) if needed
-  sprite->setTextColor(textColor); // Only set foreground color, no background
-  sprite->drawString(text, x, y);
-}
 void drawTemperatureIcon(int cx, int cy)
 {
-    contentArea.fillSmoothCircle(cx, cy + 20, 20, TFT_RED);
-    contentArea.fillRect(cx - 8, cy - 30, 16, 50, TFT_RED);
-    contentArea.drawCircle(cx, cy + 20, 20, TFT_BLACK);
-    contentArea.drawRect(cx - 8, cy - 30, 16, 50, TFT_BLACK);
+  contentArea.fillSmoothCircle(cx, cy + 20, 20, TFT_RED);
+  contentArea.fillRect(cx - 8, cy - 30, 16, 50, TFT_RED);
+  contentArea.drawCircle(cx, cy + 20, 20, TFT_BLACK);
+  contentArea.drawRect(cx - 8, cy - 30, 16, 50, TFT_BLACK);
 }
 void drawHumidityIcon(int cx, int cy)
 {
-    // drop
-    contentArea.fillSmoothCircle(cx, cy, 20, TFT_CYAN);
-    contentArea.fillTriangle(cx, cy - 28, cx - 18, cy, cx + 18, cy, TFT_CYAN);
+  // drop
+  contentArea.fillSmoothCircle(cx, cy, 20, TFT_CYAN);
+  contentArea.fillTriangle(cx, cy - 28, cx - 18, cy, cx + 18, cy, TFT_CYAN);
 
-    // outline
-    contentArea.drawTriangle(cx, cy - 28, cx - 18, cy, cx + 18, cy, TFT_BLACK);
-    contentArea.drawCircle(cx, cy, 20, TFT_BLACK);
+  // outline
+  contentArea.drawTriangle(cx, cy - 28, cx - 18, cy, cx + 18, cy, TFT_BLACK);
+  contentArea.drawCircle(cx, cy, 20, TFT_BLACK);
 
-    // humidity lines
-    contentArea.drawWideLine(cx - 12, cy + 22, cx + 12, cy + 22, 3, TFT_BLUE);
-    contentArea.drawWideLine(cx - 8, cy + 32, cx + 8, cy + 32, 3, TFT_BLUE);
+  // humidity lines
+  contentArea.drawWideLine(cx - 12, cy + 22, cx + 12, cy + 22, 3, TFT_BLUE);
+  contentArea.drawWideLine(cx - 8, cy + 32, cx + 8, cy + 32, 3, TFT_BLUE);
 }
 void drawLightIcon(int cx, int cy)
 {
-    contentArea.fillSmoothCircle(cx, cy - 10, 22, TFT_YELLOW);
-    contentArea.fillRect(cx - 12, cy + 10, 24, 20, TFT_YELLOW);
+  contentArea.fillSmoothCircle(cx, cy - 10, 22, TFT_YELLOW);
+  contentArea.fillRect(cx - 12, cy + 10, 24, 20, TFT_YELLOW);
 
-    contentArea.drawCircle(cx, cy - 10, 22, TFT_BLACK);
-    contentArea.drawRect(cx - 12, cy + 10, 24, 20, TFT_BLACK);
+  contentArea.drawCircle(cx, cy - 10, 22, TFT_BLACK);
+  contentArea.drawRect(cx - 12, cy + 10, 24, 20, TFT_BLACK);
 }
 void drawGasIcon(int cx, int cy)
 {
-    contentArea.fillSmoothCircle(cx, cy, 20, TFT_CYAN);
-    contentArea.drawCircle(cx, cy, 20, TFT_BLACK);
+  contentArea.fillSmoothCircle(cx, cy, 20, TFT_CYAN);
+  contentArea.drawCircle(cx, cy, 20, TFT_BLACK);
 
-    contentArea.fillSmoothCircle(cx - 15, cy + 22, 12, TFT_CYAN);
-    contentArea.fillSmoothCircle(cx + 15, cy + 22, 12, TFT_CYAN);
+  contentArea.fillSmoothCircle(cx - 15, cy + 22, 12, TFT_CYAN);
+  contentArea.fillSmoothCircle(cx + 15, cy + 22, 12, TFT_CYAN);
 
-    contentArea.drawCircle(cx - 15, cy + 22, 12, TFT_BLACK);
-    contentArea.drawCircle(cx + 15, cy + 22, 12, TFT_BLACK);
+  contentArea.drawCircle(cx - 15, cy + 22, 12, TFT_BLACK);
+  contentArea.drawCircle(cx + 15, cy + 22, 12, TFT_BLACK);
 }
 void drawRoomIcon(int cx, int cy)
 {
-    contentArea.drawTriangle(cx - 30, cy, cx, cy - 30, cx + 30, cy, TFT_BLACK);
-    contentArea.drawRect(cx - 22, cy, 44, 40, TFT_BLACK);
+  contentArea.drawTriangle(cx - 30, cy, cx, cy - 30, cx + 30, cy, TFT_BLACK);
+  contentArea.drawRect(cx - 22, cy, 44, 40, TFT_BLACK);
 }
 void drawGearIcon(int cx, int cy)
 {
-    contentArea.fillSmoothCircle(cx, cy, 14, TFT_DARKGREY);
+  contentArea.fillSmoothCircle(cx, cy, 14, TFT_DARKGREY);
 
-    for (int i = 0; i < 8; i++)
-    {
-        float a = i * 45 * 0.01745;
-        int x = cx + cos(a) * 22;
-        int y = cy + sin(a) * 22;
-        contentArea.fillRect(x - 4, y - 4, 8, 8, TFT_DARKGREY);
-    }
+  for (int i = 0; i < 8; i++)
+  {
+    float a = i * 45 * 0.01745;
+    int x = cx + cos(a) * 22;
+    int y = cy + sin(a) * 22;
+    contentArea.fillRect(x - 4, y - 4, 8, 8, TFT_DARKGREY);
+  }
 }
 
 void drawNotifyCard(int x, int y, int w, int h, uint32_t iconColor,
                     const char *title, const char *detail, const char *timeStr)
 {
-    // Card background
-    contentArea.fillSmoothRoundRect(x, y, w, h, 20, TFT_WHITE);
+  // Card background
+  contentArea.fillSmoothRoundRect(x, y, w, h, 20, TFT_WHITE);
 
-    // Icon Circle
-    contentArea.fillSmoothCircle(x + 45, y + h/2 - 5, 25, iconColor);
-    contentArea.drawCircle(x + 45, y + h/2 - 5, 25, TFT_BLACK);
+  // Icon Circle
+  contentArea.fillSmoothCircle(x + 45, y + h / 2 - 5, 25, iconColor);
+  contentArea.drawCircle(x + 45, y + h / 2 - 5, 25, TFT_BLACK);
 
-    // Title
-    contentArea.setTextColor(TFT_BLACK);
-    contentArea.setFont(&fonts::DejaVu12);
-    contentArea.setTextSize(2);
-    contentArea.drawString(title, x + 90, y + 18);
+  // Title
+  contentArea.setTextColor(TFT_BLACK);
+  contentArea.setFont(&fonts::DejaVu12);
+  contentArea.setTextSize(2);
+  contentArea.drawString(title, x + 90, y + 18);
 
-    // Detail small text
-    contentArea.setTextColor(TFT_DARKGREY);
-    contentArea.setTextSize(1);
-    contentArea.drawString(detail, x + 90, y + 55);
+  // Detail small text
+  contentArea.setTextColor(TFT_DARKGREY);
+  contentArea.setTextSize(1);
+  contentArea.drawString(detail, x + 90, y + 55);
 
-    // Time (right side)
-    contentArea.setTextColor(TFT_DARKGREY);
-    contentArea.setTextSize(1);
-    contentArea.drawRightString(timeStr, x + w - 20, y + 55);
+  // Time (right side)
+  contentArea.setTextColor(TFT_DARKGREY);
+  contentArea.setTextSize(1);
+  contentArea.drawRightString(timeStr, x + w - 20, y + 55);
+}
+
+// ============================================================================
+// Page Transition Animation
+// Shows page name in center of screen with fade effect
+// ============================================================================
+void playPageTransition(const char *pageName)
+{
+  // Clear content area
+  contentArea.fillScreen(TFT_BLACK);
+
+  // Set up text properties
+  contentArea.setTextSize(1);
+  contentArea.setFont(&fonts::FreeSansBold18pt7b);
+
+  // Calculate center position
+  int centerX = contentArea.width() / 2;
+  int centerY = contentArea.height() / 2 - 20;
+
+  // Draw border around text area (larger box)
+  int borderWidth = 400;
+  int borderHeight = 100;
+  int borderX = centerX - borderWidth / 2;
+  int borderY = centerY - borderHeight / 2;
+
+  contentArea.drawRect(borderX, borderY, borderWidth, borderHeight, TFT_WHITE);
+  contentArea.drawRect(borderX + 1, borderY + 1, borderWidth - 2, borderHeight - 2, TFT_WHITE);
+  contentArea.drawRect(borderX + 2, borderY + 2, borderWidth - 4, borderHeight - 4, TFT_WHITE);
+
+  // Draw page name in center
+  contentArea.setTextColor(TFT_WHITE);
+  contentArea.drawCenterString(pageName, centerX, centerY - 10);
+
+  contentArea.pushSprite(0, 40);
+  delay(400);
+
+  // Final clear
+  contentArea.fillScreen(TFT_BLACK);
+  contentArea.pushSprite(0, 40);
+}
+
+void switchDeviceContext()
+{
+  skipPageTransition = true; // Don't animate when paginating
+  contentNeedsUpdate = true;
+  if (Device_list_screen_num == 1)
+    Device_list_screen_num = 2;
+  else
+    Device_list_screen_num = 1;
 }

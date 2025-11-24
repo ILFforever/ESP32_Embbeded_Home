@@ -28,6 +28,7 @@ extern int cur_Screen;
 extern int Last_Screen;
 extern TouchPosition currentTouch;
 extern volatile bool touchDataReady;
+extern bool skipPageTransition;
 
 
 
@@ -43,5 +44,6 @@ void drawWifiSymbol(int x, int y, int strength);
 void drawProgressBar(LGFX_Sprite* sprite, int x, int y, int width, int height, int value, uint16_t fillColor, uint16_t bgColor, uint16_t borderColor, int borderThickness = 2);
 uint16_t getProgressColor(int progress);
 void drawTransparentText(LGFX_Sprite* sprite, const char* text, int x, int y, uint16_t textColor);
-
+void playPageTransition(const char* pageName);
+void switchDeviceContext();
 #endif // SCREEN_MANAGER_H
