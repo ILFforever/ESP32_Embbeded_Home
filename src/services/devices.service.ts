@@ -1248,6 +1248,167 @@ export async function restartHubSystem(deviceId: string) {
 }
 
 // ============================================================================
+// GAS SENSOR API CALLS (Using Your Existing Backend Structure)
+// ============================================================================
+
+// Interface for sensor current data
+interface SensorCurrentResponse {
+  status: string;
+  device_id: string;
+  sensors: {
+    forwarded_by?: string;
+    alert?: boolean;
+    device_type?: string;
+    averaged?: boolean;
+    sample_count?: number;
+    battery_percent?: number;
+    boot_count?: number;
+    battery_voltage?: number;
+    last_updated?: string;
+    light_lux?: number;
+    temperature?: number;
+    humidity?: number;
+    gas_level?: number;
+    timestamp?: string;
+  };
+}
+
+// Get current sensor data for a device
+export async function getCurrentSensorData(deviceId: string): Promise<SensorCurrentResponse | null> {
+  try {
+    const response = await axios.get<SensorCurrentResponse>(
+      `${API_URL}/api/v1/devices/${deviceId}/sensor/sensors`,
+      {
+        timeout: 5000,
+        headers: getAuthHeaders()
+      }
+    );
+    return response.data;
+  } catch (error) {
+    console.error(`Error fetching current sensor data for ${deviceId}:`, error);
+    return null;
+  }
+}
+
+// Get sensor readings history
+export async function getSensorReadingsHistory(deviceId: string, hours: number = 24): Promise<SensorReadingsResponse | null> {
+  try {
+    const response = await axios.get<SensorReadingsResponse>(
+      `${API_URL}/api/v1/devices/${deviceId}/sensors/readings`,
+      {
+        params: { hours },
+        timeout: 10000,
+        headers: getAuthHeaders()
+      }
+    );
+    return response.data;
+  } catch (error) {
+    console.error(`Error fetching sensor readings for ${deviceId}:`, error);
+    return null;
+  }
+}
+
+// Transform backend data to GasReading format for the dashboard
+export async function getGasReadingsForDashboard(): Promise<GasReading[]> {
+  try {
+    console.log('Fetching gas sensor data from backend...');
+
+    // Get all devices
+    const devicesResponse = await getAllDevices();
+    const devices = devicesResponse.devices;
+
+    console.log('All devices:', devices);
+
+    // Filter devices that might have gas sensors (sensors or hub)
+    const sensorDevices = devices.filter(device =>
+      device.type === 'sensor' ||
+      device.type === 'gas_sensor' ||
+      device.type === 'hub' ||
+      device.type === 'main_lcd'
+    );
+
+    console.log('Filtered sensor devices:', sensorDevices);
+
+    if (sensorDevices.length === 0) {
+      console.log('No sensor devices found, using mock data');
+      return generateMockGasReadings();
+    }
+
+    // Fetch gas sensor data from each device
+    const gasReadings: GasReading[] = [];
+
+    for (const device of sensorDevices) {
+      try {
+        // Get current sensor data
+        const currentData = await getCurrentSensorData(device.device_id);
+
+        if (!currentData || !currentData.sensors) {
+          console.log(`No sensor data for ${device.device_id}`);
+          continue;
+        }
+
+        // Check if device has gas_level data
+        if (currentData.sensors.gas_level === undefined && currentData.sensors.gas_level === null) {
+          console.log(`Device ${device.device_id} has no gas_level data`);
+          continue;
+        }
+
+        console.log(`Found gas sensor data for ${device.device_id}:`, currentData.sensors);
+
+        // Get historical data
+        const historyData = await getSensorReadingsHistory(device.device_id, 24);
+
+        // Transform history to SensorReading format
+        const history: SensorReading[] = historyData?.readings?.map(reading => ({
+          timestamp: new Date(reading.timestamp._seconds * 1000).toISOString(),
+          value: reading.gas_level || 0
+        })) || [];
+
+        // If no history, use current reading
+        if (history.length === 0) {
+          history.push({
+            timestamp: new Date().toISOString(),
+            value: currentData.sensors.gas_level || 0
+          });
+        }
+
+        // Calculate status based on gas level
+        const gasLevel = currentData.sensors.gas_level || 0;
+        let status: 'safe' | 'warning' | 'danger' = 'safe';
+        if (gasLevel > 150) status = 'danger';
+        else if (gasLevel > 100) status = 'warning';
+
+        gasReadings.push({
+          sensor_id: device.device_id,
+          location: device.name || device.device_id,
+          ppm: gasLevel,
+          status,
+          history
+        });
+
+      } catch (error) {
+        console.error(`Error processing device ${device.device_id}:`, error);
+        continue;
+      }
+    }
+
+    console.log('Final gas readings:', gasReadings);
+
+    // If no gas sensors found with data, return mock data
+    if (gasReadings.length === 0) {
+      console.log('No gas sensor data found, using mock data');
+      return generateMockGasReadings();
+    }
+
+    return gasReadings;
+
+  } catch (error) {
+    console.error('Error fetching gas readings for dashboard:', error);
+    return generateMockGasReadings();
+  }
+}
+
+// ============================================================================
 // Device Management Functions
 // ============================================================================
 

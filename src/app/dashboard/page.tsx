@@ -13,15 +13,16 @@ import { SystemStatusCard } from '@/components/dashboard/SystemStatusCard';
 import {
   getAllDevices,
   generateMockAlerts,
-  generateMockGasReadings,
+  getGasReadingsForDashboard,
   generateMockDoorsWindows
 } from '@/services/devices.service';
-import type { DevicesStatus } from '@/types/dashboard';
+import type { DevicesStatus, GasReading } from '@/types/dashboard';
 
 export default function DashboardPage() {
   const router = useRouter();
   const { logout } = useAuth();
   const [devicesStatus, setDevicesStatus] = useState<DevicesStatus | null>(null);
+  const [gasReadings, setGasReadings] = useState<GasReading[]>([]);
   const [loading, setLoading] = useState(true);
   const [theme, setTheme] = useState<'purple' | 'green'>('purple');
   const [expandedCard, setExpandedCard] = useState<string | null>(null);
@@ -34,6 +35,10 @@ export default function DashboardPage() {
         // Fetch devices status
         const devices = await getAllDevices();
         setDevicesStatus(devices);
+
+        // Fetch gas sensor readings
+        const gasData = await getGasReadingsForDashboard();
+        setGasReadings(gasData);
       } catch (error) {
         console.error('Error loading devices:', error);
       } finally {
@@ -104,7 +109,6 @@ export default function DashboardPage() {
 
   // Generate mock data for features not yet implemented
   const alerts = generateMockAlerts();
-  const gasReadings = generateMockGasReadings();
   const doorsWindows = generateMockDoorsWindows();
 
   if (loading) {
