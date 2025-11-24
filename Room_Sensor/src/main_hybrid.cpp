@@ -482,7 +482,7 @@ float readBatteryVoltage() {
 }
 
 uint8_t calculateBatteryPercent(float voltage) {
-  if (voltage >= 4.2) return 100;
+  if (voltage >= 3.7) return 100;
   if (voltage <= 3.0) return 0;
   return (uint8_t)((voltage - 3.0) / 1.2 * 100.0);
 }
