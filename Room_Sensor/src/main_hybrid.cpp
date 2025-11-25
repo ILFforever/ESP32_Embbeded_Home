@@ -65,6 +65,7 @@ const char* DEVICE_API_TOKEN = "4d5c3d05ccfcaecdc30e2f8e38b55207cd7f9054b2db7b6b
 #define MICS5524_ANALOG_PIN  34
 #define BATTERY_PIN          35
 #define STATUS_LED_PIN       2
+#define EXTERNAL_LED_PIN     13  // External LED for status indication
 
 #define I2C_SDA_PIN          19
 #define I2C_SCL_PIN          22
@@ -76,6 +77,13 @@ const char* DEVICE_API_TOKEN = "4d5c3d05ccfcaecdc30e2f8e38b55207cd7f9054b2db7b6b
 #define AVERAGING_INTERVAL   5      // Average every 5 wakes (10 minutes)
 #define GAS_HEAT_TIME_MS     20000  // Heat gas sensor for 20s
 #define MESH_CONNECT_TIMEOUT 10000  // 10 seconds to connect (increased for reliability)
+
+// ============================================================================
+// LED PWM CONFIGURATION
+// ============================================================================
+#define LED_PWM_CHANNEL      0      // LEDC channel for external LED
+#define LED_PWM_FREQ         5000   // 5 kHz PWM frequency
+#define LED_PWM_RESOLUTION   8      // 8-bit resolution (0-255)
 
 // ============================================================================
 // ALERT THRESHOLDS (for immediate transmission on anomalies)
@@ -171,6 +179,11 @@ bool sendDataToMesh(String jsonStr);
 void enterDeepSleep(uint32_t seconds);
 void blinkLED(int times, int delayMs);
 void handleCriticalBattery();
+void ledOn();
+void ledOff();
+void ledSlowPulse();
+void ledRapidFlash(uint32_t duration_ms);
+void ledSolidOn();
 
 void receivedCallback(uint32_t from, String &msg);
 void newConnectionCallback(uint32_t nodeId);
@@ -191,6 +204,14 @@ void setup() {
   Serial.println("========================================");
 
   setupPins();
+
+  // Turn on external LED at boot
+  ledcWrite(LED_PWM_CHANNEL, 255);
+  Serial.println("[LED] ✓ Boot indicator ON");
+  delay(1000);
+  ledcWrite(LED_PWM_CHANNEL, 0);
+  Serial.println("[LED] Boot indicator OFF");
+
   setupSensors();
   // Note: Mesh is initialized only when transmission is needed (saves battery)
 
@@ -343,10 +364,15 @@ void setupPins() {
   pinMode(STATUS_LED_PIN, OUTPUT);
   digitalWrite(STATUS_LED_PIN, LOW);
 
+  // Configure LEDC PWM for external LED
+  ledcSetup(LED_PWM_CHANNEL, LED_PWM_FREQ, LED_PWM_RESOLUTION);
+  ledcAttachPin(EXTERNAL_LED_PIN, LED_PWM_CHANNEL);
+  ledcWrite(LED_PWM_CHANNEL, 0); // Start with LED off
+
   analogReadResolution(12);
   analogSetAttenuation(ADC_11db);
 
-  Serial.println("[SETUP] ✓ GPIO configured");
+  Serial.println("[SETUP] ✓ GPIO configured (LED PWM ready)");
 }
 
 void setupSensors() {
@@ -394,6 +420,7 @@ void setupMesh() {
 
 bool readAllSensors() {
   Serial.println("\n[SENSORS] Reading all sensors...");
+
   bool allSuccess = true;
 
   if (!readAHT25()) allSuccess = false;
@@ -463,7 +490,23 @@ bool readMICS5524() {
 
 void heatGasSensor(uint32_t duration_ms) {
   digitalWrite(MICS5524_HEATER_PIN, HIGH);
-  delay(duration_ms);
+
+  // Slow pulse LED while heating (breathing effect)
+  unsigned long startTime = millis();
+  while (millis() - startTime < duration_ms) {
+    // Fade in
+    for (int brightness = 0; brightness < 255 && (millis() - startTime < duration_ms); brightness += 5) {
+      ledcWrite(LED_PWM_CHANNEL, brightness);
+      delay(20);
+    }
+    // Fade out
+    for (int brightness = 255; brightness > 0 && (millis() - startTime < duration_ms); brightness -= 5) {
+      ledcWrite(LED_PWM_CHANNEL, brightness);
+      delay(20);
+    }
+  }
+
+  ledOff();
 }
 
 void stopGasHeating() {
@@ -585,6 +628,7 @@ bool sendDataToMesh(String jsonStr) {
 
   Serial.println("[MESH] Waiting for mesh connection...");
 
+  // Start rapid flashing while connecting
   while (millis() - startTime < MESH_CONNECT_TIMEOUT) {
     mesh.update();
 
@@ -594,12 +638,17 @@ bool sendDataToMesh(String jsonStr) {
       break;
     }
 
-    delay(100);
+    // Flash LED during connection attempts
+    ledcWrite(LED_PWM_CHANNEL, 255);
+    delay(50);
+    ledcWrite(LED_PWM_CHANNEL, 0);
+    delay(50);
   }
 
   if (!connected) {
     Serial.println("[MESH] ✗ No mesh nodes found within timeout");
     Serial.println("[MESH] Broadcasting anyway (mesh may still relay)...");
+    ledOff();
     // Send broadcast anyway - the mesh might still relay it even if no nodes detected yet
     mesh.sendBroadcast(jsonStr);
     delay(1500);
@@ -607,7 +656,10 @@ bool sendDataToMesh(String jsonStr) {
     return false;  // Mark as failed for statistics
   }
 
-  // Connected successfully, send broadcast
+  // Connected successfully - solid LED while sending
+  ledSolidOn();
+  Serial.println("[LED] Solid ON during transmission");
+
   mesh.sendBroadcast(jsonStr);
   Serial.println("[MESH] ✓ Broadcast sent");
   delay(500);
@@ -617,6 +669,10 @@ bool sendDataToMesh(String jsonStr) {
   Serial.println("[MESH] Allowing transmission to complete...");
   delay(1500);
   mesh.update();
+
+  // Turn off LED after transmission
+  ledOff();
+  Serial.println("[LED] OFF after transmission");
 
   return true;
 }
@@ -638,6 +694,10 @@ void newConnectionCallback(uint32_t nodeId) {
 // ============================================================================
 
 void enterDeepSleep(uint32_t seconds) {
+  // Turn off LED before sleeping
+  ledOff();
+  Serial.println("[LED] OFF before sleep");
+
   Serial.printf("\n[SLEEP] Entering deep sleep for %d seconds...\n", seconds);
   Serial.printf("[SLEEP] Next wake: %d seconds from now\n", seconds);
   Serial.printf("[SLEEP] Total wakes so far: %d\n", bootCount);
@@ -658,6 +718,42 @@ void blinkLED(int times, int delayMs) {
     digitalWrite(STATUS_LED_PIN, LOW);
     delay(delayMs);
   }
+}
+
+void ledOn() {
+  ledcWrite(LED_PWM_CHANNEL, 255);
+}
+
+void ledOff() {
+  ledcWrite(LED_PWM_CHANNEL, 0);
+}
+
+void ledSlowPulse() {
+  // Slow breathing effect during sensor measurement
+  for (int brightness = 0; brightness < 255; brightness += 5) {
+    ledcWrite(LED_PWM_CHANNEL, brightness);
+    delay(10);
+  }
+  for (int brightness = 255; brightness > 0; brightness -= 5) {
+    ledcWrite(LED_PWM_CHANNEL, brightness);
+    delay(10);
+  }
+  ledOff();
+}
+
+void ledRapidFlash(uint32_t duration_ms) {
+  // Rapid flashing during mesh connection
+  unsigned long startTime = millis();
+  while (millis() - startTime < duration_ms) {
+    ledcWrite(LED_PWM_CHANNEL, 255);
+    delay(100);
+    ledcWrite(LED_PWM_CHANNEL, 0);
+    delay(100);
+  }
+}
+
+void ledSolidOn() {
+  ledcWrite(LED_PWM_CHANNEL, 255);
 }
 
 // ============================================================================

@@ -1,0 +1,24 @@
+Living Room
+{
+    "status": "ok",
+    "message": "Device registered successfully",
+    "device_id": "ss_001",
+    "api_token": "4d5c3d05ccfcaecdc30e2f8e38b55207cd7f9054b2db7b6bf8e47813dd0c9d87",
+    "warning": "Save this token securely! It will not be shown again."
+}
+Kitchen
+{
+    "status": "ok",
+    "message": "Device registered successfully",
+    "device_id": "ss_002",
+    "api_token": "d51ebbf16e2774378c045554cde3c359fc6a3230946b3d497569884b8ada502d",
+    "warning": "Save this token securely! It will not be shown again."
+}
+Bedroom
+{
+    "status": "ok",
+    "message": "Device registered successfully",
+    "device_id": "ss_003",
+    "api_token": "186800884910f83ab404b35af3a177378f9a444c1c44ec3110ec967798556061",
+    "warning": "Save this token securely! It will not be shown again."
+}
