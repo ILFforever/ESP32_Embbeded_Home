@@ -410,6 +410,13 @@ void checkMeshUARTData()
       handleMeshResponse(line);
     }
   }
+
+  // Check if new sensor data was received and trigger screen refresh
+  if (meshSensorDataUpdated)
+  {
+    meshSensorDataUpdated = false;
+    contentNeedsUpdate = true; // Trigger content area update to show new sensor data
+  }
 }
 
 // Task: Check for incoming UART data from Main Amp

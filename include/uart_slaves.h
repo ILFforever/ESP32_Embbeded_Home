@@ -37,4 +37,19 @@ void handleMeshResponse(String line);
 // Handle UART response from Main Amp
 void handleAmpResponse(String line);
 
+// Structure for Main_mesh local sensor data
+struct MainMeshLocalSensors {
+  float temperature;   // DHT11 temperature in °C
+  float humidity;      // DHT11 humidity in %
+  int pm2_5;           // PMS5003 PM2.5 in µg/m³
+  unsigned long timestamp; // Last update timestamp
+  bool valid;          // Data validity flag
+};
+
+// Global variable for Main_mesh local sensor data
+extern MainMeshLocalSensors meshLocalSensors;
+
+// Flag to trigger screen refresh when new sensor data arrives
+extern volatile bool meshSensorDataUpdated;
+
 #endif

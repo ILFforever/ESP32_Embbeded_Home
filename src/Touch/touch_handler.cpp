@@ -12,7 +12,7 @@ TouchButton exampleButton3;
 TouchButton QuickButton1;
 TouchButton QuickButton2;
 TouchButton QuickButton3;
-TouchButton moreAlter;
+TouchButton moreEnvironment;
 
 // screen 4
 TouchButton PIN_1;
@@ -64,10 +64,10 @@ void handleTouchInput()
         QuickButton3.height = 75;
 
 
-        moreAlter.x = 720;
-        moreAlter.y = 60;
-        moreAlter.width = 60;
-        moreAlter.height = 30;
+        moreEnvironment.x = 720;
+        moreEnvironment.y = 60;
+        moreEnvironment.width = 60;
+        moreEnvironment.height = 30;
 
 
         buttonsInitialized = true;
@@ -75,16 +75,16 @@ void handleTouchInput()
 
       // Update button states (no offset needed since touchArea is positioned at Y=40)
       // Debug: Print touch coordinates when touching
-      if (currentTouch.isPressed) {
-        Serial.printf("Touch: (%d,%d) in touchArea coords: (%d,%d)\n",
-          currentTouch.x, currentTouch.y, currentTouch.x, currentTouch.y);
-      }
+      // if (currentTouch.isPressed) {
+      //   Serial.printf("Touch: (%d,%d) in touchArea coords: (%d,%d)\n",
+      //     currentTouch.x, currentTouch.y, currentTouch.x, currentTouch.y);
+      // }
 
       bool qt1Clicked = updateTouchButton(&QuickButton1, currentTouch.x, currentTouch.y, currentTouch.isPressed);
       bool qt2Clicked = updateTouchButton(&QuickButton2, currentTouch.x, currentTouch.y, currentTouch.isPressed);
       bool qt3Clicked = updateTouchButton(&QuickButton3, currentTouch.x, currentTouch.y, currentTouch.isPressed);
 
-      bool MAClicked = updateTouchButton(&moreAlter, currentTouch.x, currentTouch.y, currentTouch.isPressed);
+      bool MoreEnvironmentClicked = updateTouchButton(&moreEnvironment, currentTouch.x, currentTouch.y, currentTouch.isPressed);
       
 
       // Draw Quick Button 1
@@ -119,14 +119,14 @@ void handleTouchInput()
       touchArea.drawCenterString("QB3", QuickButton3.x + QuickButton3.width / 2, QuickButton3.y + QuickButton3.height / 2 - 8);
 
       uint16_t MAColor = TFT_GREEN;
-      if (moreAlter.isPressed && !moreAlter.isDragging)
+      if (moreEnvironment.isPressed && !moreEnvironment.isDragging)
       {
         qt1Color = TFT_DARKGREEN;
       }
-      touchArea.fillSmoothRoundRect(moreAlter.x, moreAlter.y, moreAlter.width, moreAlter.height, 10, MAColor);
+      touchArea.fillSmoothRoundRect(moreEnvironment.x, moreEnvironment.y, moreEnvironment.width, moreEnvironment.height, 10, MAColor);
       touchArea.setTextColor(TFT_WHITE);
       touchArea.setTextSize(1);
-      touchArea.drawCenterString("more", moreAlter.x + moreAlter.width / 2, moreAlter.y + moreAlter.height / 2 - 8);
+      touchArea.drawCenterString("more", moreEnvironment.x + moreEnvironment.width / 2, moreEnvironment.y + moreEnvironment.height / 2 - 8);
 
 
       // Display click feedback
@@ -154,7 +154,7 @@ void handleTouchInput()
         touchArea.drawString("Quick Button 3 Clicked!", 50, feedbackY+80);
         Serial.println("Quick Button 3 clicked!");
       }
-      if (MAClicked)
+      if (MoreEnvironmentClicked)
       {
         touchArea.setTextColor(TFT_GREEN);
         touchArea.drawString("more Alter", 50, feedbackY-40);

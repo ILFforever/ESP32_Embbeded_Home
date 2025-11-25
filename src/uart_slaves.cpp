@@ -15,6 +15,18 @@ uint32_t amp_ping_counter = 0;
 unsigned long last_amp_pong_time = 0;
 int amp_status = 0;
 
+// Main_mesh local sensor data (DHT11 + PMS5003)
+MainMeshLocalSensors meshLocalSensors = {
+  .temperature = 0.0f,
+  .humidity = 0.0f,
+  .pm2_5 = 0,
+  .timestamp = 0,
+  .valid = false
+};
+
+// Flag to trigger screen refresh when new sensor data arrives
+volatile bool meshSensorDataUpdated = false;
+
 // ============================================================================
 // Main Mesh UART Functions
 // ============================================================================
@@ -85,26 +97,64 @@ void handleMeshResponse(String line)
     return;
   }
 
-  // Handle sensor data from mesh
+  // Handle sensor data from Main_mesh local sensors (DHT11 + PMS5003)
+  // Format: {"device_id":"hb_001","device_type":"mesh_hub","data":{...}}
+  if (doc.containsKey("device_type") && doc["device_type"] == "mesh_hub" &&
+      doc.containsKey("data"))
+  {
+    Serial.println("[MESH] ✓ Received Main_mesh local sensor data");
+
+    JsonObject data = doc["data"];
+
+    // Extract temperature and humidity from DHT11
+    if (data.containsKey("temperature") && data.containsKey("humidity"))
+    {
+      meshLocalSensors.temperature = data["temperature"];
+      meshLocalSensors.humidity = data["humidity"];
+      Serial.printf("[MESH]   DHT11: Temp=%.1f°C, Humidity=%.1f%%\n",
+                    meshLocalSensors.temperature, meshLocalSensors.humidity);
+    }
+
+    // Extract PM2.5 from PMS5003
+    if (data.containsKey("pm2_5"))
+    {
+      meshLocalSensors.pm2_5 = data["pm2_5"];
+      Serial.printf("[MESH]   PMS5003: PM2.5=%d µg/m³\n", meshLocalSensors.pm2_5);
+    }
+
+    // Update timestamp and mark as valid
+    meshLocalSensors.timestamp = millis();
+    meshLocalSensors.valid = true;
+
+    // Trigger screen refresh to show new data
+    meshSensorDataUpdated = true;
+  }
+
+  // Handle sensor data from mesh (old format for backwards compatibility)
   if (doc.containsKey("source") && doc["source"] == "main_mesh")
   {
     Serial.println("[MESH] ✓ Received sensor data from Main Mesh");
 
-    // Extract local sensors
+    // Extract local sensors and store them globally
     if (doc.containsKey("sensors"))
     {
       JsonObject local = doc["sensors"];
       if (local.containsKey("temperature"))
       {
-        float temp = local["temperature"];
-        float humidity = local["humidity"];
-        Serial.printf("[MESH]   Local: Temp=%.1f°C, Humidity=%.1f%%\n", temp, humidity);
+        meshLocalSensors.temperature = local["temperature"];
+        meshLocalSensors.humidity = local["humidity"];
+        Serial.printf("[MESH]   Local: Temp=%.1f°C, Humidity=%.1f%%\n",
+                      meshLocalSensors.temperature, meshLocalSensors.humidity);
       }
       if (local.containsKey("pm2_5"))
       {
-        int pm25 = local["pm2_5"];
-        Serial.printf("[MESH]   Local: PM2.5=%d µg/m³\n", pm25);
+        meshLocalSensors.pm2_5 = local["pm2_5"];
+        Serial.printf("[MESH]   Local: PM2.5=%d µg/m³\n", meshLocalSensors.pm2_5);
       }
+
+      // Update timestamp and mark as valid
+      meshLocalSensors.timestamp = millis();
+      meshLocalSensors.valid = true;
     }
 
     // Extract mesh sensor count

@@ -2,6 +2,7 @@
 #include "screen_definitions.h"
 #include "Touch/touch_handler.h"
 #include "hub_network.h"
+#include "uart_slaves.h"
 #include <WiFi.h>
 #include <Touch.h>
 
@@ -258,53 +259,60 @@ void updateContent()
       contentArea.setTextSize(1);
       contentArea.drawString("Environment", 530, 20);
 
-      // Fetch sensor data from Living Room (ss_001) for home display
-      static SensorData homeSensorData;
-      static unsigned long lastFetchHome = 0;
-      if (millis() - lastFetchHome > 30000 || !homeSensorData.valid) {
-        fetchSensorData("ss_001", &homeSensorData);
-        lastFetchHome = millis();
-      }
+      // Use local sensor data from Main_mesh (DHT11 + PMS5003)
+      // Data is received via UART and stored in meshLocalSensors global variable
+      // Check if data is recent (within 60 seconds)
+      bool dataRecent = meshLocalSensors.valid &&
+                        (millis() - meshLocalSensors.timestamp < 60000);
 
-      // Temperature Block
+      // Temperature Block (DHT11)
       contentArea.fillSmoothRoundRect(530, 60, 250, 60, 8, TFT_ORANGE);
       contentArea.setFont(&fonts::DejaVu18);
       contentArea.setTextColor(TFT_BLACK);
       contentArea.drawString("Temperature", 545, 65);
       contentArea.setFont(&fonts::DejaVu24);
-      if (homeSensorData.valid) {
+      if (dataRecent)
+      {
         char tempStr[20];
-        snprintf(tempStr, sizeof(tempStr), "%.1f C", homeSensorData.temperature);
+        snprintf(tempStr, sizeof(tempStr), "%.1f C", meshLocalSensors.temperature);
         contentArea.drawCenterString(tempStr, 655, 90);
-      } else {
+      }
+      else
+      {
         contentArea.drawCenterString("--", 655, 90);
       }
 
-      // Humidity Block
+      // Humidity Block (DHT11)
       contentArea.fillSmoothRoundRect(530, 125, 250, 60, 8, TFT_CYAN);
       contentArea.setFont(&fonts::DejaVu18);
       contentArea.setTextColor(TFT_BLACK);
       contentArea.drawString("Humidity", 545, 130);
       contentArea.setFont(&fonts::DejaVu24);
-      if (homeSensorData.valid) {
+      if (dataRecent)
+      {
         char humStr[20];
-        snprintf(humStr, sizeof(humStr), "%.1f %%", homeSensorData.humidity);
+        snprintf(humStr, sizeof(humStr), "%.1f %%", meshLocalSensors.humidity);
         contentArea.drawCenterString(humStr, 655, 155);
-      } else {
+      }
+      else
+      {
         contentArea.drawCenterString("--", 655, 155);
       }
 
-      // PM2.5 
+      // PM2.5 Block (PMS5003)
       contentArea.fillSmoothRoundRect(530, 190, 250, 60, 8, TFT_GREENYELLOW);
       contentArea.setFont(&fonts::DejaVu18);
       contentArea.setTextColor(TFT_BLACK);
       contentArea.drawString("PM 2.5", 545, 195);
       contentArea.setFont(&fonts::DejaVu24);
-      if (homeSensorData.valid) {
-        char gasStr[20];
-        snprintf(gasStr, sizeof(gasStr), "%.0f", homeSensorData.gas_level);
-        contentArea.drawCenterString(gasStr, 655, 220);
-      } else {
+      if (dataRecent)
+      {
+        char pm25Str[20];
+        snprintf(pm25Str, sizeof(pm25Str), "%d ug/m3", meshLocalSensors.pm2_5);
+        contentArea.drawCenterString(pm25Str, 655, 220);
+      }
+      else
+      {
         contentArea.drawCenterString("--", 655, 220);
       }
       contentArea.setTextColor(TFT_BLACK);
@@ -1069,7 +1077,10 @@ void updateBotBar()
 
     // Draw menu options
     botBar.drawCenterString("Home", 120, 5);
-    botBar.drawCenterString("v", 310, 5);
+    if (Device_list_screen_num == 1)
+      botBar.drawCenterString("v", 310, 5);
+    else
+      botBar.drawCenterString("^", 310, 5);
     botBar.drawCenterString("Refresh", 500, 5);
     botBar.drawCenterString("Menu", 690, 5);
   }
