@@ -437,10 +437,18 @@ const getDeviceStatus = async (req, res) => {
     const { device_id } = req.params;
     const db = getFirestore();
 
+    // Get heartbeat status
     const statusDoc = await db.collection('devices')
       .doc(device_id)
       .collection('live_status')
       .doc('heartbeat')
+      .get();
+
+    // Get device-specific state (e.g., doorbell camera_active, mic_active)
+    const deviceStateDoc = await db.collection('devices')
+      .doc(device_id)
+      .collection('live_status')
+      .doc('device_state')
       .get();
 
     if (statusDoc.exists) {
@@ -452,7 +460,8 @@ const getDeviceStatus = async (req, res) => {
       const expireAtMillis = data.expireAt ? data.expireAt.toMillis() : 0;
       const isOnline = expireAtMillis > now;
 
-      res.json({
+      // Base response with generic status
+      const response = {
         status: 'ok',
         device_id,
         online: isOnline,
@@ -462,7 +471,15 @@ const getDeviceStatus = async (req, res) => {
         wifi_rssi: data.wifi_rssi,
         ip_address: data.ip_address,
         expireAt: data.expireAt
-      });
+      };
+
+      // Merge device-specific state if available (e.g., doorbell camera_active, mic_active)
+      if (deviceStateDoc.exists) {
+        const deviceState = deviceStateDoc.data();
+        Object.assign(response, deviceState);
+      }
+
+      res.json(response);
     } else {
       // Document doesn't exist = device went offline and TTL deleted it
       res.json({
@@ -1008,10 +1025,26 @@ const getDoorbellStatus = async (req, res) => {
       });
     }
 
+    // Check if device is online by checking heartbeat status
+    // Device is online if heartbeat document exists (TTL auto-deletes if offline)
+    const heartbeatDoc = await db.collection('devices')
+      .doc(device_id)
+      .collection('live_status')
+      .doc('heartbeat')
+      .get();
+
+    const isOnline = heartbeatDoc.exists;
+
+    // Get status data and add online field
+    const statusData = statusDoc.data();
+
     res.json({
       status: 'ok',
       device_id,
-      data: statusDoc.data()
+      data: {
+        ...statusData,
+        online: isOnline
+      }
     });
 
   } catch (error) {

@@ -138,11 +138,6 @@ router.get('/:device_id/status/device', authenticateDevice, getDeviceStatus);
 // @access  Private (requires user token)
 router.get('/:device_id/history', protect, getDeviceHistory);
 
-// @route   GET /api/v1/devices/doorbell/:device_id/status
-// @desc    Get doorbell status from Firebase (data pushed by doorbell, not proxy)
-// @access  Public
-router.get('/doorbell/:device_id/status', getDoorbellStatus);
-
 // ============================================================================
 // Command Queue Routes (Ping-Pong Command System - replaces MQTT)
 // ============================================================================
