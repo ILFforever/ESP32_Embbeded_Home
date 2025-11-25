@@ -522,7 +522,7 @@ void sendMeshSensorData(const char* jsonData) {
   }
 
   // Check if this is a single mesh_node message (new format)
-  if (incomingDoc.containsKey("source") && incomingDoc["source"] == "mesh_node") {
+  if (incomingDoc.containsKey("source") && (incomingDoc["source"] == "mesh_node"||incomingDoc["source"] == "main_mesh")) {
     // Single mesh node sensor data
     const char* deviceId = incomingDoc["device_id"] | "unknown";
     const char* deviceType = incomingDoc["device_type"] | "sensor";

@@ -106,8 +106,8 @@ Task taskSendHeartbeat(60000, TASK_FOREVER, &sendHeartbeatTask);  // Every 60s
 Task taskCheckDoorbell(60000, TASK_FOREVER, &checkDoorbellTask);  // Every 60s
 Task taskProcessMQTT(100, TASK_FOREVER, &processMQTTTask);        // Every 100ms
 Task taskProcessCommands(200, TASK_FOREVER, &processPendingCommandsTask); // Check for pending commands every 200ms
-Task taskCheckMeshUART(20, TASK_FOREVER, &checkMeshUARTData);     // Check Mesh UART every 20ms
-Task taskCheckAmpUART(20, TASK_FOREVER, &checkAmpUARTData);       // Check Amp UART every 20ms
+Task taskCheckMeshUART(50, TASK_FOREVER, &checkMeshUARTData);     // Check Mesh UART every 20ms
+Task taskCheckAmpUART(50, TASK_FOREVER, &checkAmpUARTData);       // Check Amp UART every 20ms
 Task taskSendMeshPing(1000, TASK_FOREVER, &sendMeshPingTask);     // Send ping every 1s
 Task taskSendAmpPing(1000, TASK_FOREVER, &sendAmpPingTask);       // Send ping every 1s
 Task taskCheckMeshTimeout(1000, TASK_FOREVER, &checkMeshTimeout); // Check timeout every 1s
@@ -414,6 +414,7 @@ void checkMeshUARTData()
   // Check if new sensor data was received and trigger screen refresh
   if (meshSensorDataUpdated)
   {
+    Serial.print("mesh sensor update");
     meshSensorDataUpdated = false;
     contentNeedsUpdate = true; // Trigger content area update to show new sensor data
   }

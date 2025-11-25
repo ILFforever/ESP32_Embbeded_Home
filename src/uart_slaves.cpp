@@ -17,12 +17,11 @@ int amp_status = 0;
 
 // Main_mesh local sensor data (DHT11 + PMS5003)
 MainMeshLocalSensors meshLocalSensors = {
-  .temperature = 0.0f,
-  .humidity = 0.0f,
-  .pm2_5 = 0,
-  .timestamp = 0,
-  .valid = false
-};
+    .temperature = 0.0f,
+    .humidity = 0.0f,
+    .pm2_5 = 0,
+    .timestamp = 0,
+    .valid = false};
 
 // Flag to trigger screen refresh when new sensor data arrives
 volatile bool meshSensorDataUpdated = false;
@@ -87,120 +86,60 @@ void handleMeshResponse(String line)
   {
     last_mesh_pong_time = millis();
 
-    // Optional: Log pong details for debugging
-    #ifdef DEBUG_PING_PONG
+// Optional: Log pong details for debugging
+#ifdef DEBUG_PING_PONG
     uint32_t seq = doc["seq"] | 0;
     unsigned long uptime = doc["uptime_ms"] | 0;
     Serial.printf("[MESH] PONG: seq=%u, uptime=%lums\n", seq, uptime);
-    #endif
+#endif
 
     return;
   }
-
-  // Handle sensor data from Main_mesh local sensors (DHT11 + PMS5003)
-  // Format: {"device_id":"hb_001","device_type":"mesh_hub","data":{...}}
-  if (doc.containsKey("device_type") && doc["device_type"] == "mesh_hub" &&
-      doc.containsKey("data"))
+  
+  // Log other responses
+  Serial.print("[MESH] RX: ");
+  Serial.println(line);
+  // Handle sensor data from mesh (both local hub sensors and mesh nodes)
+  // Formats:
+  // - Main_mesh local: {"device_id":"hb_001","device_type":"mesh_hub","sensors":{...}}
+  // - Mesh node: {"source":"mesh_node","device_id":"ss_xxx","sensors":{...}}
+  if (doc.containsKey("sensors") && !doc["sensors"].isNull())
   {
-    Serial.println("[MESH] ✓ Received Main_mesh local sensor data");
+    JsonObject sensors = doc["sensors"];
+    const char *deviceId = doc["device_id"] | "unknown";
+    const char *deviceType = doc["device_type"] | "sensor";
+    bool isLocalHub = (strcmp(deviceType, "mesh_hub") == 0);
 
-    JsonObject data = doc["data"];
-
-    // Extract temperature and humidity from DHT11
-    if (data.containsKey("temperature") && data.containsKey("humidity"))
+    if (isLocalHub)
     {
-      meshLocalSensors.temperature = data["temperature"];
-      meshLocalSensors.humidity = data["humidity"];
-      Serial.printf("[MESH]   DHT11: Temp=%.1f°C, Humidity=%.1f%%\n",
-                    meshLocalSensors.temperature, meshLocalSensors.humidity);
-    }
+      // Main_mesh local sensors (DHT11 + PMS5003)
+      Serial.println("[MESH] ✓ Received Main_mesh local sensor data");
 
-    // Extract PM2.5 from PMS5003
-    if (data.containsKey("pm2_5"))
-    {
-      meshLocalSensors.pm2_5 = data["pm2_5"];
-      Serial.printf("[MESH]   PMS5003: PM2.5=%d µg/m³\n", meshLocalSensors.pm2_5);
-    }
-
-    // Update timestamp and mark as valid
-    meshLocalSensors.timestamp = millis();
-    meshLocalSensors.valid = true;
-
-    // Trigger screen refresh to show new data
-    meshSensorDataUpdated = true;
-  }
-
-  // Handle sensor data from mesh (old format for backwards compatibility)
-  if (doc.containsKey("source") && doc["source"] == "main_mesh")
-  {
-    Serial.println("[MESH] ✓ Received sensor data from Main Mesh");
-
-    // Extract local sensors and store them globally
-    if (doc.containsKey("sensors"))
-    {
-      JsonObject local = doc["sensors"];
-      if (local.containsKey("temperature"))
+      // Extract temperature and humidity from DHT11
+      if (sensors.containsKey("temperature") && sensors.containsKey("humidity"))
       {
-        meshLocalSensors.temperature = local["temperature"];
-        meshLocalSensors.humidity = local["humidity"];
-        Serial.printf("[MESH]   Local: Temp=%.1f°C, Humidity=%.1f%%\n",
+        meshLocalSensors.temperature = sensors["temperature"];
+        meshLocalSensors.humidity = sensors["humidity"];
+        Serial.printf("[MESH]   DHT11: Temp=%.1f°C, Humidity=%.1f%%\n",
                       meshLocalSensors.temperature, meshLocalSensors.humidity);
       }
-      if (local.containsKey("pm2_5"))
+
+      // Extract PM2.5 from PMS5003
+      if (sensors.containsKey("pm2_5"))
       {
-        meshLocalSensors.pm2_5 = local["pm2_5"];
-        Serial.printf("[MESH]   Local: PM2.5=%d µg/m³\n", meshLocalSensors.pm2_5);
+        meshLocalSensors.pm2_5 = sensors["pm2_5"];
+        Serial.printf("[MESH]   PMS5003: PM2.5=%d µg/m³\n", meshLocalSensors.pm2_5);
       }
 
       // Update timestamp and mark as valid
       meshLocalSensors.timestamp = millis();
       meshLocalSensors.valid = true;
+      meshSensorDataUpdated = true;
     }
-
-    // Extract mesh sensor count
-    if (doc.containsKey("mesh_node_count"))
+    else
     {
-      int nodeCount = doc["mesh_node_count"];
-      Serial.printf("[MESH]   Mesh nodes: %d\n", nodeCount);
-    }
-
-    // Forward Main_mesh local sensor data to backend
-    if (doc.containsKey("sensors"))
-    {
-      JsonObject localSensors = doc["sensors"];
-      if (localSensors.size() > 0)
-      {
-        Serial.printf("[MESH]   Forwarding Main_mesh local sensors to backend...\n");
-        sendMainMeshLocalData(line.c_str());
-      }
-    }
-
-    // Forward mesh sensor data to backend
-    if (doc.containsKey("mesh_sensors"))
-    {
-      JsonArray meshSensors = doc["mesh_sensors"];
-      if (meshSensors.size() > 0)
-      {
-        Serial.printf("[MESH]   Forwarding %d room sensor(s) to backend...\n", meshSensors.size());
-        sendMeshSensorData(line.c_str());
-      }
-    }
-
-    return;
-  }
-
-  // Handle sensor data from mesh nodes (individual sensor messages)
-  if (doc.containsKey("source") && doc["source"] == "mesh_node")
-  {
-    const char *deviceId = doc["device_id"] | "unknown";
-    const char *deviceType = doc["device_type"] | "sensor";
-
-    Serial.printf("[MESH] ✓ Received sensor data from mesh node: %s\n", deviceId);
-
-    // Extract sensor data if present
-    if (doc.containsKey("sensors") && !doc["sensors"].isNull())
-    {
-      JsonObject sensors = doc["sensors"];
+      // Mesh node sensors (remote room sensors)
+      Serial.printf("[MESH] ✓ Received sensor data from mesh node: %s\n", deviceId);
 
       // Log sensor values - support multiple sensor types
       if (sensors.containsKey("temperature"))
@@ -224,22 +163,13 @@ void handleMeshResponse(String line)
         int pm25 = sensors["pm2_5"];
         Serial.printf("[MESH]   %s: PM2.5=%d µg/m³\n", deviceId, pm25);
       }
-
-      // Forward mesh node sensor data to backend
-      Serial.printf("[MESH]   Forwarding mesh node %s data to backend...\n", deviceId);
-      sendMeshSensorData(line.c_str());
-    }
-    else
-    {
-      Serial.printf("[MESH]   ⚠ No sensor data in message from %s\n", deviceId);
     }
 
+    // Forward mesh node sensor data to backend
+    Serial.printf("[MESH]   Forwarding %s data to backend...\n", deviceId);
+    sendMeshSensorData(line.c_str());
     return;
   }
-
-  // Log other responses
-  Serial.print("[MESH] RX: ");
-  Serial.println(line);
 }
 
 // ============================================================================
@@ -298,12 +228,12 @@ void handleAmpResponse(String line)
   {
     last_amp_pong_time = millis();
 
-    // Optional: Log pong details for debugging
-    #ifdef DEBUG_PING_PONG
+// Optional: Log pong details for debugging
+#ifdef DEBUG_PING_PONG
     uint32_t seq = doc["seq"] | 0;
     unsigned long uptime = doc["uptime_ms"] | 0;
     Serial.printf("[AMP] PONG: seq=%u, uptime=%lums\n", seq, uptime);
-    #endif
+#endif
 
     return;
   }
