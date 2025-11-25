@@ -128,6 +128,11 @@ router.get('/status/all', protect, getAllDevicesStatus);
 // @access  Private (requires user token)
 router.get('/:device_id/status', protect, getDeviceStatus);
 
+// @route   GET /api/v1/devices/:device_id/status/device
+// @desc    Get current device status (for ESP32 with device auth)
+// @access  Private (requires device token)
+router.get('/:device_id/status/device', authenticateDevice, getDeviceStatus);
+
 // @route   GET /api/v1/devices/:device_id/history
 // @desc    Get device history with optional type filtering
 // @access  Private (requires user token)
@@ -268,6 +273,11 @@ router.post('/:device_id/face-database/result', authenticateDevice, handleFaceDa
 // @access  Private (requires user token)
 router.get('/:device_id/face-database/info', protect, getFaceDatabaseInfo);
 
+// @route   GET /api/v1/devices/:device_id/face-database/info/device
+// @desc    Get current face database information (for ESP32 with device auth)
+// @access  Private (requires device token)
+router.get('/:device_id/face-database/info/device', authenticateDevice, getFaceDatabaseInfo);
+
 // ============================================================================
 // System Control Routes
 // ============================================================================
@@ -286,6 +296,11 @@ router.post('/:device_id/system/restart', protect, restartSystem);
 // @access  Private (requires user token)
 router.get('/:device_id/info', protect, getDeviceInfo);
 
+// @route   GET /api/v1/devices/:device_id/info/device
+// @desc    Get device info (for ESP32 with device auth)
+// @access  Private (requires device token)
+router.get('/:device_id/info/device', authenticateDevice, getDeviceInfo);
+
 // ============================================================================
 // Visitors Route
 // ============================================================================
@@ -303,6 +318,11 @@ router.get('/:device_id/visitors/latest', protect, getLatestVisitors);
 // @desc    Get Hub sensor data (DHT11 temperature/humidity + PM2.5 air quality)
 // @access  Private (requires user token)
 router.get('/:device_id/hub/sensors', protect, getHubSensors);
+
+// @route   GET /api/v1/devices/:device_id/hub/sensors/device
+// @desc    Get Hub sensor data for ESP32 device (with device auth)
+// @access  Private (requires device token)
+router.get('/:device_id/hub/sensors/device', authenticateDevice, getHubSensors);
 
 // @route   POST /api/v1/devices/:device_id/hub/alert
 // @desc    Send alert to Hub LCD display
@@ -325,10 +345,20 @@ router.get('/:device_id/hub/amp/streaming', protect, getHubAmpStreaming);
 // @access  Private (requires user token)
 router.get('/:device_id/sensors/readings', protect, getSensorReadings);
 
+// @route   GET /api/v1/devices/:device_id/sensors/readings/device
+// @desc    Get sensor history readings (for ESP32 with device auth)
+// @access  Private (requires device token)
+router.get('/:device_id/sensors/readings/device', authenticateDevice, getSensorReadings);
+
 // @route   GET /api/v1/devices/:device_id/sensor/sensors
 // @desc    Get the latest raw sensor data for any device
 // @access  Protected
 router.get('/:device_id/sensor/sensors', protect, getLatestSensorData);
+
+// @route   GET /api/v1/devices/:device_id/sensor/sensors/device
+// @desc    Get the latest raw sensor data (for ESP32 with device auth)
+// @access  Private (requires device token)
+router.get('/:device_id/sensor/sensors/device', authenticateDevice, getLatestSensorData);
 
 // ============================================================================
 // Note: Hub also uses the following generic endpoints:

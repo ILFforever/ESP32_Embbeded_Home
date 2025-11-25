@@ -15,14 +15,49 @@ function mapLogLevelToAlertLevel(logLevel) {
   }
 }
 
-// Helper: Get priority value for sorting
-function getAlertPriority(level) {
+// Helper: Get base priority value for alert level
+function getBasePriority(level) {
   const priorities = {
-    IMPORTANT: 3,
-    WARN: 2,
-    INFO: 1
+    IMPORTANT: 1000,
+    WARN: 500,
+    INFO: 100
   };
   return priorities[level] || 0;
+}
+
+// Helper: Calculate time-based score decay
+// Recent alerts get higher scores, older alerts decay exponentially
+function calculateAlertScore(level, timestamp) {
+  const basePriority = getBasePriority(level);
+
+  // Calculate age in hours
+  const now = Date.now();
+  const alertTime = timestamp instanceof Date ? timestamp.getTime() : new Date(timestamp).getTime();
+  const ageInHours = (now - alertTime) / (1000 * 60 * 60);
+
+  // Decay factor: alerts lose value over time
+  // - 0-1 hour: 100% weight
+  // - 1-6 hours: 80% weight
+  // - 6-24 hours: 50% weight
+  // - 24-72 hours: 20% weight
+  // - 72+ hours: 5% weight
+  let timeWeight = 1.0;
+  if (ageInHours < 1) {
+    timeWeight = 1.0;
+  } else if (ageInHours < 6) {
+    timeWeight = 0.8;
+  } else if (ageInHours < 24) {
+    timeWeight = 0.5;
+  } else if (ageInHours < 72) {
+    timeWeight = 0.2;
+  } else {
+    timeWeight = 0.05;
+  }
+
+  // Final score = base priority * time weight
+  const score = basePriority * timeWeight;
+
+  return score;
 }
 
 // ============================================================================
@@ -151,14 +186,12 @@ const getAlerts = async (req, res) => {
       });
     }
 
-    // Sort by priority (IMPORTANT > WARN > INFO) then by timestamp (newest first)
+    // Sort by score (combines priority and recency)
+    // Recent IMPORTANT alerts score highest, old INFO alerts score lowest
     alerts.sort((a, b) => {
-      const priorityDiff = getAlertPriority(b.level) - getAlertPriority(a.level);
-      if (priorityDiff !== 0) return priorityDiff;
-
-      const timeA = a.timestamp instanceof Date ? a.timestamp.getTime() : 0;
-      const timeB = b.timestamp instanceof Date ? b.timestamp.getTime() : 0;
-      return timeB - timeA;
+      const scoreA = calculateAlertScore(a.level, a.timestamp);
+      const scoreB = calculateAlertScore(b.level, b.timestamp);
+      return scoreB - scoreA; // Higher score = more important
     });
 
     // Apply limit
