@@ -94,6 +94,7 @@ void sendAmpPingTask();
 void checkMeshTimeout();
 void checkAmpTimeout();
 void processMQTTTask();
+void processPendingCommandsTask();
 void onDoorbellRing();
 void onFaceDetection(bool recognized, const char *name, float confidence);
 
@@ -104,6 +105,7 @@ Task taskCapSensorUpdate(100, TASK_FOREVER, &updateCapSensor);
 Task taskSendHeartbeat(60000, TASK_FOREVER, &sendHeartbeatTask);  // Every 60s
 Task taskCheckDoorbell(60000, TASK_FOREVER, &checkDoorbellTask);  // Every 60s
 Task taskProcessMQTT(100, TASK_FOREVER, &processMQTTTask);        // Every 100ms
+Task taskProcessCommands(200, TASK_FOREVER, &processPendingCommandsTask); // Check for pending commands every 200ms
 Task taskCheckMeshUART(20, TASK_FOREVER, &checkMeshUARTData);     // Check Mesh UART every 20ms
 Task taskCheckAmpUART(20, TASK_FOREVER, &checkAmpUARTData);       // Check Amp UART every 20ms
 Task taskSendMeshPing(1000, TASK_FOREVER, &sendMeshPingTask);     // Send ping every 1s
@@ -299,6 +301,7 @@ void setup(void)
   scheduler.addTask(taskSendHeartbeat);
   scheduler.addTask(taskCheckDoorbell);
   scheduler.addTask(taskProcessMQTT);
+  scheduler.addTask(taskProcessCommands);
   scheduler.addTask(taskCheckMeshUART);
   scheduler.addTask(taskCheckAmpUART);
   scheduler.addTask(taskSendMeshPing);
@@ -313,6 +316,7 @@ void setup(void)
   taskSendHeartbeat.enable();
   taskCheckDoorbell.enable();
   taskProcessMQTT.enable();
+  taskProcessCommands.enable();
   taskCheckMeshUART.enable();
   taskCheckAmpUART.enable();
   taskSendMeshPing.enable();
@@ -356,6 +360,12 @@ void checkDoorbellTask()
 void processMQTTTask()
 {
   processMQTT();
+}
+
+// Task: Process pending commands (non-blocking)
+void processPendingCommandsTask()
+{
+  processPendingCommands();
 }
 
 // Callback: Called when doorbell rings (triggered by MQTT)

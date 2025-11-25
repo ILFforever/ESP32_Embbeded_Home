@@ -85,9 +85,10 @@ void mqttMessageCallback(char* topic, byte* payload, unsigned int length) {
         Serial.printf("  Command ID: %s\n", command_id.c_str());
         Serial.printf("  Action: %s\n", action.c_str());
 
-        // Fetch and execute pending commands immediately
-        Serial.println("[MQTT] → Fetching pending commands from server...");
-        fetchAndExecuteCommands();
+        // Set flag to fetch commands (non-blocking - processed in main loop)
+        Serial.println("[MQTT] → Setting flag to fetch pending commands...");
+        extern volatile bool hasPendingCommands;
+        hasPendingCommands = true;
       } else {
         Serial.printf("[MQTT] Hub command message (legacy): %s\n", message.c_str());
       }

@@ -1,6 +1,7 @@
 #include "screen_manager.h"
 #include "screen_definitions.h"
 #include "Touch/touch_handler.h"
+#include "hub_network.h"
 #include <WiFi.h>
 #include <Touch.h>
 
@@ -13,7 +14,59 @@ void drawRoomIcon(int cx, int cy);
 void drawGearIcon(int cx, int cy);
 void drawNotifyCard(int x, int y, int w, int h, uint32_t iconColor, const char *title, const char *detail, const char *timeStr);
 
+// Helper function to format timestamp for display
+void formatTimestamp(const char *isoTimestamp, char *output, size_t maxLen)
+{
+  // Parse ISO timestamp (e.g., "2025-11-25T06:24:35.386Z")
+  // For simplicity, just extract time HH:MM:SS
+  if (strlen(isoTimestamp) >= 19)
+  {
+    // Extract time portion (position 11-18 for HH:MM:SS)
+    snprintf(output, maxLen, "%.8s", isoTimestamp + 11);
+  }
+  else
+  {
+    strncpy(output, "N/A", maxLen - 1);
+    output[maxLen - 1] = '\0';
+  }
+}
+
+// Helper function to draw loading indicator
+void drawLoadingIndicator(LGFX_Sprite *sprite, int cx, int cy)
+{
+  // Draw animated dots
+  static int dotCount = 0;
+  static unsigned long lastDotUpdate = 0;
+
+  if (millis() - lastDotUpdate > 500)
+  {
+    dotCount = (dotCount + 1) % 4;
+    lastDotUpdate = millis();
+  }
+
+  sprite->setFont(&fonts::Font0);
+  sprite->setTextColor(TFT_DARKGRAY);
+
+  char loadingText[20] = "Loading";
+  for (int i = 0; i < dotCount; i++)
+  {
+    strcat(loadingText, ".");
+  }
+
+  sprite->drawCenterString(loadingText, cx, cy);
+}
+
 int Device_list_screen_num = 1;
+
+// Loading state for sensor data
+struct SensorLoadingState
+{
+  bool isLoading;
+  unsigned long loadingStartTime;
+};
+static SensorLoadingState livingRoomLoading = {false, 0};
+static SensorLoadingState kitchenLoading = {false, 0};
+static SensorLoadingState bedroomLoading = {false, 0};
 
 void updateTopBar()
 {
@@ -45,16 +98,16 @@ void updateTopBar()
   {
     if (doorbellOnline)
     {
-      topBar.fillCircle(770, 20, 10, TFT_LIGHTGRAY);
+      topBar.fillCircle(770, 20, 10, TFT_GREEN); // Green = Online (was LIGHTGRAY)
     }
     else
     {
-      topBar.fillCircle(770, 20, 10, TFT_YELLOW);
+      topBar.fillCircle(770, 20, 10, TFT_YELLOW); // Yellow = Offline
     }
   }
   else
   {
-    topBar.fillCircle(770, 20, 10, TFT_DARKGREY);
+    topBar.fillCircle(770, 20, 10, TFT_DARKGREY); // Dark Gray = No data/Unknown
   }
 
   // WiFi indicator: Calculate strength based on RSSI
@@ -120,70 +173,141 @@ void updateContent()
       contentArea.fillSmoothRoundRect(10, 10, 500, 400, 10, TFT_WHITE);
       contentArea.setFont(&fonts::Orbitron_Light_24);
       contentArea.setTextSize(1);
+      contentArea.setTextColor(TFT_BLACK);
       contentArea.drawString("Recent Alerts", 30, 25);
-      contentArea.fillSmoothRoundRect(20, 60, 480, 60, 10, TFT_BLACK); // frame
-      contentArea.fillSmoothRoundRect(25, 65, 470, 50, 8, TFT_GREEN);  // internal content
-
-      contentArea.fillSmoothRoundRect(20, 130, 480, 60, 12, TFT_BLACK);
-      contentArea.fillSmoothRoundRect(21, 131, 479, 59, 12, TFT_GREEN);
-      //contentArea.fillSmoothRoundRect(20, 130, 480, 60, 12, TFT_GREEN);
-      //ontentArea.fillSmoothRoundRect(25, 135, 470, 50, 8, TFT_WHITE);
 
       // Fetch alerts from backend API (limit to 5 to avoid heap issues)
-      // Alert alerts[5];
-      // bool alertsLoaded = fetchHomeAlerts(alerts, 5);
+      Alert alerts[5];
+      bool alertsLoaded = fetchHomeAlerts(alerts, 5);
 
-      // contentArea.setFont(&fonts::DejaVu12);
-      // contentArea.setTextSize(1);
+      if (alertsLoaded)
+      {
+        // Draw each alert with layered frame styling
+        int yPos = 60;
+        for (int i = 0; i < 5; i++)
+        {
+          if (alerts[i].valid)
+          {
+            // Color based on alert level (case-insensitive check)
+            uint16_t levelColor = TFT_LIGHTGRAY;
+            if (strcasecmp(alerts[i].level, "error") == 0 || strcasecmp(alerts[i].level, "ERROR") == 0)
+            {
+              levelColor = TFT_RED;
+            }
+            else if (strcasecmp(alerts[i].level, "warning") == 0 || strcasecmp(alerts[i].level, "WARN") == 0)
+            {
+              levelColor = TFT_ORANGE;
+            }
+            else if (strcasecmp(alerts[i].level, "info") == 0 || strcasecmp(alerts[i].level, "INFO") == 0)
+            {
+              levelColor = TFT_GREEN;
+            }
 
-      // if (alertsLoaded) {
-      //   // Draw each alert
-      //   int yPos = 80;
-      //   for (int i = 0; i < 5; i++) {
-      //     if (alerts[i].valid) {
-      //       // Color based on alert level
-      //       uint16_t bgColor = TFT_LIGHTGRAY;
-      //       if (strcmp(alerts[i].level, "error") == 0) bgColor = TFT_RED;
-      //       else if (strcmp(alerts[i].level, "warning") == 0) bgColor = TFT_ORANGE;
-      //       else if (strcmp(alerts[i].level, "info") == 0) bgColor = TFT_CYAN;
+            // Layered frame effect
+            contentArea.fillSmoothRoundRect(20, yPos, 480, 60, 10, TFT_BLACK);     // outer frame
+            contentArea.fillSmoothRoundRect(25, yPos + 5, 470, 50, 8, levelColor); // color layer
+            contentArea.fillSmoothRoundRect(35, yPos + 5, 460, 50, 8, TFT_BLACK);  // inner frame
+            contentArea.fillSmoothRoundRect(40, yPos + 5, 455, 50, 8, TFT_WHITE);  // content area
 
-      //       contentArea.fillSmoothRoundRect(20, yPos, 470, 60, 8, bgColor);
-      //       contentArea.setTextColor(TFT_BLACK);
-      //       contentArea.drawString(alerts[i].message, 30, yPos + 10);
-      //       contentArea.setTextSize(1);
-      //       contentArea.drawString(alerts[i].timestamp, 30, yPos + 35);
-      //     } else {
-      //       // Empty slot
-      //       contentArea.fillSmoothRoundRect(20, yPos, 470, 60, 8, TFT_LIGHTGRAY);
-      //     }
-      //     yPos += 70;
-      //   }
-      // } else {
-      //   // Failed to load alerts
-      //   contentArea.fillSmoothRoundRect(20, 80, 470, 60, 8, TFT_LIGHTGRAY);
-      //   contentArea.setTextColor(TFT_BLACK);
-      //   contentArea.drawString("Failed to load alerts", 40, 100);
+            // Draw alert text
+            contentArea.setFont(&fonts::DejaVu12);
+            contentArea.setTextColor(TFT_BLACK);
+            contentArea.setTextSize(1);
+            contentArea.drawString(alerts[i].message, 50, yPos + 12);
 
-      //   contentArea.fillSmoothRoundRect(20, 150, 470, 60, 8, TFT_LIGHTGRAY);
-      //   contentArea.fillSmoothRoundRect(20, 220, 470, 60, 8, TFT_LIGHTGRAY);
-      //   contentArea.fillSmoothRoundRect(20, 290, 470, 60, 8, TFT_LIGHTGRAY);
-      //   contentArea.fillSmoothRoundRect(20, 360, 470, 60, 8, TFT_LIGHTGRAY);
-      // }
+            // Draw timestamp (smaller, right-aligned)
+            contentArea.setTextColor(TFT_DARKGREY);
+            contentArea.drawRightString(alerts[i].timestamp, 480, yPos + 35);
+          }
+          else
+          {
+            // Empty slot - gray placeholder
+            contentArea.fillSmoothRoundRect(20, yPos, 480, 60, 10, TFT_BLACK);
+            contentArea.fillSmoothRoundRect(25, yPos + 5, 470, 50, 8, TFT_LIGHTGRAY);
+            contentArea.fillSmoothRoundRect(35, yPos + 5, 460, 50, 8, TFT_BLACK);
+            contentArea.fillSmoothRoundRect(40, yPos + 5, 455, 50, 8, TFT_DARKGREY);
+          }
+          yPos += 70;
+        }
+      }
+      else
+      {
+        // Failed to load alerts - show placeholder slots
+        int yPos = 60;
+        for (int i = 0; i < 5; i++)
+        {
+          contentArea.fillSmoothRoundRect(20, yPos, 480, 60, 10, TFT_BLACK);
+          contentArea.fillSmoothRoundRect(25, yPos + 5, 470, 50, 8, TFT_LIGHTGRAY);
+          contentArea.fillSmoothRoundRect(35, yPos + 5, 460, 50, 8, TFT_BLACK);
+          contentArea.fillSmoothRoundRect(40, yPos + 5, 455, 50, 8, TFT_DARKGREY);
+          yPos += 70;
+        }
 
-      // Right side - Your original layout (restore this)
+        // Show error message on first slot
+        contentArea.setFont(&fonts::DejaVu12);
+        contentArea.setTextColor(TFT_WHITE);
+        contentArea.setTextSize(1);
+        contentArea.drawString("Failed to load alerts", 50, 75);
+      }
+
       contentArea.fillSmoothRoundRect(520, 10, 270, 250, 10, TFT_WHITE);
       contentArea.fillSmoothRoundRect(520, 270, 270, 140, 10, TFT_WHITE);
 
-      // Alerts section (Top right)
+      // Environmental Sensors section (Top right)
       contentArea.setFont(&fonts::Orbitron_Light_24);
       contentArea.setTextSize(1);
-      contentArea.drawString("Alerts", 530, 20);
-      contentArea.fillSmoothRoundRect(530, 60, 250, 60, 5, TFT_GREEN);
-      contentArea.fillSmoothRoundRect(530, 125, 250, 60, 5, TFT_YELLOW);
-      contentArea.fillSmoothRoundRect(530, 190, 250, 60, 5, TFT_RED);
+      contentArea.drawString("Environment", 530, 20);
 
-      contentArea.setFont(&fonts::Font0);
+      // Fetch sensor data from Living Room (ss_001) for home display
+      static SensorData homeSensorData;
+      static unsigned long lastFetchHome = 0;
+      if (millis() - lastFetchHome > 30000 || !homeSensorData.valid) {
+        fetchSensorData("ss_001", &homeSensorData);
+        lastFetchHome = millis();
+      }
 
+      // Temperature Block
+      contentArea.fillSmoothRoundRect(530, 60, 250, 60, 8, TFT_ORANGE);
+      contentArea.setFont(&fonts::DejaVu18);
+      contentArea.setTextColor(TFT_BLACK);
+      contentArea.drawString("Temperature", 545, 65);
+      contentArea.setFont(&fonts::DejaVu24);
+      if (homeSensorData.valid) {
+        char tempStr[20];
+        snprintf(tempStr, sizeof(tempStr), "%.1f C", homeSensorData.temperature);
+        contentArea.drawCenterString(tempStr, 655, 90);
+      } else {
+        contentArea.drawCenterString("--", 655, 90);
+      }
+
+      // Humidity Block
+      contentArea.fillSmoothRoundRect(530, 125, 250, 60, 8, TFT_CYAN);
+      contentArea.setFont(&fonts::DejaVu18);
+      contentArea.setTextColor(TFT_BLACK);
+      contentArea.drawString("Humidity", 545, 130);
+      contentArea.setFont(&fonts::DejaVu24);
+      if (homeSensorData.valid) {
+        char humStr[20];
+        snprintf(humStr, sizeof(humStr), "%.1f %%", homeSensorData.humidity);
+        contentArea.drawCenterString(humStr, 655, 155);
+      } else {
+        contentArea.drawCenterString("--", 655, 155);
+      }
+
+      // PM2.5 
+      contentArea.fillSmoothRoundRect(530, 190, 250, 60, 8, TFT_GREENYELLOW);
+      contentArea.setFont(&fonts::DejaVu18);
+      contentArea.setTextColor(TFT_BLACK);
+      contentArea.drawString("PM 2.5", 545, 195);
+      contentArea.setFont(&fonts::DejaVu24);
+      if (homeSensorData.valid) {
+        char gasStr[20];
+        snprintf(gasStr, sizeof(gasStr), "%.0f", homeSensorData.gas_level);
+        contentArea.drawCenterString(gasStr, 655, 220);
+      } else {
+        contentArea.drawCenterString("--", 655, 220);
+      }
+      contentArea.setTextColor(TFT_BLACK);
       // Quick Actions section (Bottom right)
       contentArea.setFont(&fonts::Orbitron_Light_24);
       contentArea.setTextSize(1);
@@ -316,56 +440,301 @@ void updateContent()
       contentArea.setFont(&fonts::FreeSansBold9pt7b);
       contentArea.setTextSize(1);
       contentArea.setTextColor(TFT_DARKGRAY);
+
       if (Device_list_screen_num == 1)
       {
+        // Fetch sensor data for Living Room (ss_001)
+        static SensorData livingRoomData;
+        static unsigned long lastFetchLivingRoom = 0;
+
+        // Check if we need to fetch data
+        bool needsFetch = (millis() - lastFetchLivingRoom > 30000 || !livingRoomData.valid);
+
+        // Mark as loading if starting a fetch
+        if (needsFetch && !livingRoomLoading.isLoading)
+        {
+          livingRoomLoading.isLoading = true;
+          livingRoomLoading.loadingStartTime = millis();
+        }
+
+        // Perform fetch in non-blocking manner (will complete quickly)
+        if (needsFetch)
+        {
+          bool success = fetchSensorData("ss_001", &livingRoomData);
+          lastFetchLivingRoom = millis();
+          livingRoomLoading.isLoading = false;
+        }
+
         contentArea.drawString("Living Room", 25, 28);
-        contentArea.fillSmoothRoundRect(15, 25 + 25, 770, 150, 15, TFT_WHITE);
-        // contentArea.setFont(&fonts::DejaVu12);
-        // contentArea.setTextColor(TFT_BLACK);
-        // contentArea.setTextSize(2);
-        // contentArea.drawString("LIVING ROOM", 20, 110);
+        contentArea.fillSmoothRoundRect(15, 25 + 25, 460, 150, 15, TFT_WHITE);  // BG
+        contentArea.fillSmoothRoundRect(485, 25 + 25, 300, 150, 15, TFT_WHITE); // BG
 
-        // contentArea.drawString("Temp:", 20, 140);
-        // contentArea.drawString("Light:", 180, 140);
-        // contentArea.drawString("Humidity:", 350, 140);
-        // contentArea.drawString("Gas:", 570, 140);
-        // contentArea.setTextSize(3);
-        // contentArea.drawString("27", 110, 140);
-        // contentArea.drawString("40", 270, 140);
-        // contentArea.drawString("47", 490, 140);
-        // contentArea.drawString("200", 640, 140);
+        contentArea.fillSmoothRoundRect(25, 50 + 10, 140, 130, 15, TFT_CYAN);  // Temp Block
+        contentArea.fillSmoothRoundRect(175, 50 + 10, 140, 130, 15, TFT_CYAN); // Gas Block
+        contentArea.fillSmoothRoundRect(325, 50 + 10, 140, 130, 15, TFT_CYAN); // Light Block
+        contentArea.fillSmoothRoundRect(495, 60, 280, 130, 15, TFT_CYAN);      // Device info block
 
-        // contentArea.setTextSize(2);
+        contentArea.setFont(&fonts::FreeMonoBold9pt7b);
+        contentArea.drawCenterString("Temperature", 95, 165);
+        contentArea.drawCenterString("Gas", 245, 165);
+        contentArea.drawCenterString("Light", 395, 165);
+
+        contentArea.drawWideLine(25, 150, 165, 150, 4, TFT_WHITE);  // Temp separator
+        contentArea.drawWideLine(175, 150, 315, 150, 4, TFT_WHITE); // Gas separator
+        contentArea.drawWideLine(320, 150, 465, 150, 4, TFT_WHITE); // Light separator
+
+        // Display real sensor data or loading indicator
+        contentArea.setFont(&fonts::DejaVu24);
+        contentArea.setTextSize(1);
+        if (livingRoomLoading.isLoading)
+        {
+          // Show loading animation
+          drawLoadingIndicator(&contentArea, 95, 90);
+          drawLoadingIndicator(&contentArea, 245, 90);
+          drawLoadingIndicator(&contentArea, 395, 90);
+        }
+        else if (livingRoomData.valid)
+        {
+          char tempStr[20], gasStr[20], lightStr[20];
+          snprintf(tempStr, sizeof(tempStr), "%.1f C", livingRoomData.temperature);
+          snprintf(gasStr, sizeof(gasStr), "%.0f", livingRoomData.gas_level);
+          snprintf(lightStr, sizeof(lightStr), "%.1f lux", livingRoomData.light_lux);
+
+          contentArea.drawCenterString(tempStr, 95, 90);
+          contentArea.drawCenterString(gasStr, 245, 90);
+          contentArea.drawCenterString(lightStr, 395, 90);
+        }
+        else
+        {
+          contentArea.drawCenterString("--", 95, 90);
+          contentArea.drawCenterString("--", 245, 90);
+          contentArea.drawCenterString("--", 395, 90);
+        }
+
+        // Device Information panel
+        contentArea.setFont(&fonts::FreeMonoBold9pt7b);
+        contentArea.setTextColor(TFT_BLACK);
+        contentArea.drawCenterString("Device Information", 630, 70);
+        contentArea.setTextColor(TFT_DARKGRAY);
+
+        contentArea.drawString("Device name :", 505, 110);
+        if (livingRoomData.valid)
+        {
+          contentArea.drawString(livingRoomData.device_id, 670, 110);
+
+          // Format and display timestamp
+          char timeStr[20];
+          formatTimestamp(livingRoomData.last_updated, timeStr, sizeof(timeStr));
+          contentArea.drawString("Last Update :", 505, 130);
+          contentArea.drawString(timeStr, 670, 130);
+
+          // Display battery
+          char batteryStr[10];
+          snprintf(batteryStr, sizeof(batteryStr), "%d%%", livingRoomData.battery_percent);
+          contentArea.drawString("Battery :", 505, 150);
+          contentArea.drawString(batteryStr, 670, 150);
+        }
+        else
+        {
+          contentArea.drawString("ss_001", 670, 110);
+          contentArea.drawString("Last Update :", 505, 130);
+          contentArea.drawString("N/A", 670, 130);
+          contentArea.drawString("Battery :", 505, 150);
+          contentArea.drawString("N/A", 670, 150);
+        }
+
+        // Kitchen section (ss_002)
+        static SensorData kitchenData;
+        static unsigned long lastFetchKitchen = 0;
+
+        bool needsFetchKitchen = (millis() - lastFetchKitchen > 30000 || !kitchenData.valid);
+
+        if (needsFetchKitchen && !kitchenLoading.isLoading)
+        {
+          kitchenLoading.isLoading = true;
+          kitchenLoading.loadingStartTime = millis();
+        }
+
+        if (needsFetchKitchen)
+        {
+          bool success = fetchSensorData("ss_002", &kitchenData);
+          lastFetchKitchen = millis();
+          kitchenLoading.isLoading = false;
+        }
+
+        contentArea.setFont(&fonts::FreeSansBold9pt7b);
+        contentArea.setTextColor(TFT_DARKGRAY);
+
         contentArea.drawString("Kitchen", 25, 220);
-        contentArea.fillSmoothRoundRect(15, 185 + 25 + 30, 770, 150, 15, TFT_WHITE);
-        // contentArea.drawString("BEDROOM", 20, 240);
-        // contentArea.drawString("Temp:", 20, 270);
-        // contentArea.drawString("Light:", 180, 270);
-        // contentArea.drawString("Humidity:", 350, 270);
-        // contentArea.drawString("Gas:", 570, 270);
-        // contentArea.setTextSize(3);
-        // contentArea.drawString("30", 110, 270);
-        // contentArea.drawString("51", 270, 270);
-        // contentArea.drawString("76", 490, 270);
-        // contentArea.drawString("809", 640, 270);
+        contentArea.fillSmoothRoundRect(15, 185 + 25 + 30, 460, 150, 15, TFT_WHITE);  // BG
+        contentArea.fillSmoothRoundRect(485, 185 + 25 + 30, 300, 150, 15, TFT_WHITE); // BG
+        int shift = 30;
+        contentArea.fillSmoothRoundRect(25, 210 + 10 + shift, 140, 130, 15, TFT_PINK);  // Temp Block
+        contentArea.fillSmoothRoundRect(175, 210 + 10 + shift, 140, 130, 15, TFT_PINK); // Gas Block
+        contentArea.fillSmoothRoundRect(325, 210 + 10 + shift, 140, 130, 15, TFT_PINK); // Light Block
+        contentArea.fillSmoothRoundRect(495, 220 + shift, 280, 130, 15, TFT_PINK);      // Device info block
 
-        // contentArea.setTextSize(2);
-        // contentArea.fillSmoothRoundRect(15, 340, 770, 150, 15, TFT_WHITE);
-        // contentArea.drawString("KITCHEN", 20, 370);
-        // contentArea.drawString("Temp:", 20, 400);
-        // contentArea.drawString("Light:", 180, 400);
-        // contentArea.drawString("Humidity:", 350, 400);
-        // contentArea.drawString("Gas:", 570, 400);
-        // contentArea.setTextSize(3);
-        // contentArea.drawString("19", 110, 400);
-        // contentArea.drawString("88", 270, 400);
-        // contentArea.drawString("26", 490, 400);
-        // contentArea.drawString("67", 640, 400);
+        contentArea.setFont(&fonts::FreeMonoBold9pt7b);
+        contentArea.drawCenterString("Temperature", 95, 325 + shift);
+        contentArea.drawCenterString("Gas", 245, 325 + shift);
+        contentArea.drawCenterString("Light", 395, 325 + shift);
+
+        contentArea.drawWideLine(25, 310 + shift, 165, 310 + shift, 4, TFT_WHITE);  // Temp separator
+        contentArea.drawWideLine(175, 310 + shift, 315, 310 + shift, 4, TFT_WHITE); // Gas separator
+        contentArea.drawWideLine(320, 310 + shift, 465, 310 + shift, 4, TFT_WHITE); // Light separator
+
+        // Display real sensor data for Kitchen or loading indicator
+        contentArea.setFont(&fonts::DejaVu24);
+        contentArea.setTextSize(1);
+        if (kitchenLoading.isLoading)
+        {
+          drawLoadingIndicator(&contentArea, 95, 250 + shift);
+          drawLoadingIndicator(&contentArea, 245, 250 + shift);
+          drawLoadingIndicator(&contentArea, 395, 250 + shift);
+        }
+        else if (kitchenData.valid)
+        {
+          char tempStr[20], gasStr[20], lightStr[20];
+          snprintf(tempStr, sizeof(tempStr), "%.1f C", kitchenData.temperature);
+          snprintf(gasStr, sizeof(gasStr), "%.0f", kitchenData.gas_level);
+          snprintf(lightStr, sizeof(lightStr), "%.1f lux", kitchenData.light_lux);
+
+          contentArea.drawCenterString(tempStr, 95, 250 + shift);
+          contentArea.drawCenterString(gasStr, 245, 250 + shift);
+          contentArea.drawCenterString(lightStr, 395, 250 + shift);
+        }
+        else
+        {
+          contentArea.drawCenterString("--", 95, 250 + shift);
+          contentArea.drawCenterString("--", 245, 250 + shift);
+          contentArea.drawCenterString("--", 395, 250 + shift);
+        }
+
+        // Device Information for Kitchen
+        contentArea.setFont(&fonts::FreeMonoBold9pt7b);
+        contentArea.setTextColor(TFT_BLACK);
+        contentArea.drawCenterString("Device Information", 630, 230 + shift);
+        contentArea.setTextColor(TFT_DARKGRAY);
+
+        contentArea.drawString("Device name :", 505, 270 + shift);
+        if (kitchenData.valid)
+        {
+          contentArea.drawString(kitchenData.device_id, 670, 270 + shift);
+
+          char timeStr[20];
+          formatTimestamp(kitchenData.last_updated, timeStr, sizeof(timeStr));
+          contentArea.drawString("Last Update :", 505, 290 + shift);
+          contentArea.drawString(timeStr, 670, 290 + shift);
+
+          char batteryStr[10];
+          snprintf(batteryStr, sizeof(batteryStr), "%d%%", kitchenData.battery_percent);
+          contentArea.drawString("Battery :", 505, 310 + shift);
+          contentArea.drawString(batteryStr, 670, 310 + shift);
+        }
+        else
+        {
+          contentArea.drawString("ss_002", 670, 270 + shift);
+          contentArea.drawString("Last Update :", 505, 290 + shift);
+          contentArea.drawString("N/A", 670, 290 + shift);
+          contentArea.drawString("Battery :", 505, 310 + shift);
+          contentArea.drawString("N/A", 670, 310 + shift);
+        }
       }
-      else
+      else if (Device_list_screen_num == 2)
       {
-        contentArea.drawString("Bedroom Room", 25, 28);
-        contentArea.fillSmoothRoundRect(15, 25 + 25, 770, 150, 15, TFT_WHITE);
+        // Fetch sensor data for Bedroom (ss_003)
+        static SensorData bedroomData;
+        static unsigned long lastFetchBedroom = 0;
+
+        bool needsFetchBedroom = (millis() - lastFetchBedroom > 30000 || !bedroomData.valid);
+
+        if (needsFetchBedroom && !bedroomLoading.isLoading)
+        {
+          bedroomLoading.isLoading = true;
+          bedroomLoading.loadingStartTime = millis();
+        }
+
+        if (needsFetchBedroom)
+        {
+          bool success = fetchSensorData("ss_003", &bedroomData);
+          lastFetchBedroom = millis();
+          bedroomLoading.isLoading = false;
+        }
+
+        contentArea.drawString("Bedroom", 25, 28);
+        contentArea.fillSmoothRoundRect(15, 25 + 25, 460, 150, 15, TFT_WHITE);  // BG
+        contentArea.fillSmoothRoundRect(485, 25 + 25, 300, 150, 15, TFT_WHITE); // BG
+
+        contentArea.fillSmoothRoundRect(25, 50 + 10, 140, 130, 15, TFT_GREENYELLOW);  // Temp Block
+        contentArea.fillSmoothRoundRect(175, 50 + 10, 140, 130, 15, TFT_GREENYELLOW); // Gas Block
+        contentArea.fillSmoothRoundRect(325, 50 + 10, 140, 130, 15, TFT_GREENYELLOW); // Light Block
+        contentArea.fillSmoothRoundRect(495, 60, 280, 130, 15, TFT_GREENYELLOW);      // Device info block
+
+        contentArea.setFont(&fonts::FreeMonoBold9pt7b);
+        contentArea.drawCenterString("Temperature", 95, 165);
+        contentArea.drawCenterString("Gas", 245, 165);
+        contentArea.drawCenterString("Light", 395, 165);
+
+        contentArea.drawWideLine(25, 150, 165, 150, 4, TFT_WHITE);  // Temp separator
+        contentArea.drawWideLine(175, 150, 315, 150, 4, TFT_WHITE); // Gas separator
+        contentArea.drawWideLine(320, 150, 465, 150, 4, TFT_WHITE); // Light separator
+
+        // Display real sensor data for Bedroom or loading indicator
+        contentArea.setFont(&fonts::DejaVu24);
+        contentArea.setTextSize(1);
+        if (bedroomLoading.isLoading)
+        {
+          drawLoadingIndicator(&contentArea, 95, 90);
+          drawLoadingIndicator(&contentArea, 245, 90);
+          drawLoadingIndicator(&contentArea, 395, 90);
+        }
+        else if (bedroomData.valid)
+        {
+          char tempStr[20], gasStr[20], lightStr[20];
+          snprintf(tempStr, sizeof(tempStr), "%.1f C", bedroomData.temperature);
+          snprintf(gasStr, sizeof(gasStr), "%.0f", bedroomData.gas_level);
+          snprintf(lightStr, sizeof(lightStr), "%.1f lux", bedroomData.light_lux);
+
+          contentArea.drawCenterString(tempStr, 95, 90);
+          contentArea.drawCenterString(gasStr, 245, 90);
+          contentArea.drawCenterString(lightStr, 395, 90);
+        }
+        else
+        {
+          contentArea.drawCenterString("--", 95, 90);
+          contentArea.drawCenterString("--", 245, 90);
+          contentArea.drawCenterString("--", 395, 90);
+        }
+
+        // Device Information panel for Bedroom
+        contentArea.setFont(&fonts::FreeMonoBold9pt7b);
+        contentArea.setTextColor(TFT_BLACK);
+        contentArea.drawCenterString("Device Information", 630, 70);
+        contentArea.setTextColor(TFT_DARKGRAY);
+
+        contentArea.drawString("Device name :", 505, 110);
+        if (bedroomData.valid)
+        {
+          contentArea.drawString(bedroomData.device_id, 670, 110);
+
+          char timeStr[20];
+          formatTimestamp(bedroomData.last_updated, timeStr, sizeof(timeStr));
+          contentArea.drawString("Last Update :", 505, 130);
+          contentArea.drawString(timeStr, 670, 130);
+
+          char batteryStr[10];
+          snprintf(batteryStr, sizeof(batteryStr), "%d%%", bedroomData.battery_percent);
+          contentArea.drawString("Battery :", 505, 150);
+          contentArea.drawString(batteryStr, 670, 150);
+        }
+        else
+        {
+          contentArea.drawString("ss_003", 670, 110);
+          contentArea.drawString("Last Update :", 505, 130);
+          contentArea.drawString("N/A", 670, 130);
+          contentArea.drawString("Battery :", 505, 150);
+          contentArea.drawString("N/A", 670, 150);
+        }
       }
     }
 

@@ -16,6 +16,9 @@ static const char* DOORBELL_DEVICE_ID = "";
 static bool lastHeartbeatSuccess = false;
 static unsigned long lastHeartbeatTime = 0;
 
+// Flag to indicate pending commands (set by MQTT or heartbeat, processed in main loop)
+volatile bool hasPendingCommands = false;
+
 // ============================================================================
 // Helper function to get current Unix timestamp (seconds since epoch)
 // ============================================================================
@@ -120,11 +123,11 @@ void sendHubHeartbeat() {
 
         // NEW: Check for pending commands
         if (responseDoc.containsKey("has_pending_commands")) {
-          bool hasPendingCommands = responseDoc["has_pending_commands"];
-          if (hasPendingCommands) {
+          bool pendingCmds = responseDoc["has_pending_commands"];
+          if (pendingCmds) {
             Serial.println("[Heartbeat] → Server says we have pending commands!");
-            // Immediately fetch and execute commands
-            fetchAndExecuteCommands();
+            // Set flag to fetch commands in main loop (non-blocking)
+            hasPendingCommands = true;
           }
         }
       }
@@ -155,15 +158,39 @@ DeviceStatus checkDoorbellStatus() {
   }
 
   HTTPClient http;
-  String url = String(BACKEND_SERVER_URL) + "/api/v1/devices/doorbell/" + String(DOORBELL_DEVICE_ID) + "/status";
+  String url = String(BACKEND_SERVER_URL) + "/api/v1/devices/" + String(DOORBELL_DEVICE_ID) + "/status/device";
 
-  http.begin(url);  // Plain HTTP, no auth needed for doorbell status (public endpoint)
+  Serial.printf("[Status] Checking doorbell status for %s\n", DOORBELL_DEVICE_ID);
+  Serial.printf("[Status] URL: %s\n", url.c_str());
+
+  http.begin(url);
+  http.addHeader("Content-Type", "application/json");
+
+  // Add Authorization header
+  if (HUB_API_TOKEN && strlen(HUB_API_TOKEN) > 0) {
+    String authHeader = String("Bearer ") + HUB_API_TOKEN;
+    http.addHeader("Authorization", authHeader.c_str());
+  }
+
   http.setTimeout(5000);
 
-  int httpResponseCode = http.GET();
+  // Build JSON body with hub device_id
+  JsonDocument requestDoc;
+  requestDoc["device_id"] = "hb_001";  // Hub device ID
+  String requestBody;
+  serializeJson(requestDoc, requestBody);
+
+  Serial.printf("[Status] Request body: %s\n", requestBody.c_str());
+
+  // Send GET request with body
+  int httpResponseCode = http.sendRequest("GET", requestBody);
 
   if (httpResponseCode == 200) {
     String response = http.getString();
+
+    // Debug: Print raw response
+    Serial.println("[Status] Raw JSON response:");
+    Serial.println(response);
 
     JsonDocument doc;
     DeserializationError error = deserializeJson(doc, response);
@@ -175,9 +202,13 @@ DeviceStatus checkDoorbellStatus() {
       status.free_heap = doc["free_heap"] | 0;
       status.data_valid = true;
 
-      Serial.printf("[Status] Doorbell: %s (RSSI: %d dBm)\n",
-                    status.online ? "ONLINE" : "OFFLINE",
-                    status.wifi_rssi);
+      Serial.printf("[Status] Parsed - online=%s, data_valid=%s\n",
+                    status.online ? "TRUE" : "FALSE",
+                    status.data_valid ? "TRUE" : "FALSE");
+      Serial.printf("[Status] Doorbell: %s (RSSI: %d dBm, Heap: %d bytes)\n",
+                    status.online ? "ONLINE ✓" : "OFFLINE ✗",
+                    status.wifi_rssi,
+                    status.free_heap);
     } else {
       Serial.printf("[Status] ✗ JSON parse error: %s\n", error.c_str());
     }
@@ -330,6 +361,16 @@ bool executeCommand(String action, JsonObject params) {
   else {
     Serial.printf("[Commands] Unknown action: %s\n", action.c_str());
     return false;
+  }
+}
+
+// ============================================================================
+// Process pending commands flag (non-blocking check, call from main loop)
+// ============================================================================
+void processPendingCommands() {
+  if (hasPendingCommands) {
+    hasPendingCommands = false;  // Clear flag before processing
+    fetchAndExecuteCommands();
   }
 }
 
@@ -864,6 +905,140 @@ bool fetchHomeAlerts(Alert* alerts, int maxAlerts) {
     return true;
   } else {
     Serial.printf("[Alerts] ✗ HTTP error: %d\n", httpResponseCode);
+    http.end();
+    return false;
+  }
+}
+
+// ============================================================================
+// Fetch sensor data for a specific sensor device
+// GET /api/v1/devices/:deviceId/sensor/sensors/device
+// Body: {"device_id": "hb_001"} with Bearer token
+// ============================================================================
+bool fetchSensorData(const char* deviceId, SensorData* sensorData) {
+  // Initialize as invalid
+  sensorData->valid = false;
+
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("[SensorFetch] WiFi not connected");
+    return false;
+  }
+
+  if (!HUB_API_TOKEN || strlen(HUB_API_TOKEN) == 0) {
+    Serial.println("[SensorFetch] ✗ No API token set");
+    return false;
+  }
+
+  HTTPClient http;
+  String url = String(BACKEND_SERVER_URL) + "/api/v1/devices/" + String(deviceId) + "/sensor/sensors/device";
+
+  Serial.printf("[SensorFetch] Fetching data for %s\n", deviceId);
+  Serial.printf("[SensorFetch] URL: %s\n", url.c_str());
+  Serial.printf("[SensorFetch] Token: %s... (length: %d)\n",
+                String(HUB_API_TOKEN).substring(0, 10).c_str(),
+                strlen(HUB_API_TOKEN));
+
+  http.begin(url);
+  http.addHeader("Content-Type", "application/json");
+
+  // Add Authorization header with hub's API token
+  String authHeader = String("Bearer ") + HUB_API_TOKEN;
+  http.addHeader("Authorization", authHeader.c_str());
+  Serial.printf("[SensorFetch] Auth header: Bearer %s...\n", String(HUB_API_TOKEN).substring(0, 10).c_str());
+
+  http.setTimeout(5000);
+
+  // Build JSON body with device_id (hb_001 - hub device ID)
+  JsonDocument requestDoc;
+  requestDoc["device_id"] = "hb_001";  // Hub device ID
+  String requestBody;
+  serializeJson(requestDoc, requestBody);
+
+  Serial.printf("[SensorFetch] Request body: %s\n", requestBody.c_str());
+
+  // Note: GET with body is non-standard, but some servers support it
+  // HTTPClient doesn't directly support GET with body, so we use sendRequest
+  int httpResponseCode = http.sendRequest("GET", requestBody);
+
+  if (httpResponseCode == 200) {
+    String response = http.getString();
+
+    // Parse JSON response
+    JsonDocument doc;
+    DeserializationError error = deserializeJson(doc, response);
+
+    if (error) {
+      Serial.printf("[SensorFetch] JSON parse error: %s\n", error.c_str());
+      http.end();
+      return false;
+    }
+
+    // Check if sensors object exists
+    if (!doc.containsKey("sensors") || !doc["sensors"].is<JsonObject>()) {
+      Serial.println("[SensorFetch] No sensors object in response");
+      http.end();
+      return false;
+    }
+
+    JsonObject sensors = doc["sensors"];
+
+    // Extract device info
+    const char* devId = doc["device_id"] | deviceId;
+    strncpy(sensorData->device_id, devId, sizeof(sensorData->device_id) - 1);
+    sensorData->device_id[sizeof(sensorData->device_id) - 1] = '\0';
+
+    // Extract device type
+    const char* devType = sensors["device_type"] | "sensor";
+    strncpy(sensorData->device_type, devType, sizeof(sensorData->device_type) - 1);
+    sensorData->device_type[sizeof(sensorData->device_type) - 1] = '\0';
+
+    // Extract forwarded_by
+    const char* fwdBy = sensors["forwarded_by"] | "";
+    strncpy(sensorData->forwarded_by, fwdBy, sizeof(sensorData->forwarded_by) - 1);
+    sensorData->forwarded_by[sizeof(sensorData->forwarded_by) - 1] = '\0';
+
+    // Extract sensor readings
+    sensorData->temperature = sensors["temperature"] | 0.0f;
+    sensorData->humidity = sensors["humidity"] | 0.0f;
+    sensorData->gas_level = sensors["gas_level"] | 0.0f;
+    sensorData->light_lux = sensors["light_lux"] | 0.0f;
+    sensorData->battery_voltage = sensors["battery_voltage"] | 0.0f;
+    sensorData->battery_percent = sensors["battery_percent"] | 0;
+    sensorData->boot_count = sensors["boot_count"] | 0;
+
+    // Extract metadata
+    const char* lastUpdated = sensors["last_updated"] | "";
+    strncpy(sensorData->last_updated, lastUpdated, sizeof(sensorData->last_updated) - 1);
+    sensorData->last_updated[sizeof(sensorData->last_updated) - 1] = '\0';
+
+    const char* ts = sensors["timestamp"] | "";
+    strncpy(sensorData->timestamp, ts, sizeof(sensorData->timestamp) - 1);
+    sensorData->timestamp[sizeof(sensorData->timestamp) - 1] = '\0';
+
+    sensorData->alert = sensors["alert"] | false;
+    sensorData->averaged = sensors["averaged"] | false;
+    sensorData->sample_count = sensors["sample_count"] | 0;
+
+    // Mark as valid
+    sensorData->valid = true;
+
+    Serial.printf("[SensorFetch] ✓ Data fetched for %s: Temp=%.2f°C, Humidity=%.1f%%, Gas=%.0f, Light=%.2f lux, Battery=%d%%\n",
+                  deviceId,
+                  sensorData->temperature,
+                  sensorData->humidity,
+                  sensorData->gas_level,
+                  sensorData->light_lux,
+                  sensorData->battery_percent);
+
+    http.end();
+    return true;
+  } else {
+    Serial.printf("[SensorFetch] ✗ HTTP error: %d\n", httpResponseCode);
+    // Get error response body for debugging
+    if (httpResponseCode > 0) {
+      String errorResponse = http.getString();
+      Serial.printf("[SensorFetch] Error response: %s\n", errorResponse.c_str());
+    }
     http.end();
     return false;
   }
