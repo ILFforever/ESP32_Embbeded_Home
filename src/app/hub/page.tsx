@@ -20,7 +20,8 @@ import {
   getAQICategory,
   startMicrophone,
   stopMicrophone,
-  getMicrophoneStatus
+  getMicrophoneStatus,
+  getDeviceHistory
 } from '@/services/devices.service';
 import type { BackendDevice } from '@/types/dashboard';
 import {
@@ -62,6 +63,9 @@ export default function HubControlPage() {
   // Microphone state
   const [micActive, setMicActive] = useState(false);
 
+  // Recent activity
+  const [recentActivity, setRecentActivity] = useState<any[]>([]);
+
   useEffect(() => {
     const fetchData = async () => {
       try {
@@ -72,17 +76,33 @@ export default function HubControlPage() {
           console.log('🔍 Hub device found:', hub.device_id, 'Type:', hub.type);
           setHubDevice(hub);
 
+          // Fetch hub activity history (same approach as doorbell)
+          try {
+            const history = await getDeviceHistory(hub.device_id, 20);
+            if (history?.history) setRecentActivity(history.history);
+          } catch (err) {
+            console.error('Failed to fetch hub activity history:', err);
+          }
+
           // Fetch sensor data using NEW API
-          const sensors = await getHubSensors(hub.device_id);
-          if (sensors) {
-            setSensorData(sensors.sensors);
+          try {
+            const sensors = await getHubSensors(hub.device_id);
+            if (sensors) {
+              setSensorData(sensors.sensors);
+            }
+          } catch (err) {
+            console.error('Failed to fetch hub sensors:', err);
           }
 
           // Fetch amplifier streaming status using NEW API
-          const streaming = await getHubAmpStreaming(hub.device_id);
-          if (streaming) {
-            setAmpStreaming(streaming.amplifier);
-            setVolume(streaming.amplifier.volume_level || 10);
+          try {
+            const streaming = await getHubAmpStreaming(hub.device_id);
+            if (streaming) {
+              setAmpStreaming(streaming.amplifier);
+              setVolume(streaming.amplifier.volume_level || 10);
+            }
+          } catch (err) {
+            console.error('Failed to fetch hub amplifier streaming:', err);
           }
         }
       } catch (error) {
@@ -266,6 +286,50 @@ export default function HubControlPage() {
     }
   };
 
+  // ---- Helper functions for Recent Activity ----
+  const formatActivityTime = (timestamp: any) => {
+    if (timestamp?.toDate) return timestamp.toDate().toLocaleTimeString();
+    if (timestamp?._seconds) return new Date(timestamp._seconds * 1000).toLocaleTimeString();
+    if (typeof timestamp === 'string' || typeof timestamp === 'number') return new Date(timestamp).toLocaleTimeString();
+    return 'N/A';
+  };
+
+  const getActivityDescription = (event: any) => {
+    if (!event) return 'Activity detected';
+    if (event.type === 'sensor_update') return `Sensor update: ${Object.keys(event.data || {}).join(', ')}`;
+    if (event.type === 'command') return `Command: ${event.data?.action || 'unknown'}`;
+    if (event.type === 'heartbeat') return `Heartbeat (uptime ${Math.floor((event.data?.uptime_ms || 0) / 60000)}m)`;
+    if (event.type === 'device_state') return `Device state: heap ${event.data?.free_heap ? Math.floor(event.data.free_heap / 1024) : 'N/A'} KB`;
+    if (event.type === 'device_log') return event.data?.message || 'Log entry';
+    return 'Activity detected';
+  };
+
+  const getActivityStatus = (event: any) => {
+    if (!event) return 'Event';
+    if (event.type === 'command') return event.data?.status || 'pending';
+    if (event.type === 'heartbeat') return 'Active';
+    if (event.type === 'device_state') return 'Online';
+    if (event.type === 'device_log') return event.data?.level || 'INFO';
+    return 'Event';
+  };
+
+  const getActivityStatusClass = (event: any) => {
+    if (!event) return 'status-safe';
+    if (event.type === 'command') {
+      if (event.data?.status === 'completed') return 'status-safe';
+      if (event.data?.status === 'failed') return 'status-danger';
+      return 'status-warning';
+    }
+    if (event.type === 'device_log') {
+      const lvl = event.data?.level?.toUpperCase() || 'INFO';
+      if (lvl === 'ERROR' || lvl === 'CRITICAL') return 'status-danger';
+      if (lvl === 'WARNING' || lvl === 'WARN') return 'status-warning';
+      return 'status-safe';
+    }
+    if (event.type === 'device_state' || event.type === 'heartbeat') return 'status-safe';
+    return 'status-safe';
+  };
+
   if (loading) {
     return (
       <ProtectedRoute>
@@ -424,7 +488,7 @@ export default function HubControlPage() {
                       <div className="temp-ranges" style={{
                         display: 'flex',
                         justifyContent: 'space-around',
-                        marginTop: '16px',
+                        marginTop: '85px',
                         padding: '12px',
                         background: 'rgba(0,0,0,0.3)',
                         borderRadius: '8px'
@@ -492,7 +556,7 @@ export default function HubControlPage() {
                       <div style={{
                         display: 'flex',
                         justifyContent: 'space-around',
-                        marginTop: '16px',
+                        marginTop: '60px',
                         padding: '12px',
                         background: 'rgba(0,0,0,0.3)',
                         borderRadius: '8px'
@@ -555,7 +619,7 @@ export default function HubControlPage() {
                         <div style={{
                           display: 'flex',
                           justifyContent: 'space-around',
-                          marginTop: '16px',
+                          marginTop: '26px',
                           padding: '12px',
                           background: 'rgba(0,0,0,0.3)',
                           borderRadius: '8px'
@@ -778,105 +842,44 @@ export default function HubControlPage() {
                       {ampLoading ? 'RESTARTING...' : 'RESTART AMPLIFIER'}
                     </button>
                   </div>
-                </div>
-              </div>
 
-              {/* Send Alert to Hub Card - Half Height */}
-              <div className="card" style={{ height: 'fit-content' }}>
-                <div className="card-header">
-                  <div className="card-title-group">
-                    <AlertTriangle size={24} />
-                    <h3>SEND ALERT TO HUB</h3>
+                  {/* RECENT ACTIVITY (Inserted as requested) */}
+                  <div style={{ marginTop: 16 }} />
+
+                  <div className="card-header" style={{ paddingTop: '8px' }}>
+                    <h3>RECENT ACTIVITY</h3>
                   </div>
-                </div>
-                <div className="card-content">
-                  <form onSubmit={handleSendAlert} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                    <div>
-                      <label style={{ display: 'block', marginBottom: '6px', fontSize: '13px', color: 'var(--text-secondary)' }}>
-                        Alert Message
-                      </label>
-                      <input
-                        type="text"
-                        value={alertMessage}
-                        onChange={(e) => setAlertMessage(e.target.value)}
-                        placeholder="Enter alert message..."
-                        maxLength={200}
-                        required
-                        disabled={!hubDevice?.online}
+
+                  <div className="activity-list">
+                    {recentActivity?.length > 0 ? (
+                      recentActivity.map((event: any, index: number) => (
+                        <div key={event.id || index} className="activity-item">
+                          <span className="activity-time">{formatActivityTime(event.timestamp)}</span>
+                          <span className="activity-desc">{getActivityDescription(event)}</span>
+                          <span className={`activity-status ${getActivityStatusClass(event)}`}>
+                            {getActivityStatus(event)}
+                          </span>
+                        </div>
+                      ))
+                    ) : (
+                      <div
                         style={{
-                          width: '100%',
-                          padding: '10px',
-                          background: 'rgba(0,0,0,0.3)',
-                          border: '1px solid rgba(var(--primary-color-rgb), 0.3)',
-                          borderRadius: '4px',
-                          color: '#FFF',
-                          fontSize: '13px'
+                          textAlign: 'center',
+                          padding: '20px',
+                          color: '#6c757d',
+                          fontSize: '14px',
+                          fontStyle: 'italic',
                         }}
-                      />
-                    </div>
-
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                      <div>
-                        <label style={{ display: 'block', marginBottom: '6px', fontSize: '12px', color: 'var(--text-secondary)' }}>
-                          Level
-                        </label>
-                        <select
-                          value={alertLevel}
-                          onChange={(e) => setAlertLevel(e.target.value as any)}
-                          disabled={!hubDevice?.online}
-                          style={{
-                            width: '100%',
-                            padding: '8px',
-                            background: 'rgba(0,0,0,0.3)',
-                            border: '1px solid rgba(var(--primary-color-rgb), 0.3)',
-                            borderRadius: '4px',
-                            color: '#FFF',
-                            fontSize: '12px'
-                          }}
-                        >
-                          <option value="info">Info</option>
-                          <option value="warning">Warning</option>
-                          <option value="error">Error</option>
-                          <option value="critical">Critical</option>
-                        </select>
+                      >
+                        No recent activity
                       </div>
+                    )}
+                  </div>
 
-                      <div>
-                        <label style={{ display: 'block', marginBottom: '6px', fontSize: '12px', color: 'var(--text-secondary)' }}>
-                          Duration (sec)
-                        </label>
-                        <input
-                          type="number"
-                          value={alertDuration}
-                          onChange={(e) => setAlertDuration(parseInt(e.target.value))}
-                          min={1}
-                          max={300}
-                          disabled={!hubDevice?.online}
-                          style={{
-                            width: '100%',
-                            padding: '8px',
-                            background: 'rgba(0,0,0,0.3)',
-                            border: '1px solid rgba(var(--primary-color-rgb), 0.3)',
-                            borderRadius: '4px',
-                            color: '#FFF',
-                            fontSize: '12px'
-                          }}
-                        />
-                      </div>
-                    </div>
-
-                    <button
-                      type="submit"
-                      className="btn-action"
-                      disabled={sendingAlert || !hubDevice?.online || !alertMessage.trim()}
-                      style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', marginTop: '4px' }}
-                    >
-                      <Send size={16} />
-                      <span style={{ fontSize: '13px' }}>{sendingAlert ? 'Sending...' : 'Send Alert'}</span>
-                    </button>
-                  </form>
                 </div>
               </div>
+
+              {/* Send Alert to Hub Card - Half Height (commented out) */}
             </div>
           </div>
         </div>
