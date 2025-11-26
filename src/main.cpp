@@ -287,8 +287,8 @@ void setup(void)
   drawProgressBar(&contentArea, 180, 220, 440, 70, 90, getProgressColor(90), TFT_BLACK, TFT_WHITE, 5);
   contentArea.pushSprite(0, 40); // Below top bar
 
-  // Initialize MQTT client
-  initMQTT("hub_hb_001", onDoorbellRing, onFaceDetection);
+  // Initialize MQTT client (use same device_id as heartbeat: "hb_001")
+  initMQTT("hb_001", onDoorbellRing, onFaceDetection);
   connectMQTT(); // Initial connection attempt
 
   Serial.println("[MQTT] Hub will receive doorbell rings and face detection via MQTT!");

@@ -121,15 +121,8 @@ void sendHubHeartbeat() {
           Serial.println("[Heartbeat] → Throttled (cached)");
         }
 
-        // NEW: Check for pending commands
-        if (responseDoc.containsKey("has_pending_commands")) {
-          bool pendingCmds = responseDoc["has_pending_commands"];
-          if (pendingCmds) {
-            Serial.println("[Heartbeat] → Server says we have pending commands!");
-            // Set flag to fetch commands in main loop (non-blocking)
-            hasPendingCommands = true;
-          }
-        }
+        // Command notifications are now handled via MQTT (real-time)
+        // No need to poll for commands via heartbeat
       }
     } else {
       Serial.printf("[Heartbeat] ✗ Failed (code: %d)\n", httpResponseCode);

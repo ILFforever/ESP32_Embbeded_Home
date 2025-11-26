@@ -95,10 +95,7 @@ void handleMeshResponse(String line)
 
     return;
   }
-  
-  // Log other responses
-  Serial.print("[MESH] RX: ");
-  Serial.println(line);
+
   // Handle sensor data from mesh (both local hub sensors and mesh nodes)
   // Formats:
   // - Main_mesh local: {"device_id":"hb_001","device_type":"mesh_hub","sensors":{...}}
@@ -170,6 +167,9 @@ void handleMeshResponse(String line)
     sendMeshSensorData(line.c_str());
     return;
   }
+  // Log other responses
+  Serial.print("[MESH] RX: ");
+  Serial.println(line);
 }
 
 // ============================================================================
