@@ -1573,6 +1573,8 @@ export default function DoorbellControlPage() {
             alignItems: "center",
             justifyContent: "center",
             zIndex: 1000,
+            padding: "20px",
+            overflowY: "auto",
           }}
         >
           <div
@@ -1581,29 +1583,29 @@ export default function DoorbellControlPage() {
             style={{
               borderRadius: "12px",
               padding: "24px",
-              maxWidth: "600px",
-              width: "90%",
+              maxWidth: "500px",
+              width: "100%",
               boxShadow: "0 8px 24px rgba(0, 0, 0, 0.2)",
+              margin: "auto",
+              maxHeight: "fit-content",
             }}
           >
             <div
               style={{
                 display: "flex",
-                gap: "24px",
-                flexWrap: "wrap",
+                gap: "20px",
               }}
             >
               {/* Image on the left */}
               <div
                 style={{
-                  flex: "0 0 200px",
-                  minWidth: "200px",
+                  flex: "0 0 auto",
                 }}
               >
                 <div
                   style={{
-                    width: "200px",
-                    height: "200px",
+                    width: "180px",
+                    height: "180px",
                     borderRadius: "16px",
                     overflow: "hidden",
                     border: selectedVisitor.recognized
@@ -1644,16 +1646,17 @@ export default function DoorbellControlPage() {
               {/* Information on the right */}
               <div
                 style={{
-                  flex: "1 1 300px",
-                  minWidth: "250px",
+                  flex: "1",
+                  display: "flex",
+                  flexDirection: "column",
                 }}
               >
                 <h2
                   style={{
                     marginTop: 0,
-                    marginBottom: "20px",
+                    marginBottom: "14px",
                     color: selectedVisitor.recognized ? "#4CAF50" : "#FF9800",
-                    fontSize: "24px",
+                    fontSize: "22px",
                     fontWeight: "700",
                   }}
                 >
@@ -1664,7 +1667,8 @@ export default function DoorbellControlPage() {
                   style={{
                     display: "flex",
                     flexDirection: "column",
-                    gap: "16px",
+                    gap: "12px",
+                    flex: 1,
                   }}
                 >
                   {/* Recognition Status */}

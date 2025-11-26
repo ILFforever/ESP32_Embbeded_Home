@@ -69,6 +69,7 @@ export default function HubControlPage() {
         const hub = findHubDevice(devicesStatus.devices);
 
         if (hub) {
+          console.log('🔍 Hub device found:', hub.device_id, 'Type:', hub.type);
           setHubDevice(hub);
 
           // Fetch sensor data using NEW API
@@ -121,6 +122,7 @@ export default function HubControlPage() {
 
     try {
       setSendingAlert(true);
+      console.log('🔍 Sending alert to hub device_id:', hubDevice.device_id);
       const result = await sendHubAlert(hubDevice.device_id, {
         message: alertMessage,
         level: alertLevel,

@@ -28,6 +28,7 @@ export default function DashboardPage() {
   const [expandedCard, setExpandedCard] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [activeView, setActiveView] = useState<string>('dashboard');
+  const [systemOnline, setSystemOnline] = useState<boolean>(false);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -39,8 +40,27 @@ export default function DashboardPage() {
         // Fetch gas sensor readings
         const gasData = await getGasReadingsForDashboard();
         setGasReadings(gasData);
+
+        // Check system status via /info endpoint
+        try {
+          const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+          const response = await fetch(`${apiUrl}/info`, {
+            method: 'GET',
+          });
+
+          if (response.ok) {
+            const data = await response.text();
+            setSystemOnline(data.includes('Arduino-888-SmartHome is running!'));
+          } else {
+            setSystemOnline(false);
+          }
+        } catch (infoError) {
+          console.error('Error checking system status:', infoError);
+          setSystemOnline(false);
+        }
       } catch (error) {
         console.error('Error loading devices:', error);
+        setSystemOnline(false);
       } finally {
         setLoading(false);
       }
@@ -267,8 +287,8 @@ export default function DashboardPage() {
 
             <div className="dashboard-header-right">
               <div className="header-info">
-                <span className="status-dot status-online"></span>
-                <span>ALL SYSTEMS OPERATIONAL</span>
+                <span className={`status-dot ${systemOnline ? 'status-online' : 'status-offline'}`}></span>
+                <span>{systemOnline ? 'ALL SYSTEMS OPERATIONAL' : 'SYSTEM OFFLINE'}</span>
               </div>
             </div>
           </header>
