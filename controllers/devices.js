@@ -45,9 +45,12 @@ function shouldWriteToFirebase(deviceId, newData, dataType = 'heartbeat') {
   }
 
   const now = Date.now();
-  const timeSinceLastWrite = now - cached.lastWriteTime;
 
-  // Always write if 1+ minute elapsed
+  // Check last write time for THIS specific data type only
+  const lastWriteTime = cached.lastWriteTime?.[dataType] || 0;
+  const timeSinceLastWrite = now - lastWriteTime;
+
+  // Always write if 1+ minute elapsed since last write of this type
   if (timeSinceLastWrite >= WRITE_INTERVAL_MS) {
     return true;
   }
@@ -55,20 +58,24 @@ function shouldWriteToFirebase(deviceId, newData, dataType = 'heartbeat') {
   // Check for status changes (online/offline)
   if (dataType === 'heartbeat') {
     // Status changed - write immediately
-    if (cached.lastData.online !== newData.online) {
+    const lastHeartbeat = cached.lastData?.heartbeat;
+    if (lastHeartbeat && lastHeartbeat.online !== newData.online) {
       return true;
     }
   }
 
   // Check for significant sensor changes
-  if (dataType === 'sensor' && cached.lastData.sensors) {
-    for (const [key, value] of Object.entries(newData.sensors || {})) {
-      const oldValue = cached.lastData.sensors[key];
-      if (oldValue !== undefined) {
-        const percentChange = Math.abs((value - oldValue) / oldValue) * 100;
-        if (percentChange >= SENSOR_DELTA_THRESHOLD) {
-          console.log(`[Throttle] Sensor ${key} changed by ${percentChange.toFixed(1)}% - writing`);
-          return true;
+  if (dataType === 'sensor') {
+    const lastSensor = cached.lastData?.sensor;
+    if (lastSensor && lastSensor.sensors) {
+      for (const [key, value] of Object.entries(newData.sensors || {})) {
+        const oldValue = lastSensor.sensors[key];
+        if (oldValue !== undefined) {
+          const percentChange = Math.abs((value - oldValue) / oldValue) * 100;
+          if (percentChange >= SENSOR_DELTA_THRESHOLD) {
+            console.log(`[Throttle] Sensor ${key} changed by ${percentChange.toFixed(1)}% - writing`);
+            return true;
+          }
         }
       }
     }
@@ -78,13 +85,59 @@ function shouldWriteToFirebase(deviceId, newData, dataType = 'heartbeat') {
   return false;
 }
 
-// Helper: Update cache
+// Helper: Update cache with separate tracking per data type
 function updateCache(deviceId, data, dataType) {
-  deviceCache.set(deviceId, {
-    lastWriteTime: Date.now(),
-    lastData: { ...data, online: true },
-    dataType
-  });
+  const cached = deviceCache.get(deviceId) || { lastWriteTime: {}, lastData: {} };
+
+  // Update write time for this specific data type
+  cached.lastWriteTime[dataType] = Date.now();
+
+  // Update data for this specific data type
+  cached.lastData[dataType] = { ...data, online: true };
+
+  deviceCache.set(deviceId, cached);
+}
+
+// History write interval (5 minutes in milliseconds)
+const HISTORY_WRITE_INTERVAL_MS = 5 * 60 * 1000;
+
+// Cache for tracking last history write time per device
+const historyWriteCache = new Map(); // { device_id: lastHistoryWriteTime }
+
+// Helper: Check if we should write to history (every 30 minutes)
+function shouldWriteToHistory(deviceId) {
+  const lastWrite = historyWriteCache.get(deviceId);
+
+  if (!lastWrite) {
+    return true; // First time - always write
+  }
+
+  const now = Date.now();
+  const timeSinceLastWrite = now - lastWrite;
+
+  return timeSinceLastWrite >= HISTORY_WRITE_INTERVAL_MS;
+}
+
+// Helper: Store sensor reading in history for graphing (30-minute intervals)
+async function storeSensorHistory(deviceRef, sensorData, timestamp, deviceId) {
+  if (!shouldWriteToHistory(deviceId)) {
+    return false; // Skip history write
+  }
+
+  // Create history document with timestamp and sensor values
+  const historyDoc = {
+    timestamp: admin.firestore.Timestamp.fromDate(new Date(timestamp)),
+    ...sensorData,
+    created_at: admin.firestore.FieldValue.serverTimestamp()
+  };
+
+  // Store in history collection with readings subcollection
+  await deviceRef.collection('sensors').doc('history').collection('readings').add(historyDoc);
+
+  // Update cache
+  historyWriteCache.set(deviceId, Date.now());
+
+  return true;
 }
 
 // ============================================================================
@@ -277,17 +330,18 @@ const handleSensorData = async (req, res) => {
       const db = getFirestore();
       const deviceRef = db.collection('devices').doc(device_id);
 
-      // Write sensor data
+      // Write sensor data to current (for real-time display)
       await deviceRef.collection('sensors').doc('current').set({
         ...sensors,
+        timestamp: admin.firestore.Timestamp.fromDate(new Date(sensorData.timestamp)),
         last_updated: admin.firestore.FieldValue.serverTimestamp(),
       }, { merge: true });
 
-      // Optional: Store history (disable if not needed to save writes)
-      // await deviceRef.collection('sensor_history').add({
-      //   ...sensors,
-      //   timestamp: admin.firestore.FieldValue.serverTimestamp(),
-      // });
+      // Store in history (30-minute intervals for graphing)
+      const historyWritten = await storeSensorHistory(deviceRef, sensors, sensorData.timestamp, device_id);
+      if (historyWritten) {
+        console.log(`[Sensor] ${device_id} - Stored in history (30min interval)`);
+      }
 
       updateCache(device_id, sensorData, 'sensor');
     } else {
@@ -307,6 +361,74 @@ const handleSensorData = async (req, res) => {
 };
 
 // ============================================================================
+// @route   POST /api/v1/devices/sensor-data
+// @desc    Handle sensor data from room sensors (forwarded by Main_lcd hub)
+// @access  Authenticated devices (requires Bearer token)
+// ============================================================================
+const handleRoomSensorData = async (req, res) => {
+  try {
+    const { device_id, device_type, data, timestamp, forwarded_by } = req.body;
+
+    if (!device_id || !data) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'device_id and data object required'
+      });
+    }
+
+    // Convert timestamp from seconds to milliseconds if needed
+    // ESP32 sends Unix timestamp in seconds, JavaScript Date needs milliseconds
+    let timestampMs = timestamp || Date.now();
+    if (timestamp && timestamp < 10000000000) {
+      // If timestamp is less than 10 billion, it's in seconds (before year 2286)
+      timestampMs = timestamp * 1000;
+    }
+
+    const sensorData = {
+      ...data,
+      timestamp: timestampMs,
+      forwarded_by: forwarded_by || 'unknown'
+    };
+
+    // Room sensors already throttle on ESP32 side - always write to Firebase
+    const shouldWrite = true;
+
+    console.log(`[RoomSensor] ${device_id} - Writing to Firebase (forwarded by: ${forwarded_by})`);
+
+    const db = getFirestore();
+    const deviceRef = db.collection('devices').doc(device_id);
+
+    // Write sensor data to current document (for real-time display)
+    await deviceRef.collection('sensors').doc('current').set({
+      ...data,
+      device_type: device_type || 'environmental_sensor',
+      forwarded_by: forwarded_by || 'unknown',
+      timestamp: admin.firestore.Timestamp.fromDate(new Date(timestampMs)),
+      last_updated: admin.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true });
+
+    // Store in history (30-minute intervals for graphing)
+    const historyWritten = await storeSensorHistory(deviceRef, data, sensorData.timestamp, device_id);
+    if (historyWritten) {
+      console.log(`[RoomSensor] ${device_id} - Stored in history (30min interval)`);
+    }
+
+    // Update cache to track last write
+    updateCache(device_id, sensorData, 'sensor');
+
+    res.json({
+      status: 'ok',
+      message: 'Sensor data received',
+      written: shouldWrite
+    });
+
+  } catch (error) {
+    console.error('[RoomSensor] Error:', error);
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+};
+
+// ============================================================================
 // @route   GET /api/v1/devices/:device_id/status
 // @desc    Get current device status (use expireAt to determine online status)
 // ============================================================================
@@ -315,10 +437,18 @@ const getDeviceStatus = async (req, res) => {
     const { device_id } = req.params;
     const db = getFirestore();
 
+    // Get heartbeat status
     const statusDoc = await db.collection('devices')
       .doc(device_id)
       .collection('live_status')
       .doc('heartbeat')
+      .get();
+
+    // Get device-specific state (e.g., doorbell camera_active, mic_active)
+    const deviceStateDoc = await db.collection('devices')
+      .doc(device_id)
+      .collection('live_status')
+      .doc('device_state')
       .get();
 
     if (statusDoc.exists) {
@@ -330,7 +460,8 @@ const getDeviceStatus = async (req, res) => {
       const expireAtMillis = data.expireAt ? data.expireAt.toMillis() : 0;
       const isOnline = expireAtMillis > now;
 
-      res.json({
+      // Base response with generic status
+      const response = {
         status: 'ok',
         device_id,
         online: isOnline,
@@ -340,7 +471,15 @@ const getDeviceStatus = async (req, res) => {
         wifi_rssi: data.wifi_rssi,
         ip_address: data.ip_address,
         expireAt: data.expireAt
-      });
+      };
+
+      // Merge device-specific state if available (e.g., doorbell camera_active, mic_active)
+      if (deviceStateDoc.exists) {
+        const deviceState = deviceStateDoc.data();
+        Object.assign(response, deviceState);
+      }
+
+      res.json(response);
     } else {
       // Document doesn't exist = device went offline and TTL deleted it
       res.json({
@@ -886,10 +1025,26 @@ const getDoorbellStatus = async (req, res) => {
       });
     }
 
+    // Check if device is online by checking heartbeat status
+    // Device is online if heartbeat document exists (TTL auto-deletes if offline)
+    const heartbeatDoc = await db.collection('devices')
+      .doc(device_id)
+      .collection('live_status')
+      .doc('heartbeat')
+      .get();
+
+    const isOnline = heartbeatDoc.exists;
+
+    // Get status data and add online field
+    const statusData = statusDoc.data();
+
     res.json({
       status: 'ok',
       device_id,
-      data: statusDoc.data()
+      data: {
+        ...statusData,
+        online: isOnline
+      }
     });
 
   } catch (error) {
@@ -1947,12 +2102,337 @@ const getLatestVisitors = async (req, res) => {
   }
 };
 
+// ============================================================================
+// Hub-Specific Endpoints
+// ============================================================================
+
+// @desc    Get Hub sensor data (DHT11 temperature/humidity + PM2.5 air quality)
+// @route   GET /api/v1/devices/:device_id/hub/sensors
+// @access  Protected
+const getHubSensors = async (req, res) => {
+  try {
+    const { device_id } = req.params;
+
+    const db = getFirestore();
+    const deviceRef = db.collection('devices').doc(device_id);
+
+    // Get the current sensor data from sensors/current document
+    const sensorDoc = await deviceRef
+      .collection('sensors')
+      .doc('current')
+      .get();
+
+    if (!sensorDoc.exists) {
+      return res.status(404).json({
+        status: 'error',
+        message: 'No sensor data found. Hub may not have sent data yet.'
+      });
+    }
+
+    const data = sensorDoc.data();
+
+    // Helper function to calculate AQI from PM2.5
+    const calculateAQI = (pm25) => {
+      if (pm25 == null) return null;
+
+      // EPA AQI breakpoints for PM2.5
+      if (pm25 <= 12.0) return Math.round((50 / 12.0) * pm25);
+      if (pm25 <= 35.4) return Math.round(((100 - 51) / (35.4 - 12.1)) * (pm25 - 12.1) + 51);
+      if (pm25 <= 55.4) return Math.round(((150 - 101) / (55.4 - 35.5)) * (pm25 - 35.5) + 101);
+      if (pm25 <= 150.4) return Math.round(((200 - 151) / (150.4 - 55.5)) * (pm25 - 55.5) + 151);
+      if (pm25 <= 250.4) return Math.round(((300 - 201) / (250.4 - 150.5)) * (pm25 - 150.5) + 201);
+      return Math.round(((500 - 301) / (500.4 - 250.5)) * (pm25 - 250.5) + 301);
+    };
+
+    // Extract sensor data with correct field names from Firebase
+    const sensorData = {
+      temperature: data.temperature != null ? data.temperature : null,
+      humidity: data.humidity != null ? data.humidity : null,
+      pm25: data.pm2_5 != null ? data.pm2_5 : null,  // Note: Firebase stores as pm2_5
+      pm10: data.pm10 != null ? data.pm10 : null,
+      pm1_0: data.pm1_0 != null ? data.pm1_0 : null,
+      aqi: data.aqi != null ? data.aqi : calculateAQI(data.pm2_5),  // Calculate if not stored
+      timestamp: data.timestamp,
+      device_id
+    };
+
+    console.log(`[HubSensors] ${device_id} - Retrieved sensor data from sensors/current:`, sensorData);
+
+    res.json({
+      status: 'ok',
+      device_id,
+      sensors: sensorData
+    });
+
+  } catch (error) {
+    console.error('[HubSensors] Error:', error);
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+};
+
+// @desc    Send alert to Hub LCD display
+// @route   POST /api/v1/devices/:device_id/hub/alert
+// @access  Protected
+const sendHubAlert = async (req, res) => {
+  try {
+    const { device_id } = req.params;
+    const { message, level, duration } = req.body;
+
+    // Validate message
+    if (!message) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'Alert message is required'
+      });
+    }
+
+    // Validate level (info, warning, error, critical)
+    const validLevels = ['info', 'warning', 'error', 'critical'];
+    const alertLevel = level || 'info';
+
+    if (!validLevels.includes(alertLevel)) {
+      return res.status(400).json({
+        status: 'error',
+        message: `Invalid alert level. Must be one of: ${validLevels.join(', ')}`
+      });
+    }
+
+    // Validate duration (seconds to display alert, default 10)
+    const alertDuration = duration || 10;
+    if (isNaN(alertDuration) || alertDuration < 1 || alertDuration > 300) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'Duration must be between 1 and 300 seconds'
+      });
+    }
+
+    const db = getFirestore();
+    const deviceRef = db.collection('devices').doc(device_id);
+
+    // Verify device exists and is a Hub
+    const deviceDoc = await deviceRef.get();
+    if (!deviceDoc.exists) {
+      return res.status(404).json({
+        status: 'error',
+        message: 'Device not found'
+      });
+    }
+
+    // Queue hub_alert command
+    const commandRef = await deviceRef.collection('commands').add({
+      action: 'hub_alert',
+      params: {
+        message: message.substring(0, 200), // Limit message length for LCD
+        level: alertLevel,
+        duration: alertDuration
+      },
+      status: 'pending',
+      created_at: admin.firestore.FieldValue.serverTimestamp(),
+      executed_at: null,
+      result: null
+    });
+
+    console.log(`[HubAlert] ${device_id} - Alert queued (ID: ${commandRef.id}, Level: ${alertLevel})`);
+
+    // Notify device via MQTT
+    await publishDeviceCommand(device_id, commandRef.id, 'hub_alert');
+
+    res.json({
+      status: 'ok',
+      message: 'Alert sent to Hub and device notified via MQTT',
+      command_id: commandRef.id,
+      alert: {
+        message,
+        level: alertLevel,
+        duration: alertDuration
+      }
+    });
+
+  } catch (error) {
+    console.error('[HubAlert] Error:', error);
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+};
+
+// @desc    Get Hub amplifier streaming status
+// @route   GET /api/v1/devices/:device_id/hub/amp/streaming
+// @access  Protected
+const getHubAmpStreaming = async (req, res) => {
+  try {
+    const { device_id } = req.params;
+
+    const db = getFirestore();
+    const deviceRef = db.collection('devices').doc(device_id);
+
+    // Get the latest status document which should contain amp streaming status
+    const statusDoc = await deviceRef
+      .collection('status')
+      .orderBy('timestamp', 'desc')
+      .limit(1)
+      .get();
+
+    if (statusDoc.empty) {
+      return res.status(404).json({
+        status: 'error',
+        message: 'No amplifier status found. Hub may not have sent data yet.'
+      });
+    }
+
+    const statusData = statusDoc.docs[0].data();
+
+    // Extract amplifier streaming data
+    const ampData = {
+      is_streaming: statusData.amp_streaming || false,
+      current_url: statusData.amp_url || null,
+      volume_level: statusData.amp_volume || 0,
+      is_playing: statusData.amp_playing || false,
+      timestamp: statusData.timestamp,
+      device_id
+    };
+
+    console.log(`[HubAmpStreaming] ${device_id} - Retrieved amp status:`, ampData);
+
+    res.json({
+      status: 'ok',
+      device_id,
+      amplifier: ampData
+    });
+
+  } catch (error) {
+    console.error('[HubAmpStreaming] Error:', error);
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+};
+
+// ============================================================================
+// @route   GET /api/v1/devices/:device_id/sensors/readings
+// @desc    Get sensor history readings for graphing (30-minute interval data)
+// @query   hours - Number of hours to fetch (default 24, max 720 = 30 days)
+// @query   limit - Max readings to return (default 500)
+// @access  Protected
+// ============================================================================
+const getSensorReadings = async (req, res) => {
+  try {
+    const { device_id } = req.params;
+    const { hours = 24, limit = 500 } = req.query;
+
+    const hoursInt = parseInt(hours);
+    const limitInt = parseInt(limit);
+
+    // Validate parameters
+    if (hoursInt < 1 || hoursInt > 720) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'hours must be between 1 and 720 (30 days)'
+      });
+    }
+
+    console.log(`[SensorReadings] ${device_id} - Fetching last ${hoursInt} hours of data`);
+
+    const db = getFirestore();
+    const deviceRef = db.collection('devices').doc(device_id);
+
+    // Calculate time range
+    const endTime = new Date();
+    const startTime = new Date(endTime.getTime() - (hoursInt * 60 * 60 * 1000));
+
+    // Query history collection with readings subcollection
+    const snapshot = await deviceRef
+      .collection('sensors')
+      .doc('history')
+      .collection('readings')
+      .where('timestamp', '>=', admin.firestore.Timestamp.fromDate(startTime))
+      .where('timestamp', '<=', admin.firestore.Timestamp.fromDate(endTime))
+      .orderBy('timestamp', 'asc')
+      .limit(limitInt)
+      .get();
+
+    const readings = snapshot.docs.map(doc => {
+      const data = doc.data();
+      return {
+        id: doc.id,
+        timestamp: data.timestamp.toDate().toISOString(),
+        ...data,
+        created_at: data.created_at ? data.created_at.toDate().toISOString() : null
+      };
+    });
+
+    console.log(`[SensorReadings] ${device_id} - Returning ${readings.length} history readings`);
+
+    res.json({
+      status: 'ok',
+      device_id,
+      start: startTime.toISOString(),
+      end: endTime.toISOString(),
+      hours: hoursInt,
+      count: readings.length,
+      interval_minutes: 30,
+      readings
+    });
+
+  } catch (error) {
+    console.error('[SensorReadings] Error:', error);
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+};
+
+// ============================================================================
+// @route   GET /api/v1/devices/:device_id/sensors/latest
+// @desc    Get the latest raw sensor data for any device
+// @access  Protected
+// ============================================================================
+const getLatestSensorData = async (req, res) => {
+  try {
+    const { device_id } = req.params;
+
+    const db = getFirestore();
+    const deviceRef = db.collection('devices').doc(device_id);
+
+    // Get the current sensor data from sensors/current document
+    const sensorDoc = await deviceRef
+      .collection('sensors')
+      .doc('current')
+      .get();
+
+    if (!sensorDoc.exists) {
+      return res.status(404).json({
+        status: 'error',
+        message: 'No sensor data found. Device may not have sent data yet.'
+      });
+    }
+
+    const rawData = sensorDoc.data();
+    
+    // Format the data to be consistent with other endpoints
+    const formattedData = { ...rawData };
+    if (rawData.timestamp) {
+      formattedData.timestamp = rawData.timestamp.toDate().toISOString();
+    }
+    if (rawData.last_updated) {
+      formattedData.last_updated = rawData.last_updated.toDate().toISOString();
+    }
+
+    console.log(`[LatestSensor] ${device_id} - Retrieved and formatted raw sensor data from sensors/current:`, formattedData);
+
+    res.json({
+      status: 'ok',
+      device_id,
+      sensors: formattedData // Use the 'sensors' key as requested
+    });
+
+  } catch (error) {
+    console.error('[LatestSensor] Error:', error);
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+};
+
 module.exports = {
   registerDevice,
   handleHeartbeat,
   getDeviceStatus,
   getAllDevicesStatus,
   handleSensorData,
+  handleRoomSensorData,
   getDeviceHistory,
   handleDoorbellRing,
   handleFaceDetection,
@@ -1990,5 +2470,13 @@ module.exports = {
   // Device info
   getDeviceInfo,
   // Visitors
-  getLatestVisitors
+  getLatestVisitors,
+  // Hub-specific endpoints
+  getHubSensors,
+  sendHubAlert,
+  getHubAmpStreaming,
+  // Sensor readings
+  getSensorReadings,
+  // Latest sensor reading
+  getLatestSensorData
 };

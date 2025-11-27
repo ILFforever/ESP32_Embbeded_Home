@@ -1,6 +1,6 @@
 # Firebase Cloud Functions Setup Guide
 Complete step-by-step guide to deploy device status cleanup using Firebase Cloud Functions
-
+repush
 ---
 
 ## 📋 Table of Contents
