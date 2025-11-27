@@ -31,7 +31,8 @@ app.use(enforceHttpsExceptIoT);
 
 // Body parser with increased limits for ESP32 uploads
 // Raw body parser for audio streaming (must come before JSON parser)
-app.use('/api/v1/devices/doorbell/mic-stream', express.raw({ type: 'application/octet-stream', limit: '10kb' }));
+// Note: This applies to all /devices/:device_id/stream/audio routes
+app.use('/api/v1/devices/*/stream/audio', express.raw({ type: 'application/octet-stream', limit: '10kb' }));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 

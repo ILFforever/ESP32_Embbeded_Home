@@ -1,13 +1,18 @@
 /**
- * In-Memory Stream Buffer Manager
+ * In-Memory Stream Buffer Manager (Multi-Device Support)
  *
- * Lightweight streaming solution for ESP32 camera and microphone.
- * Keeps frames/audio in memory with timestamps for sync.
- * No Firebase storage - pure pass-through with small buffer.
+ * Manages separate stream buffers for multiple ESP32 devices.
+ * Each device (doorbell camera) has its own isolated buffer.
+ * Supports both device-specific and aggregated streaming.
  */
 
+/**
+ * Single device stream buffer
+ */
 class StreamBuffer {
-  constructor(maxFrames = 30, maxAudioChunks = 100) {
+  constructor(deviceId, maxFrames = 30, maxAudioChunks = 100) {
+    this.deviceId = deviceId;
+
     // Camera frames buffer (circular buffer, keeps last N frames)
     this.frames = [];
     this.maxFrames = maxFrames;
@@ -41,17 +46,14 @@ class StreamBuffer {
 
   /**
    * Add camera frame to buffer
-   * @param {Buffer} frameData - JPEG frame data
-   * @param {number} frameId - Frame sequence number
-   * @param {string} deviceId - Source device ID
    */
-  addFrame(frameData, frameId, deviceId = 'unknown') {
+  addFrame(frameData, frameId) {
     const timestamp = Date.now();
 
     const frame = {
       id: this.currentFrameId++,
       frameId,
-      deviceId,
+      deviceId: this.deviceId,
       data: frameData,
       size: frameData.length,
       timestamp,
@@ -80,17 +82,14 @@ class StreamBuffer {
 
   /**
    * Add audio chunk to buffer
-   * @param {Buffer} audioData - PCM audio data
-   * @param {number} sequence - Chunk sequence number
-   * @param {string} deviceId - Source device ID
    */
-  addAudioChunk(audioData, sequence, deviceId = 'unknown') {
+  addAudioChunk(audioData, sequence) {
     const timestamp = Date.now();
 
     const chunk = {
       id: this.currentAudioSeq++,
       sequence,
-      deviceId,
+      deviceId: this.deviceId,
       data: audioData,
       size: audioData.length,
       timestamp,
@@ -140,7 +139,6 @@ class StreamBuffer {
 
   /**
    * Get synced frame for audio timestamp
-   * Finds the frame closest to the given audio timestamp
    */
   getSyncedFrame(audioTimestamp) {
     if (this.frames.length === 0) return null;
@@ -172,6 +170,7 @@ class StreamBuffer {
     res.on('close', () => {
       this.videoClients.delete(res);
       this.stats.videoClientsConnected = this.videoClients.size;
+      console.log(`[Stream] Client disconnected from ${this.deviceId} video stream`);
     });
   }
 
@@ -185,6 +184,7 @@ class StreamBuffer {
     res.on('close', () => {
       this.audioClients.delete(res);
       this.stats.audioClientsConnected = this.audioClients.size;
+      console.log(`[Stream] Client disconnected from ${this.deviceId} audio stream`);
     });
   }
 
@@ -196,7 +196,7 @@ class StreamBuffer {
 
     // MJPEG format: --boundary\r\nContent-Type: image/jpeg\r\nContent-Length: N\r\n\r\n[JPEG DATA]
     const boundary = 'frame';
-    const header = `--${boundary}\r\nContent-Type: image/jpeg\r\nContent-Length: ${frame.size}\r\n\r\n`;
+    const header = `--${boundary}\r\nContent-Type: image/jpeg\r\nContent-Length: ${frame.size}\r\nX-Device-ID: ${this.deviceId}\r\n\r\n`;
 
     for (const client of this.videoClients) {
       try {
@@ -204,7 +204,7 @@ class StreamBuffer {
         client.write(frame.data);
         client.write('\r\n');
       } catch (err) {
-        console.error('Error sending frame to client:', err.message);
+        console.error(`[Stream] Error sending frame to client (${this.deviceId}):`, err.message);
         this.videoClients.delete(client);
       }
     }
@@ -220,7 +220,7 @@ class StreamBuffer {
       try {
         client.write(chunk.data);
       } catch (err) {
-        console.error('Error sending audio to client:', err.message);
+        console.error(`[Stream] Error sending audio to client (${this.deviceId}):`, err.message);
         this.audioClients.delete(client);
       }
     }
@@ -242,6 +242,7 @@ class StreamBuffer {
    */
   getStats() {
     return {
+      deviceId: this.deviceId,
       ...this.stats,
       currentFrames: this.frames.length,
       currentAudioChunks: this.audioChunks.length,
@@ -262,6 +263,23 @@ class StreamBuffer {
   clear() {
     this.frames = [];
     this.audioChunks = [];
+
+    // Close all client connections
+    for (const client of this.videoClients) {
+      try {
+        client.end();
+      } catch (err) {
+        // Ignore errors on close
+      }
+    }
+    for (const client of this.audioClients) {
+      try {
+        client.end();
+      } catch (err) {
+        // Ignore errors on close
+      }
+    }
+
     this.videoClients.clear();
     this.audioClients.clear();
     this.stats.videoClientsConnected = 0;
@@ -269,7 +287,168 @@ class StreamBuffer {
   }
 }
 
-// Singleton instance
-const streamBuffer = new StreamBuffer();
+/**
+ * Multi-device stream buffer manager
+ */
+class StreamBufferManager {
+  constructor() {
+    // Map of device_id → StreamBuffer
+    this.deviceBuffers = new Map();
+  }
 
-module.exports = streamBuffer;
+  /**
+   * Get or create buffer for a device
+   */
+  getDeviceBuffer(deviceId) {
+    if (!this.deviceBuffers.has(deviceId)) {
+      console.log(`[StreamBuffer] Creating new buffer for device: ${deviceId}`);
+      this.deviceBuffers.set(deviceId, new StreamBuffer(deviceId));
+    }
+    return this.deviceBuffers.get(deviceId);
+  }
+
+  /**
+   * Check if device has a buffer
+   */
+  hasDevice(deviceId) {
+    return this.deviceBuffers.has(deviceId);
+  }
+
+  /**
+   * Add frame to device-specific buffer
+   */
+  addFrame(deviceId, frameData, frameId) {
+    const buffer = this.getDeviceBuffer(deviceId);
+    return buffer.addFrame(frameData, frameId);
+  }
+
+  /**
+   * Add audio chunk to device-specific buffer
+   */
+  addAudioChunk(deviceId, audioData, sequence) {
+    const buffer = this.getDeviceBuffer(deviceId);
+    return buffer.addAudioChunk(audioData, sequence);
+  }
+
+  /**
+   * Get latest frame from specific device
+   */
+  getLatestFrame(deviceId) {
+    const buffer = this.deviceBuffers.get(deviceId);
+    return buffer ? buffer.getLatestFrame() : null;
+  }
+
+  /**
+   * Get latest audio chunk from specific device
+   */
+  getLatestAudioChunk(deviceId) {
+    const buffer = this.deviceBuffers.get(deviceId);
+    return buffer ? buffer.getLatestAudioChunk() : null;
+  }
+
+  /**
+   * Get all active devices (streaming in last 5 seconds)
+   */
+  getActiveDevices() {
+    const devices = [];
+    for (const [deviceId, buffer] of this.deviceBuffers.entries()) {
+      if (buffer.isVideoActive() || buffer.isAudioActive()) {
+        devices.push({
+          deviceId,
+          videoActive: buffer.isVideoActive(),
+          audioActive: buffer.isAudioActive(),
+          stats: buffer.getStats()
+        });
+      }
+    }
+    return devices;
+  }
+
+  /**
+   * Get all devices (active or not)
+   */
+  getAllDevices() {
+    const devices = [];
+    for (const [deviceId, buffer] of this.deviceBuffers.entries()) {
+      devices.push({
+        deviceId,
+        videoActive: buffer.isVideoActive(),
+        audioActive: buffer.isAudioActive(),
+        stats: buffer.getStats()
+      });
+    }
+    return devices;
+  }
+
+  /**
+   * Get stats for specific device or all devices
+   */
+  getStats(deviceId = null) {
+    if (deviceId) {
+      const buffer = this.deviceBuffers.get(deviceId);
+      return buffer ? buffer.getStats() : null;
+    }
+
+    // Return stats for all devices
+    const allStats = {};
+    for (const [id, buffer] of this.deviceBuffers.entries()) {
+      allStats[id] = buffer.getStats();
+    }
+    return allStats;
+  }
+
+  /**
+   * Add video client to specific device stream
+   */
+  addVideoClient(deviceId, res) {
+    const buffer = this.getDeviceBuffer(deviceId);
+    buffer.addVideoClient(res);
+  }
+
+  /**
+   * Add audio client to specific device stream
+   */
+  addAudioClient(deviceId, res) {
+    const buffer = this.getDeviceBuffer(deviceId);
+    buffer.addAudioClient(res);
+  }
+
+  /**
+   * Clear buffer for specific device or all devices
+   */
+  clear(deviceId = null) {
+    if (deviceId) {
+      const buffer = this.deviceBuffers.get(deviceId);
+      if (buffer) {
+        buffer.clear();
+        this.deviceBuffers.delete(deviceId);
+        console.log(`[StreamBuffer] Cleared buffer for device: ${deviceId}`);
+      }
+    } else {
+      // Clear all devices
+      for (const buffer of this.deviceBuffers.values()) {
+        buffer.clear();
+      }
+      this.deviceBuffers.clear();
+      console.log('[StreamBuffer] Cleared all device buffers');
+    }
+  }
+
+  /**
+   * Get total number of connected clients across all devices
+   */
+  getTotalClients() {
+    let videoClients = 0;
+    let audioClients = 0;
+
+    for (const buffer of this.deviceBuffers.values()) {
+      videoClients += buffer.stats.videoClientsConnected;
+      audioClients += buffer.stats.audioClientsConnected;
+    }
+
+    return { videoClients, audioClients };
+  }
+}
+
+// Export singleton manager
+module.exports = new StreamBufferManager();
