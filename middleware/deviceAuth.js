@@ -81,7 +81,8 @@ const authenticateDevice = async (req, res, next) => {
 
     // Token valid - attach device info to request
     req.device = {
-      id: device_id,
+      device_id: device_id,  // Used by controllers
+      id: device_id,         // Alias for compatibility
       type: deviceData.type,
       name: deviceData.name
     };
