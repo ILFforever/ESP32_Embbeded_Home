@@ -30,6 +30,8 @@ app.use(cors({
 app.use(enforceHttpsExceptIoT);
 
 // Body parser with increased limits for ESP32 uploads
+// Raw body parser for audio streaming (must come before JSON parser)
+app.use('/api/v1/devices/doorbell/mic-stream', express.raw({ type: 'application/octet-stream', limit: '10kb' }));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
@@ -39,11 +41,13 @@ app.use(cookieParser());
 // Import route files
 const auth = require('./routes/auth');
 const devices = require('./routes/devices');
+const streaming = require('./routes/streaming');
 const alerts = require('./routes/alerts');
 
 // Mount routers
 app.use('/api/v1/auth', auth);
 app.use('/api/v1/devices', devices);
+app.use('/api/v1', streaming); // Streaming endpoints (stream/* and devices/doorbell/*-stream)
 app.use('/api/v1/alerts', alerts);
 
 app.get('/info', (req, res) => {
