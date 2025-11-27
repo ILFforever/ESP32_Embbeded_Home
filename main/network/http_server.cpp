@@ -10,6 +10,7 @@
 #include "freertos/event_groups.h"
 #include "i2s_microphone.hpp"
 #include "JpegEncoder.hpp"
+#include "backend/backend_stream.hpp"
 #include <cstring>
 
 static const char *TAG = "HTTP_SERVER";
@@ -42,49 +43,45 @@ static esp_err_t status_handler(httpd_req_t *req)
     return httpd_resp_sendstr(req, "Webpage running");
 }
 
-// Audio streaming handler - streams PCM audio data
+// Audio streaming handler - sends PCM audio data to backend
 static esp_err_t audio_stream_handler(httpd_req_t *req)
 {
-    // Try buffered microphone first, fall back to legacy
+    // This endpoint now triggers backend streaming instead of local HTTP streaming
     if (!g_microphone || !g_microphone->is_running()) {
         httpd_resp_set_status(req, "503 Service Unavailable");
         httpd_resp_sendstr(req, "Microphone not running");
         return ESP_OK;
     }
 
-    // Set headers for streaming audio with minimal buffering
-    httpd_resp_set_type(req, "audio/pcm");
-    httpd_resp_set_hdr(req, "Cache-Control", "no-cache, no-store, must-revalidate");
-    httpd_resp_set_hdr(req, "Pragma", "no-cache");
-    httpd_resp_set_hdr(req, "Expires", "0");
-    httpd_resp_set_hdr(req, "Connection", "keep-alive");
-    httpd_resp_set_hdr(req, "X-Accel-Buffering", "no");  // Disable nginx buffering if present
+    // Start backend audio streaming if not already active
+    if (!backend_stream::is_audio_streaming()) {
+        backend_stream::start_audio_streaming();
+        ESP_LOGI(TAG, "Started backend audio streaming");
+    }
+
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_sendstr(req, "{\"status\":\"streaming\",\"target\":\"backend\",\"endpoint\":\"/api/v1/devices/doorbell/mic-stream\"}");
 
     const size_t chunk_size = 1024;
     int16_t* audio_buffer = (int16_t*)malloc(chunk_size * sizeof(int16_t));
 
     if (!audio_buffer) {
-        ESP_LOGE(TAG, "Failed to allocate audio buffer for streaming");
-        httpd_resp_set_status(req, "500 Internal Server Error");
-        httpd_resp_sendstr(req, "Out of memory");
+        ESP_LOGE(TAG, "Failed to allocate audio buffer");
         return ESP_OK;
     }
 
-    ESP_LOGI(TAG, "Audio stream started with gain boost");
+    ESP_LOGI(TAG, "Audio streaming to backend started");
 
-    uint32_t dropped_chunks = 0;
+    uint32_t sequence = 0;
     uint32_t sent_chunks = 0;
-    uint32_t total_samples = 0;
 
-    // Audio gain multiplier (2 = 2x volume, 4 = 4x volume, etc.)
-    const int16_t gain = 4;  // Start with 4x gain
+    // Audio gain multiplier
+    const int16_t gain = 4;
 
-    // Stream audio chunks until client disconnects
-    uint32_t read_attempts = 0;
+    // Read audio and send to backend
     while (true) {
-        // Check if microphone is still running before reading
         if (!g_microphone || !g_microphone->is_running()) {
-            ESP_LOGI(TAG, "Microphone stopped, ending audio stream");
+            ESP_LOGI(TAG, "Microphone stopped");
             break;
         }
 
@@ -92,44 +89,33 @@ static esp_err_t audio_stream_handler(httpd_req_t *req)
         esp_err_t ret = g_microphone->read_audio(audio_buffer, chunk_size * sizeof(int16_t),
                                                    &bytes_read, 100);
 
-        read_attempts++;
-
-        // Debug logging for first few attempts
-        if (read_attempts <= 10) {
-            ESP_LOGI(TAG, "Read #%lu: ret=%s bytes=%zu", read_attempts,
-                     esp_err_to_name(ret), bytes_read);
-        }
-
-        // Accept data even if we got a timeout, as long as we have some bytes
-        // This handles the case where I2S returns partial data with ESP_ERR_TIMEOUT
         if (bytes_read > 0) {
             size_t samples_read = bytes_read / sizeof(int16_t);
 
             // Apply gain to boost volume
             for (size_t i = 0; i < samples_read; i++) {
                 int32_t sample = audio_buffer[i] * gain;
-                // Clamp to prevent overflow/distortion
                 if (sample > 32767) sample = 32767;
                 if (sample < -32768) sample = -32768;
                 audio_buffer[i] = (int16_t)sample;
             }
 
-            // Send audio chunk to client
-            esp_err_t send_ret = httpd_resp_send_chunk(req, (const char*)audio_buffer,
-                                                        samples_read * sizeof(int16_t));
+            // Send audio chunk to backend
+            esp_err_t queue_ret = backend_stream::queue_audio_chunk(
+                (const uint8_t*)audio_buffer,
+                samples_read * sizeof(int16_t),
+                sequence++
+            );
 
-            if (send_ret != ESP_OK) {
-                ESP_LOGW(TAG, "Audio stream client disconnected or send failed");
-                break;
-            }
+            if (queue_ret == ESP_OK) {
+                sent_chunks++;
 
-            sent_chunks++;
-            total_samples += samples_read;
-
-            // Log stats every 5 seconds (~78 chunks @ 1024 samples, 64ms each)
-            if (sent_chunks % 78 == 0) {
-                ESP_LOGI(TAG, "Audio stream stats: sent=%lu samples=%lu",
-                         sent_chunks, total_samples);
+                // Log stats periodically
+                if (sent_chunks % 50 == 0) {
+                    backend_stream::StreamStats stats = backend_stream::get_stats();
+                    ESP_LOGI(TAG, "Audio streaming: queued=%lu sent=%lu failed=%lu",
+                             sent_chunks, stats.audio_chunks_sent, stats.audio_chunks_failed);
+                }
             }
 
             // Yield periodically
@@ -137,7 +123,6 @@ static esp_err_t audio_stream_handler(httpd_req_t *req)
                 vTaskDelay(pdMS_TO_TICKS(1));
             }
         } else if (ret == ESP_ERR_TIMEOUT) {
-            // No data ready - wait a short time and retry
             vTaskDelay(pdMS_TO_TICKS(5));
             continue;
         } else if (ret != ESP_OK) {
@@ -145,20 +130,21 @@ static esp_err_t audio_stream_handler(httpd_req_t *req)
             vTaskDelay(pdMS_TO_TICKS(10));
             continue;
         }
+
+        // Check if we should stop (simulate client disconnect check)
+        if (sent_chunks > 1000) {  // Stream for ~64 seconds max per request
+            break;
+        }
     }
 
-    ESP_LOGI(TAG, "Audio stream ended: sent=%lu chunks, %lu total samples, dropped=%lu",
-             sent_chunks, total_samples, dropped_chunks);
+    ESP_LOGI(TAG, "Audio streaming to backend ended: %lu chunks sent", sent_chunks);
 
     free(audio_buffer);
-
-    // End chunked response
-    httpd_resp_send_chunk(req, NULL, 0);
 
     return ESP_OK;
 }
 
-// MJPEG camera streaming handler
+// Camera streaming handler - sends JPEG frames to backend
 static esp_err_t camera_stream_handler(httpd_req_t *req)
 {
     if (!g_frame_cap || !g_standby_ctrl) {
@@ -174,19 +160,24 @@ static esp_err_t camera_stream_handler(httpd_req_t *req)
         return ESP_OK;
     }
 
-    ESP_LOGI(TAG, "MJPEG stream started");
+    // Start backend camera streaming if not already active
+    if (!backend_stream::is_camera_streaming()) {
+        backend_stream::start_camera_streaming();
+        ESP_LOGI(TAG, "Started backend camera streaming");
+    }
 
-    // Set MJPEG multipart headers
-    httpd_resp_set_type(req, "multipart/x-mixed-replace; boundary=frame");
-    httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
-    httpd_resp_set_hdr(req, "Cache-Control", "no-cache, no-store, must-revalidate");
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_sendstr(req, "{\"status\":\"streaming\",\"target\":\"backend\",\"endpoint\":\"/api/v1/devices/doorbell/camera-stream\"}");
+
+    ESP_LOGI(TAG, "Camera streaming to backend started");
 
     auto frame_cap_node = g_frame_cap->get_last_node();
-    RawJpegEncoder encoder(50);  // JPEG quality 50 for bandwidth
+    RawJpegEncoder encoder(50);  // JPEG quality 50 (~9KB avg)
 
-    uint32_t frames_sent = 0;
+    uint16_t frame_id = 0;
+    uint32_t frames_queued = 0;
     uint32_t last_report = xTaskGetTickCount();
-    bool logged_format = false;  // Log format only once
+    bool logged_format = false;
 
     while (true) {
         // Peek at latest frame
@@ -201,13 +192,11 @@ static esp_err_t camera_stream_handler(httpd_req_t *req)
             }
 
             bool encoded = false;
-
             const uint8_t *jpeg_data = nullptr;
             uint32_t jpeg_size = 0;
 
             // Check if frame is already JPEG
             if (static_cast<pixformat_t>(frame->format) == PIXFORMAT_JPEG) {
-                // Frame is already JPEG, use directly
                 jpeg_data = static_cast<const uint8_t *>(frame->buf);
                 jpeg_size = frame->len;
                 encoded = true;
@@ -236,42 +225,39 @@ static esp_err_t camera_stream_handler(httpd_req_t *req)
             }
 
             if (encoded && jpeg_data && jpeg_size > 0) {
+                // Send frame to backend
+                esp_err_t queue_ret = backend_stream::queue_camera_frame(
+                    jpeg_data,
+                    jpeg_size,
+                    frame_id++
+                );
 
-                // Send multipart boundary and headers
-                char part_buf[128];  // Increased size to avoid truncation warning
-                snprintf(part_buf, sizeof(part_buf),
-                        "\r\n--frame\r\nContent-Type: image/jpeg\r\nContent-Length: %lu\r\n\r\n",
-                        jpeg_size);
-
-                if (httpd_resp_send_chunk(req, part_buf, strlen(part_buf)) != ESP_OK) {
-                    ESP_LOGI(TAG, "Client disconnected");
-                    break;
+                if (queue_ret == ESP_OK) {
+                    frames_queued++;
                 }
-
-                // Send JPEG data
-                if (httpd_resp_send_chunk(req, (const char*)jpeg_data, jpeg_size) != ESP_OK) {
-                    ESP_LOGI(TAG, "Client disconnected");
-                    break;
-                }
-
-                frames_sent++;
 
                 // Log stats every 5 seconds
                 if (xTaskGetTickCount() - last_report > pdMS_TO_TICKS(5000)) {
-                    ESP_LOGI(TAG, "MJPEG: %lu frames sent", frames_sent);
+                    backend_stream::StreamStats stats = backend_stream::get_stats();
+                    ESP_LOGI(TAG, "Camera streaming: queued=%lu sent=%lu failed=%lu (avg: %lu KB)",
+                             frames_queued, stats.camera_frames_sent, stats.camera_frames_failed,
+                             frames_queued > 0 ? (jpeg_size / 1024) : 0);
                     last_report = xTaskGetTickCount();
                 }
             }
         }
 
-        // Limit to ~10 FPS to save bandwidth
-        vTaskDelay(pdMS_TO_TICKS(100));
+        // Limit to ~5 FPS (backend rate limits to this anyway)
+        vTaskDelay(pdMS_TO_TICKS(200));
+
+        // Stream for ~60 seconds max per request
+        if (frames_queued > 300) {
+            break;
+        }
     }
 
-    ESP_LOGI(TAG, "MJPEG stream ended: %lu frames sent", frames_sent);
+    ESP_LOGI(TAG, "Camera streaming to backend ended: %lu frames queued", frames_queued);
 
-    // End chunked response
-    httpd_resp_send_chunk(req, NULL, 0);
     return ESP_OK;
 }
 
@@ -336,6 +322,15 @@ static void wifi_event_handler(void* arg, esp_event_base_t event_base,
     } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
         ip_event_got_ip_t* event = (ip_event_got_ip_t*) event_data;
         ESP_LOGI(TAG, "Got IP: " IPSTR, IP2STR(&event->ip_info.ip));
+
+        // Initialize backend streaming (must have network connectivity)
+        esp_err_t ret = backend_stream::init();
+        if (ret == ESP_OK) {
+            ESP_LOGI(TAG, "Backend streaming module initialized");
+        } else {
+            ESP_LOGE(TAG, "Failed to initialize backend streaming: %d", ret);
+        }
+
         g_server = start_webserver();
     }
 }

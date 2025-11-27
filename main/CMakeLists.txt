@@ -1,6 +1,6 @@
-set(src_dirs ./ app control network uart spi jpeg recognition audio)
+set(src_dirs ./ app control network uart spi jpeg recognition audio backend)
 
-set(include_dirs ./ app control network uart spi jpeg recognition audio)
+set(include_dirs ./ app control network uart spi jpeg recognition audio backend)
 
 set(requires who_detect_app
              who_detect
@@ -9,6 +9,7 @@ set(requires who_detect_app
              human_face_recognition
              json
              esp_http_server
+             esp_http_client
              nvs_flash
              esp_wifi
              esp_event
