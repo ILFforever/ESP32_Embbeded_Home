@@ -9,9 +9,10 @@
 namespace backend_stream {
 
 // Backend server configuration
-#define BACKEND_SERVER_HOST "embedded-smarthome.fly.dev"
+//#define BACKEND_SERVER_HOST "192.168.1.35"
+#define BACKEND_SERVER_HOST "embedded-smarthome.fly.dev"  // Production server
 #define BACKEND_SERVER_PORT 80
-#define DEVICE_ID "db_camera_001"
+#define DEVICE_ID "db_001"
 #define API_TOKEN "d8ac2f1ee97b4a8b3f299696773e807e735284c47cfc30aadef1287e10a53b6d"
 
 // Maximum frame/chunk sizes

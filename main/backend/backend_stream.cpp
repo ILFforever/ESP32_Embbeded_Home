@@ -1,6 +1,7 @@
 #include "backend_stream.hpp"
 #include "esp_log.h"
 #include "esp_http_client.h"
+#include "esp_wifi.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/queue.h"
@@ -30,16 +31,77 @@ static StreamStats stats = {0};
 static uint32_t last_frame_sent_time = 0;
 static const uint32_t FRAME_INTERVAL_MS = 200;  // 5 FPS
 
+// Persistent HTTP client for camera streaming (keep-alive)
+static esp_http_client_handle_t persistent_camera_client = nullptr;
+
+// ============================================================================
+// Internal: Get or create persistent HTTP client for camera
+// ============================================================================
+static esp_http_client_handle_t get_camera_http_client() {
+    if (persistent_camera_client != nullptr) {
+        // Client already exists, reuse it
+        return persistent_camera_client;
+    }
+
+    // Create new persistent client
+    char url[256];
+    snprintf(url, sizeof(url), "http://%s:%d/api/v1/devices/%s/stream/camera",
+             BACKEND_SERVER_HOST, BACKEND_SERVER_PORT, DEVICE_ID);
+
+    esp_http_client_config_t config = {};
+    config.url = url;
+    config.method = HTTP_METHOD_POST;
+    config.timeout_ms = 5000;
+    config.keep_alive_enable = true;
+    config.keep_alive_idle = 5;
+    config.keep_alive_interval = 5;
+    config.keep_alive_count = 3;
+
+    persistent_camera_client = esp_http_client_init(&config);
+    ESP_LOGI(TAG, "Created persistent HTTP client for camera streaming");
+
+    return persistent_camera_client;
+}
+
+// ============================================================================
+// Internal: Check WiFi connectivity
+// ============================================================================
+static bool check_wifi_connected() {
+    wifi_ap_record_t ap_info;
+    esp_err_t ret = esp_wifi_sta_get_ap_info(&ap_info);
+
+    if (ret == ESP_OK) {
+        ESP_LOGI(TAG, "WiFi connected to: %s, RSSI: %d", ap_info.ssid, ap_info.rssi);
+        return true;
+    } else {
+        ESP_LOGE(TAG, "WiFi NOT connected! Error: %s", esp_err_to_name(ret));
+        return false;
+    }
+}
+
 // ============================================================================
 // Internal: Send camera frame to backend
 // ============================================================================
 static esp_err_t send_camera_frame_blocking(CameraFrame* frame) {
+    // Check WiFi first
+    if (!check_wifi_connected()) {
+        ESP_LOGE(TAG, "Cannot send frame - WiFi not connected");
+        stats.camera_frames_failed++;
+        return ESP_FAIL;
+    }
+
     uint32_t start_time = xTaskGetTickCount() * portTICK_PERIOD_MS;
 
-    // Build URL
+    // Build URL with device-specific path
     char url[256];
-    snprintf(url, sizeof(url), "http://%s:%d/api/v1/devices/doorbell/camera-stream",
-             BACKEND_SERVER_HOST, BACKEND_SERVER_PORT);
+    snprintf(url, sizeof(url), "http://%s:%d/api/v1/devices/%s/stream/camera",
+             BACKEND_SERVER_HOST, BACKEND_SERVER_PORT, DEVICE_ID);
+
+    // Debug: Log connection details
+    ESP_LOGI(TAG, "=== Camera Frame Upload ===");
+    ESP_LOGI(TAG, "URL: %s", url);
+    ESP_LOGI(TAG, "Frame ID: %u, Size: %zu bytes", frame->frame_id, frame->size);
+    ESP_LOGI(TAG, "Backend: %s:%d", BACKEND_SERVER_HOST, BACKEND_SERVER_PORT);
 
     // Create boundary for multipart
     char boundary[64];
@@ -71,13 +133,20 @@ static esp_err_t send_camera_frame_blocking(CameraFrame* frame) {
 
     // Calculate total content length
     size_t content_length = header_len + frame->size + footer_len;
+    ESP_LOGI(TAG, "Content-Length: %zu bytes (header:%d + frame:%zu + footer:%d)",
+             content_length, header_len, frame->size, footer_len);
 
-    // Configure HTTP client
+    // Configure HTTP client with keep-alive
     esp_http_client_config_t config = {};
     config.url = url;
     config.method = HTTP_METHOD_POST;
     config.timeout_ms = 5000;
+    config.keep_alive_enable = true;      // Reuse connection
+    config.keep_alive_idle = 5;           // Keep alive for 5 seconds
+    config.keep_alive_interval = 5;       // Ping every 5 seconds
+    config.keep_alive_count = 3;          // Max 3 retries
 
+    ESP_LOGI(TAG, "Initializing HTTP client...");
     esp_http_client_handle_t client = esp_http_client_init(&config);
     if (client == nullptr) {
         ESP_LOGE(TAG, "Failed to init HTTP client");
@@ -95,16 +164,22 @@ static esp_err_t send_camera_frame_blocking(CameraFrame* frame) {
     snprintf(auth_header, sizeof(auth_header), "Bearer %s", API_TOKEN);
     esp_http_client_set_header(client, "Authorization", auth_header);
 
+    ESP_LOGI(TAG, "Headers set - Auth: Bearer ...%s", API_TOKEN + strlen(API_TOKEN) - 8);
+
     // Open connection and send headers
+    ESP_LOGI(TAG, "Opening HTTP connection to %s:%d...", BACKEND_SERVER_HOST, BACKEND_SERVER_PORT);
     esp_err_t err = esp_http_client_open(client, content_length);
     if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to open HTTP connection: %s", esp_err_to_name(err));
+        ESP_LOGE(TAG, "Failed to open HTTP connection: %s (0x%x)", esp_err_to_name(err), err);
+        ESP_LOGE(TAG, "Check: 1) Backend server running? 2) Correct IP? 3) Port open? 4) Network connected?");
         esp_http_client_cleanup(client);
         stats.camera_frames_failed++;
         return err;
     }
+    ESP_LOGI(TAG, "HTTP connection opened successfully");
 
     // Send form header
+    ESP_LOGI(TAG, "Writing form header (%d bytes)...", header_len);
     int written = esp_http_client_write(client, form_header, header_len);
     if (written < 0) {
         ESP_LOGE(TAG, "Failed to write form header");
@@ -112,10 +187,14 @@ static esp_err_t send_camera_frame_blocking(CameraFrame* frame) {
         stats.camera_frames_failed++;
         return ESP_FAIL;
     }
+    ESP_LOGI(TAG, "Form header written successfully (%d bytes)", written);
 
     // Send frame data in chunks
     const size_t CHUNK_SIZE = 1024;
     size_t sent = 0;
+    ESP_LOGI(TAG, "Starting frame data upload (%zu bytes)...", frame->size);
+    uint32_t upload_start = xTaskGetTickCount() * portTICK_PERIOD_MS;
+
     while (sent < frame->size) {
         size_t to_send = (frame->size - sent > CHUNK_SIZE) ? CHUNK_SIZE : (frame->size - sent);
         written = esp_http_client_write(client, (const char*)(frame->data + sent), to_send);
@@ -127,13 +206,24 @@ static esp_err_t send_camera_frame_blocking(CameraFrame* frame) {
         }
         sent += written;
 
+        // Log progress every 10KB
+        if (sent % 10240 == 0 || sent == frame->size) {
+            uint32_t elapsed = (xTaskGetTickCount() * portTICK_PERIOD_MS) - upload_start;
+            ESP_LOGI(TAG, "Upload progress: %zu/%zu bytes (%.1f%%) in %lums",
+                     sent, frame->size, (sent * 100.0f) / frame->size, elapsed);
+        }
+
         // Yield occasionally to prevent watchdog
         if (sent % 4096 == 0) {
             vTaskDelay(pdMS_TO_TICKS(1));
         }
     }
 
+    uint32_t upload_duration = (xTaskGetTickCount() * portTICK_PERIOD_MS) - upload_start;
+    ESP_LOGI(TAG, "Frame data upload complete (%zu bytes in %lums)", frame->size, upload_duration);
+
     // Send footer
+    ESP_LOGI(TAG, "Writing form footer (%d bytes)...", footer_len);
     written = esp_http_client_write(client, form_footer, footer_len);
     if (written < 0) {
         ESP_LOGE(TAG, "Failed to write form footer");
@@ -141,15 +231,26 @@ static esp_err_t send_camera_frame_blocking(CameraFrame* frame) {
         stats.camera_frames_failed++;
         return ESP_FAIL;
     }
+    ESP_LOGI(TAG, "Form footer written successfully (%d bytes)", written);
 
     // Fetch response
+    ESP_LOGI(TAG, "Fetching server response...");
+    uint32_t response_start = xTaskGetTickCount() * portTICK_PERIOD_MS;
     int content_len = esp_http_client_fetch_headers(client);
     int status_code = esp_http_client_get_status_code(client);
+    uint32_t response_time = (xTaskGetTickCount() * portTICK_PERIOD_MS) - response_start;
 
-    esp_http_client_cleanup(client);
+    uint32_t total_duration = (xTaskGetTickCount() * portTICK_PERIOD_MS) - start_time;
+    stats.last_send_duration_ms = total_duration;
 
-    uint32_t duration = (xTaskGetTickCount() * portTICK_PERIOD_MS) - start_time;
-    stats.last_send_duration_ms = duration;
+    // Detailed timing breakdown
+    uint32_t connect_time = upload_start - start_time;
+    ESP_LOGI(TAG, "=== Timing Breakdown ===");
+    ESP_LOGI(TAG, "Connection setup: %lums", connect_time);
+    ESP_LOGI(TAG, "Data upload: %lums", upload_duration);
+    ESP_LOGI(TAG, "Server response wait: %lums", response_time);
+    ESP_LOGI(TAG, "Total time: %lums", total_duration);
+    ESP_LOGI(TAG, "Response: status=%d, content_len=%d", status_code, content_len);
 
     if (status_code == 200 || status_code == 201) {
         stats.camera_frames_sent++;
@@ -157,11 +258,25 @@ static esp_err_t send_camera_frame_blocking(CameraFrame* frame) {
         // Log periodically
         if (stats.camera_frames_sent % 10 == 0) {
             ESP_LOGI(TAG, "Camera frame %u sent (%zu bytes, %lu ms)",
-                     frame->frame_id, frame->size, (unsigned long)duration);
+                     frame->frame_id, frame->size, (unsigned long)total_duration);
         }
+
+        esp_http_client_cleanup(client);
         return ESP_OK;
     } else {
-        ESP_LOGW(TAG, "Backend returned status %d", status_code);
+        // Error - read response body for error message
+        char response_buffer[512];
+        int read_len = esp_http_client_read(client, response_buffer, sizeof(response_buffer) - 1);
+
+        if (read_len > 0) {
+            response_buffer[read_len] = '\0';  // Null terminate
+            ESP_LOGE(TAG, "Backend returned status %d", status_code);
+            ESP_LOGE(TAG, "Response body: %s", response_buffer);
+        } else {
+            ESP_LOGE(TAG, "Backend returned status %d (no response body)", status_code);
+        }
+
+        esp_http_client_cleanup(client);
         stats.camera_frames_failed++;
         return ESP_FAIL;
     }
@@ -172,8 +287,8 @@ static esp_err_t send_camera_frame_blocking(CameraFrame* frame) {
 // ============================================================================
 static esp_err_t send_audio_chunk_blocking(AudioChunk* chunk) {
     char url[256];
-    snprintf(url, sizeof(url), "http://%s:%d/api/v1/devices/doorbell/mic-stream",
-             BACKEND_SERVER_HOST, BACKEND_SERVER_PORT);
+    snprintf(url, sizeof(url), "http://%s:%d/api/v1/devices/%s/stream/audio",
+             BACKEND_SERVER_HOST, BACKEND_SERVER_PORT, DEVICE_ID);
 
     esp_http_client_config_t config = {};
     config.url = url;
@@ -219,9 +334,8 @@ static esp_err_t send_audio_chunk_blocking(AudioChunk* chunk) {
     int content_len = esp_http_client_fetch_headers(client);
     int status_code = esp_http_client_get_status_code(client);
 
-    esp_http_client_cleanup(client);
-
     if (status_code == 200 || status_code == 201) {
+        ESP_LOGI(TAG, "backend returned %d", status_code);
         stats.audio_chunks_sent++;
 
         // Log periodically
@@ -230,9 +344,23 @@ static esp_err_t send_audio_chunk_blocking(AudioChunk* chunk) {
                      (unsigned long)chunk->sequence, chunk->size,
                      (unsigned long)(stats.audio_chunks_sent * chunk->size) / 1024);
         }
+
+        esp_http_client_cleanup(client);
         return ESP_OK;
     } else {
-        ESP_LOGW(TAG, "Audio backend returned status %d", status_code);
+        // Error - read response body for error message
+        char response_buffer[512];
+        int read_len = esp_http_client_read(client, response_buffer, sizeof(response_buffer) - 1);
+
+        if (read_len > 0) {
+            response_buffer[read_len] = '\0';  // Null terminate
+            ESP_LOGE(TAG, "Audio backend returned status %d", status_code);
+            ESP_LOGE(TAG, "Response body: %s", response_buffer);
+        } else {
+            ESP_LOGE(TAG, "Audio backend returned status %d (no response body)", status_code);
+        }
+
+        esp_http_client_cleanup(client);
         stats.audio_chunks_failed++;
         return ESP_FAIL;
     }

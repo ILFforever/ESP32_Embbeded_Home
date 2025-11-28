@@ -9,6 +9,7 @@
 #include "uart/uart_comm.hpp"
 #include "recognition/face_db_reader.hpp"
 #include "audio/i2s_microphone.hpp"
+#include "backend/backend_stream.hpp"
 #include <cstdio>
 #include <sys/stat.h>
 #include "spi/slave_spi.hpp"
@@ -34,6 +35,7 @@ void start_camera_task(void *pvParameters);
 void pause_face_detection();
 // static void stats_task(void *pvParameters);
 static void spi_frame_sender_task(void *pvParameters);
+static void audio_streamer_task(void *pvParameters);
 
 // ============================================================
 // Global Variables
@@ -47,6 +49,7 @@ static FaceDbReader *g_face_db_reader = nullptr;
 static I2SMicrophone *g_microphone = nullptr;
 static bool g_camera_running = false;
 static TaskHandle_t g_spi_sender_task_handle = nullptr;
+static TaskHandle_t g_audio_streamer_task_handle = nullptr;
 static uint16_t g_frame_id = 0;
 
 // ============================================================
@@ -111,6 +114,14 @@ extern "C" void app_main(void)
     g_recognition_app->set_face_db_reader(g_face_db_reader);
 
     create_uart_commands();
+
+    // Initialize backend streaming module
+    esp_err_t stream_ret = backend_stream::init();
+    if (stream_ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to initialize backend streaming");
+    } else {
+        ESP_LOGI(TAG, "Backend streaming initialized");
+    }
 
     // WiFi and HTTP server will be initialized when mic_start is called
     // Set HTTP server references now (will be used when server starts)
@@ -569,6 +580,18 @@ void create_uart_commands()
 
             // Start microphone
             if (g_microphone->start()) {
+                // Create audio streamer task on Core 0
+                if (g_audio_streamer_task_handle == nullptr) {
+                    xTaskCreatePinnedToCore(
+                        audio_streamer_task,
+                        "audio_stream",
+                        4096,  // 4KB stack
+                        nullptr,
+                        3,  // Priority 3
+                        &g_audio_streamer_task_handle,
+                        0   // Core 0
+                    );
+                }
                 g_uart->send_status("microphone_event", "Microphone and WiFi started");
             } else {
                 // If mic fails to start, stop WiFi
@@ -588,8 +611,19 @@ void create_uart_commands()
                 return;
             }
 
-            // Stop microphone first
+            // Stop backend audio streaming first
+            if (backend_stream::is_audio_streaming()) {
+                backend_stream::stop_audio_streaming();
+            }
+
+            // Stop microphone
             g_microphone->stop();
+
+            // Delete audio streamer task if it exists
+            if (g_audio_streamer_task_handle != nullptr) {
+                vTaskDelete(g_audio_streamer_task_handle);
+                g_audio_streamer_task_handle = nullptr;
+            }
 
             // Then stop WiFi and HTTP server
             stop_webserver_and_wifi();
@@ -616,6 +650,234 @@ void create_uart_commands()
         } else {
             g_uart->send_status("error", "Unknown microphone action");
         } });
+
+    // ============================================================
+    // Backend Streaming Control Commands
+    // ============================================================
+
+    // Backend streaming control command with params.name structure
+    // Usage: {"cmd": "stream_control", "params": {"name": "camera_start"}}
+    //        {"cmd": "stream_control", "params": {"name": "mic_start"}}
+    //        {"cmd": "stream_control", "params": {"name": "both_start"}}
+    //        {"cmd": "stream_control", "params": {"name": "camera_stop"}}
+    //        {"cmd": "stream_control", "params": {"name": "mic_stop"}}
+    //        {"cmd": "stream_control", "params": {"name": "stop_stream"}}
+    //        {"cmd": "stream_control", "params": {"name": "stream_status"}}
+    g_uart->register_command("stream_control", [](const char *cmd, cJSON *params)
+                             {
+        if (!params) {
+            g_uart->send_status("error", "Missing parameters");
+            return;
+        }
+
+        cJSON* name = cJSON_GetObjectItem(params, "name");
+        if (!name || !cJSON_IsString(name)) {
+            g_uart->send_status("error", "Missing or invalid 'name' parameter");
+            return;
+        }
+
+        const char* action_str = name->valuestring;
+
+        if (strcmp(action_str, "camera_start") == 0) {
+            // Auto-start WiFi if not already running (needed for backend streaming)
+            // WiFi is started with microphone, but camera streaming also needs it
+            if (!g_microphone || !g_microphone->is_running()) {
+                ESP_LOGI(TAG, "WiFi not running, starting WiFi for camera streaming...");
+                init_wifi_and_server();
+                vTaskDelay(pdMS_TO_TICKS(2000)); // Wait for WiFi to connect
+            }
+
+            // Auto-start camera if not running
+            if (g_standby_control->is_standby()) {
+                ESP_LOGI(TAG, "Camera not running, starting camera first...");
+
+                if (!exit_standby_mode()) {
+                    g_uart->send_status("error", "Failed to start camera");
+                    return;
+                }
+
+                // Create SPI frame sender task
+                if (g_spi_sender_task_handle == nullptr) {
+                    xTaskCreatePinnedToCore(
+                        spi_frame_sender_task,
+                        "spi_sender",
+                        8192,
+                        NULL,
+                        4,
+                        &g_spi_sender_task_handle,
+                        0
+                    );
+                }
+                g_camera_running = true;
+
+                // Wait for camera to stabilize
+                vTaskDelay(pdMS_TO_TICKS(500));
+            }
+
+            backend_stream::start_camera_streaming();
+            g_uart->send_status("stream_event", "Camera streaming started (WiFi + Camera)");
+
+        } else if (strcmp(action_str, "mic_start") == 0) {
+            // Auto-start microphone if not running
+            if (!g_microphone || !g_microphone->is_running()) {
+                ESP_LOGI(TAG, "Microphone not running, starting microphone first...");
+
+                // Create microphone if needed
+                if (!g_microphone) {
+                    g_microphone = new I2SMicrophone();
+                    esp_err_t ret = g_microphone->init();
+                    if (ret != ESP_OK) {
+                        delete g_microphone;
+                        g_microphone = nullptr;
+                        g_uart->send_status("error", "Failed to initialize microphone");
+                        return;
+                    }
+
+                    set_http_server_refs(g_standby_control,
+                                       g_recognition_app->get_recognition(),
+                                       g_face_db_reader,
+                                       g_microphone,
+                                       g_frame_cap);
+                }
+
+                // Start WiFi and HTTP server
+                init_wifi_and_server();
+                vTaskDelay(pdMS_TO_TICKS(2000));
+
+                // Start microphone
+                if (!g_microphone->start()) {
+                    stop_webserver_and_wifi();
+                    g_uart->send_status("error", "Failed to start microphone");
+                    return;
+                }
+
+                // Create audio streamer task
+                if (g_audio_streamer_task_handle == nullptr) {
+                    xTaskCreatePinnedToCore(
+                        audio_streamer_task,
+                        "audio_stream",
+                        4096,
+                        nullptr,
+                        3,
+                        &g_audio_streamer_task_handle,
+                        0
+                    );
+                }
+
+                // Wait for mic to stabilize
+                vTaskDelay(pdMS_TO_TICKS(500));
+            }
+
+            backend_stream::start_audio_streaming();
+            g_uart->send_status("stream_event", "Audio streaming started");
+
+        } else if (strcmp(action_str, "both_start") == 0) {
+            // Auto-start camera if not running
+            if (g_standby_control->is_standby()) {
+                ESP_LOGI(TAG, "Camera not running, starting camera first...");
+
+                if (!exit_standby_mode()) {
+                    g_uart->send_status("error", "Failed to start camera");
+                    return;
+                }
+
+                if (g_spi_sender_task_handle == nullptr) {
+                    xTaskCreatePinnedToCore(
+                        spi_frame_sender_task,
+                        "spi_sender",
+                        8192,
+                        NULL,
+                        4,
+                        &g_spi_sender_task_handle,
+                        0
+                    );
+                }
+                g_camera_running = true;
+                vTaskDelay(pdMS_TO_TICKS(500));
+            }
+
+            // Auto-start microphone if not running
+            if (!g_microphone || !g_microphone->is_running()) {
+                ESP_LOGI(TAG, "Microphone not running, starting microphone first...");
+
+                if (!g_microphone) {
+                    g_microphone = new I2SMicrophone();
+                    esp_err_t ret = g_microphone->init();
+                    if (ret != ESP_OK) {
+                        delete g_microphone;
+                        g_microphone = nullptr;
+                        g_uart->send_status("error", "Failed to initialize microphone");
+                        return;
+                    }
+
+                    set_http_server_refs(g_standby_control,
+                                       g_recognition_app->get_recognition(),
+                                       g_face_db_reader,
+                                       g_microphone,
+                                       g_frame_cap);
+                }
+
+                init_wifi_and_server();
+                vTaskDelay(pdMS_TO_TICKS(2000));
+
+                if (!g_microphone->start()) {
+                    stop_webserver_and_wifi();
+                    g_uart->send_status("error", "Failed to start microphone");
+                    return;
+                }
+
+                if (g_audio_streamer_task_handle == nullptr) {
+                    xTaskCreatePinnedToCore(
+                        audio_streamer_task,
+                        "audio_stream",
+                        4096,
+                        nullptr,
+                        3,
+                        &g_audio_streamer_task_handle,
+                        0
+                    );
+                }
+                vTaskDelay(pdMS_TO_TICKS(500));
+            }
+
+            backend_stream::start_camera_streaming();
+            backend_stream::start_audio_streaming();
+            g_uart->send_status("stream_event", "Camera and audio streaming started");
+
+        } else if (strcmp(action_str, "camera_stop") == 0) {
+            backend_stream::stop_camera_streaming();
+            g_uart->send_status("stream_event", "Camera streaming stopped");
+
+        } else if (strcmp(action_str, "mic_stop") == 0) {
+            backend_stream::stop_audio_streaming();
+            g_uart->send_status("stream_event", "Audio streaming stopped");
+
+        } else if (strcmp(action_str, "stop_stream") == 0) {
+            backend_stream::stop_camera_streaming();
+            backend_stream::stop_audio_streaming();
+            g_uart->send_status("stream_event", "All streaming stopped");
+
+        } else if (strcmp(action_str, "stream_status") == 0) {
+            // Get streaming status and statistics
+            bool cam_active = backend_stream::is_camera_streaming();
+            bool audio_active = backend_stream::is_audio_streaming();
+            backend_stream::StreamStats stats = backend_stream::get_stats();
+
+            char msg[256];
+            snprintf(msg, sizeof(msg),
+                     "Camera:%s Audio:%s | Cam(sent:%lu fail:%lu) Audio(sent:%lu fail:%lu)",
+                     cam_active ? "ON" : "OFF",
+                     audio_active ? "ON" : "OFF",
+                     stats.camera_frames_sent,
+                     stats.camera_frames_failed,
+                     stats.audio_chunks_sent,
+                     stats.audio_chunks_failed);
+            g_uart->send_status("stream_event", msg);
+
+        } else {
+            g_uart->send_status("error", "Unknown stream action");
+        }
+    });
 }
 
 // ============================================================
@@ -802,10 +1064,17 @@ static void spi_frame_sender_task(void *pvParameters)
             // Send JPEG over SPI
             uint32_t spi_start = esp_timer_get_time() / 1000;
             esp_err_t ret = slave_spi_queue_frame(
-                g_frame_id++,
+                g_frame_id,
                 jpeg_data,
                 jpeg_size);
             spi_time = (esp_timer_get_time() / 1000) - spi_start;
+
+            // Also queue to backend if streaming is active
+            if (backend_stream::is_camera_streaming()) {
+                backend_stream::queue_camera_frame(jpeg_data, jpeg_size, g_frame_id);
+            }
+
+            g_frame_id++;
 
             uint32_t total_time = (esp_timer_get_time() / 1000) - frame_start_time;
 
@@ -829,4 +1098,62 @@ static void spi_frame_sender_task(void *pvParameters)
         // Remove artificial delay - run as fast as possible
         vTaskDelay(pdMS_TO_TICKS(33));
     }
+}
+
+// Task that continuously reads audio from microphone and queues to backend
+static void audio_streamer_task(void *pvParameters)
+{
+    ESP_LOGI(TAG, "Audio streamer task started on Core %d", xPortGetCoreID());
+
+    const size_t chunk_size = 1024;  // 1024 samples = 64ms @ 16kHz
+    int16_t* audio_buffer = (int16_t*)malloc(chunk_size * sizeof(int16_t));
+
+    if (!audio_buffer) {
+        ESP_LOGE(TAG, "Failed to allocate audio buffer");
+        vTaskDelete(NULL);
+        return;
+    }
+
+    uint32_t sequence = 0;
+    const int16_t gain = 4;  // Audio gain multiplier
+
+    while (true) {
+        // Only stream if microphone is running AND backend streaming is active
+        if (g_microphone && g_microphone->is_running() && backend_stream::is_audio_streaming()) {
+            size_t bytes_read = 0;
+            esp_err_t ret = g_microphone->read_audio(audio_buffer, chunk_size * sizeof(int16_t),
+                                                       &bytes_read, 100);
+
+            if (ret == ESP_OK && bytes_read > 0) {
+                size_t samples_read = bytes_read / sizeof(int16_t);
+
+                // Apply gain to boost volume
+                for (size_t i = 0; i < samples_read; i++) {
+                    int32_t sample = audio_buffer[i] * gain;
+                    if (sample > 32767) sample = 32767;
+                    if (sample < -32768) sample = -32768;
+                    audio_buffer[i] = (int16_t)sample;
+                }
+
+                // Queue audio chunk to backend
+                backend_stream::queue_audio_chunk(
+                    (const uint8_t*)audio_buffer,
+                    samples_read * sizeof(int16_t),
+                    sequence++
+                );
+            } else if (ret == ESP_ERR_TIMEOUT) {
+                // Timeout is normal, just wait a bit
+                vTaskDelay(pdMS_TO_TICKS(5));
+            } else if (ret != ESP_OK) {
+                ESP_LOGW(TAG, "Failed to read audio: %s", esp_err_to_name(ret));
+                vTaskDelay(pdMS_TO_TICKS(10));
+            }
+        } else {
+            // Not streaming, sleep longer to avoid busy waiting
+            vTaskDelay(pdMS_TO_TICKS(100));
+        }
+    }
+
+    free(audio_buffer);
+    vTaskDelete(NULL);
 }
