@@ -17,6 +17,7 @@ function initWebSocketServer(server) {
   wss = new WebSocket.Server({
     server,
     path: '/ws/stream',
+    perMessageDeflate: false,  // Disable compression for ESP32 compatibility
     verifyClient: (info, callback) => {
       console.log('[WebSocket] Upgrade request from:', info.req.socket.remoteAddress);
       console.log('[WebSocket] Headers:', JSON.stringify(info.req.headers, null, 2));
