@@ -39,7 +39,8 @@ primary_region = 'sin'
   min_machines_running = 0
 
   [[services.ports]]
-    port = 8080
+    start_port = 8080
+    end_port = 8085
     handlers = ["http"]  # HTTP handler without TLS
 
   [[services.tcp_checks]]
