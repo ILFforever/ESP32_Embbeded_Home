@@ -140,7 +140,7 @@ export default function DoorbellControlPage() {
               const statusResponse = await fetch(
                 `${
                   process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000"
-                }/api/v1/devices/doorbell/${deviceIdToUse}/status`,
+                }/api/v1/devices/${deviceIdToUse}/status`,
                 {
                   headers: {
                     Authorization: `Bearer ${authToken || ""}`,
