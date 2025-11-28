@@ -16,10 +16,19 @@ const deviceConnections = new Map(); // device_id -> WebSocket
 function initWebSocketServer(server) {
   wss = new WebSocket.Server({
     server,
-    path: '/ws/stream'
+    path: '/ws/stream',
+    verifyClient: (info, callback) => {
+      console.log('[WebSocket] Upgrade request from:', info.req.socket.remoteAddress);
+      console.log('[WebSocket] Headers:', JSON.stringify(info.req.headers, null, 2));
+      callback(true); // Accept all connections
+    }
   });
 
   wss.on('connection', handleConnection);
+
+  wss.on('error', (error) => {
+    console.error('[WebSocket] Server error:', error);
+  });
 
   console.log('[WebSocket] Stream server initialized on /ws/stream');
 }
