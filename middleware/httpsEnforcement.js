@@ -10,7 +10,8 @@ const enforceHttpsExceptIoT = (req, res, next) => {
   const iotPaths = [
     '/api/v1/devices/heartbeat',
     '/api/v1/devices/sensor',
-    '/api/v1/devices/warning'
+    '/api/v1/devices/warning',
+    '/ws/stream'  // WebSocket for ESP32 streaming
   ];
 
   const isIoTEndpoint = iotPaths.some(path => req.path === path);
