@@ -16,7 +16,13 @@ primary_region = 'sin'
   min_machines_running = 0
   processes = ['app']
 
-  # Explicit HTTP handler for port 80 (ESP32 WebSocket connections)
+  # Explicit handlers for both HTTP and HTTPS
+  [[http_service.concurrency]]
+    type = "connections"
+    hard_limit = 25
+    soft_limit = 20
+
+  # Health check
   [[http_service.checks]]
     grace_period = "10s"
     interval = "30s"
