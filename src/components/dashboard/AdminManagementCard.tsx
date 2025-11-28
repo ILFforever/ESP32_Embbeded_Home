@@ -620,8 +620,8 @@ export function AdminManagementCard({ isExpanded = false, devices = [] }: AdminM
                         </div>
                       </div>
                       <div className="device-status-container">
-                        <span className={`status-indicator ${getDeviceStatusClass(device.online, device.last_seen)}`}>
-                          {getDeviceStatusText(device.online, device.last_seen)}
+                        <span className={`status-indicator ${getDeviceStatusClass(device.online, device.last_seen, device.type)}`}>
+                          {getDeviceStatusText(device.online, device.last_seen, device.type)}
                         </span>
                       </div>
                       <div className="admin-info">

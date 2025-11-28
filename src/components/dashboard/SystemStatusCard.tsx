@@ -19,12 +19,12 @@ export function SystemStatusCard({ devicesStatus, isExpanded = false }: SystemSt
   const allDevices = devicesStatus?.devices || [];
 
   // Helper functions using online boolean from backend
-  const getDeviceStatusClass = (online: boolean, lastSeen: string | null | undefined) => {
-    return getStatusClass(online, lastSeen || null);
+  const getDeviceStatusClass = (online: boolean, lastSeen: string | null | undefined, deviceType?: string) => {
+    return getStatusClass(online, lastSeen || null, deviceType);
   };
 
-  const getDeviceStatusText = (online: boolean, lastSeen: string | null | undefined) => {
-    return getStatusText(online, lastSeen || null);
+  const getDeviceStatusText = (online: boolean, lastSeen: string | null | undefined, deviceType?: string) => {
+    return getStatusText(online, lastSeen || null, deviceType);
   };
 
   const getBatteryIcon = (battery: number | undefined) => {
@@ -120,8 +120,8 @@ export function SystemStatusCard({ devicesStatus, isExpanded = false }: SystemSt
                 <div className="device-status-header">
                   <h3>{device.name?.toUpperCase() || device.type?.toUpperCase()}</h3>
                   <div className="status-group">
-                    <span className={`status-indicator ${getDeviceStatusClass(device.online, device.last_seen)}`}>
-                      {getDeviceStatusText(device.online, device.last_seen)}
+                    <span className={`status-indicator ${getDeviceStatusClass(device.online, device.last_seen, device.type)}`}>
+                      {getDeviceStatusText(device.online, device.last_seen, device.type)}
                     </span>
                     {device.battery !== undefined && (
                       <div className={`battery-indicator ${getBatteryClass(device.battery)}`}>
@@ -184,8 +184,8 @@ export function SystemStatusCard({ devicesStatus, isExpanded = false }: SystemSt
             <div className="device-status-header">
               <h3>DOORBELL</h3>
               <div className="status-group">
-                <span className={`status-indicator ${getDeviceStatusClass(doorbellDevice?.online || false, doorbellDevice?.last_seen)}`}>
-                  {getDeviceStatusText(doorbellDevice?.online || false, doorbellDevice?.last_seen)}
+                <span className={`status-indicator ${getDeviceStatusClass(doorbellDevice?.online || false, doorbellDevice?.last_seen, doorbellDevice?.type)}`}>
+                  {getDeviceStatusText(doorbellDevice?.online || false, doorbellDevice?.last_seen, doorbellDevice?.type)}
                 </span>
                 {doorbellDevice?.battery !== undefined && (
                   <div className={`battery-indicator ${getBatteryClass(doorbellDevice.battery)}`}>
@@ -218,8 +218,8 @@ export function SystemStatusCard({ devicesStatus, isExpanded = false }: SystemSt
             <div className="device-status-header">
               <h3>HUB</h3>
               <div className="status-group">
-                <span className={`status-indicator ${getDeviceStatusClass(hubDevice?.online || false, hubDevice?.last_seen)}`}>
-                  {getDeviceStatusText(hubDevice?.online || false, hubDevice?.last_seen)}
+                <span className={`status-indicator ${getDeviceStatusClass(hubDevice?.online || false, hubDevice?.last_seen, hubDevice?.type)}`}>
+                  {getDeviceStatusText(hubDevice?.online || false, hubDevice?.last_seen, hubDevice?.type)}
                 </span>
                 {hubDevice?.battery !== undefined && (
                   <div className={`battery-indicator ${getBatteryClass(hubDevice.battery)}`}>

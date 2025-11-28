@@ -760,7 +760,7 @@ export function findHubDevice(devices: BackendDevice[]): BackendDevice | null {
 }
 
 // Helper function to get device status class for styling
-export function getDeviceStatusClass(online: boolean, lastSeen: string | null): string {
+export function getDeviceStatusClass(online: boolean, lastSeen: string | null, deviceType?: string): string {
   // Backend provides online boolean
   if (online) return 'status-online';
 
@@ -771,12 +771,15 @@ export function getDeviceStatusClass(online: boolean, lastSeen: string | null): 
   const now = new Date();
   const diffMinutes = (now.getTime() - lastSeenDate.getTime()) / 60000;
 
-  if (diffMinutes < 5) return 'status-warning';
+  // Sensor-type devices poll every 10 minutes, so allow 20 minute window
+  const warningThreshold = (deviceType === 'sensor' || deviceType === 'gas_sensor') ? 20 : 5;
+
+  if (diffMinutes < warningThreshold) return 'status-warning';
   return 'status-offline';
 }
 
 // Helper function to get human-readable device status text
-export function getDeviceStatusText(online: boolean, lastSeen: string | null): string {
+export function getDeviceStatusText(online: boolean, lastSeen: string | null, deviceType?: string): string {
   // Backend provides online boolean
   if (online) return 'ONLINE';
 
@@ -787,7 +790,10 @@ export function getDeviceStatusText(online: boolean, lastSeen: string | null): s
   const now = new Date();
   const diffMinutes = Math.floor((now.getTime() - lastSeenDate.getTime()) / 60000);
 
-  if (diffMinutes < 5) return `LAST SEEN ${diffMinutes}M AGO`;
+  // Sensor-type devices poll every 10 minutes, so allow 20 minute window
+  const warningThreshold = (deviceType === 'sensor' || deviceType === 'gas_sensor') ? 20 : 5;
+
+  if (diffMinutes < warningThreshold) return `LAST SEEN ${diffMinutes}M AGO`;
   return 'OFFLINE';
 }
 

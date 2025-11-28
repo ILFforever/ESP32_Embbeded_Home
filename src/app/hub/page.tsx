@@ -341,8 +341,8 @@ export default function HubControlPage() {
     );
   }
 
-  const statusClass = hubDevice ? getDeviceStatusClass(hubDevice.online, hubDevice.last_seen) : 'status-offline';
-  const statusText = hubDevice ? getDeviceStatusText(hubDevice.online, hubDevice.last_seen) : 'OFFLINE';
+  const statusClass = hubDevice ? getDeviceStatusClass(hubDevice.online, hubDevice.last_seen, hubDevice.type) : 'status-offline';
+  const statusText = hubDevice ? getDeviceStatusText(hubDevice.online, hubDevice.last_seen, hubDevice.type) : 'OFFLINE';
   const tempStatus = sensorData?.temperature != null ? getTemperatureStatus(sensorData.temperature) : null;
   const humidityStatus = sensorData?.humidity != null ? getHumidityStatus(sensorData.humidity) : null;
   const aqiData = sensorData?.aqi ? getAQICategory(sensorData.aqi) : null;
