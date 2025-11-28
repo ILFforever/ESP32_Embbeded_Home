@@ -613,6 +613,7 @@ export default function DoorbellControlPage() {
                 <div
                   style={{
                     display: "flex",
+                    flexDirection: "column",
                     gap: "12px",
                     marginBottom: "20px",
                     padding: "16px",
@@ -628,7 +629,7 @@ export default function DoorbellControlPage() {
                     onClick={handleCameraToggle}
                     disabled={commandLoading === "camera" || isDeviceOffline()}
                     style={{
-                      flex: 1,
+                      width: "100%",
                       display: "flex",
                       alignItems: "center",
                       justifyContent: "center",
@@ -652,7 +653,7 @@ export default function DoorbellControlPage() {
                     onClick={handleMicToggle}
                     disabled={commandLoading === "mic" || isDeviceOffline()}
                     style={{
-                      flex: 1,
+                      width: "100%",
                       display: "flex",
                       alignItems: "center",
                       justifyContent: "center",
