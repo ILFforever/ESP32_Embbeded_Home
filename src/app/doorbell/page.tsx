@@ -609,6 +609,68 @@ export default function DoorbellControlPage() {
                 <h3>LIVE CAMERA & AUDIO STREAM</h3>
               </div>
               <div className="card-content">
+                {/* Stream Controls */}
+                <div
+                  style={{
+                    display: "flex",
+                    gap: "12px",
+                    marginBottom: "20px",
+                    padding: "16px",
+                    backgroundColor: "rgba(33, 150, 243, 0.05)",
+                    borderRadius: "8px",
+                    border: "1px solid rgba(33, 150, 243, 0.2)",
+                  }}
+                >
+                  <button
+                    className={`btn-control ${
+                      cameraActive ? "btn-stop" : "btn-start"
+                    }`}
+                    onClick={handleCameraToggle}
+                    disabled={commandLoading === "camera" || isDeviceOffline()}
+                    style={{
+                      flex: 1,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: "8px",
+                      padding: "12px 24px",
+                      fontSize: "14px",
+                      fontWeight: "600",
+                    }}
+                  >
+                    <Camera size={18} />
+                    {commandLoading === "camera"
+                      ? "PROCESSING..."
+                      : cameraActive
+                      ? "STOP STREAM"
+                      : "START STREAM"}
+                  </button>
+                  <button
+                    className={`btn-control ${
+                      micActive ? "btn-stop" : "btn-start"
+                    }`}
+                    onClick={handleMicToggle}
+                    disabled={commandLoading === "mic" || isDeviceOffline()}
+                    style={{
+                      flex: 1,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: "8px",
+                      padding: "12px 24px",
+                      fontSize: "14px",
+                      fontWeight: "600",
+                    }}
+                  >
+                    <Mic size={18} />
+                    {commandLoading === "mic"
+                      ? "PROCESSING..."
+                      : micActive
+                      ? "MIC OFF"
+                      : "MIC ON"}
+                  </button>
+                </div>
+
                 <div
                   style={{
                     display: "flex",
@@ -934,92 +996,6 @@ export default function DoorbellControlPage() {
               </div>
             </div>
 
-            {/* Column 1: Camera & Microphone */}
-            <div className="card">
-              <div className="card-header">
-                <h3>CAMERA CONTROL</h3>
-              </div>
-              <div className="card-content">
-                <div className="control-panel">
-                  <div className="control-status">
-                    <Camera
-                      size={48}
-                      className={
-                        cameraActive
-                          ? "status-active-large"
-                          : "status-inactive-large"
-                      }
-                    />
-                    <div className="status-label">
-                      <span className="status-text">
-                        {cameraActive ? "ACTIVE" : "INACTIVE"}
-                      </span>
-                      <span className="status-description">
-                        {cameraActive
-                          ? "Camera is streaming video"
-                          : "Camera is off"}
-                      </span>
-                    </div>
-                  </div>
-                  <button
-                    className={`btn-control ${
-                      cameraActive ? "btn-stop" : "btn-start"
-                    }`}
-                    onClick={handleCameraToggle}
-                    disabled={commandLoading === "camera"}
-                    style={{ marginTop: "12px" }}
-                  >
-                    {commandLoading === "camera"
-                      ? "PROCESSING..."
-                      : cameraActive
-                      ? "STOP CAMERA"
-                      : "START CAMERA"}
-                  </button>
-                </div>
-
-                <div className="control-divider"></div>
-
-                <div className="card-header" style={{ paddingTop: "8px" }}>
-                  <h3>MICROPHONE CONTROL</h3>
-                </div>
-                <div className="control-panel">
-                  <div className="control-status">
-                    <Mic
-                      size={48}
-                      className={
-                        micActive
-                          ? "status-active-large"
-                          : "status-inactive-large"
-                      }
-                    />
-                    <div className="status-label">
-                      <span className="status-text">
-                        {micActive ? "ACTIVE" : "INACTIVE"}
-                      </span>
-                      <span className="status-description">
-                        {micActive
-                          ? "Microphone is listening"
-                          : "Microphone is muted"}
-                      </span>
-                    </div>
-                  </div>
-                  <button
-                    className={`btn-control ${
-                      micActive ? "btn-stop" : "btn-start"
-                    }`}
-                    onClick={handleMicToggle}
-                    disabled={commandLoading === "mic"}
-                    style={{ marginTop: "12px" }}
-                  >
-                    {commandLoading === "mic"
-                      ? "PROCESSING..."
-                      : micActive
-                      ? "STOP MIC"
-                      : "START MIC"}
-                  </button>
-                </div>
-              </div>
-            </div>
 
             {/* Column 2: Amplifier & Face Recognition */}
             <div className="card">
