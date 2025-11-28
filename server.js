@@ -6,6 +6,7 @@ const { initializeFirebase } = require('./config/firebase');
 const { initMQTT } = require('./config/mqtt');
 const enforceHttpsExceptIoT = require('./middleware/httpsEnforcement');
 const cors = require('cors');
+const { initWebSocketServer } = require('./services/websocketStream');
 
 // Load env vars
 dotenv.config();
@@ -60,6 +61,9 @@ const PORT = process.env.PORT || 5000;
 const server = app.listen(PORT, () => {
   console.log(`Server running in ${process.env.NODE_ENV} mode on port ${PORT}`);
 });
+
+// Initialize WebSocket server for device streaming
+initWebSocketServer(server);
 
 // Handle unhandled promise rejections
 process.on('unhandledRejection', (err, promise) => {

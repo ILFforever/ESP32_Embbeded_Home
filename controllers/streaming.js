@@ -33,10 +33,10 @@ exports.receiveCameraFrame = asyncHandler(async (req, res) => {
     parseInt(frame_id) || 0
   );
 
-  // Log periodically (every 10th frame)
+  // Log periodically (every 10th frame for performance)
   if (bufferId % 10 === 0) {
     const stats = streamBuffer.getStats(device_id);
-    console.log(`[Stream] Frame ${bufferId} received from ${device_id}: ${frameData.length} bytes (${stats.videoClientsConnected} clients)`);
+    console.log(`[Stream] Frame ${bufferId} received from ${device_id}: ${frameData.length} bytes (${stats.videoClientsConnected} clients, ${stats.framesReceived} total)`);
   }
 
   res.status(200).json({
