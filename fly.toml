@@ -30,7 +30,7 @@ primary_region = 'sin'
     timeout = "5s"
     path = "/info"
 
-# Raw TCP service for ESP32 WebSocket (bypasses HTTP proxy restrictions)
+# Additional HTTP port for ESP32 WebSocket (no forced HTTPS upgrade)
 [[services]]
   internal_port = 5000
   protocol = "tcp"
@@ -39,8 +39,8 @@ primary_region = 'sin'
   min_machines_running = 0
 
   [[services.ports]]
-    port = 8080  # ESP32 will connect to this port
-    handlers = []  # No TLS/HTTP processing
+    port = 8080
+    handlers = ["http"]  # HTTP handler without TLS
 
   [[services.tcp_checks]]
     interval = "15s"
