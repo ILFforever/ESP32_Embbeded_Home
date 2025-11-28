@@ -16,19 +16,21 @@ const deviceConnections = new Map(); // device_id -> WebSocket
 function initWebSocketServer(server) {
   wss = new WebSocket.Server({
     server,
-    path: '/ws/stream',
-    perMessageDeflate: false,  // Disable compression for ESP32 compatibility
-    verifyClient: (info, callback) => {
-      console.log('[WebSocket] Upgrade request from:', info.req.socket.remoteAddress);
-      console.log('[WebSocket] Headers:', JSON.stringify(info.req.headers, null, 2));
-      callback(true); // Accept all connections
-    }
+    path: '/ws/stream'
   });
 
   wss.on('connection', handleConnection);
 
+  // Log WebSocket server errors
   wss.on('error', (error) => {
     console.error('[WebSocket] Server error:', error);
+  });
+
+  // Log when headers are received (for debugging upgrade requests)
+  wss.on('headers', (headers, request) => {
+    console.log('[WebSocket] Upgrade request headers:', headers);
+    console.log('[WebSocket] Request URL:', request.url);
+    console.log('[WebSocket] Request method:', request.method);
   });
 
   console.log('[WebSocket] Stream server initialized on /ws/stream');
