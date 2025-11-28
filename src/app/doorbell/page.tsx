@@ -85,6 +85,10 @@ export default function DoorbellControlPage() {
   const [customDeviceId, setCustomDeviceId] = useState("");
   const [savedDeviceId, setSavedDeviceId] = useState<string | null>(null);
 
+  // Stream display states
+  const [streamError, setStreamError] = useState<string | null>(null);
+  const [audioMuted, setAudioMuted] = useState(false);
+
   // Load saved device_id from localStorage on mount
   useEffect(() => {
     const saved = localStorage.getItem("doorbell_device_id");
@@ -599,6 +603,215 @@ export default function DoorbellControlPage() {
           </header>
 
           <div className="control-page-grid">
+            {/* Live Camera & Audio Stream */}
+            <div className="card control-card-large">
+              <div className="card-header">
+                <h3>LIVE CAMERA & AUDIO STREAM</h3>
+              </div>
+              <div className="card-content">
+                <div
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: "16px",
+                    alignItems: "center",
+                  }}
+                >
+                  {/* Camera Stream */}
+                  <div
+                    style={{
+                      width: "100%",
+                      maxWidth: "800px",
+                      position: "relative",
+                      backgroundColor: "#000",
+                      borderRadius: "12px",
+                      overflow: "hidden",
+                      boxShadow: "0 4px 12px rgba(0, 0, 0, 0.2)",
+                    }}
+                  >
+                    {getEffectiveDeviceId() && cameraActive ? (
+                      <>
+                        <img
+                          src={`${
+                            process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000"
+                          }/api/v1/stream/camera/${getEffectiveDeviceId()}`}
+                          alt="Live Camera Feed"
+                          style={{
+                            width: "100%",
+                            height: "auto",
+                            display: "block",
+                            minHeight: "400px",
+                            objectFit: "contain",
+                          }}
+                          onError={() => {
+                            setStreamError("Failed to load camera stream. Make sure the camera is streaming.");
+                          }}
+                          onLoad={() => {
+                            setStreamError(null);
+                          }}
+                        />
+                        <div
+                          style={{
+                            position: "absolute",
+                            top: "12px",
+                            left: "12px",
+                            backgroundColor: "rgba(76, 175, 80, 0.9)",
+                            color: "white",
+                            padding: "6px 12px",
+                            borderRadius: "6px",
+                            fontSize: "12px",
+                            fontWeight: "600",
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "6px",
+                          }}
+                        >
+                          <span
+                            style={{
+                              width: "8px",
+                              height: "8px",
+                              backgroundColor: "#fff",
+                              borderRadius: "50%",
+                              animation: "pulse 2s ease-in-out infinite",
+                            }}
+                          />
+                          LIVE
+                        </div>
+                      </>
+                    ) : (
+                      <div
+                        style={{
+                          width: "100%",
+                          minHeight: "400px",
+                          display: "flex",
+                          flexDirection: "column",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          color: "#666",
+                          gap: "12px",
+                        }}
+                      >
+                        <Camera size={64} color="#444" />
+                        <div style={{ fontSize: "16px", fontWeight: "600" }}>
+                          {!getEffectiveDeviceId()
+                            ? "No device paired"
+                            : !cameraActive
+                            ? "Camera is not active"
+                            : "Waiting for stream..."}
+                        </div>
+                        {!cameraActive && getEffectiveDeviceId() && (
+                          <div style={{ fontSize: "14px", color: "#888" }}>
+                            Start the camera to view live stream
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Stream Error Message */}
+                  {streamError && (
+                    <div
+                      style={{
+                        width: "100%",
+                        maxWidth: "800px",
+                        padding: "12px",
+                        backgroundColor: "rgba(244, 67, 54, 0.1)",
+                        border: "1px solid rgba(244, 67, 54, 0.3)",
+                        borderRadius: "8px",
+                        color: "#d32f2f",
+                        fontSize: "14px",
+                        fontWeight: "500",
+                      }}
+                    >
+                      ⚠ {streamError}
+                    </div>
+                  )}
+
+                  {/* Audio Stream Controls */}
+                  {getEffectiveDeviceId() && micActive && (
+                    <div
+                      style={{
+                        width: "100%",
+                        maxWidth: "800px",
+                        padding: "16px",
+                        backgroundColor: "rgba(33, 150, 243, 0.1)",
+                        border: "1px solid rgba(33, 150, 243, 0.3)",
+                        borderRadius: "8px",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        gap: "16px",
+                      }}
+                    >
+                      <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                        <Mic size={24} color="#2196F3" />
+                        <div>
+                          <div style={{ fontSize: "14px", fontWeight: "600", color: "#2196F3" }}>
+                            Audio Stream Active
+                          </div>
+                          <div style={{ fontSize: "12px", color: "#666" }}>
+                            PCM Audio Stream (16kHz, 16-bit, Mono)
+                          </div>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => setAudioMuted(!audioMuted)}
+                        className="btn-control"
+                        style={{
+                          padding: "8px 16px",
+                          fontSize: "13px",
+                          fontWeight: "600",
+                          backgroundColor: audioMuted ? "#f44336" : "#4caf50",
+                          borderColor: audioMuted ? "#f44336" : "#4caf50",
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "6px",
+                        }}
+                      >
+                        {audioMuted ? "🔇 MUTED" : "🔊 UNMUTED"}
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Audio Element (Hidden) */}
+                  {getEffectiveDeviceId() && micActive && !audioMuted && (
+                    <audio
+                      autoPlay
+                      controls
+                      style={{ width: "100%", maxWidth: "800px" }}
+                      onError={(e) => {
+                        console.error("Audio stream error:", e);
+                        setStreamError("Failed to play audio stream. Audio format may not be supported by your browser.");
+                      }}
+                    >
+                      <source
+                        src={`${
+                          process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000"
+                        }/api/v1/stream/audio/${getEffectiveDeviceId()}`}
+                        type="audio/pcm"
+                      />
+                      Your browser does not support audio streaming.
+                    </audio>
+                  )}
+
+                  {/* Stream Info */}
+                  {getEffectiveDeviceId() && (cameraActive || micActive) && (
+                    <div
+                      style={{
+                        width: "100%",
+                        maxWidth: "800px",
+                        fontSize: "12px",
+                        color: "#888",
+                        textAlign: "center",
+                      }}
+                    >
+                      Streaming from device: <span style={{ fontFamily: "monospace", color: "#2196F3" }}>{getEffectiveDeviceId()}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
             {/* Latest Visitors */}
             <div className="card control-card-large">
               <div className="card-header">
@@ -1823,8 +2036,17 @@ export default function DoorbellControlPage() {
         </div>
       )}
 
-      {/* Volume Slider Styles */}
+      {/* Volume Slider Styles & Animations */}
       <style jsx>{`
+        @keyframes pulse {
+          0%, 100% {
+            opacity: 1;
+          }
+          50% {
+            opacity: 0.3;
+          }
+        }
+
         .volume-slider::-webkit-slider-thumb {
           appearance: none;
           width: 18px;
