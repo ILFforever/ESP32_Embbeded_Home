@@ -30,6 +30,23 @@ primary_region = 'sin'
     timeout = "5s"
     path = "/info"
 
+# Raw TCP service for ESP32 WebSocket (bypasses HTTP proxy restrictions)
+[[services]]
+  internal_port = 5000
+  protocol = "tcp"
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 0
+
+  [[services.ports]]
+    port = 8080  # ESP32 will connect to this port
+    handlers = []  # No TLS/HTTP processing
+
+  [[services.tcp_checks]]
+    interval = "15s"
+    timeout = "5s"
+    grace_period = "10s"
+
 [[vm]]
   memory = '1gb'
   cpu_kind = 'shared'
