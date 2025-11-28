@@ -27,16 +27,6 @@ app.use(cors({
   credentials: true,
 }));
 
-// Log all incoming requests for debugging ESP32 connections
-app.use((req, res, next) => {
-  console.log(`[${new Date().toISOString()}] ${req.method} ${req.path}`);
-  console.log('  - Headers:', JSON.stringify(req.headers, null, 2));
-  console.log('  - Protocol:', req.protocol);
-  console.log('  - Secure:', req.secure);
-  console.log('  - X-Forwarded-Proto:', req.headers['x-forwarded-proto']);
-  next();
-});
-
 // Enforce HTTPS for all routes except IoT device endpoints
 app.use(enforceHttpsExceptIoT);
 

@@ -30,24 +30,6 @@ primary_region = 'sin'
     timeout = "5s"
     path = "/info"
 
-# Additional HTTP port for ESP32 WebSocket (no forced HTTPS upgrade)
-[[services]]
-  internal_port = 5000
-  protocol = "tcp"
-  auto_stop_machines = false
-  auto_start_machines = true
-  min_machines_running = 0
-
-  [[services.ports]]
-    start_port = 8080
-    end_port = 8085
-    handlers = ["http"]  # HTTP handler without TLS
-
-  [[services.tcp_checks]]
-    interval = "15s"
-    timeout = "5s"
-    grace_period = "10s"
-
 [[vm]]
   memory = '1gb'
   cpu_kind = 'shared'
