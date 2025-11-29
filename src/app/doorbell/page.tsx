@@ -39,11 +39,11 @@ import type { Device } from "@/types/dashboard";
 interface ActivityEvent {
   id: string;
   type:
-    | "heartbeat"
-    | "face_detection"
-    | "command"
-    | "device_state"
-    | "device_log";
+  | "heartbeat"
+  | "face_detection"
+  | "command"
+  | "device_state"
+  | "device_log";
   timestamp: any; // Firestore timestamp or ISO string
   data: any;
 }
@@ -138,8 +138,7 @@ export default function DoorbellControlPage() {
             try {
               const authToken = getCookie("auth_token");
               const statusResponse = await fetch(
-                `${
-                  process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000"
+                `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000"
                 }/api/v1/devices/${deviceIdToUse}/status`,
                 {
                   headers: {
@@ -602,11 +601,135 @@ export default function DoorbellControlPage() {
             </div>
           </header>
 
+          {/* Latest Visitors */}
+          <div
+            className="card control-card-large"
+            style={{ marginBottom: "var(--spacing-lg, 24px)" }}
+          >
+            <div className="card-header">
+              <h3>LATEST VISITORS</h3>
+            </div>
+            <div className="card-content">
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fill, minmax(120px, 1fr))",
+                  gap: "16px",
+                  padding: "8px",
+                  maxHeight: "600px",
+                  overflowY: "auto",
+                }}
+              >
+                {latestVisitors.length > 0 ? (
+                  latestVisitors.map((visitor) => (
+                    <div
+                      key={visitor.id}
+                      onClick={() => handleVisitorClick(visitor)}
+                      style={{
+                        display: "flex",
+                        flexDirection: "column",
+                        alignItems: "center",
+                        gap: "8px",
+                        cursor: "pointer",
+                        transition: "transform 0.2s ease",
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.transform = "scale(1.05)";
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.transform = "scale(1)";
+                      }}
+                    >
+                      <div
+                        style={{
+                          width: "100px",
+                          height: "100px",
+                          borderRadius: "16px",
+                          overflow: "hidden",
+                          border: visitor.recognized
+                            ? "3px solid #4CAF50"
+                            : "3px solid #FF9800",
+                          boxShadow: "0 2px 8px rgba(0, 0, 0, 0.15)",
+                          backgroundColor: "#f0f0f0",
+                        }}
+                      >
+                        {visitor.image ? (
+                          <img
+                            src={visitor.image}
+                            alt={visitor.name}
+                            style={{
+                              width: "100%",
+                              height: "100%",
+                              objectFit: "cover",
+                            }}
+                            onError={(e) => {
+                              (e.target as HTMLImageElement).style.display =
+                                "none";
+                            }}
+                          />
+                        ) : (
+                          <div
+                            style={{
+                              width: "100%",
+                              height: "100%",
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              fontSize: "48px",
+                              color: "#999",
+                            }}
+                          >
+                            👤
+                          </div>
+                        )}
+                      </div>
+                      <div
+                        style={{
+                          textAlign: "center",
+                          fontSize: "12px",
+                          fontWeight: "600",
+                          color: visitor.recognized ? "#4CAF50" : "#FF9800",
+                          maxWidth: "100px",
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {visitor.name}
+                      </div>
+                      {visitor.confidence > 0 && (
+                        <div
+                          style={{
+                            fontSize: "10px",
+                            color: "#666",
+                          }}
+                        >
+                          {(visitor.confidence * 100).toFixed(0)}%
+                        </div>
+                      )}
+                    </div>
+                  ))
+                ) : (
+                  <div
+                    style={{
+                      gridColumn: "1 / -1",
+                      textAlign: "center",
+                      padding: "40px 20px",
+                      color: "#6c757d",
+                      fontSize: "14px",
+                    }}
+                  >
+                    No visitors detected yet
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
           <div className="control-page-grid">
-            {/* Live Camera & Audio Stream */}
-            <div className="card control-card-large">
+            {/* Stream Control */}
+            <div className="card">
               <div className="card-header">
-                <h3>LIVE CAMERA & AUDIO STREAM</h3>
+                <h3>STREAM CONTROL</h3>
               </div>
               <div className="card-content">
                 {/* Stream Controls */}
@@ -622,9 +745,8 @@ export default function DoorbellControlPage() {
                   }}
                 >
                   <button
-                    className={`btn-control ${
-                      cameraActive ? "btn-stop" : "btn-start"
-                    }`}
+                    className={`btn-control ${cameraActive ? "btn-stop" : "btn-start"
+                      }`}
                     onClick={handleCameraToggle}
                     disabled={commandLoading === "camera" || isDeviceOffline()}
                     style={{
@@ -642,13 +764,12 @@ export default function DoorbellControlPage() {
                     {commandLoading === "camera"
                       ? "PROCESSING..."
                       : cameraActive
-                      ? "STOP STREAM"
-                      : "START STREAM"}
+                        ? "STOP STREAM"
+                        : "START STREAM"}
                   </button>
                   <button
-                    className={`btn-control ${
-                      micActive ? "btn-stop" : "btn-start"
-                    }`}
+                    className={`btn-control ${micActive ? "btn-stop" : "btn-start"
+                      }`}
                     onClick={handleMicToggle}
                     disabled={commandLoading === "mic" || isDeviceOffline()}
                     style={{
@@ -666,8 +787,8 @@ export default function DoorbellControlPage() {
                     {commandLoading === "mic"
                       ? "PROCESSING..."
                       : micActive
-                      ? "MIC OFF"
-                      : "MIC ON"}
+                        ? "MIC OFF"
+                        : "MIC ON"}
                   </button>
                 </div>
 
@@ -683,7 +804,6 @@ export default function DoorbellControlPage() {
                   <div
                     style={{
                       width: "100%",
-                      maxWidth: "800px",
                       position: "relative",
                       backgroundColor: "#000",
                       borderRadius: "12px",
@@ -694,15 +814,14 @@ export default function DoorbellControlPage() {
                     {getEffectiveDeviceId() && cameraActive ? (
                       <>
                         <img
-                          src={`${
-                            process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000"
-                          }/api/v1/stream/camera/${getEffectiveDeviceId()}`}
+                          src={`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000"
+                            }/api/v1/stream/camera/${getEffectiveDeviceId()}`}
                           alt="Live Camera Feed"
                           style={{
                             width: "100%",
                             height: "auto",
                             display: "block",
-                            minHeight: "400px",
+                            minHeight: "250px",
                             objectFit: "contain",
                           }}
                           onError={() => {
@@ -744,7 +863,7 @@ export default function DoorbellControlPage() {
                       <div
                         style={{
                           width: "100%",
-                          minHeight: "400px",
+                          minHeight: "250px",
                           display: "flex",
                           flexDirection: "column",
                           alignItems: "center",
@@ -753,13 +872,13 @@ export default function DoorbellControlPage() {
                           gap: "12px",
                         }}
                       >
-                        <Camera size={64} color="#444" />
+                        <Camera size={48} color="#444" />
                         <div style={{ fontSize: "16px", fontWeight: "600" }}>
                           {!getEffectiveDeviceId()
                             ? "No device paired"
                             : !cameraActive
-                            ? "Camera is not active"
-                            : "Waiting for stream..."}
+                              ? "Camera is not active"
+                              : "Waiting for stream..."}
                         </div>
                         {!cameraActive && getEffectiveDeviceId() && (
                           <div style={{ fontSize: "14px", color: "#888" }}>
@@ -775,7 +894,6 @@ export default function DoorbellControlPage() {
                     <div
                       style={{
                         width: "100%",
-                        maxWidth: "800px",
                         padding: "12px",
                         backgroundColor: "rgba(244, 67, 54, 0.1)",
                         border: "1px solid rgba(244, 67, 54, 0.3)",
@@ -789,79 +907,11 @@ export default function DoorbellControlPage() {
                     </div>
                   )}
 
-                  {/* Audio Stream Controls */}
-                  {getEffectiveDeviceId() && micActive && (
-                    <div
-                      style={{
-                        width: "100%",
-                        maxWidth: "800px",
-                        padding: "16px",
-                        backgroundColor: "rgba(33, 150, 243, 0.1)",
-                        border: "1px solid rgba(33, 150, 243, 0.3)",
-                        borderRadius: "8px",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "space-between",
-                        gap: "16px",
-                      }}
-                    >
-                      <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-                        <Mic size={24} color="#2196F3" />
-                        <div>
-                          <div style={{ fontSize: "14px", fontWeight: "600", color: "#2196F3" }}>
-                            Audio Stream Active
-                          </div>
-                          <div style={{ fontSize: "12px", color: "#666" }}>
-                            PCM Audio Stream (16kHz, 16-bit, Mono)
-                          </div>
-                        </div>
-                      </div>
-                      <button
-                        onClick={() => setAudioMuted(!audioMuted)}
-                        className="btn-control"
-                        style={{
-                          padding: "8px 16px",
-                          fontSize: "13px",
-                          fontWeight: "600",
-                          backgroundColor: audioMuted ? "#f44336" : "#4caf50",
-                          borderColor: audioMuted ? "#f44336" : "#4caf50",
-                          display: "flex",
-                          alignItems: "center",
-                          gap: "6px",
-                        }}
-                      >
-                        {audioMuted ? "🔇 MUTED" : "🔊 UNMUTED"}
-                      </button>
-                    </div>
-                  )}
-
-                  {/* Audio Element (Hidden) */}
-                  {getEffectiveDeviceId() && micActive && !audioMuted && (
-                    <audio
-                      autoPlay
-                      controls
-                      style={{ width: "100%", maxWidth: "800px" }}
-                      onError={(e) => {
-                        console.error("Audio stream error:", e);
-                        setStreamError("Failed to play audio stream. Audio format may not be supported by your browser.");
-                      }}
-                    >
-                      <source
-                        src={`${
-                          process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000"
-                        }/api/v1/stream/audio/${getEffectiveDeviceId()}`}
-                        type="audio/pcm"
-                      />
-                      Your browser does not support audio streaming.
-                    </audio>
-                  )}
-
                   {/* Stream Info */}
                   {getEffectiveDeviceId() && (cameraActive || micActive) && (
                     <div
                       style={{
                         width: "100%",
-                        maxWidth: "800px",
                         fontSize: "12px",
                         color: "#888",
                         textAlign: "center",
@@ -873,129 +923,6 @@ export default function DoorbellControlPage() {
                 </div>
               </div>
             </div>
-
-            {/* Latest Visitors */}
-            <div className="card control-card-large">
-              <div className="card-header">
-                <h3>LATEST VISITORS</h3>
-              </div>
-              <div className="card-content">
-                <div
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "repeat(auto-fill, minmax(120px, 1fr))",
-                    gap: "16px",
-                    padding: "8px",
-                    maxHeight: "600px",
-                    overflowY: "auto",
-                  }}
-                >
-                  {latestVisitors.length > 0 ? (
-                    latestVisitors.map((visitor) => (
-                      <div
-                        key={visitor.id}
-                        onClick={() => handleVisitorClick(visitor)}
-                        style={{
-                          display: "flex",
-                          flexDirection: "column",
-                          alignItems: "center",
-                          gap: "8px",
-                          cursor: "pointer",
-                          transition: "transform 0.2s ease",
-                        }}
-                        onMouseEnter={(e) => {
-                          e.currentTarget.style.transform = "scale(1.05)";
-                        }}
-                        onMouseLeave={(e) => {
-                          e.currentTarget.style.transform = "scale(1)";
-                        }}
-                      >
-                        <div
-                          style={{
-                            width: "100px",
-                            height: "100px",
-                            borderRadius: "16px",
-                            overflow: "hidden",
-                            border: visitor.recognized
-                              ? "3px solid #4CAF50"
-                              : "3px solid #FF9800",
-                            boxShadow: "0 2px 8px rgba(0, 0, 0, 0.15)",
-                            backgroundColor: "#f0f0f0",
-                          }}
-                        >
-                          {visitor.image ? (
-                            <img
-                              src={visitor.image}
-                              alt={visitor.name}
-                              style={{
-                                width: "100%",
-                                height: "100%",
-                                objectFit: "cover",
-                              }}
-                              onError={(e) => {
-                                (e.target as HTMLImageElement).style.display =
-                                  "none";
-                              }}
-                            />
-                          ) : (
-                            <div
-                              style={{
-                                width: "100%",
-                                height: "100%",
-                                display: "flex",
-                                alignItems: "center",
-                                justifyContent: "center",
-                                fontSize: "48px",
-                                color: "#999",
-                              }}
-                            >
-                              👤
-                            </div>
-                          )}
-                        </div>
-                        <div
-                          style={{
-                            textAlign: "center",
-                            fontSize: "12px",
-                            fontWeight: "600",
-                            color: visitor.recognized ? "#4CAF50" : "#FF9800",
-                            maxWidth: "100px",
-                            overflow: "hidden",
-                            textOverflow: "ellipsis",
-                            whiteSpace: "nowrap",
-                          }}
-                        >
-                          {visitor.name}
-                        </div>
-                        {visitor.confidence > 0 && (
-                          <div
-                            style={{
-                              fontSize: "10px",
-                              color: "#666",
-                            }}
-                          >
-                            {(visitor.confidence * 100).toFixed(0)}%
-                          </div>
-                        )}
-                      </div>
-                    ))
-                  ) : (
-                    <div
-                      style={{
-                        gridColumn: "1 / -1",
-                        textAlign: "center",
-                        padding: "40px 20px",
-                        color: "#6c757d",
-                        fontSize: "14px",
-                      }}
-                    >
-                      No visitors detected yet
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-
 
             {/* Column 2: Amplifier & Face Recognition */}
             <div className="card">
@@ -1062,11 +989,9 @@ export default function DoorbellControlPage() {
                           flex: 1,
                           height: "6px",
                           borderRadius: "3px",
-                          background: `linear-gradient(to right, #4CAF50 0%, #4CAF50 ${
-                            (ampVolume / 21) * 100
-                          }%, #e0e0e0 ${
-                            (ampVolume / 21) * 100
-                          }%, #e0e0e0 100%)`,
+                          background: `linear-gradient(to right, #4CAF50 0%, #4CAF50 ${(ampVolume / 21) * 100
+                            }%, #e0e0e0 ${(ampVolume / 21) * 100
+                            }%, #e0e0e0 100%)`,
                           outline: "none",
                           cursor: "pointer",
                           transition: "background 0.15s ease",
@@ -1184,6 +1109,72 @@ export default function DoorbellControlPage() {
                   </div>
                 </div>
 
+                {/* Audio Stream Controls */}
+                {getEffectiveDeviceId() && micActive && (
+                  <div
+                    style={{
+                      width: "100%",
+                      padding: "16px",
+                      backgroundColor: "rgba(33, 150, 243, 0.1)",
+                      border: "1px solid rgba(33, 150, 243, 0.3)",
+                      borderRadius: "8px",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      gap: "16px",
+                      marginTop: "16px",
+                    }}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                      <Mic size={24} color="#2196F3" />
+                      <div>
+                        <div style={{ fontSize: "14px", fontWeight: "600", color: "#2196F3" }}>
+                          Audio Stream Active
+                        </div>
+                        <div style={{ fontSize: "12px", color: "#666" }}>
+                          PCM Audio Stream (16kHz, 16-bit, Mono)
+                        </div>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => setAudioMuted(!audioMuted)}
+                      className="btn-control"
+                      style={{
+                        padding: "8px 16px",
+                        fontSize: "13px",
+                        fontWeight: "600",
+                        backgroundColor: audioMuted ? "#f44336" : "#4caf50",
+                        borderColor: audioMuted ? "#f44336" : "#4caf50",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "6px",
+                      }}
+                    >
+                      {audioMuted ? "🔇 MUTED" : "🔊 UNMUTED"}
+                    </button>
+                  </div>
+                )}
+
+                {/* Audio Element (Hidden) */}
+                {getEffectiveDeviceId() && micActive && !audioMuted && (
+                  <audio
+                    autoPlay
+                    controls
+                    style={{ width: "100%", marginTop: "16px" }}
+                    onError={(e) => {
+                      console.error("Audio stream error:", e);
+                      setStreamError("Failed to play audio stream. Audio format may not be supported by your browser.");
+                    }}
+                  >
+                    <source
+                      src={`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000"
+                        }/api/v1/stream/audio/${getEffectiveDeviceId()}`}
+                      type="audio/pcm"
+                    />
+                    Your browser does not support audio streaming.
+                  </audio>
+                )}
+
                 <div className="control-divider"></div>
 
                 <div className="card-header" style={{ paddingTop: "8px" }}>
@@ -1219,9 +1210,8 @@ export default function DoorbellControlPage() {
                     }}
                   >
                     <button
-                      className={`btn-control ${
-                        faceRecognition ? "btn-stop" : "btn-start"
-                      }`}
+                      className={`btn-control ${faceRecognition ? "btn-stop" : "btn-start"
+                        }`}
                       onClick={handleFaceRecognitionToggle}
                     >
                       {faceRecognition ? "IDLE" : "TRIGGER"}
@@ -1611,8 +1601,8 @@ export default function DoorbellControlPage() {
                         {isDeviceOffline()
                           ? "-"
                           : (doorbellDevice?.wifi_rssi
-                              ? `${doorbellDevice.wifi_rssi} dBm`
-                              : "N/A")}
+                            ? `${doorbellDevice.wifi_rssi} dBm`
+                            : "N/A")}
                       </span>
                     </div>
                     <div className="info-item">
@@ -1621,8 +1611,8 @@ export default function DoorbellControlPage() {
                         {isDeviceOffline()
                           ? "-"
                           : (doorbellDevice?.free_heap
-                              ? `${(doorbellDevice.free_heap / 1024).toFixed(1)} KB`
-                              : "N/A")}
+                            ? `${(doorbellDevice.free_heap / 1024).toFixed(1)} KB`
+                            : "N/A")}
                       </span>
                     </div>
                     <div className="info-item">
@@ -1631,12 +1621,12 @@ export default function DoorbellControlPage() {
                         {isDeviceOffline()
                           ? "-"
                           : (doorbellDevice?.uptime_ms
-                              ? `${Math.floor(
-                                  doorbellDevice.uptime_ms / 3600000
-                                )}h ${Math.floor(
-                                  (doorbellDevice.uptime_ms % 3600000) / 60000
-                                )}m`
-                              : "N/A")}
+                            ? `${Math.floor(
+                              doorbellDevice.uptime_ms / 3600000
+                            )}h ${Math.floor(
+                              (doorbellDevice.uptime_ms % 3600000) / 60000
+                            )}m`
+                            : "N/A")}
                       </span>
                     </div>
                   </div>
@@ -1957,13 +1947,13 @@ export default function DoorbellControlPage() {
                     >
                       {selectedVisitor.detected_at
                         ? new Date(
-                            selectedVisitor.detected_at._seconds
-                              ? selectedVisitor.detected_at._seconds * 1000
-                              : selectedVisitor.detected_at
-                          ).toLocaleString("en-US", {
-                            dateStyle: "medium",
-                            timeStyle: "short",
-                          })
+                          selectedVisitor.detected_at._seconds
+                            ? selectedVisitor.detected_at._seconds * 1000
+                            : selectedVisitor.detected_at
+                        ).toLocaleString("en-US", {
+                          dateStyle: "medium",
+                          timeStyle: "short",
+                        })
                         : "N/A"}
                     </div>
                   </div>
