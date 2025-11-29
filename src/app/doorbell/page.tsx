@@ -290,7 +290,7 @@ export default function DoorbellControlPage() {
           console.log("[Camera] ✓ Stream is ready, waiting for continuous stream endpoint...");
           // Add a short delay to ensure the continuous stream endpoint is fully ready
           // The snapshot endpoint being ready doesn't guarantee the stream endpoint is ready
-          await new Promise(resolve => setTimeout(resolve, 1500));
+          await new Promise(resolve => setTimeout(resolve, 5000));
           console.log("[Camera] ✓ Activating camera display");
           setCameraActive(true);
         } else {
