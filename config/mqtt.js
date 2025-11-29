@@ -140,21 +140,19 @@ const publishDoorbellRing = async (deviceId) => {
  * Publish device command notification (tells device to fetch pending commands)
  * @param {string} deviceId - Device ID
  * @param {string} commandId - Command ID that was queued
- * @param {string} action - Command action (e.g., 'camera_start')
  */
-const publishDeviceCommand = async (deviceId, commandId, action) => {
+const publishDeviceCommand = async (deviceId, commandId) => {
   // Replace {device_id} in topic template with actual device ID
   const topic = MQTT_TOPICS.DEVICE_COMMAND.replace('{device_id}', deviceId);
 
   const payload = {
     device_id: deviceId,
     command_id: commandId,
-    action: action,
-    fetch_commands: true, // Signal to device to fetch pending commands immediately
+    fetch_commands: true,
     timestamp: Date.now(),
   };
 
-  console.log(`[MQTT] Notifying device ${deviceId} to fetch command ${commandId} (${action})`);
+  console.log(`[MQTT] Notifying device ${deviceId} to fetch command ${commandId}`);
   return await publishMQTT(topic, payload);
 };
 

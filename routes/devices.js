@@ -164,17 +164,17 @@ router.post('/commands/ack', authenticateDevice, acknowledgeCommand);
 // @route   POST /api/v1/devices/:device_id/camera/start
 // @desc    Queue camera start command
 // @access  Private (requires user token)
-router.post('/:device_id/camera/start', protect, startCamera);
+router.post('/:device_id/camera/start_stream', protect, startCamera);
 
 // @route   POST /api/v1/devices/:device_id/camera/stop
 // @desc    Queue camera stop command
 // @access  Private (requires user token)
-router.post('/:device_id/camera/stop', protect, stopCamera);
+router.post('/:device_id/camera/stop_stream', protect, stopCamera);
 
 // @route   POST /api/v1/devices/:device_id/camera/restart
 // @desc    Queue camera restart command
 // @access  Private (requires user token)
-router.post('/:device_id/camera/restart', protect, restartCamera);
+router.post('/:device_id/camera/restart_stream', protect, restartCamera);
 
 // ============================================================================
 // Microphone Control Routes

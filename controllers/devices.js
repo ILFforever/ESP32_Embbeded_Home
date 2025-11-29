@@ -1104,7 +1104,7 @@ const sendDeviceCommand = async (req, res) => {
     console.log(`[SendCommand] ${device_id} - Queued command: ${action} (ID: ${commandRef.id})`);
 
     // Notify device via MQTT to fetch commands immediately (faster than waiting for heartbeat)
-    await publishDeviceCommand(device_id, commandRef.id, action);
+    await publishDeviceCommand(device_id, commandRef.id);
 
     res.json({
       status: 'ok',
@@ -1234,6 +1234,7 @@ const acknowledgeCommand = async (req, res) => {
 // Camera Control Endpoints
 // ============================================================================
 
+// Tells the ESP32 to start a camera stream
 const startCamera = async (req, res) => {
   try {
     const { device_id } = req.params;
@@ -1254,7 +1255,7 @@ const startCamera = async (req, res) => {
     console.log(`[CameraControl] ${device_id} - Start camera command queued (ID: ${commandRef.id})`);
 
     // Notify device via MQTT
-    await publishDeviceCommand(device_id, commandRef.id, 'camera_start');
+    await publishDeviceCommand(device_id, commandRef.id);
 
     res.json({
       status: 'ok',
@@ -1267,6 +1268,7 @@ const startCamera = async (req, res) => {
   }
 };
 
+// Tells the ESP32 to stop a camera stream
 const stopCamera = async (req, res) => {
   try {
     const { device_id } = req.params;
@@ -1287,7 +1289,7 @@ const stopCamera = async (req, res) => {
     console.log(`[CameraControl] ${device_id} - Stop camera command queued (ID: ${commandRef.id})`);
 
     // Notify device via MQTT
-    await publishDeviceCommand(device_id, commandRef.id, 'camera_stop');
+    await publishDeviceCommand(device_id, commandRef.id);
 
     res.json({
       status: 'ok',
@@ -1320,7 +1322,7 @@ const restartCamera = async (req, res) => {
     console.log(`[CameraControl] ${device_id} - Restart camera command queued (ID: ${commandRef.id})`);
 
     // Notify device via MQTT
-    await publishDeviceCommand(device_id, commandRef.id, 'camera_restart');
+    await publishDeviceCommand(device_id, commandRef.id);
 
     res.json({
       status: 'ok',
@@ -1337,6 +1339,7 @@ const restartCamera = async (req, res) => {
 // Microphone Control Endpoints
 // ============================================================================
 
+// Tells the ESP32 to start a microphone stream
 const startMicrophone = async (req, res) => {
   try {
     const { device_id } = req.params;
@@ -1357,7 +1360,7 @@ const startMicrophone = async (req, res) => {
     console.log(`[MicControl] ${device_id} - Start microphone command queued (ID: ${commandRef.id})`);
 
     // Notify device via MQTT
-    await publishDeviceCommand(device_id, commandRef.id, 'mic_start');
+    await publishDeviceCommand(device_id, commandRef.id);
 
     res.json({
       status: 'ok',
@@ -1370,6 +1373,7 @@ const startMicrophone = async (req, res) => {
   }
 };
 
+// Tells the ESP32 to stop a microphone stream
 const stopMicrophone = async (req, res) => {
   try {
     const { device_id } = req.params;
@@ -1390,7 +1394,7 @@ const stopMicrophone = async (req, res) => {
     console.log(`[MicControl] ${device_id} - Stop microphone command queued (ID: ${commandRef.id})`);
 
     // Notify device via MQTT
-    await publishDeviceCommand(device_id, commandRef.id, 'mic_stop');
+    await publishDeviceCommand(device_id, commandRef.id);
 
     res.json({
       status: 'ok',
@@ -1423,7 +1427,7 @@ const getMicrophoneStatus = async (req, res) => {
     console.log(`[MicControl] ${device_id} - Get microphone status command queued (ID: ${commandRef.id})`);
 
     // Notify device via MQTT
-    await publishDeviceCommand(device_id, commandRef.id, 'mic_status');
+    await publishDeviceCommand(device_id, commandRef.id);
 
     res.json({
       status: 'ok',
@@ -1468,7 +1472,7 @@ const playAmplifier = async (req, res) => {
     console.log(`[AmpControl] ${device_id} - Play amplifier command queued (ID: ${commandRef.id}, URL: ${url})`);
 
     // Notify device via MQTT
-    await publishDeviceCommand(device_id, commandRef.id, 'amp_play');
+    await publishDeviceCommand(device_id, commandRef.id);
 
     res.json({
       status: 'ok',
@@ -1501,7 +1505,7 @@ const stopAmplifier = async (req, res) => {
     console.log(`[AmpControl] ${device_id} - Stop amplifier command queued (ID: ${commandRef.id})`);
 
     // Notify device via MQTT
-    await publishDeviceCommand(device_id, commandRef.id, 'amp_stop');
+    await publishDeviceCommand(device_id, commandRef.id);
 
     res.json({
       status: 'ok',
@@ -1534,7 +1538,7 @@ const restartAmplifier = async (req, res) => {
     console.log(`[AmpControl] ${device_id} - Restart amplifier command queued (ID: ${commandRef.id})`);
 
     // Notify device via MQTT
-    await publishDeviceCommand(device_id, commandRef.id, 'amp_restart');
+    await publishDeviceCommand(device_id, commandRef.id);
 
     res.json({
       status: 'ok',
@@ -1583,7 +1587,7 @@ const setAmplifierVolume = async (req, res) => {
     console.log(`[AmpControl] ${device_id} - Set volume to ${volumeLevel} command queued (ID: ${commandRef.id})`);
 
     // Notify device via MQTT
-    await publishDeviceCommand(device_id, commandRef.id, 'amp_volume');
+    await publishDeviceCommand(device_id, commandRef.id);
 
     res.json({
       status: 'ok',
@@ -1616,7 +1620,7 @@ const getAmplifierStatus = async (req, res) => {
     console.log(`[AmpControl] ${device_id} - Get status command queued (ID: ${commandRef.id})`);
 
     // Notify device via MQTT
-    await publishDeviceCommand(device_id, commandRef.id, 'amp_status');
+    await publishDeviceCommand(device_id, commandRef.id);
 
     res.json({
       status: 'ok',
@@ -1649,7 +1653,7 @@ const listAmplifierFiles = async (req, res) => {
     console.log(`[AmpControl] ${device_id} - List files command queued (ID: ${commandRef.id})`);
 
     // Notify device via MQTT
-    await publishDeviceCommand(device_id, commandRef.id, 'amp_list');
+    await publishDeviceCommand(device_id, commandRef.id);
 
     res.json({
       status: 'ok',
@@ -1690,7 +1694,7 @@ const setAmplifierWifi = async (req, res) => {
     console.log(`[AmpControl] ${device_id} - Set WiFi credentials command queued (ID: ${commandRef.id})`);
 
     // Notify device via MQTT
-    await publishDeviceCommand(device_id, commandRef.id, 'amp_wifi');
+    await publishDeviceCommand(device_id, commandRef.id);
 
     res.json({
       status: 'ok',
@@ -1727,7 +1731,7 @@ const getFaceCount = async (req, res) => {
     console.log(`[FaceManagement] ${device_id} - Get face count command queued (ID: ${commandRef.id})`);
 
     // Notify device via MQTT
-    await publishDeviceCommand(device_id, commandRef.id, 'face_count');
+    await publishDeviceCommand(device_id, commandRef.id);
 
     res.json({
       status: 'ok',
@@ -1760,7 +1764,7 @@ const listFaces = async (req, res) => {
     console.log(`[FaceManagement] ${device_id} - List faces command queued (ID: ${commandRef.id})`);
 
     // Notify device via MQTT
-    await publishDeviceCommand(device_id, commandRef.id, 'face_list');
+    await publishDeviceCommand(device_id, commandRef.id);
 
     res.json({
       status: 'ok',
@@ -1793,7 +1797,7 @@ const checkFaceDatabase = async (req, res) => {
     console.log(`[FaceManagement] ${device_id} - Check face database command queued (ID: ${commandRef.id})`);
 
     // Notify device via MQTT
-    await publishDeviceCommand(device_id, commandRef.id, 'face_check');
+    await publishDeviceCommand(device_id, commandRef.id);
 
     res.json({
       status: 'ok',
@@ -1828,7 +1832,7 @@ const syncFaceDatabase = async (req, res) => {
     console.log(`[FaceManagement] ${device_id} - Sync database command queued (ID: ${commandRef.id})`);
 
     // Notify device via MQTT
-    await publishDeviceCommand(device_id, commandRef.id, 'sync_database');
+    await publishDeviceCommand(device_id, commandRef.id);
 
     res.json({
       status: 'ok',
@@ -1967,7 +1971,7 @@ const restartSystem = async (req, res) => {
     console.log(`[SystemControl] ${device_id} - System restart command queued (ID: ${commandRef.id})`);
 
     // Notify device via MQTT
-    await publishDeviceCommand(device_id, commandRef.id, 'system_restart');
+    await publishDeviceCommand(device_id, commandRef.id);
 
     res.json({
       status: 'ok',
@@ -2235,7 +2239,7 @@ const sendHubAlert = async (req, res) => {
     console.log(`[HubAlert] ${device_id} - Alert queued (ID: ${commandRef.id}, Level: ${alertLevel})`);
 
     // Notify device via MQTT
-    await publishDeviceCommand(device_id, commandRef.id, 'hub_alert');
+    await publishDeviceCommand(device_id, commandRef.id);
 
     res.json({
       status: 'ok',
@@ -2402,7 +2406,7 @@ const getLatestSensorData = async (req, res) => {
     }
 
     const rawData = sensorDoc.data();
-    
+
     // Format the data to be consistent with other endpoints
     const formattedData = { ...rawData };
     if (rawData.timestamp) {
