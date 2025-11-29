@@ -232,19 +232,36 @@ export default function DoorbellControlPage() {
       try {
         console.log(`[Stream Check] Attempt ${attempt}/${maxAttempts} - Checking if stream is ready...`);
 
-        // Check snapshot endpoint to see if frames are available
-        const response = await fetch(`${apiUrl}/api/v1/stream/snapshot/${deviceId}`, {
-          headers: {
-            Authorization: `Bearer ${authToken || ""}`,
-          },
-        });
+        // Check the actual camera stream endpoint (not just snapshot)
+        // Use AbortController to timeout the request after 3 seconds
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 3000);
 
-        if (response.ok) {
-          console.log(`[Stream Check] ✓ Stream is ready! (attempt ${attempt})`);
-          return true;
+        try {
+          const response = await fetch(`${apiUrl}/api/v1/stream/camera/${deviceId}`, {
+            headers: {
+              Authorization: `Bearer ${authToken || ""}`,
+            },
+            signal: controller.signal,
+          });
+
+          clearTimeout(timeoutId);
+
+          if (response.ok) {
+            console.log(`[Stream Check] ✓ Stream is ready! (attempt ${attempt})`);
+            // Abort the stream fetch since we just wanted to check availability
+            controller.abort();
+            return true;
+          }
+
+          console.log(`[Stream Check] Stream not ready yet (status: ${response.status}), waiting...`);
+        } catch (fetchError: any) {
+          clearTimeout(timeoutId);
+          // AbortError is expected when we cancel the request
+          if (fetchError.name !== 'AbortError') {
+            console.log(`[Stream Check] Error fetching stream (attempt ${attempt}):`, fetchError.message);
+          }
         }
-
-        console.log(`[Stream Check] Stream not ready yet (status: ${response.status}), waiting...`);
       } catch (error) {
         console.log(`[Stream Check] Error checking stream (attempt ${attempt}):`, error);
       }
@@ -287,11 +304,7 @@ export default function DoorbellControlPage() {
         setStreamConnecting(false);
 
         if (isReady) {
-          console.log("[Camera] ✓ Stream is ready, waiting for continuous stream endpoint...");
-          // Add a short delay to ensure the continuous stream endpoint is fully ready
-          // The snapshot endpoint being ready doesn't guarantee the stream endpoint is ready
-          await new Promise(resolve => setTimeout(resolve, 1500));
-          console.log("[Camera] ✓ Activating camera display");
+          console.log("[Camera] ✓ Stream endpoint is ready, activating camera display");
           setCameraActive(true);
         } else {
           console.error("[Camera] ✗ Stream did not start in time");
