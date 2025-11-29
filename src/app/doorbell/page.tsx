@@ -77,6 +77,7 @@ export default function DoorbellControlPage() {
   // Stream display states
   const [streamError, setStreamError] = useState<string | null>(null);
   const [audioMuted, setAudioMuted] = useState(false);
+  const [streamConnecting, setStreamConnecting] = useState(false);
 
   // Load saved device_id from localStorage on mount
   useEffect(() => {
@@ -222,19 +223,82 @@ export default function DoorbellControlPage() {
     alert("Device ID cleared. Using backend default.");
   };
 
+  // Helper function to check if stream is ready
+  const waitForStreamReady = async (deviceId: string, maxAttempts = 15, delayMs = 1000): Promise<boolean> => {
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
+    const authToken = getCookie("auth_token");
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        console.log(`[Stream Check] Attempt ${attempt}/${maxAttempts} - Checking if stream is ready...`);
+
+        // Check snapshot endpoint to see if frames are available
+        const response = await fetch(`${apiUrl}/api/v1/stream/snapshot/${deviceId}`, {
+          headers: {
+            Authorization: `Bearer ${authToken || ""}`,
+          },
+        });
+
+        if (response.ok) {
+          console.log(`[Stream Check] ✓ Stream is ready! (attempt ${attempt})`);
+          return true;
+        }
+
+        console.log(`[Stream Check] Stream not ready yet (status: ${response.status}), waiting...`);
+      } catch (error) {
+        console.log(`[Stream Check] Error checking stream (attempt ${attempt}):`, error);
+      }
+
+      // Wait before next attempt (unless it's the last one)
+      if (attempt < maxAttempts) {
+        await new Promise(resolve => setTimeout(resolve, delayMs));
+      }
+    }
+
+    console.log(`[Stream Check] ✗ Stream did not become ready after ${maxAttempts} attempts`);
+    return false;
+  };
+
   // Camera control handlers
   const handleCameraToggle = async () => {
     const deviceId = getEffectiveDeviceId();
     if (!deviceId) return;
 
     setCommandLoading("camera");
+    setStreamError(null);
+
     try {
-      const action = cameraActive ? 'camera_stop' : 'camera_start';
-      await sendCommand(deviceId, action);
-      setCameraActive(!cameraActive);
+      if (cameraActive) {
+        // Stopping camera - simple case
+        await sendCommand(deviceId, 'camera_stop');
+        setCameraActive(false);
+      } else {
+        // Starting camera - need to wait for stream to be ready
+        console.log("[Camera] Sending camera_start command...");
+        await sendCommand(deviceId, 'camera_start');
+
+        // Show connecting state
+        setStreamConnecting(true);
+        console.log("[Camera] Waiting for stream to become ready...");
+
+        // Wait for stream to actually start (max 15 seconds)
+        const isReady = await waitForStreamReady(deviceId, 15, 1000);
+
+        setStreamConnecting(false);
+
+        if (isReady) {
+          console.log("[Camera] ✓ Stream is ready, activating camera display");
+          setCameraActive(true);
+        } else {
+          console.error("[Camera] ✗ Stream did not start in time");
+          setStreamError("Camera started but stream is not available yet. Please wait a moment and try again.");
+          // Don't set cameraActive to true since stream isn't ready
+        }
+      }
     } catch (error) {
       console.error("Error toggling camera:", error);
-      alert("Failed to toggle camera");
+      setStreamConnecting(false);
+      setStreamError("Failed to toggle camera. Please try again.");
     } finally {
       setCommandLoading(null);
     }
@@ -796,7 +860,38 @@ export default function DoorbellControlPage() {
                       boxShadow: "0 4px 12px rgba(0, 0, 0, 0.2)",
                     }}
                   >
-                    {getEffectiveDeviceId() && cameraActive ? (
+                    {streamConnecting ? (
+                      <div
+                        style={{
+                          width: "100%",
+                          minHeight: "250px",
+                          display: "flex",
+                          flexDirection: "column",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          color: "#2196F3",
+                          gap: "16px",
+                        }}
+                      >
+                        <Camera size={48} color="#2196F3" />
+                        <div style={{ fontSize: "16px", fontWeight: "600" }}>
+                          Connecting to camera stream...
+                        </div>
+                        <div
+                          style={{
+                            width: "40px",
+                            height: "40px",
+                            border: "4px solid rgba(33, 150, 243, 0.2)",
+                            borderTopColor: "#2196F3",
+                            borderRadius: "50%",
+                            animation: "spin 1s linear infinite",
+                          }}
+                        />
+                        <div style={{ fontSize: "12px", color: "#888" }}>
+                          Waiting for ESP32 to start streaming...
+                        </div>
+                      </div>
+                    ) : getEffectiveDeviceId() && cameraActive ? (
                       <>
                         <img
                           src={`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000"
@@ -1999,6 +2094,15 @@ export default function DoorbellControlPage() {
           }
           50% {
             opacity: 0.3;
+          }
+        }
+
+        @keyframes spin {
+          0% {
+            transform: rotate(0deg);
+          }
+          100% {
+            transform: rotate(360deg);
           }
         }
 
