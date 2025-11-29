@@ -1,0 +1,12 @@
+{
+  "git": {
+    "deploymentEnabled": {
+      "Frontend": true
+    }
+  },
+  "github": {
+    "silent": true,
+    "autoJobCancelation": true
+  },
+  "ignoreCommand": "bash -c 'if [ \"$VERCEL_GIT_COMMIT_REF\" != \"Frontend\" ]; then echo \"Skipping build for $VERCEL_GIT_COMMIT_REF\"; exit 0; else exit 1; fi'"
+}

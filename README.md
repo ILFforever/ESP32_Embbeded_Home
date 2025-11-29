@@ -1,39 +1,88 @@
-# ESP32_Embedded_Home
-This is an IoT project simulating a full-fledged smart home ecosystem using ESP32 boards, developed in accordance with Chulalongkorn's 2110356 Embedded System class.
+# Arduino888 Smart Home - Frontend
 
-## Branches Explanation
-- **3D-Models** - Holds project's 3D models for 3D printing (SketchUp and Cura files)
-- **Main_lcd** - Holds code for main LCD hub (PlatformIO)
-- **Main_mesh** - Secondary LCD which connects Main_lcd to sensor mesh (PlatformIO)
-- **Room_Sensors** - Code for room sensors (PlatformIO)
-- **Doorbell_lcd** - LCD for doorbell, communicates with Doorbell_Camera via SPI (PlatformIO)
-- **Doorbell_Camera** - Code for Xiao ESP32-S3 Sense camera running AI face recognition, communicates with Doorbell_lcd using SPI (ESP-IDF)
-## ⚠️ Important Workflow Note
-**Each branch contains operational code for a different hardware module.**
+Frontend application for the Arduino888 Smart Home system built with React and TypeScript.
 
-- Each branch is **independent** and should **NOT** be merged together
-- Do **NOT** merge branches together 😡😡😡
-- ใครทำเเตกเเก้เองนะ 🫠
+## Features
 
-## Branch Usage
-- Clone the branch you are assigned to!!!
-- Keep the codes off main and in their respective branches :)
+- 🔐 User Authentication (Login/Register)
+- 🏠 Real-time Device Control
+- 📊 Sensor Data Visualization
+- 👥 Admin Panel for User Management
+- 📱 Responsive Design
+- 🔄 Real-time Updates via WebSocket
 
-## Branch Commands
+## Prerequisites
 
-### View all branches
+- Node.js (v16 or higher)
+- npm or yarn
+- Backend server running (see main branch)
+
+## Installation
+
 ```bash
-git branch -a
+# Install dependencies
+npm install
+
+# Start development server
+npm start
+
+# Build for production
+npm run build
 ```
-### Clone a specific branch
-```bash
-git clone -b <branch-name> <repository-url>
+
+## Environment Variables
+
+Copy `.env.example` to `.env` and update with your backend URL:
+
+```env
+REACT_APP_API_URL=http://localhost:5000
+REACT_APP_WS_URL=ws://localhost:5000
+REACT_APP_ENV=development
 ```
-### Switch to your assigned branch
-```bash
-git switch <branch-name>
+
+## Project Structure
+
 ```
-### Check Current Branch
-```bash
-git branch
+src/
+├── components/     # Reusable UI components
+├── context/        # React Context providers
+├── hooks/          # Custom React hooks
+├── pages/          # Page components (routes)
+├── services/       # API services
+├── types/          # TypeScript type definitions
+├── utils/          # Utility functions
+└── styles/         # Global styles
 ```
+
+## Available Scripts
+
+- `npm start` - Start development server
+- `npm build` - Build for production
+- `npm test` - Run tests
+
+## Integration with Backend
+
+This frontend connects to the Express/Firebase backend from the main branch:
+
+- **API Base URL**: `http://localhost:5000/api/v1`
+- **Authentication**: JWT tokens stored in localStorage
+- **Real-time**: WebSocket connection for sensor updates
+
+## Development
+
+1. Start the backend server (see main branch README)
+2. Run `npm start` in this directory
+3. Access the app at `http://localhost:3000`
+
+## ESP32 Device Integration
+
+The frontend interfaces with:
+- Main LCD Hub
+- Secondary LCD (Mesh)
+- Room Sensors
+- Doorbell LCD
+- Doorbell Camera (Face Recognition)
+
+## License
+
+MIT License - See LICENSE file for details
