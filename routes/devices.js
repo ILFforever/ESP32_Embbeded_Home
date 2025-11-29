@@ -17,22 +17,11 @@ const {
   sendDeviceCommand,
   fetchPendingCommands,
   acknowledgeCommand,
-  // Camera control
-  startCamera,
-  stopCamera,
-  restartCamera,
-  // Microphone control
-  startMicrophone,
-  stopMicrophone,
-  getMicrophoneStatus,
-  // Amplifier control
-  playAmplifier,
-  stopAmplifier,
-  restartAmplifier,
-  setAmplifierVolume,
-  getAmplifierStatus,
-  listAmplifierFiles,
-  setAmplifierWifi,
+  // Amplifier Global Control
+  playAmplifierAll,
+  stopAmplifierAll,
+  setAmplifierVolumeAll,
+  restartAmplifierAll,
   // Face management
   getFaceCount,
   listFaces,
@@ -40,8 +29,6 @@ const {
   syncFaceDatabase,
   handleFaceDatabaseResult,
   getFaceDatabaseInfo,
-  // System control
-  restartSystem,
   // Device info
   getDeviceInfo,
   // Visitors
@@ -158,83 +145,6 @@ router.post('/commands/pending', authenticateDevice, fetchPendingCommands);
 router.post('/commands/ack', authenticateDevice, acknowledgeCommand);
 
 // ============================================================================
-// Camera Control Routes
-// ============================================================================
-
-// @route   POST /api/v1/devices/:device_id/camera/start
-// @desc    Queue camera start command
-// @access  Private (requires user token)
-router.post('/:device_id/camera/start', protect, startCamera);
-
-// @route   POST /api/v1/devices/:device_id/camera/stop
-// @desc    Queue camera stop command
-// @access  Private (requires user token)
-router.post('/:device_id/camera/stop', protect, stopCamera);
-
-// @route   POST /api/v1/devices/:device_id/camera/restart
-// @desc    Queue camera restart command
-// @access  Private (requires user token)
-router.post('/:device_id/camera/restart', protect, restartCamera);
-
-// ============================================================================
-// Microphone Control Routes
-// ============================================================================
-
-// @route   POST /api/v1/devices/:device_id/mic/start
-// @desc    Queue microphone start command
-// @access  Private (requires user token)
-router.post('/:device_id/mic/start', protect, startMicrophone);
-
-// @route   POST /api/v1/devices/:device_id/mic/stop
-// @desc    Queue microphone stop command
-// @access  Private (requires user token)
-router.post('/:device_id/mic/stop', protect, stopMicrophone);
-
-// @route   POST /api/v1/devices/:device_id/mic/status
-// @desc    Queue microphone status command
-// @access  Private (requires user token)
-router.post('/:device_id/mic/status', protect, getMicrophoneStatus);
-
-// ============================================================================
-// Audio Amplifier Control Routes
-// ============================================================================
-
-// @route   POST /api/v1/devices/:device_id/amp/play
-// @desc    Queue amplifier play command (requires ?url= parameter)
-// @access  Private (requires user token)
-router.post('/:device_id/amp/play', protect, playAmplifier);
-
-// @route   POST /api/v1/devices/:device_id/amp/stop
-// @desc    Queue amplifier stop command
-// @access  Private (requires user token)
-router.post('/:device_id/amp/stop', protect, stopAmplifier);
-
-// @route   POST /api/v1/devices/:device_id/amp/restart
-// @desc    Queue amplifier restart command
-// @access  Private (requires user token)
-router.post('/:device_id/amp/restart', protect, restartAmplifier);
-
-// @route   POST /api/v1/devices/:device_id/amp/volume
-// @desc    Queue amplifier set volume command (requires ?level= parameter 0-21)
-// @access  Private (requires user token)
-router.post('/:device_id/amp/volume', protect, setAmplifierVolume);
-
-// @route   GET /api/v1/devices/:device_id/amp/status
-// @desc    Queue amplifier get status command
-// @access  Private (requires user token)
-router.get('/:device_id/amp/status', protect, getAmplifierStatus);
-
-// @route   GET /api/v1/devices/:device_id/amp/files
-// @desc    Queue amplifier list files command
-// @access  Private (requires user token)
-router.get('/:device_id/amp/files', protect, listAmplifierFiles);
-
-// @route   POST /api/v1/devices/:device_id/amp/wifi
-// @desc    Queue amplifier set WiFi credentials command (requires ssid and password in body)
-// @access  Private (requires user token)
-router.post('/:device_id/amp/wifi', protect, setAmplifierWifi);
-
-// ============================================================================
 // Face Management Routes
 // ============================================================================
 
@@ -272,15 +182,6 @@ router.get('/:device_id/face-database/info', protect, getFaceDatabaseInfo);
 // @desc    Get current face database information (for ESP32 with device auth)
 // @access  Private (requires device token)
 router.get('/:device_id/face-database/info/device', authenticateDevice, getFaceDatabaseInfo);
-
-// ============================================================================
-// System Control Routes
-// ============================================================================
-
-// @route   POST /api/v1/devices/:device_id/system/restart
-// @desc    Queue system restart command
-// @access  Private (requires user token)
-router.post('/:device_id/system/restart', protect, restartSystem);
 
 // ============================================================================
 // Device Info Route
@@ -328,6 +229,30 @@ router.post('/:device_id/hub/alert', protect, sendHubAlert);
 // @desc    Get Hub amplifier streaming status
 // @access  Private (requires user token)
 router.get('/:device_id/hub/amp/streaming', protect, getHubAmpStreaming);
+
+// ============================================================================
+// Amplifier Global Control Routes (affecting all hub/doorbell devices)
+// ============================================================================
+
+// @route   POST /api/v1/devices/amp/all/play
+// @desc    Queue amplifier play command on all hub/doorbell devices
+// @access  Private (requires user token)
+router.post('/amp/all/play', protect, playAmplifierAll);
+
+// @route   POST /api/v1/devices/amp/all/stop
+// @desc    Queue amplifier stop command on all hub/doorbell devices
+// @access  Private (requires user token)
+router.post('/amp/all/stop', protect, stopAmplifierAll);
+
+// @route   POST /api/v1/devices/amp/all/volume
+// @desc    Queue amplifier set volume command on all hub/doorbell devices
+// @access  Private (requires user token)
+router.post('/amp/all/volume', protect, setAmplifierVolumeAll);
+
+// @route   POST /api/v1/devices/amp/all/restart
+// @desc    Queue amplifier restart command on all hub/doorbell devices
+// @access  Private (requires user token)
+router.post('/amp/all/restart', protect, restartAmplifierAll);
 
 // ============================================================================
 // Sensor Readings for Graphing
