@@ -21,7 +21,7 @@ set(EXTRA_COMPONENT_DIRS ${ESP_WHO_PATH}/components/who_task
                          ${ESP_WHO_PATH}/components/who_app/who_recognition_app
                          ${ESP_WHO_PATH}/components/who_peripherals/who_spiflash_fatfs)
 
- set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 add_compile_options(-fdiagnostics-color=always)

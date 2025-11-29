@@ -31,8 +31,9 @@ static StreamStats stats = {0};
 static uint32_t last_frame_sent_time = 0;
 static const uint32_t FRAME_INTERVAL_MS = 200;  // 5 FPS
 
-// Persistent HTTP client for camera streaming (keep-alive)
+// Persistent HTTP clients for streaming (keep-alive)
 static esp_http_client_handle_t persistent_camera_client = nullptr;
+static esp_http_client_handle_t persistent_audio_client = nullptr;
 
 // ============================================================================
 // Internal: Get or create persistent HTTP client for camera
@@ -64,6 +65,35 @@ static esp_http_client_handle_t get_camera_http_client() {
 }
 
 // ============================================================================
+// Internal: Get or create persistent HTTP client for audio
+// ============================================================================
+static esp_http_client_handle_t get_audio_http_client() {
+    if (persistent_audio_client != nullptr) {
+        // Client already exists, reuse it
+        return persistent_audio_client;
+    }
+
+    // Create new persistent client
+    char url[256];
+    snprintf(url, sizeof(url), "http://%s:%d/api/v1/devices/%s/stream/audio",
+             BACKEND_SERVER_HOST, BACKEND_SERVER_PORT, DEVICE_ID);
+
+    esp_http_client_config_t config = {};
+    config.url = url;
+    config.method = HTTP_METHOD_POST;
+    config.timeout_ms = 3000;
+    config.keep_alive_enable = true;
+    config.keep_alive_idle = 5;
+    config.keep_alive_interval = 5;
+    config.keep_alive_count = 3;
+
+    persistent_audio_client = esp_http_client_init(&config);
+    ESP_LOGI(TAG, "Created persistent HTTP client for audio streaming");
+
+    return persistent_audio_client;
+}
+
+// ============================================================================
 // Internal: Check WiFi connectivity
 // ============================================================================
 static bool check_wifi_connected() {
@@ -83,70 +113,19 @@ static bool check_wifi_connected() {
 // Internal: Send camera frame to backend
 // ============================================================================
 static esp_err_t send_camera_frame_blocking(CameraFrame* frame) {
-    // Check WiFi first
-    if (!check_wifi_connected()) {
-        ESP_LOGE(TAG, "Cannot send frame - WiFi not connected");
-        stats.camera_frames_failed++;
-        return ESP_FAIL;
-    }
-
     uint32_t start_time = xTaskGetTickCount() * portTICK_PERIOD_MS;
 
-    // Build URL with device-specific path
+    // Build URL
     char url[256];
     snprintf(url, sizeof(url), "http://%s:%d/api/v1/devices/%s/stream/camera",
              BACKEND_SERVER_HOST, BACKEND_SERVER_PORT, DEVICE_ID);
 
-    // Debug: Log connection details
-    ESP_LOGI(TAG, "=== Camera Frame Upload ===");
-    ESP_LOGI(TAG, "URL: %s", url);
-    ESP_LOGI(TAG, "Frame ID: %u, Size: %zu bytes", frame->frame_id, frame->size);
-    ESP_LOGI(TAG, "Backend: %s:%d", BACKEND_SERVER_HOST, BACKEND_SERVER_PORT);
-
-    // Create boundary for multipart
-    char boundary[64];
-    snprintf(boundary, sizeof(boundary), "----ESP32CameraFrame%lu", (unsigned long)frame->timestamp);
-
-    // Build multipart form data header
-    char form_header[512];
-    int header_len = snprintf(form_header, sizeof(form_header),
-        "--%s\r\n"
-        "Content-Disposition: form-data; name=\"device_id\"\r\n\r\n"
-        "%s\r\n"
-        "--%s\r\n"
-        "Content-Disposition: form-data; name=\"frame_id\"\r\n\r\n"
-        "%u\r\n"
-        "--%s\r\n"
-        "Content-Disposition: form-data; name=\"timestamp\"\r\n\r\n"
-        "%lu\r\n"
-        "--%s\r\n"
-        "Content-Disposition: form-data; name=\"frame\"; filename=\"frame.jpg\"\r\n"
-        "Content-Type: image/jpeg\r\n\r\n",
-        boundary, DEVICE_ID,
-        boundary, frame->frame_id,
-        boundary, (unsigned long)frame->timestamp,
-        boundary);
-
-    // Build footer
-    char form_footer[128];
-    int footer_len = snprintf(form_footer, sizeof(form_footer), "\r\n--%s--\r\n", boundary);
-
-    // Calculate total content length
-    size_t content_length = header_len + frame->size + footer_len;
-    ESP_LOGI(TAG, "Content-Length: %zu bytes (header:%d + frame:%zu + footer:%d)",
-             content_length, header_len, frame->size, footer_len);
-
-    // Configure HTTP client with keep-alive
+    // Create new HTTP client for each request (simpler and faster than persistent)
     esp_http_client_config_t config = {};
     config.url = url;
     config.method = HTTP_METHOD_POST;
-    config.timeout_ms = 5000;
-    config.keep_alive_enable = true;      // Reuse connection
-    config.keep_alive_idle = 5;           // Keep alive for 5 seconds
-    config.keep_alive_interval = 5;       // Ping every 5 seconds
-    config.keep_alive_count = 3;          // Max 3 retries
+    config.timeout_ms = 3000;
 
-    ESP_LOGI(TAG, "Initializing HTTP client...");
     esp_http_client_handle_t client = esp_http_client_init(&config);
     if (client == nullptr) {
         ESP_LOGE(TAG, "Failed to init HTTP client");
@@ -154,129 +133,74 @@ static esp_err_t send_camera_frame_blocking(CameraFrame* frame) {
         return ESP_FAIL;
     }
 
+    // Create boundary
+    char boundary[64];
+    snprintf(boundary, sizeof(boundary), "----ESP32Frame%lu", (unsigned long)frame->timestamp);
+
+    // Build form data in buffer
+    size_t buffer_size = 1024 + frame->size;
+    char* post_data = (char*)malloc(buffer_size);
+    if (post_data == nullptr) {
+        ESP_LOGE(TAG, "Failed to allocate buffer");
+        esp_http_client_cleanup(client);
+        stats.camera_frames_failed++;
+        return ESP_FAIL;
+    }
+
+    int offset = snprintf(post_data, buffer_size,
+        "--%s\r\n"
+        "Content-Disposition: form-data; name=\"device_id\"\r\n\r\n%s\r\n"
+        "--%s\r\n"
+        "Content-Disposition: form-data; name=\"frame_id\"\r\n\r\n%u\r\n"
+        "--%s\r\n"
+        "Content-Disposition: form-data; name=\"timestamp\"\r\n\r\n%lu\r\n"
+        "--%s\r\n"
+        "Content-Disposition: form-data; name=\"frame\"; filename=\"frame.jpg\"\r\n"
+        "Content-Type: image/jpeg\r\n\r\n",
+        boundary, DEVICE_ID, boundary, frame->frame_id,
+        boundary, (unsigned long)frame->timestamp, boundary);
+
+    memcpy(post_data + offset, frame->data, frame->size);
+    offset += frame->size;
+    offset += snprintf(post_data + offset, buffer_size - offset, "\r\n--%s--\r\n", boundary);
+
     // Set headers
-    char content_type_header[128];
-    snprintf(content_type_header, sizeof(content_type_header),
-             "multipart/form-data; boundary=%s", boundary);
-    esp_http_client_set_header(client, "Content-Type", content_type_header);
+    char content_type[128];
+    snprintf(content_type, sizeof(content_type), "multipart/form-data; boundary=%s", boundary);
+    esp_http_client_set_header(client, "Content-Type", content_type);
 
     char auth_header[256];
     snprintf(auth_header, sizeof(auth_header), "Bearer %s", API_TOKEN);
     esp_http_client_set_header(client, "Authorization", auth_header);
 
-    ESP_LOGI(TAG, "Headers set - Auth: Bearer ...%s", API_TOKEN + strlen(API_TOKEN) - 8);
+    // Set POST data and perform
+    esp_http_client_set_post_field(client, post_data, offset);
+    esp_err_t err = esp_http_client_perform(client);
 
-    // Open connection and send headers
-    ESP_LOGI(TAG, "Opening HTTP connection to %s:%d...", BACKEND_SERVER_HOST, BACKEND_SERVER_PORT);
-    esp_err_t err = esp_http_client_open(client, content_length);
+    free(post_data);
+
     if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to open HTTP connection: %s (0x%x)", esp_err_to_name(err), err);
-        ESP_LOGE(TAG, "Check: 1) Backend server running? 2) Correct IP? 3) Port open? 4) Network connected?");
+        ESP_LOGE(TAG, "HTTP request failed: %s", esp_err_to_name(err));
         esp_http_client_cleanup(client);
         stats.camera_frames_failed++;
         return err;
     }
-    ESP_LOGI(TAG, "HTTP connection opened successfully");
 
-    // Send form header
-    ESP_LOGI(TAG, "Writing form header (%d bytes)...", header_len);
-    int written = esp_http_client_write(client, form_header, header_len);
-    if (written < 0) {
-        ESP_LOGE(TAG, "Failed to write form header");
-        esp_http_client_cleanup(client);
-        stats.camera_frames_failed++;
-        return ESP_FAIL;
-    }
-    ESP_LOGI(TAG, "Form header written successfully (%d bytes)", written);
-
-    // Send frame data in chunks
-    const size_t CHUNK_SIZE = 1024;
-    size_t sent = 0;
-    ESP_LOGI(TAG, "Starting frame data upload (%zu bytes)...", frame->size);
-    uint32_t upload_start = xTaskGetTickCount() * portTICK_PERIOD_MS;
-
-    while (sent < frame->size) {
-        size_t to_send = (frame->size - sent > CHUNK_SIZE) ? CHUNK_SIZE : (frame->size - sent);
-        written = esp_http_client_write(client, (const char*)(frame->data + sent), to_send);
-        if (written < 0) {
-            ESP_LOGE(TAG, "Failed to write frame data at %zu/%zu", sent, frame->size);
-            esp_http_client_cleanup(client);
-            stats.camera_frames_failed++;
-            return ESP_FAIL;
-        }
-        sent += written;
-
-        // Log progress every 10KB
-        if (sent % 10240 == 0 || sent == frame->size) {
-            uint32_t elapsed = (xTaskGetTickCount() * portTICK_PERIOD_MS) - upload_start;
-            ESP_LOGI(TAG, "Upload progress: %zu/%zu bytes (%.1f%%) in %lums",
-                     sent, frame->size, (sent * 100.0f) / frame->size, elapsed);
-        }
-
-        // Yield occasionally to prevent watchdog
-        if (sent % 4096 == 0) {
-            vTaskDelay(pdMS_TO_TICKS(1));
-        }
-    }
-
-    uint32_t upload_duration = (xTaskGetTickCount() * portTICK_PERIOD_MS) - upload_start;
-    ESP_LOGI(TAG, "Frame data upload complete (%zu bytes in %lums)", frame->size, upload_duration);
-
-    // Send footer
-    ESP_LOGI(TAG, "Writing form footer (%d bytes)...", footer_len);
-    written = esp_http_client_write(client, form_footer, footer_len);
-    if (written < 0) {
-        ESP_LOGE(TAG, "Failed to write form footer");
-        esp_http_client_cleanup(client);
-        stats.camera_frames_failed++;
-        return ESP_FAIL;
-    }
-    ESP_LOGI(TAG, "Form footer written successfully (%d bytes)", written);
-
-    // Fetch response
-    ESP_LOGI(TAG, "Fetching server response...");
-    uint32_t response_start = xTaskGetTickCount() * portTICK_PERIOD_MS;
-    int content_len = esp_http_client_fetch_headers(client);
     int status_code = esp_http_client_get_status_code(client);
-    uint32_t response_time = (xTaskGetTickCount() * portTICK_PERIOD_MS) - response_start;
+    esp_http_client_cleanup(client);  // Always cleanup after each request
 
     uint32_t total_duration = (xTaskGetTickCount() * portTICK_PERIOD_MS) - start_time;
     stats.last_send_duration_ms = total_duration;
 
-    // Detailed timing breakdown
-    uint32_t connect_time = upload_start - start_time;
-    ESP_LOGI(TAG, "=== Timing Breakdown ===");
-    ESP_LOGI(TAG, "Connection setup: %lums", connect_time);
-    ESP_LOGI(TAG, "Data upload: %lums", upload_duration);
-    ESP_LOGI(TAG, "Server response wait: %lums", response_time);
-    ESP_LOGI(TAG, "Total time: %lums", total_duration);
-    ESP_LOGI(TAG, "Response: status=%d, content_len=%d", status_code, content_len);
+    if (stats.camera_frames_sent % 10 == 0) {
+        ESP_LOGI(TAG, "Frame %u: status=%d, time=%lums", frame->frame_id, status_code, total_duration);
+    }
 
     if (status_code == 200 || status_code == 201) {
         stats.camera_frames_sent++;
-
-        // Log periodically
-        if (stats.camera_frames_sent % 10 == 0) {
-            ESP_LOGI(TAG, "Camera frame %u sent (%zu bytes, %lu ms)",
-                     frame->frame_id, frame->size, (unsigned long)total_duration);
-        }
-
-        esp_http_client_cleanup(client);
         return ESP_OK;
     } else {
-        // Error - read response body for error message
-        char response_buffer[512];
-        int read_len = esp_http_client_read(client, response_buffer, sizeof(response_buffer) - 1);
-
-        if (read_len > 0) {
-            response_buffer[read_len] = '\0';  // Null terminate
-            ESP_LOGE(TAG, "Backend returned status %d", status_code);
-            ESP_LOGE(TAG, "Response body: %s", response_buffer);
-        } else {
-            ESP_LOGE(TAG, "Backend returned status %d (no response body)", status_code);
-        }
-
-        esp_http_client_cleanup(client);
+        ESP_LOGE(TAG, "Backend returned status %d", status_code);
         stats.camera_frames_failed++;
         return ESP_FAIL;
     }
@@ -286,25 +210,16 @@ static esp_err_t send_camera_frame_blocking(CameraFrame* frame) {
 // Internal: Send audio chunk to backend
 // ============================================================================
 static esp_err_t send_audio_chunk_blocking(AudioChunk* chunk) {
-    char url[256];
-    snprintf(url, sizeof(url), "http://%s:%d/api/v1/devices/%s/stream/audio",
-             BACKEND_SERVER_HOST, BACKEND_SERVER_PORT, DEVICE_ID);
-
-    esp_http_client_config_t config = {};
-    config.url = url;
-    config.method = HTTP_METHOD_POST;
-    config.timeout_ms = 3000;
-
-    esp_http_client_handle_t client = esp_http_client_init(&config);
+    // Get persistent HTTP client (reuses TCP connection)
+    esp_http_client_handle_t client = get_audio_http_client();
     if (client == nullptr) {
-        ESP_LOGE(TAG, "Failed to init HTTP client for audio");
+        ESP_LOGE(TAG, "Failed to get HTTP client for audio");
         stats.audio_chunks_failed++;
         return ESP_FAIL;
     }
 
-    // Set headers
+    // Set headers for THIS request
     esp_http_client_set_header(client, "Content-Type", "application/octet-stream");
-    esp_http_client_set_header(client, "X-Device-ID", DEVICE_ID);
 
     char auth_header[256];
     snprintf(auth_header, sizeof(auth_header), "Bearer %s", API_TOKEN);
@@ -314,28 +229,24 @@ static esp_err_t send_audio_chunk_blocking(AudioChunk* chunk) {
     snprintf(sequence_header, sizeof(sequence_header), "%lu", (unsigned long)chunk->sequence);
     esp_http_client_set_header(client, "X-Sequence", sequence_header);
 
-    // Open connection and send
-    esp_err_t err = esp_http_client_open(client, chunk->size);
+    // Set POST field (this sets the body)
+    esp_http_client_set_post_field(client, (const char*)chunk->data, chunk->size);
+
+    // Perform the request (reuses connection if server allows)
+    esp_err_t err = esp_http_client_perform(client);
+
     if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to open HTTP connection for audio");
+        ESP_LOGE(TAG, "Audio HTTP perform failed: %s", esp_err_to_name(err));
+        // Cleanup and reset on connection error
         esp_http_client_cleanup(client);
+        persistent_audio_client = nullptr;
         stats.audio_chunks_failed++;
         return err;
     }
 
-    int written = esp_http_client_write(client, (const char*)chunk->data, chunk->size);
-    if (written < 0) {
-        ESP_LOGE(TAG, "Failed to write audio data");
-        esp_http_client_cleanup(client);
-        stats.audio_chunks_failed++;
-        return ESP_FAIL;
-    }
-
-    int content_len = esp_http_client_fetch_headers(client);
     int status_code = esp_http_client_get_status_code(client);
 
     if (status_code == 200 || status_code == 201) {
-        ESP_LOGI(TAG, "backend returned %d", status_code);
         stats.audio_chunks_sent++;
 
         // Log periodically
@@ -345,22 +256,13 @@ static esp_err_t send_audio_chunk_blocking(AudioChunk* chunk) {
                      (unsigned long)(stats.audio_chunks_sent * chunk->size) / 1024);
         }
 
-        esp_http_client_cleanup(client);
+        // DON'T cleanup - connection will be reused!
         return ESP_OK;
     } else {
-        // Error - read response body for error message
-        char response_buffer[512];
-        int read_len = esp_http_client_read(client, response_buffer, sizeof(response_buffer) - 1);
-
-        if (read_len > 0) {
-            response_buffer[read_len] = '\0';  // Null terminate
-            ESP_LOGE(TAG, "Audio backend returned status %d", status_code);
-            ESP_LOGE(TAG, "Response body: %s", response_buffer);
-        } else {
-            ESP_LOGE(TAG, "Audio backend returned status %d (no response body)", status_code);
-        }
-
+        ESP_LOGE(TAG, "Audio backend returned status %d", status_code);
+        // On error, cleanup and recreate
         esp_http_client_cleanup(client);
+        persistent_audio_client = nullptr;
         stats.audio_chunks_failed++;
         return ESP_FAIL;
     }
@@ -604,6 +506,17 @@ void cleanup() {
     if (audio_queue != nullptr) {
         vQueueDelete(audio_queue);
         audio_queue = nullptr;
+    }
+
+    // Cleanup persistent HTTP clients
+    if (persistent_camera_client != nullptr) {
+        esp_http_client_cleanup(persistent_camera_client);
+        persistent_camera_client = nullptr;
+    }
+
+    if (persistent_audio_client != nullptr) {
+        esp_http_client_cleanup(persistent_audio_client);
+        persistent_audio_client = nullptr;
     }
 
     ESP_LOGI(TAG, "Backend streaming cleaned up");

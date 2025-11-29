@@ -9,6 +9,7 @@ sdkconfig.old
 # Dependencies
 dependencies.lock
 managed_components/
+components/
 
 # Python
 __pycache__/

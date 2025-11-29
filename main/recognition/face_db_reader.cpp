@@ -61,16 +61,14 @@ bool FaceDbReader::init_recognizer()
         return false;
     }
 
-    // Create a copy of the path as HumanFaceRecognizer may modify it
-    char* db_path_copy = strdup(m_db_path);
-
     // Initialize the recognizer to access the database
-    // Using default model, threshold (0.55) and top_k (1)
+    // Using default model with lazy_load=false to load database immediately
+    // Note: New API uses hardcoded threshold (0.5) and top_k (1)
     m_recognizer = new HumanFaceRecognizer(
-        db_path_copy,
+        const_cast<char*>(m_db_path),
         static_cast<HumanFaceFeat::model_type_t>(CONFIG_DEFAULT_HUMAN_FACE_FEAT_MODEL),
-        0.55f,
-        1
+        0.5f,  // threshold
+        1      // top_k
     );
 
     if (!m_recognizer) {

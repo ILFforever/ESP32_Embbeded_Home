@@ -9,7 +9,9 @@
 namespace backend_stream {
 
 // Backend server configuration
-//#define BACKEND_SERVER_HOST "192.168.1.35"
+//#define BACKEND_SERVER_HOST "192.168.1.35"  // Local development server
+//#define BACKEND_SERVER_PORT 5000
+
 #define BACKEND_SERVER_HOST "embedded-smarthome.fly.dev"  // Production server
 #define BACKEND_SERVER_PORT 80
 #define DEVICE_ID "db_001"
@@ -59,7 +61,7 @@ struct StreamStats {
  * @return ESP_OK on success
  */
 esp_err_t init();
-
+bool is_initialized();
 /**
  * Start/stop camera frame streaming to backend
  */

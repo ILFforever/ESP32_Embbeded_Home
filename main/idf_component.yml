@@ -1,16 +1,15 @@
 ## IDF Component Manager Manifest File
 dependencies:
-  idf: ">=5.4"
+  idf: '>=5.4'
   espressif/esp32-camera:
-    version: "^2.0.13"
+    version: ^2.0.13
   espressif/human_face_detect:
-    version: "*"
+    version: '*'
   espressif/esp32_s3_eye_noglib:
-    version: "*"
+    version: '*'
     rules:
-      - if: "target == esp32s3"
+    - if: target == esp32s3
   espressif/esp32_p4_function_ev_board_noglib:
-    version: "*"
+    version: '*'
     rules:
-      - if: "target == esp32p4"
-  
+    - if: target == esp32p4

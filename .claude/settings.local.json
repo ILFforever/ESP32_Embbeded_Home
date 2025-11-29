@@ -13,7 +13,8 @@
       "Read(//c/Users/paeki/esp/v5.5.1/esp-idf/components/esp-who/**)",
       "Bash(idf.py build:*)",
       "Read(//c/Users/paeki/esp/v5.5.1/esp-idf/examples/peripherals/i2s/i2s_basic/i2s_pdm/main/**)",
-      "Read(//c/Users/paeki/OneDrive/Desktop/Embedded_Project/Doorbell_lcd/**)"
+      "Read(//c/Users/paeki/OneDrive/Desktop/Embedded_Project/Doorbell_lcd/**)",
+      "Bash(cat:*)"
     ],
     "deny": [],
     "ask": []

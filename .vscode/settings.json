@@ -19,6 +19,7 @@
   "files.associations": {
     "frame_cap_pipeline.hpp": "c",
     "format": "cpp",
-    "vector": "cpp"
+    "vector": "cpp",
+    "cstdint": "cpp"
   }
 }
