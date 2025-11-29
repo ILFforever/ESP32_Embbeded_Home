@@ -78,6 +78,7 @@ export default function DoorbellControlPage() {
   const [streamError, setStreamError] = useState<string | null>(null);
   const [audioMuted, setAudioMuted] = useState(false);
   const [streamConnecting, setStreamConnecting] = useState(false);
+  const [audioConnecting, setAudioConnecting] = useState(false);
 
   // Load saved device_id from localStorage on mount
   useEffect(() => {
@@ -343,13 +344,81 @@ export default function DoorbellControlPage() {
     if (!deviceId) return;
 
     setCommandLoading("mic");
+    setStreamError(null);
+
     try {
-      const action = micActive ? 'mic_stop' : 'mic_start';
-      await sendCommand(deviceId, action);
-      setMicActive(!micActive);
+      if (micActive) {
+        // Stopping mic - simple case
+        await sendCommand(deviceId, 'mic_stop');
+        setMicActive(false);
+      } else {
+        // Starting mic - need to wait for audio stream to be ready
+        console.log("[Mic] Sending mic_start command...");
+        await sendCommand(deviceId, 'mic_start');
+
+        // Show connecting state
+        setAudioConnecting(true);
+        console.log("[Mic] Waiting for audio stream to become ready...");
+
+        // Wait for audio stream to actually start (max 15 seconds)
+        // Check the audio stream endpoint instead of snapshot
+        const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
+        const isReady = await (async () => {
+          for (let attempt = 1; attempt <= 15; attempt++) {
+            try {
+              console.log(`[Audio Check] Attempt ${attempt}/15 - Checking if audio stream is ready...`);
+
+              const controller = new AbortController();
+              const timeoutId = setTimeout(() => controller.abort(), 3000);
+
+              try {
+                const response = await fetch(`${apiUrl}/api/v1/stream/audio/${deviceId}`, {
+                  headers: {
+                    Authorization: `Bearer ${getCookie("auth_token") || ""}`,
+                  },
+                  signal: controller.signal,
+                });
+
+                clearTimeout(timeoutId);
+
+                if (response.ok) {
+                  console.log(`[Audio Check] ✓ Audio stream is ready! (attempt ${attempt})`);
+                  controller.abort();
+                  return true;
+                }
+
+                console.log(`[Audio Check] Audio stream not ready yet (status: ${response.status}), waiting...`);
+              } catch (fetchError: any) {
+                clearTimeout(timeoutId);
+                if (fetchError.name !== 'AbortError') {
+                  console.log(`[Audio Check] Error fetching audio stream (attempt ${attempt}):`, fetchError.message);
+                }
+              }
+            } catch (error) {
+              console.log(`[Audio Check] Error checking audio stream (attempt ${attempt}):`, error);
+            }
+
+            if (attempt < 15) {
+              await new Promise(resolve => setTimeout(resolve, 1000));
+            }
+          }
+          return false;
+        })();
+
+        setAudioConnecting(false);
+
+        if (isReady) {
+          console.log("[Mic] ✓ Audio stream endpoint is ready, activating mic");
+          setMicActive(true);
+        } else {
+          console.error("[Mic] ✗ Audio stream did not start in time");
+          setStreamError("Microphone started but audio stream is not available yet. Please wait a moment and try again.");
+        }
+      }
     } catch (error) {
       console.error("Error toggling mic:", error);
-      alert("Failed to toggle microphone");
+      setAudioConnecting(false);
+      setStreamError("Failed to toggle microphone. Please try again.");
     } finally {
       setCommandLoading(null);
     }
@@ -1252,7 +1321,7 @@ export default function DoorbellControlPage() {
                   </div>
                 )}
 
-                {/* Audio Element (Hidden) */}
+                {/* Audio Element */}
                 {getEffectiveDeviceId() && micActive && !audioMuted && (
                   <audio
                     autoPlay
@@ -1260,16 +1329,53 @@ export default function DoorbellControlPage() {
                     style={{ width: "100%", marginTop: "16px" }}
                     onError={(e) => {
                       console.error("Audio stream error:", e);
-                      setStreamError("Failed to play audio stream. Audio format may not be supported by your browser.");
+                      setStreamError("Failed to play audio stream. Make sure the microphone is streaming.");
+                    }}
+                    onLoadedData={() => {
+                      console.log("[Audio] Stream loaded successfully");
+                      setStreamError(null);
                     }}
                   >
                     <source
                       src={`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000"
                         }/api/v1/stream/audio/${getEffectiveDeviceId()}`}
-                      type="audio/pcm"
+                      type="audio/wav"
                     />
                     Your browser does not support audio streaming.
                   </audio>
+                )}
+
+                {/* Audio Connecting Indicator */}
+                {getEffectiveDeviceId() && audioConnecting && (
+                  <div
+                    style={{
+                      width: "100%",
+                      padding: "16px",
+                      backgroundColor: "rgba(33, 150, 243, 0.1)",
+                      border: "1px solid rgba(33, 150, 243, 0.3)",
+                      borderRadius: "8px",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: "12px",
+                      marginTop: "16px",
+                      color: "#2196F3",
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: "20px",
+                        height: "20px",
+                        border: "3px solid rgba(33, 150, 243, 0.2)",
+                        borderTopColor: "#2196F3",
+                        borderRadius: "50%",
+                        animation: "spin 1s linear infinite",
+                      }}
+                    />
+                    <div style={{ fontSize: "14px", fontWeight: "600" }}>
+                      Connecting to audio stream...
+                    </div>
+                  </div>
                 )}
 
                 <div className="control-divider"></div>
