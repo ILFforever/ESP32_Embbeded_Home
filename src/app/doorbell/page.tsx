@@ -287,7 +287,11 @@ export default function DoorbellControlPage() {
         setStreamConnecting(false);
 
         if (isReady) {
-          console.log("[Camera] ✓ Stream is ready, activating camera display");
+          console.log("[Camera] ✓ Stream is ready, waiting for continuous stream endpoint...");
+          // Add a short delay to ensure the continuous stream endpoint is fully ready
+          // The snapshot endpoint being ready doesn't guarantee the stream endpoint is ready
+          await new Promise(resolve => setTimeout(resolve, 1500));
+          console.log("[Camera] ✓ Activating camera display");
           setCameraActive(true);
         } else {
           console.error("[Camera] ✗ Stream did not start in time");
