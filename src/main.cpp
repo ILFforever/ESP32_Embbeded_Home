@@ -131,6 +131,10 @@ struct ButtonState
 ButtonState doorbellButton = {false, false, false, 0, 0, false, false};
 ButtonState callButton = {false, false, false, 0, 0, false, false};
 
+// Streaming state tracking
+#include "streaming_state.h"
+bool isStreaming = false; // Track if camera/audio streaming to backend is active
+
 void checkUARTData();
 void checkUART2Data();
 void sendPingTask();
@@ -1375,10 +1379,41 @@ void updateButtonState(ButtonState &btn, int pin, const char *buttonName)
         }
         else if (strcmp(buttonName, "Call") == 0)
         {
-          // Call button pressed - start camera without recognition
-          updateStatusMsg("Connecting...", true, "Ready");
-          sendUARTCommand("camera_control", "camera_start");
-          sendUARTCommand("stop_detection");
+          // Call button pressed - toggle streaming to backend
+          if (!isStreaming)
+          {
+            // Start streaming
+            updateStatusMsg("Starting stream...", true, "Ready");
+            Serial.println("[BTN] Starting stream to backend");
+
+            // Send stream control commands (action in params.name, id=0)
+            //sendUARTCommand("stream_control", "mic_start", 0);
+            //delay(100);
+
+            sendUARTCommand("stream_control", "camera_start", 0);
+            delay(100);
+
+            // Set desired camera state to running
+            setDesiredMode(1);
+
+            isStreaming = true;
+            updateStatusMsg("Streaming active", true, "Streaming");
+          }
+          else
+          {
+            // Stop streaming
+            updateStatusMsg("Stopping stream...", true, "Ready");
+            Serial.println("[BTN] Stopping stream");
+
+            // Stop streaming (action in params.name, id=0)
+            sendUARTCommand("stream_control", "stop_stream", 0);
+
+            // Set desired camera state to standby
+            setDesiredMode(0);
+
+            isStreaming = false;
+            updateStatusMsg("Stream stopped", true, "Ready");
+          }
         }
       }
     }

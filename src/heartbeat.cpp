@@ -5,6 +5,8 @@
 #include <WiFi.h>
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
+#include "slave_state_manager.h"
+#include "streaming_state.h"
 
 // Configuration variables (set via initHeartbeat)
 const char *BACKEND_SERVER_URL = "";
@@ -599,7 +601,7 @@ bool sendFaceDetectionAsync(bool recognized, const char *name, float confidence,
 // ============================================================================
 // Send face database result to backend (face_count, face_list, face_check)
 // ============================================================================
-void sendFaceDatabaseResult(const char* type, int count, JsonArray faces, const char* db_status, const char* db_message)
+void sendFaceDatabaseResult(const char *type, int count, JsonArray faces, const char *db_status, const char *db_message)
 {
   if (WiFi.status() != WL_CONNECTED)
   {
@@ -783,16 +785,22 @@ bool executeCommand(String action, JsonObject params)
   // Camera commands
   if (action == "camera_start")
   {
-    sendUARTCommand("camera_control", "camera_start");
+    sendUARTCommand("stream_control", "camera_start");
+    isStreaming = true;
+    setDesiredMode(1);
     return true;
   }
   else if (action == "camera_stop")
   {
-    sendUARTCommand("camera_control", "camera_stop");
+    sendUARTCommand("stream_control", "camera_stop");
+    isStreaming = false;
+    setDesiredMode(0);
     return true;
   }
   else if (action == "camera_restart")
   {
+    isStreaming = false;
+    setDesiredMode(0); // Shut off?
     sendUARTCommand("reboot");
     return true;
   }
@@ -800,18 +808,34 @@ bool executeCommand(String action, JsonObject params)
   // Microphone commands
   else if (action == "mic_start")
   {
-    sendUARTCommand("mic_control", "mic_start");
+    isStreaming = true;
+    sendUARTCommand("stream_control", "mic_start");
     return true;
   }
   else if (action == "mic_stop")
   {
-    sendUARTCommand("mic_control", "mic_stop");
+    isStreaming = false;
+    sendUARTCommand("stream_control", "mic_stop");
     return true;
   }
-  else if (action == "mic_status")
+  else if (action == "stream_status")
   {
-    sendUARTCommand("mic_control", "mic_status");
+    sendUARTCommand("stream_control", "stream_status");
     return true;
+  }
+  else if (action == "start_stream")
+  {
+    isStreaming = true;
+    setDesiredMode(1);
+    sendUARTCommand("stream_control", "camera_start");
+    sendUARTCommand("stream_control", "mic_start");
+  }
+  else if (action == "stop_stream")
+  {
+    isStreaming = false;
+    setDesiredMode(0);
+    sendUARTCommand("stream_control", "camera_stop");
+    sendUARTCommand("stream_control", "mic_stop");
   }
 
   // Amplifier commands
@@ -917,19 +941,23 @@ bool executeCommand(String action, JsonObject params)
   }
 
   // Face recognition commands
-  else if (action == "face_count") {
+  else if (action == "face_count")
+  {
     sendUARTCommand("face_count");
     return true;
   }
-  else if (action == "face_list") {
+  else if (action == "face_list")
+  {
     sendUARTCommand("list_faces");
     return true;
   }
-  else if (action == "face_check") {
+  else if (action == "face_check")
+  {
     sendUARTCommand("check_face_db");
     return true;
   }
-  else if (action == "sync_database") {
+  else if (action == "sync_database")
+  {
     // Execute all three face database commands in sequence
     Serial.println("[Commands] Syncing face database - executing all three commands...");
     sendUARTCommand("face_count");
