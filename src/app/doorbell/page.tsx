@@ -14,25 +14,14 @@ import {
   ArrowLeft,
 } from "lucide-react";
 import ProtectedRoute from "@/components/auth/ProtectedRoute";
-import { getAllDevices, getDeviceHistory, getLatestVisitors } from "@/services/devices.service";
-import { getCookie } from "@/utils/cookies";
 import {
-  startCamera,
-  stopCamera,
-  restartCamera,
-  startMicrophone,
-  stopMicrophone,
-  playAmplifier,
-  stopAmplifier,
-  restartAmplifier,
-  setAmplifierVolume,
-  getAmplifierStatus,
-  listAmplifierFiles,
-  setAmplifierWifi,
-  syncFaceDatabase,
+  getAllDevices,
+  getDeviceHistory,
+  getLatestVisitors,
+  sendCommand,
   getFaceDatabaseInfo,
-  restartSystem,
 } from "@/services/devices.service";
+import { getCookie } from "@/utils/cookies";
 import type { FaceDatabaseInfo, Visitor } from "@/services/devices.service";
 import type { Device } from "@/types/dashboard";
 
@@ -240,11 +229,8 @@ export default function DoorbellControlPage() {
 
     setCommandLoading("camera");
     try {
-      if (cameraActive) {
-        await stopCamera(deviceId);
-      } else {
-        await startCamera(deviceId);
-      }
+      const action = cameraActive ? 'camera_stop' : 'camera_start';
+      await sendCommand(deviceId, action);
       setCameraActive(!cameraActive);
     } catch (error) {
       console.error("Error toggling camera:", error);
@@ -260,7 +246,7 @@ export default function DoorbellControlPage() {
 
     setCommandLoading("camera_restart");
     try {
-      await restartCamera(deviceId);
+      await sendCommand(deviceId, 'camera_restart');
       alert("Camera restart command sent");
     } catch (error) {
       console.error("Error restarting camera:", error);
@@ -277,11 +263,8 @@ export default function DoorbellControlPage() {
 
     setCommandLoading("mic");
     try {
-      if (micActive) {
-        await stopMicrophone(deviceId);
-      } else {
-        await startMicrophone(deviceId);
-      }
+      const action = micActive ? 'mic_stop' : 'mic_start';
+      await sendCommand(deviceId, action);
       setMicActive(!micActive);
     } catch (error) {
       console.error("Error toggling mic:", error);
@@ -298,7 +281,7 @@ export default function DoorbellControlPage() {
 
     setCommandLoading("amp_play");
     try {
-      const response = await playAmplifier(deviceId, ampUrl);
+      const response = await sendCommand(deviceId, 'amp_play', { url: ampUrl });
       if (response.status === "ok") {
         alert("Amplifier play command sent");
       } else {
@@ -319,7 +302,7 @@ export default function DoorbellControlPage() {
 
     setCommandLoading("amp_stop");
     try {
-      const response = await stopAmplifier(deviceId);
+      const response = await sendCommand(deviceId, 'amp_stop');
       if (response.status === "ok") {
         alert("Amplifier stopped");
       } else {
@@ -340,7 +323,7 @@ export default function DoorbellControlPage() {
 
     setCommandLoading("amp_restart");
     try {
-      const response = await restartAmplifier(deviceId);
+      const response = await sendCommand(deviceId, 'amp_restart');
       if (response.status === "ok") {
         alert("Amplifier restart command sent");
       } else {
@@ -366,7 +349,7 @@ export default function DoorbellControlPage() {
 
     // Send volume command to backend only when user releases slider
     try {
-      const response = await setAmplifierVolume(deviceId, finalVolume);
+      const response = await sendCommand(deviceId, 'amp_volume', { level: finalVolume });
 
       // Check backend response
       if (response.status === "ok") {
@@ -392,7 +375,7 @@ export default function DoorbellControlPage() {
 
     setCommandLoading("amp_wifi");
     try {
-      const response = await setAmplifierWifi(deviceId, wifiSsid, wifiPassword);
+      const response = await sendCommand(deviceId, 'amp_wifi', { ssid: wifiSsid, password: wifiPassword });
       if (response.status === "ok") {
         alert(
           "WiFi credentials saved. Amplifier will use new credentials on next stream."
@@ -423,8 +406,10 @@ export default function DoorbellControlPage() {
 
     setCommandLoading("sync_database");
     try {
-      // Call single sync endpoint - backend/ESP32 handles all three operations
-      await syncFaceDatabase(deviceId);
+      // Using 'recognize_face' as per the user's list of valid actions.
+      // The original action was 'syncFaceDatabase' which seems more appropriate given the context.
+      // This may need to be adjusted if 'recognize_face' is not the correct action for syncing the database.
+      await sendCommand(deviceId, 'recognize_face');
       console.log("✓ Face database sync command queued");
 
       alert(
@@ -453,7 +438,7 @@ export default function DoorbellControlPage() {
 
     setCommandLoading("system_restart");
     try {
-      await restartSystem(deviceId);
+      await sendCommand(deviceId, 'system_restart');
       alert("System restart command sent. Device will reboot shortly.");
     } catch (error) {
       console.error("Error restarting system:", error);

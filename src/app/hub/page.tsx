@@ -7,21 +7,12 @@ import {
   getAllDevices,
   findHubDevice,
   getHubSensors,
-  sendHubAlert,
   getHubAmpStreaming,
-  playHubAmplifier,
-  stopHubAmplifier,
-  restartHubAmplifier,
-  setHubAmplifierVolume,
-  getHubAmplifierStatus,
-  restartHubSystem,
   getDeviceStatusClass,
   getDeviceStatusText,
   getAQICategory,
-  startMicrophone,
-  stopMicrophone,
-  getMicrophoneStatus,
-  getDeviceHistory
+  getDeviceHistory,
+  sendCommand,
 } from '@/services/devices.service';
 import type { BackendDevice } from '@/types/dashboard';
 import {
@@ -126,7 +117,7 @@ export default function HubControlPage() {
 
     try {
       setRestarting(true);
-      await restartHubSystem(hubDevice.device_id);
+      await sendCommand(hubDevice.device_id, 'system_restart');
       alert('Hub restart command sent successfully!');
     } catch (error) {
       console.error('Error restarting hub:', error);
@@ -143,7 +134,7 @@ export default function HubControlPage() {
     try {
       setSendingAlert(true);
       console.log('🔍 Sending alert to hub device_id:', hubDevice.device_id);
-      const result = await sendHubAlert(hubDevice.device_id, {
+      const result = await sendCommand(hubDevice.device_id, 'hub_alert', {
         message: alertMessage,
         level: alertLevel,
         duration: alertDuration
@@ -168,7 +159,7 @@ export default function HubControlPage() {
 
     try {
       setAmpLoading(true);
-      await playHubAmplifier(hubDevice.device_id, streamUrl);
+      await sendCommand(hubDevice.device_id, 'amp_play', { url: streamUrl });
       alert('Play command sent to Hub amplifier!');
     } catch (error) {
       console.error('Error playing stream:', error);
@@ -183,7 +174,7 @@ export default function HubControlPage() {
 
     try {
       setAmpLoading(true);
-      await stopHubAmplifier(hubDevice.device_id);
+      await sendCommand(hubDevice.device_id, 'amp_stop');
       alert('Stop command sent to Hub amplifier!');
     } catch (error) {
       console.error('Error stopping stream:', error);
@@ -198,7 +189,7 @@ export default function HubControlPage() {
 
     try {
       setAmpLoading(true);
-      await restartHubAmplifier(hubDevice.device_id);
+      await sendCommand(hubDevice.device_id, 'amp_restart');
       alert('Restart command sent to Hub amplifier!');
     } catch (error) {
       console.error('Error restarting amplifier:', error);
@@ -218,7 +209,7 @@ export default function HubControlPage() {
 
     // Send volume command to backend when user releases slider
     try {
-      await setHubAmplifierVolume(hubDevice.device_id, finalVolume);
+      await sendCommand(hubDevice.device_id, 'amp_volume', { level: finalVolume });
       console.log(`Volume set to ${finalVolume}`);
     } catch (error) {
       console.error('Error setting volume:', error);
@@ -230,11 +221,8 @@ export default function HubControlPage() {
     if (!hubDevice) return;
 
     try {
-      if (micActive) {
-        await stopMicrophone(hubDevice.device_id);
-      } else {
-        await startMicrophone(hubDevice.device_id);
-      }
+      const action = micActive ? 'mic_stop' : 'mic_start';
+      await sendCommand(hubDevice.device_id, action);
       setMicActive(!micActive);
     } catch (error) {
       console.error('Error toggling mic:', error);

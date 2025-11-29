@@ -30,6 +30,29 @@ const getAuthHeaders = () => {
   return token ? { Authorization: `Bearer ${token}` } : {};
 };
 
+export const validActions = [
+  'camera_start',
+  'camera_stop',
+  'camera_restart',
+  'mic_start',
+  'mic_stop',
+  'mic_status',
+  'recording_start',
+  'recording_stop',
+  'start_preview',
+  'recognize_face',
+  'reboot',
+  'update_config',
+  'amp_play',
+  'amp_stop',
+  'amp_restart',
+  'amp_volume',
+  'amp_status',
+  'amp_list',
+  'amp_wifi',
+  'system_restart',
+];
+
 // Backend devices response interface
 interface BackendDevicesResponse {
   status: string;
@@ -311,293 +334,29 @@ export async function getDoorbellInfo(deviceId: string): Promise<DoorbellInfo | 
   }
 }
 
-// Camera control functions using new backend endpoints
-export async function startCamera(deviceId: string) {
+
+/**
+* Sends a generic command to a device using the unified command endpoint.
+*
+* @param deviceId The ID of the device to send the command to.
+* @param action The specific action to be performed (e.g., 'camera_start', 'mic_stop').
+* @param params Optional parameters for the command.
+* @returns The response data from the backend.
+* @throws Error if the command fails.
+*/
+export async function sendCommand(deviceId: string, action: string, params: any = {}) {
   try {
     const response = await axios.post(
-      `${API_URL}/api/v1/devices/${deviceId}/camera/start`,
-      {},
+      `${API_URL}/api/v1/devices/${deviceId}/command`,
+      { action, params },
       {
-        timeout: 15000,
-        headers: getAuthHeaders()
+        timeout: 15000, // Or whatever default timeout is appropriate
+        headers: getAuthHeaders() // Assuming this function exists and provides auth headers
       }
     );
     return response.data;
   } catch (error) {
-    console.error('Error starting camera:', error);
-    throw error;
-  }
-}
-
-export async function stopCamera(deviceId: string) {
-  try {
-    const response = await axios.post(
-      `${API_URL}/api/v1/devices/${deviceId}/camera/stop`,
-      {},
-      {
-        timeout: 15000,
-        headers: getAuthHeaders()
-      }
-    );
-    return response.data;
-  } catch (error) {
-    console.error('Error stopping camera:', error);
-    throw error;
-  }
-}
-
-export async function restartCamera(deviceId: string) {
-  try {
-    const response = await axios.post(
-      `${API_URL}/api/v1/devices/${deviceId}/camera/restart`,
-      {},
-      {
-        timeout: 15000,
-        headers: getAuthHeaders()
-      }
-    );
-    return response.data;
-  } catch (error) {
-    console.error('Error restarting camera:', error);
-    throw error;
-  }
-}
-
-// Microphone control functions
-export async function startMicrophone(deviceId: string) {
-  try {
-    const response = await axios.post(
-      `${API_URL}/api/v1/devices/${deviceId}/mic/start`,
-      {},
-      {
-        timeout: 15000,
-        headers: getAuthHeaders()
-      }
-    );
-    return response.data;
-  } catch (error) {
-    console.error('Error starting microphone:', error);
-    throw error;
-  }
-}
-
-export async function stopMicrophone(deviceId: string) {
-  try {
-    const response = await axios.post(
-      `${API_URL}/api/v1/devices/${deviceId}/mic/stop`,
-      {},
-      {
-        timeout: 15000,
-        headers: getAuthHeaders()
-      }
-    );
-    return response.data;
-  } catch (error) {
-    console.error('Error stopping microphone:', error);
-    throw error;
-  }
-}
-
-export async function getMicrophoneStatus(deviceId: string) {
-  try {
-    const response = await axios.post(
-      `${API_URL}/api/v1/devices/${deviceId}/mic/status`,
-      {},
-      {
-        timeout: 15000,
-        headers: getAuthHeaders()
-      }
-    );
-    return response.data;
-  } catch (error) {
-    console.error('Error getting microphone status:', error);
-    throw error;
-  }
-}
-
-// Audio amplifier control functions
-export async function playAmplifier(deviceId: string, url: string) {
-  try {
-    const response = await axios.post(
-      `${API_URL}/api/v1/devices/${deviceId}/amp/play?url=${encodeURIComponent(url)}`,
-      {},
-      {
-        timeout: 15000,
-        headers: getAuthHeaders()
-      }
-    );
-    return response.data;
-  } catch (error) {
-    console.error('Error playing amplifier:', error);
-    throw error;
-  }
-}
-
-export async function stopAmplifier(deviceId: string) {
-  try {
-    const response = await axios.post(
-      `${API_URL}/api/v1/devices/${deviceId}/amp/stop`,
-      {},
-      {
-        timeout: 15000,
-        headers: getAuthHeaders()
-      }
-    );
-    return response.data;
-  } catch (error) {
-    console.error('Error stopping amplifier:', error);
-    throw error;
-  }
-}
-
-export async function restartAmplifier(deviceId: string) {
-  try {
-    const response = await axios.post(
-      `${API_URL}/api/v1/devices/${deviceId}/amp/restart`,
-      {},
-      {
-        timeout: 15000,
-        headers: getAuthHeaders()
-      }
-    );
-    return response.data;
-  } catch (error) {
-    console.error('Error restarting amplifier:', error);
-    throw error;
-  }
-}
-
-export async function setAmplifierVolume(deviceId: string, level: number) {
-  try {
-    const response = await axios.post(
-      `${API_URL}/api/v1/devices/${deviceId}/amp/volume?level=${level}`,
-      {},
-      {
-        timeout: 15000,
-        headers: getAuthHeaders()
-      }
-    );
-    return response.data;
-  } catch (error) {
-    console.error('Error setting amplifier volume:', error);
-    throw error;
-  }
-}
-
-export async function getAmplifierStatus(deviceId: string) {
-  try {
-    const response = await axios.get(
-      `${API_URL}/api/v1/devices/${deviceId}/amp/status`,
-      {
-        timeout: 15000,
-        headers: getAuthHeaders()
-      }
-    );
-    return response.data;
-  } catch (error) {
-    console.error('Error getting amplifier status:', error);
-    throw error;
-  }
-}
-
-export async function listAmplifierFiles(deviceId: string) {
-  try {
-    const response = await axios.get(
-      `${API_URL}/api/v1/devices/${deviceId}/amp/files`,
-      {
-        timeout: 15000,
-        headers: getAuthHeaders()
-      }
-    );
-    return response.data;
-  } catch (error) {
-    console.error('Error listing amplifier files:', error);
-    throw error;
-  }
-}
-
-export async function setAmplifierWifi(deviceId: string, ssid: string, password: string) {
-  try {
-    const response = await axios.post(
-      `${API_URL}/api/v1/devices/${deviceId}/amp/wifi`,
-      { ssid, password },
-      {
-        timeout: 15000,
-        headers: getAuthHeaders()
-      }
-    );
-    return response.data;
-  } catch (error) {
-    console.error('Error setting amplifier WiFi:', error);
-    throw error;
-  }
-}
-
-// Face management functions
-export async function getFaceCount(deviceId: string) {
-  try {
-    const response = await axios.post(
-      `${API_URL}/api/v1/devices/${deviceId}/face/count`,
-      {},
-      {
-        timeout: 15000,
-        headers: getAuthHeaders()
-      }
-    );
-    return response.data;
-  } catch (error) {
-    console.error('Error getting face count:', error);
-    throw error;
-  }
-}
-
-export async function listFaces(deviceId: string) {
-  try {
-    const response = await axios.post(
-      `${API_URL}/api/v1/devices/${deviceId}/face/list`,
-      {},
-      {
-        timeout: 15000,
-        headers: getAuthHeaders()
-      }
-    );
-    return response.data;
-  } catch (error) {
-    console.error('Error listing faces:', error);
-    throw error;
-  }
-}
-
-export async function checkFaceDatabase(deviceId: string) {
-  try {
-    const response = await axios.post(
-      `${API_URL}/api/v1/devices/${deviceId}/face/check`,
-      {},
-      {
-        timeout: 15000,
-        headers: getAuthHeaders()
-      }
-    );
-    return response.data;
-  } catch (error) {
-    console.error('Error checking face database:', error);
-    throw error;
-  }
-}
-
-export async function syncFaceDatabase(deviceId: string) {
-  try {
-    const response = await axios.post(
-      `${API_URL}/api/v1/devices/${deviceId}/face/sync`,
-      {},
-      {
-        timeout: 15000,
-        headers: getAuthHeaders()
-      }
-    );
-    return response.data;
-  } catch (error) {
-    console.error('Error syncing face database:', error);
+    console.error(`Error sending command '${action}' to device '${deviceId}':`, error);
     throw error;
   }
 }
@@ -623,24 +382,6 @@ export async function getFaceDatabaseInfo(deviceId: string): Promise<FaceDatabas
   }
 }
 
-// System control functions
-export async function restartSystem(deviceId: string) {
-  try {
-    const response = await axios.post(
-      `${API_URL}/api/v1/devices/${deviceId}/system/restart`,
-      {},
-      {
-        timeout: 15000,
-        headers: getAuthHeaders()
-      }
-    );
-    return response.data;
-  } catch (error) {
-    console.error('Error restarting system:', error);
-    throw error;
-  }
-}
-
 // Get device info (combines live_status data)
 export async function getDeviceInfo(deviceId: string) {
   try {
@@ -655,26 +396,6 @@ export async function getDeviceInfo(deviceId: string) {
   } catch (error) {
     console.error('Error getting device info:', error);
     throw error;
-  }
-}
-
-// Legacy function for backward compatibility
-export async function controlDoorbell(
-  deviceId: string,
-  action: 'camera_start' | 'camera_stop' | 'mic_start' | 'mic_stop' | 'ping'
-) {
-  // Use new endpoints based on action
-  switch (action) {
-    case 'camera_start':
-      return startCamera(deviceId);
-    case 'camera_stop':
-      return stopCamera(deviceId);
-    case 'mic_start':
-      return startMicrophone(deviceId);
-    case 'mic_stop':
-      return stopMicrophone(deviceId);
-    default:
-      throw new Error(`Unsupported action: ${action}`);
   }
 }
 
