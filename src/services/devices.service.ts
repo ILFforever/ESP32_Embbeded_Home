@@ -152,10 +152,11 @@ export function generateMockTemperatureData(): TemperatureData[] {
 }
 
 export function generateMockGasReadings(): GasReading[] {
-  const locations = ['Kitchen', 'Garage', 'Basement'];
+  // Renamed to Sensor 1, Sensor 2, Sensor 3 (removed specific location names)
+  const sensorCount = 3;
   const now = Date.now();
 
-  return locations.map((location, idx) => {
+  return Array.from({ length: sensorCount }, (_, idx) => {
     const basePPM = 50 + idx * 20;
     const history: SensorReading[] = [];
 
@@ -174,7 +175,7 @@ export function generateMockGasReadings(): GasReading[] {
 
     return {
       sensor_id: `gas_0${idx + 1}`,
-      location,
+      location: `Sensor ${idx + 1}`,
       ppm: currentPPM,
       status,
       history
@@ -1046,15 +1047,12 @@ export async function getGasReadingsForDashboard(): Promise<GasReading[]> {
 
     console.log('All devices:', devices);
 
-    // Filter devices that might have gas sensors (sensors or hub)
+    // Filter devices with IDs starting with "ss_" (gas sensors only)
     const sensorDevices = devices.filter(device =>
-      device.type === 'sensor' ||
-      device.type === 'gas_sensor' ||
-      device.type === 'hub' ||
-      device.type === 'main_lcd'
+      device.device_id.startsWith('ss_')
     );
 
-    console.log('Filtered sensor devices:', sensorDevices);
+    console.log('Filtered gas sensor devices (ss_*):', sensorDevices);
 
     if (sensorDevices.length === 0) {
       console.log('No sensor devices found, using mock data');
@@ -1105,9 +1103,14 @@ export async function getGasReadingsForDashboard(): Promise<GasReading[]> {
         if (gasLevel > 150) status = 'danger';
         else if (gasLevel > 100) status = 'warning';
 
+        // Extract sensor number from device_id (e.g., ss_001 → 1, ss_002 → 2)
+        const match = device.device_id.match(/ss_(\d+)/);
+        const sensorNumber = match ? parseInt(match[1], 10) : gasReadings.length + 1;
+        const locationName = `Sensor ${sensorNumber}`;
+
         gasReadings.push({
           sensor_id: device.device_id,
-          location: device.name || device.device_id,
+          location: locationName,
           ppm: gasLevel,
           status,
           history
