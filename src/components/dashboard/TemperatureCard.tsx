@@ -61,9 +61,10 @@ export function TemperatureCard({ isExpanded = false, refreshInterval = 5000 }: 
           const temperature = deviceSensors.sensors.temperature || 0;
           const humidity = deviceSensors.sensors.humidity || 0;
 
-          // Find device info from devices list if available
-          const deviceInfo = devices.find(d => d.device_id === sensorId);
-          const roomName = deviceInfo?.name || sensorId;
+          // Extract sensor number from device_id (e.g., ss_001 → 1, ss_002 → 2)
+          const match = sensorId.match(/ss_(\d+)/);
+          const sensorNumber = match ? parseInt(match[1], 10) : sensorId;
+          const roomName = match ? `Sensor ${sensorNumber}` : sensorId;
 
           // Convert historical readings to chart data
           const history = sensorReadings?.readings.map(reading => ({
@@ -79,8 +80,10 @@ export function TemperatureCard({ isExpanded = false, refreshInterval = 5000 }: 
           });
         } else {
           // Sensor is offline or returned null (404/400 error)
-          const deviceInfo = devices.find(d => d.device_id === sensorId);
-          const roomName = deviceInfo?.name || sensorId;
+          // Extract sensor number from device_id (e.g., ss_001 → 1, ss_002 → 2)
+          const match = sensorId.match(/ss_(\d+)/);
+          const sensorNumber = match ? parseInt(match[1], 10) : sensorId;
+          const roomName = match ? `Sensor ${sensorNumber}` : sensorId;
 
           // Create offline entry
           const offlineHistory = [{ timestamp: new Date().toISOString(), value: 0 }];
