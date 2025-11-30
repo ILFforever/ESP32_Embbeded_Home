@@ -99,3 +99,4 @@ Thumbs.db
 .idea/
 *.swp
 *.swo
+next-env.d.ts
