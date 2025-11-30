@@ -152,10 +152,11 @@ export function generateMockTemperatureData(): TemperatureData[] {
 }
 
 export function generateMockGasReadings(): GasReading[] {
-  const locations = ['Kitchen', 'Garage', 'Basement'];
+  // Renamed to Sensor 1, Sensor 2, Sensor 3 (removed specific location names)
+  const sensorCount = 3;
   const now = Date.now();
 
-  return locations.map((location, idx) => {
+  return Array.from({ length: sensorCount }, (_, idx) => {
     const basePPM = 50 + idx * 20;
     const history: SensorReading[] = [];
 
@@ -174,7 +175,7 @@ export function generateMockGasReadings(): GasReading[] {
 
     return {
       sensor_id: `gas_0${idx + 1}`,
-      location,
+      location: `Sensor ${idx + 1}`,
       ppm: currentPPM,
       status,
       history
@@ -1105,9 +1106,19 @@ export async function getGasReadingsForDashboard(): Promise<GasReading[]> {
         if (gasLevel > 150) status = 'danger';
         else if (gasLevel > 100) status = 'warning';
 
+        // Remove "homehub" from location name and rename to "Sensor X"
+        let locationName = device.name || device.device_id;
+
+        // Remove "homehub" (case-insensitive)
+        locationName = locationName.replace(/homehub/gi, '').trim();
+
+        // Generate sensor number based on array index
+        const sensorNumber = gasReadings.length + 1;
+        locationName = `Sensor ${sensorNumber}`;
+
         gasReadings.push({
           sensor_id: device.device_id,
-          location: device.name || device.device_id,
+          location: locationName,
           ppm: gasLevel,
           status,
           history
