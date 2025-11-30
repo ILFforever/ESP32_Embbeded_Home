@@ -12,23 +12,34 @@ import { AdminManagementCard } from '@/components/dashboard/AdminManagementCard'
 import { SystemStatusCard } from '@/components/dashboard/SystemStatusCard';
 import {
   getAllDevices,
-  generateMockAlerts,
+  getAlerts,
   getGasReadingsForDashboard,
   generateMockDoorsWindows
 } from '@/services/devices.service';
-import type { DevicesStatus, GasReading } from '@/types/dashboard';
+import type { DevicesStatus, GasReading, Alert } from '@/types/dashboard';
 
 export default function DashboardPage() {
   const router = useRouter();
   const { logout } = useAuth();
   const [devicesStatus, setDevicesStatus] = useState<DevicesStatus | null>(null);
   const [gasReadings, setGasReadings] = useState<GasReading[]>([]);
+  const [alerts, setAlerts] = useState<Alert[]>([]);
   const [loading, setLoading] = useState(true);
   const [theme, setTheme] = useState<'purple' | 'green'>('purple');
   const [expandedCard, setExpandedCard] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [activeView, setActiveView] = useState<string>('dashboard');
   const [systemOnline, setSystemOnline] = useState<boolean>(false);
+
+  const fetchAlerts = async () => {
+    try {
+      // Fetch all alerts with a limit of 50
+      const alertsData = await getAlerts({ limit: 50 });
+      setAlerts(alertsData);
+    } catch (error) {
+      console.error('Error loading alerts:', error);
+    }
+  };
 
   useEffect(() => {
     const fetchData = async () => {
@@ -40,6 +51,9 @@ export default function DashboardPage() {
         // Fetch gas sensor readings
         const gasData = await getGasReadingsForDashboard();
         setGasReadings(gasData);
+
+        // Fetch alerts
+        await fetchAlerts();
 
         // Check system status via /info endpoint
         try {
@@ -128,7 +142,6 @@ export default function DashboardPage() {
   };
 
   // Generate mock data for features not yet implemented
-  const alerts = generateMockAlerts();
   const doorsWindows = generateMockDoorsWindows();
 
   if (loading) {
@@ -150,7 +163,7 @@ export default function DashboardPage() {
         content = <SystemStatusCard devicesStatus={devicesStatus} isExpanded={true} />;
         break;
       case 'alerts':
-        content = <AlertsCard alerts={alerts} isExpanded={true} />;
+        content = <AlertsCard alerts={alerts} isExpanded={true} onRefresh={fetchAlerts} />;
         break;
       case 'temperature':
         content = <TemperatureCard isExpanded={true} />;
@@ -320,7 +333,7 @@ export default function DashboardPage() {
                   <circle cx="12" cy="12" r="3"></circle>
                 </svg>
               </button>
-              <AlertsCard alerts={alerts} />
+              <AlertsCard alerts={alerts} onRefresh={fetchAlerts} />
             </div>
 
             {/* Top-right row 2: Temperature */}
