@@ -1047,15 +1047,12 @@ export async function getGasReadingsForDashboard(): Promise<GasReading[]> {
 
     console.log('All devices:', devices);
 
-    // Filter devices that might have gas sensors (sensors or hub)
+    // Filter devices with IDs starting with "ss_" (gas sensors only)
     const sensorDevices = devices.filter(device =>
-      device.type === 'sensor' ||
-      device.type === 'gas_sensor' ||
-      device.type === 'hub' ||
-      device.type === 'main_lcd'
+      device.device_id.startsWith('ss_')
     );
 
-    console.log('Filtered sensor devices:', sensorDevices);
+    console.log('Filtered gas sensor devices (ss_*):', sensorDevices);
 
     if (sensorDevices.length === 0) {
       console.log('No sensor devices found, using mock data');
