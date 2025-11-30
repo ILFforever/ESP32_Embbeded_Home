@@ -98,30 +98,33 @@ export function generateMockAlerts(): Alert[] {
   return [
     {
       id: '1',
-      type: 'critical',
-      title: 'Front Door Unlocked',
+      level: 'IMPORTANT',
       message: 'Front door has been unlocked for 10 minutes',
+      source: 'door_01',
+      tags: ['device-log', 'error'],
       timestamp: new Date(Date.now() - 600000).toISOString(),
-      device_id: 'door_01',
-      acknowledged: false
+      read: false,
+      created_at: new Date(Date.now() - 600000).toISOString()
     },
     {
       id: '2',
-      type: 'warning',
-      title: 'High Temperature',
+      level: 'WARN',
       message: 'Living room temperature is 32°C',
+      source: 'temp_01',
+      tags: ['device-log', 'warning'],
       timestamp: new Date(Date.now() - 300000).toISOString(),
-      device_id: 'temp_01',
-      acknowledged: false
+      read: false,
+      created_at: new Date(Date.now() - 300000).toISOString()
     },
     {
       id: '3',
-      type: 'info',
-      title: 'Doorbell Activity',
+      level: 'INFO',
       message: 'Motion detected at front door',
+      source: 'db_001',
+      tags: ['face-detection', 'recognized'],
       timestamp: new Date(Date.now() - 120000).toISOString(),
-      device_id: 'db_001',
-      acknowledged: true
+      read: true,
+      created_at: new Date(Date.now() - 120000).toISOString()
     }
   ];
 }
@@ -267,6 +270,141 @@ export function generateMockSecurityDevices(): SecurityDevice[] {
       location: 'Front Door'
     }
   ];
+}
+
+// ============================================================================
+// ALERT API CALLS
+// ============================================================================
+
+// Backend alerts response interface
+export interface AlertsResponse {
+  status: string;
+  count: number;
+  alerts: Alert[];
+}
+
+// Get all alerts with optional filtering
+export async function getAlerts(params?: {
+  level?: 'INFO' | 'WARN' | 'IMPORTANT';
+  source?: string;
+  tags?: string;
+  read?: boolean;
+  limit?: number;
+}): Promise<Alert[]> {
+  try {
+    const queryParams = new URLSearchParams();
+    if (params?.level) queryParams.append('level', params.level);
+    if (params?.source) queryParams.append('source', params.source);
+    if (params?.tags) queryParams.append('tags', params.tags);
+    if (params?.read !== undefined) queryParams.append('read', String(params.read));
+    if (params?.limit) queryParams.append('limit', String(params.limit));
+
+    const response = await axios.get<AlertsResponse>(
+      `${API_URL}/api/v1/alerts?${queryParams.toString()}`,
+      {
+        timeout: 10000,
+        headers: getAuthHeaders()
+      }
+    );
+
+    if (response.data.status === 'ok') {
+      return response.data.alerts;
+    }
+    return [];
+  } catch (error) {
+    console.error('Error fetching alerts:', error);
+    // Return mock data on error for development
+    return generateMockAlerts();
+  }
+}
+
+// Mark a single alert as read
+export async function markAlertAsRead(alertId: string): Promise<boolean> {
+  try {
+    const response = await axios.patch(
+      `${API_URL}/api/v1/alerts/${alertId}/read`,
+      {},
+      {
+        timeout: 5000,
+        headers: getAuthHeaders()
+      }
+    );
+    return response.data.status === 'ok';
+  } catch (error) {
+    console.error('Error marking alert as read:', error);
+    return false;
+  }
+}
+
+// Mark multiple alerts as read
+export async function markMultipleAlertsAsRead(alertIds: string[]): Promise<boolean> {
+  try {
+    const response = await axios.post(
+      `${API_URL}/api/v1/alerts/mark-read`,
+      { alert_ids: alertIds },
+      {
+        timeout: 10000,
+        headers: getAuthHeaders()
+      }
+    );
+    return response.data.status === 'ok';
+  } catch (error) {
+    console.error('Error marking multiple alerts as read:', error);
+    return false;
+  }
+}
+
+// Delete an alert
+export async function deleteAlert(alertId: string): Promise<boolean> {
+  try {
+    const response = await axios.delete(
+      `${API_URL}/api/v1/alerts/${alertId}`,
+      {
+        timeout: 5000,
+        headers: getAuthHeaders()
+      }
+    );
+    return response.data.status === 'ok';
+  } catch (error) {
+    console.error('Error deleting alert:', error);
+    return false;
+  }
+}
+
+// Create a custom alert (manual)
+export interface CreateAlertParams {
+  level: 'INFO' | 'WARN' | 'IMPORTANT';
+  message: string;
+  source?: string;
+  tags?: string[];
+  metadata?: any;
+}
+
+export async function createAlert(params: CreateAlertParams): Promise<Alert | null> {
+  try {
+    const response = await axios.post(
+      `${API_URL}/api/v1/alerts`,
+      {
+        level: params.level,
+        message: params.message,
+        source: params.source || 'user',
+        tags: params.tags || ['custom'],
+        metadata: params.metadata || {}
+      },
+      {
+        timeout: 5000,
+        headers: getAuthHeaders()
+      }
+    );
+
+    if (response.data.status === 'ok') {
+      return response.data.alert;
+    }
+    return null;
+  } catch (error) {
+    console.error('Error creating alert:', error);
+    return null;
+  }
 }
 
 // Doorbell info interface from ESP32 (via backend proxy)

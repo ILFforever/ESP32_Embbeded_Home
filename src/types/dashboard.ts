@@ -30,12 +30,29 @@ export interface DevicesStatus {
 
 export interface Alert {
   id: string;
-  type: 'critical' | 'warning' | 'info';
-  title: string;
+  level: 'INFO' | 'WARN' | 'IMPORTANT';
   message: string;
+  source: string;
+  tags: string[];
+  metadata?: any;
   timestamp: string;
-  device_id?: string;
-  acknowledged: boolean;
+  read: boolean;
+  created_at: string;
+  read_at?: string;
+}
+
+// Helper function to convert backend alert level to frontend type
+export function alertLevelToType(level: 'INFO' | 'WARN' | 'IMPORTANT'): 'critical' | 'warning' | 'info' {
+  switch (level) {
+    case 'IMPORTANT':
+      return 'critical';
+    case 'WARN':
+      return 'warning';
+    case 'INFO':
+      return 'info';
+    default:
+      return 'info';
+  }
 }
 
 export interface SensorReading {
