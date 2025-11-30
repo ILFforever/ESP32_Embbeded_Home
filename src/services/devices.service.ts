@@ -1103,15 +1103,10 @@ export async function getGasReadingsForDashboard(): Promise<GasReading[]> {
         if (gasLevel > 150) status = 'danger';
         else if (gasLevel > 100) status = 'warning';
 
-        // Remove "homehub" from location name and rename to "Sensor X"
-        let locationName = device.name || device.device_id;
-
-        // Remove "homehub" (case-insensitive)
-        locationName = locationName.replace(/homehub/gi, '').trim();
-
-        // Generate sensor number based on array index
-        const sensorNumber = gasReadings.length + 1;
-        locationName = `Sensor ${sensorNumber}`;
+        // Extract sensor number from device_id (e.g., ss_001 → 1, ss_002 → 2)
+        const match = device.device_id.match(/ss_(\d+)/);
+        const sensorNumber = match ? parseInt(match[1], 10) : gasReadings.length + 1;
+        const locationName = `Sensor ${sensorNumber}`;
 
         gasReadings.push({
           sensor_id: device.device_id,
