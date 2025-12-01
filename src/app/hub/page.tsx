@@ -231,15 +231,15 @@ export default function HubControlPage() {
   };
 
   const getTemperatureStatus = (temp: number) => {
-    if (temp < 18) return { text: 'Cold', color: '#4FC3F7', status: 'status-warning' };
-    if (temp <= 25) return { text: 'Comfortable', color: 'var(--success)', status: 'status-online' };
-    if (temp <= 30) return { text: 'Warm', color: 'var(--warning)', status: 'status-warning' };
+    if (temp < 25) return { text: 'Cold', color: '#4FC3F7', status: 'status-warning' };
+    if (temp <= 30) return { text: 'Comfortable', color: 'var(--success)', status: 'status-online' };
+    if (temp <= 40) return { text: 'Warm', color: 'var(--warning)', status: 'status-warning' };
     return { text: 'Hot', color: 'var(--danger)', status: 'status-offline' };
   };
 
   const getHumidityStatus = (humidity: number) => {
-    if (humidity < 30) return { text: 'Dry', color: 'var(--warning)', status: 'status-warning' };
-    if (humidity <= 60) return { text: 'Comfortable', color: 'var(--success)', status: 'status-online' };
+    if (humidity < 50) return { text: 'Dry', color: 'var(--warning)', status: 'status-warning' };
+    if (humidity <= 65) return { text: 'Comfortable', color: 'var(--success)', status: 'status-online' };
     return { text: 'Humid', color: 'var(--warning)', status: 'status-warning' };
   };
 
@@ -354,6 +354,214 @@ export default function HubControlPage() {
             </div>
           </header>
 
+          <div className="card control-card-large" style={{ marginBottom: 'var(--spacing-lg, 24px)' }}>
+          <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h3>HUB SENSORS</h3>
+              {sensorData?.timestamp && (
+                <span style={{ fontSize: '14px', color: 'var(--text-secondary)' }}>
+                  Last updated: {formatTimestamp(sensorData.timestamp)}
+                </span>
+              )}
+            </div>
+            <div className="card-content">
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '16px' }}>
+                {/* Temperature Card (DHT11) */}
+                <div className="card">
+                  <div className="card-header">
+                    <div className="card-title-group">
+                      <Thermometer size={24} />
+                      <h3>TEMPERATURE</h3>
+                    </div>
+                    {tempStatus && (
+                      <span className={`status-indicator ${tempStatus.status}`}>
+                        {tempStatus.text}
+                      </span>
+                    )}
+                  </div>
+                  <div className="card-content">
+                    {sensorData?.temperature != null ? (
+                      <>
+                        <div
+                          className="card-value"
+                          style={{
+                            fontSize: '56px',
+                            color: tempStatus?.color,
+                            textAlign: 'center',
+                            margin: '20px 0',
+                            height: '80px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center'
+                          }}
+                        >
+                          {sensorData.temperature.toFixed(1)}°C
+                        </div>
+                        <div style={{ textAlign: 'center', color: 'var(--text-secondary)' }}>
+                          <div className="temp-ranges" style={{
+                            display: 'flex',
+                            justifyContent: 'space-around',
+                            marginTop: '85px',
+                            padding: '12px',
+                            background: 'rgba(0,0,0,0.3)',
+                            borderRadius: '8px'
+                          }}>
+                            <div>
+                              <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Comfort Range</div>
+                              <div style={{ fontSize: '14px', fontWeight: 'bold' }}>18-25°C</div>
+                            </div>
+                            <div>
+                              <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Device</div>
+                              <div style={{ fontSize: '14px', fontWeight: 'bold' }}>DHT11</div>
+                            </div>
+                          </div>
+                        </div>
+                      </>
+                    ) : (
+                      <div className="no-alerts">
+                        <Activity size={48} style={{ margin: '0 auto 16px', opacity: 0.3 }} />
+                        <p>No temperature data available</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Humidity Card (DHT11) */}
+                <div className="card">
+                  <div className="card-header">
+                    <div className="card-title-group">
+                      <Droplets size={24} />
+                      <h3>HUMIDITY</h3>
+                    </div>
+                    {humidityStatus && (
+                      <span className={`status-indicator ${humidityStatus.status}`}>
+                        {humidityStatus.text}
+                      </span>
+                    )}
+                  </div>
+                  <div className="card-content">
+                    {sensorData?.humidity != null ? (
+                      <>
+                        <div
+                          className="card-value"
+                          style={{
+                            fontSize: '56px',
+                            color: humidityStatus?.color,
+                            textAlign: 'center',
+                            margin: '20px 0',
+                            height: '80px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center'
+                          }}
+                        >
+                          {sensorData.humidity.toFixed(1)}%
+                        </div>
+                        <div style={{ textAlign: 'center', color: 'var(--text-secondary)' }}>
+                          <div className="progress-bar" style={{ marginTop: '16px' }}>
+                            <div
+                              className="progress-fill"
+                              style={{
+                                width: `${Math.min(sensorData.humidity, 100)}%`,
+                                background: humidityStatus?.color
+                              }}
+                            ></div>
+                          </div>
+                          <div style={{
+                            display: 'flex',
+                            justifyContent: 'space-around',
+                            marginTop: '60px',
+                            padding: '12px',
+                            background: 'rgba(0,0,0,0.3)',
+                            borderRadius: '8px'
+                          }}>
+                            <div>
+                              <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Comfort Range</div>
+                              <div style={{ fontSize: '14px', fontWeight: 'bold' }}>30-60%</div>
+                            </div>
+                            <div>
+                              <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Device</div>
+                              <div style={{ fontSize: '14px', fontWeight: 'bold' }}>DHT11</div>
+                            </div>
+                          </div>
+                        </div>
+                      </>
+                    ) : (
+                      <div className="no-alerts">
+                        <Activity size={48} style={{ margin: '0 auto 16px', opacity: 0.3 }} />
+                        <p>No humidity data available</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Air Quality Card (PM2.5) */}
+                <div className="card">
+                  <div className="card-header">
+                    <div className="card-title-group">
+                      <Wind size={24} />
+                      <h3>AIR QUALITY (PM2.5)</h3>
+                    </div>
+                    {aqiData && (
+                      <span className={`status-indicator ${aqiData.status}`}>
+                        {aqiData.category}
+                      </span>
+                    )}
+                  </div>
+                  <div className="card-content">
+                    {sensorData?.pm25 != null ? (
+                      <>
+                        <div
+                          className="card-value"
+                          style={{
+                            fontSize: '56px',
+                            color: aqiData?.color,
+                            textAlign: 'center',
+                            margin: '20px 0',
+                            height: '80px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center'
+                          }}
+                        >
+                          {sensorData.pm25.toFixed(1)}
+                        </div>
+                        <div style={{ textAlign: 'center', color: 'var(--text-secondary)', fontSize: '14px', marginBottom: '8px' }}>
+                          μg/m³
+                        </div>
+                        <div style={{ textAlign: 'center', color: 'var(--text-secondary)' }}>
+                          {sensorData.aqi !== undefined && (
+                            <div style={{
+                              display: 'flex',
+                              justifyContent: 'space-around',
+                              marginTop: '26px',
+                              padding: '12px',
+                              background: 'rgba(0,0,0,0.3)',
+                              borderRadius: '8px'
+                            }}>
+                              <div>
+                                <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>AQI</div>
+                                <div style={{ fontSize: '14px', fontWeight: 'bold', color: aqiData?.color }}>{sensorData.aqi}</div>
+                              </div>
+                              <div>
+                                <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Category</div>
+                                <div style={{ fontSize: '14px', fontWeight: 'bold' }}>{aqiData?.category}</div>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </>
+                    ) : (
+                      <div className="no-alerts">
+                        <Activity size={48} style={{ margin: '0 auto 16px', opacity: 0.3 }} />
+                        <p>No air quality data available</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
           <div className="control-page-grid">
             {/* Hub Information Card - Spans 2 rows */}
             <div className="card" style={{ gridRow: 'span 2' }}>
@@ -437,197 +645,6 @@ export default function HubControlPage() {
                 ) : (
                   <div className="no-alerts">
                     <p>No hub device found</p>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Temperature Card (DHT11) */}
-            <div className="card">
-              <div className="card-header">
-                <div className="card-title-group">
-                  <Thermometer size={24} />
-                  <h3>TEMPERATURE</h3>
-                </div>
-                {tempStatus && (
-                  <span className={`status-indicator ${tempStatus.status}`}>
-                    {tempStatus.text}
-                  </span>
-                )}
-              </div>
-              <div className="card-content">
-                {sensorData?.temperature != null ? (
-                  <>
-                    <div
-                      className="card-value"
-                      style={{
-                        fontSize: '56px',
-                        color: tempStatus?.color,
-                        textAlign: 'center',
-                        margin: '20px 0'
-                      }}
-                    >
-                      {sensorData.temperature.toFixed(1)}°C
-                    </div>
-                    <div style={{ textAlign: 'center', color: 'var(--text-secondary)' }}>
-                      <p style={{ fontSize: '14px', marginBottom: '8px' }}>
-                        Last updated: {formatTimestamp(sensorData.timestamp)}
-                      </p>
-                      <div className="temp-ranges" style={{
-                        display: 'flex',
-                        justifyContent: 'space-around',
-                        marginTop: '85px',
-                        padding: '12px',
-                        background: 'rgba(0,0,0,0.3)',
-                        borderRadius: '8px'
-                      }}>
-                        <div>
-                          <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Comfort Range</div>
-                          <div style={{ fontSize: '14px', fontWeight: 'bold' }}>18-25°C</div>
-                        </div>
-                        <div>
-                          <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Device</div>
-                          <div style={{ fontSize: '14px', fontWeight: 'bold' }}>DHT11</div>
-                        </div>
-                      </div>
-                    </div>
-                  </>
-                ) : (
-                  <div className="no-alerts">
-                    <Activity size={48} style={{ margin: '0 auto 16px', opacity: 0.3 }} />
-                    <p>No temperature data available</p>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Humidity Card (DHT11) */}
-            <div className="card">
-              <div className="card-header">
-                <div className="card-title-group">
-                  <Droplets size={24} />
-                  <h3>HUMIDITY</h3>
-                </div>
-                {humidityStatus && (
-                  <span className={`status-indicator ${humidityStatus.status}`}>
-                    {humidityStatus.text}
-                  </span>
-                )}
-              </div>
-              <div className="card-content">
-                {sensorData?.humidity != null ? (
-                  <>
-                    <div
-                      className="card-value"
-                      style={{
-                        fontSize: '56px',
-                        color: humidityStatus?.color,
-                        textAlign: 'center',
-                        margin: '20px 0'
-                      }}
-                    >
-                      {sensorData.humidity.toFixed(1)}%
-                    </div>
-                    <div style={{ textAlign: 'center', color: 'var(--text-secondary)' }}>
-                      <p style={{ fontSize: '14px', marginBottom: '8px' }}>
-                        Last updated: {formatTimestamp(sensorData.timestamp)}
-                      </p>
-                      <div className="progress-bar" style={{ marginTop: '16px' }}>
-                        <div
-                          className="progress-fill"
-                          style={{
-                            width: `${Math.min(sensorData.humidity, 100)}%`,
-                            background: humidityStatus?.color
-                          }}
-                        ></div>
-                      </div>
-                      <div style={{
-                        display: 'flex',
-                        justifyContent: 'space-around',
-                        marginTop: '60px',
-                        padding: '12px',
-                        background: 'rgba(0,0,0,0.3)',
-                        borderRadius: '8px'
-                      }}>
-                        <div>
-                          <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Comfort Range</div>
-                          <div style={{ fontSize: '14px', fontWeight: 'bold' }}>30-60%</div>
-                        </div>
-                        <div>
-                          <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Device</div>
-                          <div style={{ fontSize: '14px', fontWeight: 'bold' }}>DHT11</div>
-                        </div>
-                      </div>
-                    </div>
-                  </>
-                ) : (
-                  <div className="no-alerts">
-                    <Activity size={48} style={{ margin: '0 auto 16px', opacity: 0.3 }} />
-                    <p>No humidity data available</p>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Air Quality Card (PM2.5) */}
-            <div className="card">
-              <div className="card-header">
-                <div className="card-title-group">
-                  <Wind size={24} />
-                  <h3>AIR QUALITY (PM2.5)</h3>
-                </div>
-                {aqiData && (
-                  <span className={`status-indicator ${aqiData.status}`}>
-                    {aqiData.category}
-                  </span>
-                )}
-              </div>
-              <div className="card-content">
-                {sensorData?.pm25 != null ? (
-                  <>
-                    <div
-                      className="card-value"
-                      style={{
-                        fontSize: '56px',
-                        color: aqiData?.color,
-                        textAlign: 'center',
-                        margin: '20px 0'
-                      }}
-                    >
-                      {sensorData.pm25.toFixed(1)}
-                    </div>
-                    <div style={{ textAlign: 'center', color: 'var(--text-secondary)', fontSize: '14px', marginBottom: '8px' }}>
-                      μg/m³
-                    </div>
-                    <div style={{ textAlign: 'center', color: 'var(--text-secondary)' }}>
-                      <p style={{ fontSize: '14px', marginBottom: '8px' }}>
-                        Last updated: {formatTimestamp(sensorData.timestamp)}
-                      </p>
-                      {sensorData.aqi !== undefined && (
-                        <div style={{
-                          display: 'flex',
-                          justifyContent: 'space-around',
-                          marginTop: '26px',
-                          padding: '12px',
-                          background: 'rgba(0,0,0,0.3)',
-                          borderRadius: '8px'
-                        }}>
-                          <div>
-                            <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>AQI</div>
-                            <div style={{ fontSize: '14px', fontWeight: 'bold', color: aqiData?.color }}>{sensorData.aqi}</div>
-                          </div>
-                          <div>
-                            <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Category</div>
-                            <div style={{ fontSize: '14px', fontWeight: 'bold' }}>{aqiData?.category}</div>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  </>
-                ) : (
-                  <div className="no-alerts">
-                    <Activity size={48} style={{ margin: '0 auto 16px', opacity: 0.3 }} />
-                    <p>No air quality data available</p>
                   </div>
                 )}
               </div>
