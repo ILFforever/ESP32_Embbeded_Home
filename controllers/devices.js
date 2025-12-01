@@ -18,7 +18,7 @@ const SENSOR_DELTA_THRESHOLD = 5; // Write if sensor changes by 5%
 const OFFLINE_THRESHOLD_MS = 2 * 60 * 1000; // 2 minutes = offline
 
 // TTL Settings (Firestore auto-deletion)
-const STATUS_TTL_SECONDS = 120; // 2 minutes - document auto-deletes if no heartbeat
+const STATUS_TTL_SECONDS = 180; // 3 minutes - document auto-deletes if no heartbeat
 const HISTORY_RETENTION_DAYS = 30; // Keep history for 30 days
 
 // Helper: Calculate expiration timestamp for status (2 minutes)
@@ -543,47 +543,74 @@ const getAllDevicesStatus = async (req, res) => {
     for (const deviceDoc of devicesSnapshot.docs) {
       const deviceId = deviceDoc.id;
       const deviceData = deviceDoc.data();
+      const deviceType = deviceData.type || 'unknown';
 
-      // Get status subcollection
-      const statusDoc = await deviceDoc.ref.collection('live_status').doc('heartbeat').get();
+      let isOnline = false;
+      let lastSeenTimestamp = null;
+      let statusDetails = {
+        uptime_ms: 0,
+        free_heap: 0,
+        wifi_rssi: -100,
+        ip_address: 'N/A',
+        sensor_data: null // For sensors
+      };
 
-      if (statusDoc.exists) {
-        // Document exists - calculate online status from expireAt
-        const statusData = statusDoc.data();
-        const lastHeartbeat = statusData.last_heartbeat?.toMillis() || 0;
-        const expireAt = statusData.expireAt;
+      if (deviceType.includes('sensor')) {
+        const SENSOR_OFFLINE_MINUTES = 20;
+        const sensorCurrentDoc = await deviceDoc.ref.collection('sensors').doc('current').get();
 
-        // Count as online if expireAt is in the future
-        const isOnline = expireAt && expireAt.toMillis() > Date.now();
-        if (isOnline) onlineCount++;
+        if (sensorCurrentDoc.exists) {
+          const sensorRawData = sensorCurrentDoc.data();
+          let lastUpdatedMillis = 0;
+          const timestampValue = sensorRawData.last_updated || sensorRawData.timestamp;
 
-        devices.push({
-          device_id: deviceId,
-          type: deviceData.type || 'unknown',
-          name: deviceData.name || deviceId,
-          online: isOnline,
-          last_seen: lastHeartbeat ? new Date(lastHeartbeat).toISOString() : null,
-          uptime_ms: statusData.uptime_ms || 0,
-          free_heap: statusData.free_heap || 0,
-          wifi_rssi: statusData.wifi_rssi || 0,
-          ip_address: statusData.ip_address || null,
-          expireAt: expireAt
-        });
+          if (timestampValue) {
+            if (typeof timestampValue.toMillis === 'function') {
+              lastUpdatedMillis = timestampValue.toMillis();
+            } else if (typeof timestampValue === 'string') {
+              const parsedDate = new Date(timestampValue);
+              if (!isNaN(parsedDate)) {
+                lastUpdatedMillis = parsedDate.getTime();
+              }
+            } else if (timestampValue instanceof Date) {
+              lastUpdatedMillis = timestampValue.getTime();
+            }
+          }
+
+          if (lastUpdatedMillis !== 0) {
+            const now = Date.now();
+            const lagTimeMs = SENSOR_OFFLINE_MINUTES * 60 * 1000;
+            isOnline = (now - lastUpdatedMillis) < lagTimeMs;
+            lastSeenTimestamp = new admin.firestore.Timestamp(Math.floor(lastUpdatedMillis / 1000), (lastUpdatedMillis % 1000) * 1000000);
+            statusDetails.sensor_data = sensorRawData; // Include all raw sensor data
+          }
+        }
       } else {
-        // Document doesn't exist = device offline (TTL deleted it or never sent heartbeat)
-        devices.push({
-          device_id: deviceId,
-          type: deviceData.type || 'unknown',
-          name: deviceData.name || deviceId,
-          online: false,
-          last_seen: null,
-          uptime_ms: 0,
-          free_heap: 0,
-          wifi_rssi: 0,
-          ip_address: null,
-          expireAt: null
-        });
+        // ORIGINAL HEARTBEAT LOGIC FOR NON-SENSORS
+        const heartbeatDoc = await deviceDoc.ref.collection('live_status').doc('heartbeat').get();
+
+        if (heartbeatDoc.exists) {
+          const heartbeatData = heartbeatDoc.data();
+          const expireAtMillis = heartbeatData.expireAt ? heartbeatData.expireAt.toMillis() : 0;
+          isOnline = expireAtMillis > Date.now();
+          lastSeenTimestamp = heartbeatData.last_heartbeat;
+          statusDetails.uptime_ms = heartbeatData.uptime_ms || 0;
+          statusDetails.free_heap = heartbeatData.free_heap || 0;
+          statusDetails.wifi_rssi = heartbeatData.wifi_rssi || -100;
+          statusDetails.ip_address = heartbeatData.ip_address || 'unknown';
+        }
       }
+
+      if (isOnline) onlineCount++;
+
+      devices.push({
+        device_id: deviceId,
+        type: deviceType,
+        name: deviceData.name || deviceId,
+        online: isOnline,
+        last_seen: lastSeenTimestamp ? lastSeenTimestamp.toDate().toISOString() : null,
+        ...statusDetails
+      });
     }
 
     // Summary stats
@@ -1658,13 +1685,107 @@ const getDeviceInfo = async (req, res) => {
     const db = getFirestore();
     const deviceRef = db.collection('devices').doc(device_id);
 
-    // Get device heartbeat data
+    // Get device document to check type
+    const deviceDoc = await deviceRef.get();
+    if (!deviceDoc.exists) {
+      return res.status(404).json({
+        status: 'error',
+        message: 'Device not found'
+      });
+    }
+    const deviceData = deviceDoc.data();
+
+    // Special case for sensors which may not have a heartbeat
+    if (deviceData.type && deviceData.type.includes('sensor')) {
+      const SENSOR_OFFLINE_MINUTES = 20;
+      const sensorDoc = await deviceRef.collection('sensors').doc('current').get();
+
+      if (!sensorDoc.exists) {
+        return res.json({
+          status: 'ok',
+          online: false,
+          message: 'Sensor has never reported data.',
+          ip: 'N/A',
+          free_heap: 0,
+          uptime: 0,
+          slave_status: 0,
+          amp_status: 0,
+          mesh_status: -1,
+          ping_count: 0,
+          wifi_rssi: -100,
+          last_heartbeat: null,
+          device_state: {}
+        });
+      }
+
+      const sensorData = sensorDoc.data();
+      
+      let lastUpdated = 0;
+      // Prefer server-side timestamp, fall back to device-side
+      const timestampValue = sensorData.last_updated || sensorData.timestamp;
+
+      if (timestampValue) {
+        // Handle Firestore Timestamp object, which has a toMillis method
+        if (typeof timestampValue.toMillis === 'function') {
+          lastUpdated = timestampValue.toMillis();
+        } 
+        // Handle ISO 8601 string date format
+        else if (typeof timestampValue === 'string') {
+          const parsedDate = new Date(timestampValue);
+          if (!isNaN(parsedDate)) {
+            lastUpdated = parsedDate.getTime();
+          }
+        }
+        // Handle JavaScript Date object
+        else if (timestampValue instanceof Date) {
+            lastUpdated = timestampValue.getTime();
+        }
+      }
+      
+      if (lastUpdated === 0) {
+        return res.json({
+          status: 'ok',
+          online: false,
+          message: 'Sensor data is missing a valid timestamp.',
+          ip: 'N/A',
+          free_heap: 0,
+          uptime: 0,
+          slave_status: 0,
+          amp_status: 0,
+          mesh_status: -1,
+          ping_count: 0,
+          wifi_rssi: -100,
+          last_heartbeat: null,
+          device_state: {}
+        });
+      }
+
+      const now = Date.now();
+      const lagTimeMs = SENSOR_OFFLINE_MINUTES * 60 * 1000;
+      const isOnline = (now - lastUpdated) < lagTimeMs;
+
+      return res.json({
+        status: 'ok',
+        online: isOnline,
+        ip: 'N/A',
+        free_heap: 0,
+        uptime: 0,
+        slave_status: 0,
+        amp_status: 0,
+        mesh_status: -1,
+        ping_count: 0,
+        wifi_rssi: -100,
+        last_heartbeat: sensorData.last_updated || sensorData.timestamp,
+        device_state: sensorData, // Return all sensor data in device_state
+      });
+    }
+
+    // Original logic for devices with heartbeats
     const heartbeatDoc = await deviceRef
       .collection('live_status')
       .doc('heartbeat')
       .get();
 
-    // Get device state data
     const deviceStateDoc = await deviceRef
       .collection('live_status')
       .doc('device_state')
