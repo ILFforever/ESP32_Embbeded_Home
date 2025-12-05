@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Battery, Info, List } from 'lucide-react';
+import { Battery, Info, List, Cpu, Radio } from 'lucide-react';
 import type { DevicesStatus, Device } from '@/types/dashboard';
 import { getDeviceStatusClass as getStatusClass, getDeviceStatusText as getStatusText } from '@/services/devices.service';
 
@@ -11,7 +11,7 @@ interface SystemStatusCardProps {
 
 export function SystemStatusCard({ devicesStatus, isExpanded = false }: SystemStatusCardProps) {
   const router = useRouter();
-
+  const [viewMode, setViewMode] = useState<'devices' | 'sensors'>('devices');
 
   // Extract doorbell and hub devices from the devices array
   const doorbellDevice = devicesStatus?.devices?.find(d => d.type === 'doorbell');
@@ -76,19 +76,37 @@ export function SystemStatusCard({ devicesStatus, isExpanded = false }: SystemSt
     }
   };
 
-  // If expanded (popup mode), show all devices
+  // If expanded (popup mode), show all devices or sensors with toggle
   if (isExpanded) {
+    const displayDevices = viewMode === 'devices'
+      ? allDevices.filter(device => device.type !== 'sensor' && device.type !== 'gas_sensor')
+      : allDevices.filter(device => device.type === 'sensor' || device.type === 'gas_sensor');
+
     return (
       <div className="card card-large">
         <div className="card-header">
           <h2>SYSTEM STATUS</h2>
+          <div className="view-toggle">
+            <button
+              className={`toggle-btn ${viewMode === 'devices' ? 'active' : ''}`}
+              onClick={() => setViewMode('devices')}
+            >
+              <Cpu size={16} />
+              Devices
+            </button>
+            <button
+              className={`toggle-btn ${viewMode === 'sensors' ? 'active' : ''}`}
+              onClick={() => setViewMode('sensors')}
+            >
+              <Radio size={16} />
+              Sensors
+            </button>
+          </div>
         </div>
         <div className="card-content">
           <div className="system-status-grid">
-            {/* All Devices in Popup */}
-            {allDevices
-              .filter(device => device.type !== 'sensor' && device.type !== 'gas_sensor')
-              .map((device) => (
+            {/* All Devices or Sensors in Popup */}
+            {displayDevices.map((device) => (
               <div
                 key={device.device_id}
                 className="device-status-item device-clickable"
@@ -114,13 +132,26 @@ export function SystemStatusCard({ devicesStatus, isExpanded = false }: SystemSt
                 </div>
                 <div className="device-info">
                   <p>Last Heartbeat: {device.last_seen ? new Date(device.last_seen).toLocaleString() : 'Never'}</p>
-                  <p>Device ID: {device.device_id || 'N/A'}</p>
-                  <p>IP Address: {isDeviceOffline(device) ? '-' : (device.ip_address || 'N/A')}</p>
-                  <p>WiFi Signal: {isDeviceOffline(device) ? '-' : (device.wifi_rssi ? `${device.wifi_rssi} dBm` : 'N/A')}</p>
-                  <p>Free Heap: {isDeviceOffline(device) ? '-' : (device.free_heap ? `${(device.free_heap / 1024).toFixed(1)} KB` : 'N/A')}</p>
-                  <p>Uptime: {isDeviceOffline(device) ? '-' : (device.uptime_ms ? `${Math.floor(device.uptime_ms / 3600000)}h ${Math.floor((device.uptime_ms % 3600000) / 60000)}m` : 'N/A')}</p>
-                  {device.battery !== undefined && (
-                    <p>Battery: {device.battery}%</p>
+                  {viewMode === 'sensors' ? (
+                    // Reduced info for sensors
+                    <>
+                      <p>Device ID: {device.device_id || 'N/A'}</p>
+                      {device.battery !== undefined && (
+                        <p>Battery: {device.battery}%</p>
+                      )}
+                    </>
+                  ) : (
+                    // Full info for devices
+                    <>
+                      <p>Device ID: {device.device_id || 'N/A'}</p>
+                      <p>IP Address: {isDeviceOffline(device) ? '-' : (device.ip_address || 'N/A')}</p>
+                      <p>WiFi Signal: {isDeviceOffline(device) ? '-' : (device.wifi_rssi ? `${device.wifi_rssi} dBm` : 'N/A')}</p>
+                      <p>Free Heap: {isDeviceOffline(device) ? '-' : (device.free_heap ? `${(device.free_heap / 1024).toFixed(1)} KB` : 'N/A')}</p>
+                      <p>Uptime: {isDeviceOffline(device) ? '-' : (device.uptime_ms ? `${Math.floor(device.uptime_ms / 3600000)}h ${Math.floor((device.uptime_ms % 3600000) / 60000)}m` : 'N/A')}</p>
+                      {device.battery !== undefined && (
+                        <p>Battery: {device.battery}%</p>
+                      )}
+                    </>
                   )}
                 </div>
                 {(device.type === 'doorbell' || device.type === 'hub' || device.type === 'main_lcd') && (
@@ -173,7 +204,7 @@ export function SystemStatusCard({ devicesStatus, isExpanded = false }: SystemSt
         <h2>SYSTEM STATUS</h2>
       </div>
       <div className="card-content">
-        <div className="system-status-grid">
+        <div className="system-status-grid-compact">
           {/* Doorbell Status */}
           <div
             className="device-status-item device-clickable"
