@@ -68,6 +68,7 @@ function calculateAlertScore(level, timestamp) {
 // @query   source - Filter by source device_id
 // @query   tags - Filter by tags (comma-separated)
 // @query   limit - Max alerts to return (default 50, max 100)
+// @query   read - Filter by read status (true/false)
 // ============================================================================
 const getAlerts = async (req, res) => {
   try {
@@ -75,7 +76,8 @@ const getAlerts = async (req, res) => {
       level,
       source,
       tags,
-      limit = 50
+      limit = 50,
+      read
     } = req.query;
 
     // Validate level
@@ -92,10 +94,29 @@ const getAlerts = async (req, res) => {
     // Parse tags filter
     const tagArray = tags ? tags.split(',').map(t => t.trim()) : null;
 
-    console.log(`[Alerts] Querying alerts - level: ${level || 'all'}, source: ${source || 'all'}, limit: ${limitNum}`);
+    // Parse read filter
+    const readFilter = read !== undefined ? read === 'true' : null;
+
+    console.log(`[Alerts] Querying alerts - level: ${level || 'all'}, source: ${source || 'all'}, read: ${readFilter !== null ? readFilter : 'all'}, limit: ${limitNum}`);
 
     const db = getFirestore();
     const alerts = [];
+
+    // Get user/device ID for read status tracking
+    const userId = req.user ? req.user.uid : req.device?.device_id;
+
+    // Load read status map for this user/device
+    const readStatusMap = new Map();
+    if (userId) {
+      const readStatusSnapshot = await db.collection('alert_read_status')
+        .where('user_id', '==', userId)
+        .get();
+
+      readStatusSnapshot.docs.forEach(doc => {
+        const data = doc.data();
+        readStatusMap.set(data.alert_id, true);
+      });
+    }
 
     // Get all devices or specific device
     const devicesSnapshot = source
@@ -131,8 +152,11 @@ const getAlerts = async (req, res) => {
         // Apply tags filter (device-log tag)
         if (tagArray && !tagArray.includes('device-log') && !tagArray.includes(logData.level)) return;
 
+        const alertId = `${deviceId}_log_${doc.id}`;
+        const isRead = readStatusMap.has(alertId);
+
         alerts.push({
-          id: doc.id,
+          id: alertId,
           level: alertLevel,
           message: `${deviceId}: ${logData.message}`,
           source: deviceId,
@@ -143,7 +167,8 @@ const getAlerts = async (req, res) => {
             error_message: logData.error_message
           },
           timestamp: logData.timestamp?.toDate?.() || logData.timestamp,
-          created_at: logData.created_at?.toDate?.() || logData.created_at
+          created_at: logData.created_at?.toDate?.() || logData.created_at,
+          read: isRead
         });
       });
 
@@ -166,8 +191,11 @@ const getAlerts = async (req, res) => {
         if (tagArray && !tagArray.includes('face-detection') &&
             !tagArray.includes(isRecognized ? 'recognized' : 'unknown')) return;
 
+        const alertId = `${deviceId}_face_${doc.id}`;
+        const isRead = readStatusMap.has(alertId);
+
         alerts.push({
-          id: doc.id,
+          id: alertId,
           level: alertLevel,
           message: isRecognized
             ? `Face detected: ${faceData.name || 'Unknown'}`
@@ -181,23 +209,30 @@ const getAlerts = async (req, res) => {
             image_url: faceData.image
           },
           timestamp: faceData.detected_at?.toDate?.() || faceData.detected_at || faceData.timestamp?.toDate?.() || faceData.timestamp,
-          created_at: faceData.detected_at?.toDate?.() || faceData.detected_at
+          created_at: faceData.detected_at?.toDate?.() || faceData.detected_at,
+          read: isRead
         });
       });
     }
 
+    // Apply read filter if specified
+    let filteredAlerts = alerts;
+    if (readFilter !== null) {
+      filteredAlerts = alerts.filter(alert => alert.read === readFilter);
+    }
+
     // Sort by score (combines priority and recency)
     // Recent IMPORTANT alerts score highest, old INFO alerts score lowest
-    alerts.sort((a, b) => {
+    filteredAlerts.sort((a, b) => {
       const scoreA = calculateAlertScore(a.level, a.timestamp);
       const scoreB = calculateAlertScore(b.level, b.timestamp);
       return scoreB - scoreA; // Higher score = more important
     });
 
     // Apply limit
-    const limitedAlerts = alerts.slice(0, limitNum);
+    const limitedAlerts = filteredAlerts.slice(0, limitNum);
 
-    console.log(`[Alerts] Returning ${limitedAlerts.length} alerts`);
+    console.log(`[Alerts] Returning ${limitedAlerts.length} alerts (filtered from ${alerts.length})`);
 
     // Return alerts
     res.json({
@@ -261,27 +296,36 @@ const createAlert = async (req, res) => {
 // ============================================================================
 // @route   PATCH /api/v1/alerts/:alert_id/read
 // @desc    Mark alert as read
-// @access  Protected (requires user token)
+// @access  Protected (requires user token or device token)
 // ============================================================================
 const markAlertAsRead = async (req, res) => {
   try {
     const { alert_id } = req.params;
+    const userId = req.user ? req.user.uid : req.device?.device_id;
 
-    const alert = await Alert.markAsRead(alert_id);
-
-    if (!alert) {
-      return res.status(404).json({
+    if (!userId) {
+      return res.status(401).json({
         status: 'error',
-        message: 'Alert not found'
+        message: 'User or device authentication required'
       });
     }
 
-    console.log(`[Alerts] Marked alert as read: ${alert_id}`);
+    const db = getFirestore();
+    const { admin } = require('../config/firebase');
+
+    // Create or update read status
+    await db.collection('alert_read_status').add({
+      user_id: userId,
+      alert_id: alert_id,
+      read_at: admin.firestore.FieldValue.serverTimestamp()
+    });
+
+    console.log(`[Alerts] Marked alert as read: ${alert_id} for user: ${userId}`);
 
     res.json({
       status: 'ok',
       message: 'Alert marked as read',
-      alert: alert.toJSON()
+      alert_id: alert_id
     });
 
   } catch (error) {
@@ -296,11 +340,19 @@ const markAlertAsRead = async (req, res) => {
 // ============================================================================
 // @route   POST /api/v1/alerts/mark-read
 // @desc    Mark multiple alerts as read
-// @access  Protected (requires user token)
+// @access  Protected (requires user token or device token)
 // ============================================================================
 const markMultipleAlertsAsRead = async (req, res) => {
   try {
     const { alert_ids } = req.body;
+    const userId = req.user ? req.user.uid : req.device?.device_id;
+
+    if (!userId) {
+      return res.status(401).json({
+        status: 'error',
+        message: 'User or device authentication required'
+      });
+    }
 
     if (!alert_ids || !Array.isArray(alert_ids) || alert_ids.length === 0) {
       return res.status(400).json({
@@ -309,9 +361,23 @@ const markMultipleAlertsAsRead = async (req, res) => {
       });
     }
 
-    await Alert.markMultipleAsRead(alert_ids);
+    const db = getFirestore();
+    const { admin } = require('../config/firebase');
+    const batch = db.batch();
 
-    console.log(`[Alerts] Marked ${alert_ids.length} alerts as read`);
+    // Create read status records for each alert
+    alert_ids.forEach(alert_id => {
+      const docRef = db.collection('alert_read_status').doc();
+      batch.set(docRef, {
+        user_id: userId,
+        alert_id: alert_id,
+        read_at: admin.firestore.FieldValue.serverTimestamp()
+      });
+    });
+
+    await batch.commit();
+
+    console.log(`[Alerts] Marked ${alert_ids.length} alerts as read for user: ${userId}`);
 
     res.json({
       status: 'ok',
