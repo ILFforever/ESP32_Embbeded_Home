@@ -251,6 +251,144 @@ const getAlerts = async (req, res) => {
 };
 
 // ============================================================================
+// @route   GET /api/v1/alerts/:alert_id
+// @desc    Get a single alert by ID
+// @access  Protected (requires user token or device token)
+// ============================================================================
+const getAlertById = async (req, res) => {
+  try {
+    const { alert_id } = req.params;
+
+    console.log(`[Alerts] Fetching alert: ${alert_id}`);
+
+    // Parse alert_id to determine type and IDs
+    // Format: {deviceId}_face_{docId} or {deviceId}_log_{docId}
+    const parts = alert_id.split('_');
+
+    if (parts.length < 3) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'Invalid alert_id format'
+      });
+    }
+
+    const type = parts[parts.length - 2]; // 'face' or 'log'
+    const docId = parts[parts.length - 1];
+    const deviceId = parts.slice(0, parts.length - 2).join('_');
+
+    const db = getFirestore();
+
+    // Get user/device ID for read status tracking
+    const userId = req.user ? req.user.uid : req.device?.device_id;
+
+    // Check read status
+    let isRead = false;
+    if (userId) {
+      const readStatusSnapshot = await db.collection('alert_read_status')
+        .where('user_id', '==', userId)
+        .where('alert_id', '==', alert_id)
+        .limit(1)
+        .get();
+
+      isRead = !readStatusSnapshot.empty;
+    }
+
+    // Fetch the alert based on type
+    if (type === 'face') {
+      const faceDoc = await db.collection('devices').doc(deviceId)
+        .collection('face_detections')
+        .doc(docId)
+        .get();
+
+      if (!faceDoc.exists) {
+        return res.status(404).json({
+          status: 'error',
+          message: 'Alert not found'
+        });
+      }
+
+      const faceData = faceDoc.data();
+      const isRecognized = faceData.recognized;
+      const alertLevel = isRecognized ? ALERT_LEVELS.INFO : ALERT_LEVELS.WARN;
+
+      const alert = {
+        id: alert_id,
+        level: alertLevel,
+        message: isRecognized
+          ? `Face detected: ${faceData.name || 'Unknown'}`
+          : 'Unknown person detected at door',
+        source: deviceId,
+        tags: ['face-detection', isRecognized ? 'recognized' : 'unknown'],
+        metadata: {
+          event_id: docId,
+          name: faceData.name,
+          confidence: faceData.confidence,
+          image_url: faceData.image
+        },
+        timestamp: faceData.detected_at?.toDate?.() || faceData.detected_at || faceData.timestamp?.toDate?.() || faceData.timestamp,
+        created_at: faceData.detected_at?.toDate?.() || faceData.detected_at,
+        read: isRead
+      };
+
+      return res.json({
+        status: 'ok',
+        alert
+      });
+
+    } else if (type === 'log') {
+      const logDoc = await db.collection('devices').doc(deviceId)
+        .collection('device_logs')
+        .doc(docId)
+        .get();
+
+      if (!logDoc.exists) {
+        return res.status(404).json({
+          status: 'error',
+          message: 'Alert not found'
+        });
+      }
+
+      const logData = logDoc.data();
+      const alertLevel = mapLogLevelToAlertLevel(logData.level);
+
+      const alert = {
+        id: alert_id,
+        level: alertLevel,
+        message: `${deviceId}: ${logData.message}`,
+        source: deviceId,
+        tags: ['device-log', logData.level],
+        metadata: {
+          log_level: logData.level,
+          data: logData.data,
+          error_message: logData.error_message
+        },
+        timestamp: logData.timestamp?.toDate?.() || logData.timestamp,
+        created_at: logData.created_at?.toDate?.() || logData.created_at,
+        read: isRead
+      };
+
+      return res.json({
+        status: 'ok',
+        alert
+      });
+
+    } else {
+      return res.status(400).json({
+        status: 'error',
+        message: 'Invalid alert type. Must be face or log.'
+      });
+    }
+
+  } catch (error) {
+    console.error('[Alerts] Error fetching alert:', error);
+    res.status(500).json({
+      status: 'error',
+      message: error.message
+    });
+  }
+};
+
+// ============================================================================
 // @route   POST /api/v1/alerts
 // @desc    Create a new alert (manual creation)
 // @access  Protected (requires user token)
@@ -442,6 +580,7 @@ const createDeviceAlert = async (alertData) => {
 
 module.exports = {
   getAlerts,
+  getAlertById,
   createAlert,
   markAlertAsRead,
   markMultipleAlertsAsRead,

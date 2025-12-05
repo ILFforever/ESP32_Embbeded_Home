@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const {
   getAlerts,
+  getAlertById,
   createAlert,
   markAlertAsRead,
   markMultipleAlertsAsRead,
@@ -20,6 +21,10 @@ router.get('/', protect, getAlerts);
 // @access  Private (requires device token and device_id)
 router.get('/device', authenticateDevice, getAlerts);
 
+// @route   GET /api/v1/alerts/:alert_id
+// @desc    Get a single alert by ID
+// @access  Private (requires user token)
+router.get('/:alert_id', protect, getAlertById);
 
 // @route   POST /api/v1/alerts
 // @desc    Create a new alert manually
