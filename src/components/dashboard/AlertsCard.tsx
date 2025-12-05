@@ -96,7 +96,7 @@ export function AlertsCard({ alerts, isExpanded = false, onRefresh }: AlertsCard
               <p className="no-alerts">NO ACTIVE ALERTS</p>
             ) : (
               <div className="alerts-list">
-                {unreadAlerts.slice(0, 5).map(alert => (
+                {unreadAlerts.slice(0, 4).map(alert => (
                   <div key={alert.id} className={`alert-item alert-${alertLevelToType(alert.level)}`}>
                     {getAlertIcon(alert.level)}
                     <div className="alert-content">
@@ -106,7 +106,7 @@ export function AlertsCard({ alerts, isExpanded = false, onRefresh }: AlertsCard
                     </div>
                   </div>
                 ))}
-                {unreadAlerts.length > 5 && (
+                {unreadAlerts.length > 4 && (
                   <p className="alert-more">+{unreadAlerts.length - 5} more alerts</p>
                 )}
               </div>

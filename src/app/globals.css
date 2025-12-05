@@ -240,13 +240,44 @@ h6 { font-size: var(--font-size-sm); }
   }
 }
 
-/* Dashboard Grid - Two independent columns (left and right) */
+/* Dashboard Grid - 4x4 Grid Layout */
 .dashboard-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(4, 1fr);
+  grid-template-rows: repeat(4, auto);
   gap: var(--spacing-lg);
   animation: fadeInUp 0.6s ease-out 0.2s both;
   align-items: start;
+  grid-template-areas:
+    "system-status system-status alerts alerts"
+    "system-status system-status alerts alerts"
+    "temperature temperature gas gas"
+    "doors doors admin admin";
+}
+
+/* Grid area assignments */
+.grid-system-status {
+  grid-area: system-status;
+}
+
+.grid-alerts {
+  grid-area: alerts;
+}
+
+.grid-temperature {
+  grid-area: temperature;
+}
+
+.grid-gas {
+  grid-area: gas;
+}
+
+.grid-doors {
+  grid-area: doors;
+}
+
+.grid-admin {
+  grid-area: admin;
 }
 
 @keyframes fadeInUp {
@@ -1885,7 +1916,13 @@ h6 { font-size: var(--font-size-sm); }
 /* Mobile Responsive */
 @media (max-width: 1024px) {
   .dashboard-grid {
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(2, 1fr);
+    grid-template-rows: auto;
+    grid-template-areas:
+      "system-status alerts"
+      "system-status alerts"
+      "temperature gas"
+      "doors admin";
   }
 
   .sidebar {
@@ -1930,7 +1967,15 @@ h6 { font-size: var(--font-size-sm); }
 
   .dashboard-grid {
     grid-template-columns: 1fr;
+    grid-template-rows: auto;
     gap: var(--spacing-md);
+    grid-template-areas:
+      "system-status"
+      "alerts"
+      "temperature"
+      "gas"
+      "doors"
+      "admin";
   }
 
   .dashboard-column {
