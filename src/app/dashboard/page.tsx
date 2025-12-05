@@ -41,6 +41,15 @@ export default function DashboardPage() {
     }
   };
 
+  const fetchGasReadings = async () => {
+    try {
+      const gasData = await getGasReadingsForDashboard();
+      setGasReadings(gasData);
+    } catch (error) {
+      console.error('Error loading gas readings:', error);
+    }
+  };
+
   useEffect(() => {
     const fetchData = async () => {
       try {
@@ -169,7 +178,7 @@ export default function DashboardPage() {
         content = <TemperatureCard isExpanded={true} />;
         break;
       case 'gas':
-        content = <GasReadingsCard gasReadings={gasReadings} isExpanded={true} />;
+        content = <GasReadingsCard gasReadings={gasReadings} isExpanded={true} onRefresh={fetchGasReadings} />;
         break;
       case 'doors':
         content = <DoorsWindowsCard doorsWindows={doorsWindows} isExpanded={true} />;
@@ -351,7 +360,7 @@ export default function DashboardPage() {
                   <circle cx="12" cy="12" r="3"></circle>
                 </svg>
               </button>
-              <GasReadingsCard gasReadings={gasReadings} />
+              <GasReadingsCard gasReadings={gasReadings} onRefresh={fetchGasReadings} />
             </div>
 
             {/* Doors/Windows - spans 1 row x 2 columns */}

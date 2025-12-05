@@ -995,7 +995,12 @@ export async function getHubAmpStreaming(deviceId: string): Promise<HubAmpStream
       }
     );
     return response.data;
-  } catch (error) {
+  } catch (error: any) {
+    // Silently handle 404 errors (endpoint not implemented yet)
+    if (error?.response?.status === 404) {
+      return null;
+    }
+    // Log other errors
     console.error('Error fetching Hub amp streaming status:', error);
     return null;
   }

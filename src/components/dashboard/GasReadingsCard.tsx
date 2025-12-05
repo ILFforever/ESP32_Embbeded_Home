@@ -1,15 +1,25 @@
 import React, { useState } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
-import { Wind } from 'lucide-react';
+import { Wind, RefreshCw } from 'lucide-react';
 import type { GasReading } from '@/types/dashboard';
 
 interface GasReadingsCardProps {
   gasReadings: GasReading[];
   isExpanded?: boolean;
+  onRefresh?: () => void;
 }
 
-export function GasReadingsCard({ gasReadings, isExpanded = false }: GasReadingsCardProps) {
+export function GasReadingsCard({ gasReadings, isExpanded = false, onRefresh }: GasReadingsCardProps) {
   const [selectedSensor, setSelectedSensor] = useState<string | null>(null);
+  const [refetching, setRefetching] = useState(false);
+
+  const handleRefresh = async () => {
+    if (onRefresh) {
+      setRefetching(true);
+      await onRefresh();
+      setRefetching(false);
+    }
+  };
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -44,6 +54,13 @@ export function GasReadingsCard({ gasReadings, isExpanded = false }: GasReadings
           <Wind size={20} />
           <h3>GAS SENSORS</h3>
         </div>
+        <button
+          className="card-refresh-icon"
+          onClick={(e) => { e.stopPropagation(); handleRefresh(); }}
+          disabled={refetching}
+        >
+          <RefreshCw size={20} className={refetching ? 'spinning' : ''} />
+        </button>
       </div>
 
       <div className="card-content">
@@ -83,6 +100,14 @@ export function GasReadingsCard({ gasReadings, isExpanded = false }: GasReadings
                   </button>
                 ))}
               </div>
+              <button
+                className="card-refresh-icon"
+                onClick={(e) => { e.stopPropagation(); handleRefresh(); }}
+                disabled={refetching}
+                style={{ marginLeft: 'auto' }}
+              >
+                <RefreshCw size={20} className={refetching ? 'spinning' : ''} />
+              </button>
             </div>
 
             {selectedSensor === null ? (

@@ -201,6 +201,14 @@ export function TemperatureCard({ isExpanded = false, refreshInterval = 5000 }: 
                   </button>
                 ))}
               </div>
+              <button
+                className="card-refresh-icon"
+                onClick={(e) => { e.stopPropagation(); fetchTemperatureData(); }}
+                disabled={refetching}
+                style={{ marginLeft: 'auto' }}
+              >
+                <RefreshCw size={20} className={refetching ? 'spinning' : ''} />
+              </button>
             </div>
 
             {selectedRoom === null ? (
@@ -253,67 +261,73 @@ export function TemperatureCard({ isExpanded = false, refreshInterval = 5000 }: 
               <div className="chart-container">
                 {temperatureData
                   .filter(data => data.room === selectedRoom)
-                  .map(data => (
-                    <div key={data.room}>
-                      <div className="room-details">
-                        <div className="detail-item">
-                          <span className="detail-label">CURRENT TEMPERATURE:</span>
-                          <span className="detail-value">{data.current.toFixed(1)}°C</span>
+                  .map(data => {
+                    // Find the color index for this room to match the "ALL ROOMS" view
+                    const roomIndex = temperatureData.findIndex(room => room.room === data.room);
+                    const roomColor = colors[roomIndex % colors.length];
+
+                    return (
+                      <div key={data.room}>
+                        <div className="room-details">
+                          <div className="detail-item">
+                            <span className="detail-label">CURRENT TEMPERATURE:</span>
+                            <span className="detail-value">{data.current.toFixed(1)}°C</span>
+                          </div>
+                          <div className="detail-item">
+                            <span className="detail-label">HUMIDITY:</span>
+                            <span className="detail-value">{data.humidity?.toFixed(0) ?? 0}%</span>
+                          </div>
+                          <div className="detail-item">
+                            <span className="detail-label">AVG (24H):</span>
+                            <span className="detail-value">
+                              {(data.history.reduce((sum, h) => sum + (h.value ?? 0), 0) / data.history.length).toFixed(1)}°C
+                            </span>
+                          </div>
                         </div>
-                        <div className="detail-item">
-                          <span className="detail-label">HUMIDITY:</span>
-                          <span className="detail-value">{data.humidity?.toFixed(0) ?? 0}%</span>
-                        </div>
-                        <div className="detail-item">
-                          <span className="detail-label">AVG (24H):</span>
-                          <span className="detail-value">
-                            {(data.history.reduce((sum, h) => sum + h.value, 0) / data.history.length).toFixed(1)}°C
-                          </span>
-                        </div>
+                        <h4>TEMPERATURE HISTORY - {selectedRoom.toUpperCase()} (24H)</h4>
+                        <ResponsiveContainer width="100%" height={400}>
+                          <LineChart
+                            data={data.history.map(h => ({
+                              timestamp: new Date(h.timestamp).toLocaleTimeString(),
+                              temperature: h.value != null ? h.value.toFixed(1) : '0'
+                            }))}
+                            margin={{ top: 20, right: 30, left: 20, bottom: 20 }}
+                          >
+                            <CartesianGrid strokeDasharray="3 3" stroke="#333" />
+                            <XAxis
+                              dataKey="timestamp"
+                              stroke="#FFF"
+                              tick={{ fill: '#FFF', fontFamily: 'monospace' }}
+                              interval="preserveStartEnd"
+                            />
+                            <YAxis
+                              stroke="#FFF"
+                              tick={{ fill: '#FFF', fontFamily: 'monospace' }}
+                              label={{ value: 'Temperature (°C)', angle: -90, position: 'insideLeft', fill: '#FFF' }}
+                            />
+                            <Tooltip
+                              contentStyle={{
+                                backgroundColor: '#1a1a1a',
+                                border: `2px solid ${roomColor}`,
+                                borderRadius: '4px',
+                                fontFamily: 'monospace',
+                                textTransform: 'uppercase'
+                              }}
+                            />
+                            <Line
+                              type="monotone"
+                              dataKey="temperature"
+                              stroke={roomColor}
+                              strokeWidth={2}
+                              dot={{ r: 3 }}
+                              activeDot={{ r: 6 }}
+                              connectNulls={true}
+                            />
+                          </LineChart>
+                        </ResponsiveContainer>
                       </div>
-                      <h4>TEMPERATURE HISTORY - {selectedRoom.toUpperCase()} (24H)</h4>
-                      <ResponsiveContainer width="100%" height={400}>
-                        <LineChart
-                          data={data.history.map(h => ({
-                            timestamp: new Date(h.timestamp).toLocaleTimeString(),
-                            temperature: h.value.toFixed(1)
-                          }))}
-                          margin={{ top: 20, right: 30, left: 20, bottom: 20 }}
-                        >
-                          <CartesianGrid strokeDasharray="3 3" stroke="#333" />
-                          <XAxis
-                            dataKey="timestamp"
-                            stroke="#FFF"
-                            tick={{ fill: '#FFF', fontFamily: 'monospace' }}
-                            interval="preserveStartEnd"
-                          />
-                          <YAxis
-                            stroke="#FFF"
-                            tick={{ fill: '#FFF', fontFamily: 'monospace' }}
-                            label={{ value: 'Temperature (°C)', angle: -90, position: 'insideLeft', fill: '#FFF' }}
-                          />
-                          <Tooltip
-                            contentStyle={{
-                              backgroundColor: '#1a1a1a',
-                              border: '2px solid #FF6600',
-                              borderRadius: '4px',
-                              fontFamily: 'monospace',
-                              textTransform: 'uppercase'
-                            }}
-                          />
-                          <Line
-                            type="monotone"
-                            dataKey="temperature"
-                            stroke="#FF6600"
-                            strokeWidth={2}
-                            dot={{ r: 3 }}
-                            activeDot={{ r: 6 }}
-                            connectNulls={true}
-                          />
-                        </LineChart>
-                      </ResponsiveContainer>
-                    </div>
-                  ))}
+                    );
+                  })}
               </div>
             )}
           </div>

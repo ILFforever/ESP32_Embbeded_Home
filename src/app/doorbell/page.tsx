@@ -1750,7 +1750,7 @@ export default function DoorbellControlPage() {
                       </span>
                     </div>
                   </div>
-                  <button
+                  {/* <button
                     className="btn-control btn-info"
                     onClick={() => setShowSettings(true)}
                     style={{
@@ -1763,7 +1763,7 @@ export default function DoorbellControlPage() {
                     }}
                   >
                     ⚙️ PAIR DEVICE
-                  </button>
+                  </button> */}
                 </div>
               </div>
             </div>

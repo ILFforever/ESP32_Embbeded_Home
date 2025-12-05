@@ -1,8 +1,8 @@
 import React from 'react';
-import { AlertTriangle, Info, XCircle, X, Check } from 'lucide-react';
+import { AlertTriangle, Info, XCircle, Check } from 'lucide-react';
 import type { Alert } from '@/types/dashboard';
 import { alertLevelToType } from '@/types/dashboard';
-import { markAlertAsRead, deleteAlert } from '@/services/devices.service';
+import { markAlertAsRead } from '@/services/devices.service';
 
 interface AlertsCardProps {
   alerts: Alert[];
@@ -27,13 +27,6 @@ export function AlertsCard({ alerts, isExpanded = false, onRefresh }: AlertsCard
 
   const handleMarkAsRead = async (alertId: string) => {
     const success = await markAlertAsRead(alertId);
-    if (success && onRefresh) {
-      onRefresh();
-    }
-  };
-
-  const handleDeleteAlert = async (alertId: string) => {
-    const success = await deleteAlert(alertId);
     if (success && onRefresh) {
       onRefresh();
     }
@@ -130,13 +123,6 @@ export function AlertsCard({ alerts, isExpanded = false, onRefresh }: AlertsCard
                             {formatTimestamp(alert.timestamp)}
                           </span>
                         </div>
-                        <button
-                          className="btn-icon-small"
-                          onClick={() => handleDeleteAlert(alert.id)}
-                          title="Delete alert"
-                        >
-                          <X size={16} />
-                        </button>
                       </div>
                       <div className="alert-body">
                         <h5>{getAlertTitle(alert)}</h5>
@@ -176,13 +162,6 @@ export function AlertsCard({ alerts, isExpanded = false, onRefresh }: AlertsCard
                             {formatTimestamp(alert.timestamp)}
                           </span>
                         </div>
-                        <button
-                          className="btn-icon-small"
-                          onClick={() => handleDeleteAlert(alert.id)}
-                          title="Delete alert"
-                        >
-                          <X size={16} />
-                        </button>
                       </div>
                       <div className="alert-body">
                         <h5>{getAlertTitle(alert)}</h5>
