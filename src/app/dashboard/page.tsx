@@ -237,16 +237,6 @@ export default function DashboardPage() {
             </li>
             <li className="sidebar-nav-item">
               <div
-                className={`sidebar-nav-link ${activeView === 'devices' ? 'active' : ''}`}
-                onClick={() => handleMenuClick('devices')}
-                style={{ cursor: 'pointer' }}
-              >
-                <span className="sidebar-nav-icon">🔧</span>
-                <span>Devices</span>
-              </div>
-            </li>
-            <li className="sidebar-nav-item">
-              <div
                 className={`sidebar-nav-link ${activeView === 'settings' ? 'active' : ''}`}
                 onClick={() => handleMenuClick('settings')}
                 style={{ cursor: 'pointer' }}
@@ -308,86 +298,94 @@ export default function DashboardPage() {
 
           {/* Dashboard Grid */}
           <div className="dashboard-grid">
-            {/* Top-left: Large card (2×2) - System Status */}
-            <div
-              className="card-large-main"
-              onClick={() => openExpandedCard('system-status')}
-            >
-              <button className="card-eye-icon" onClick={(e) => { e.stopPropagation(); openExpandedCard('system-status'); }}>
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
-                  <circle cx="12" cy="12" r="3"></circle>
-                </svg>
-              </button>
-              <SystemStatusCard devicesStatus={devicesStatus} />
+            {/* Left Column */}
+            <div className="dashboard-column">
+              {/* System Status */}
+              <div
+                className="dashboard-card"
+                onClick={() => openExpandedCard('system-status')}
+              >
+                <button className="card-eye-icon" onClick={(e) => { e.stopPropagation(); openExpandedCard('system-status'); }}>
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                    <circle cx="12" cy="12" r="3"></circle>
+                  </svg>
+                </button>
+                <SystemStatusCard devicesStatus={devicesStatus} />
+              </div>
+
+              {/* Temperature */}
+              <div
+                className="dashboard-card"
+                onClick={() => openExpandedCard('temperature')}
+              >
+                <button className="card-eye-icon" onClick={(e) => { e.stopPropagation(); openExpandedCard('temperature'); }}>
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                    <circle cx="12" cy="12" r="3"></circle>
+                  </svg>
+                </button>
+                <TemperatureCard />
+              </div>
+
+              {/* Doors/Windows */}
+              <div
+                className="dashboard-card"
+                onClick={() => openExpandedCard('doors')}
+              >
+                <button className="card-eye-icon" onClick={(e) => { e.stopPropagation(); openExpandedCard('doors'); }}>
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                    <circle cx="12" cy="12" r="3"></circle>
+                  </svg>
+                </button>
+                <DoorsWindowsCard doorsWindows={doorsWindows} />
+              </div>
             </div>
 
-            {/* Top-right row 1: Alerts */}
-            <div
-              className="card-top-right-1"
-              onClick={() => openExpandedCard('alerts')}
-            >
-              <button className="card-eye-icon" onClick={(e) => { e.stopPropagation(); openExpandedCard('alerts'); }}>
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
-                  <circle cx="12" cy="12" r="3"></circle>
-                </svg>
-              </button>
-              <AlertsCard alerts={alerts} onRefresh={fetchAlerts} />
-            </div>
+            {/* Right Column */}
+            <div className="dashboard-column">
+              {/* Alerts */}
+              <div
+                className="dashboard-card"
+                onClick={() => openExpandedCard('alerts')}
+              >
+                <button className="card-eye-icon" onClick={(e) => { e.stopPropagation(); openExpandedCard('alerts'); }}>
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                    <circle cx="12" cy="12" r="3"></circle>
+                  </svg>
+                </button>
+                <AlertsCard alerts={alerts} onRefresh={fetchAlerts} />
+              </div>
 
-            {/* Top-right row 2: Temperature */}
-            <div
-              className="card-top-right-2"
-              onClick={() => openExpandedCard('temperature')}
-            >
-              <button className="card-eye-icon" onClick={(e) => { e.stopPropagation(); openExpandedCard('temperature'); }}>
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
-                  <circle cx="12" cy="12" r="3"></circle>
-                </svg>
-              </button>
-              <TemperatureCard />
-            </div>
+              {/* Gas Readings */}
+              <div
+                className="dashboard-card"
+                onClick={() => openExpandedCard('gas')}
+              >
+                <button className="card-eye-icon" onClick={(e) => { e.stopPropagation(); openExpandedCard('gas'); }}>
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                    <circle cx="12" cy="12" r="3"></circle>
+                  </svg>
+                </button>
+                <GasReadingsCard gasReadings={gasReadings} />
+              </div>
 
-            {/* Row 3: Doors/Windows (1 col), Admin (1 col), Gas (2 cols - same width as Temperature/Alerts) */}
-            <div
-              className="card-row3-1"
-              onClick={() => openExpandedCard('doors')}
-            >
-              <button className="card-eye-icon" onClick={(e) => { e.stopPropagation(); openExpandedCard('doors'); }}>
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
-                  <circle cx="12" cy="12" r="3"></circle>
-                </svg>
-              </button>
-              <DoorsWindowsCard doorsWindows={doorsWindows} />
-            </div>
-
-            <div
-              className="card-row3-2"
-              onClick={() => openExpandedCard('admin')}
-            >
-              <button className="card-eye-icon" onClick={(e) => { e.stopPropagation(); openExpandedCard('admin'); }}>
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
-                  <circle cx="12" cy="12" r="3"></circle>
-                </svg>
-              </button>
-              <AdminManagementCard devices={devicesStatus?.devices || []} />
-            </div>
-
-            <div
-              className="card-row3-3-wide"
-              onClick={() => openExpandedCard('gas')}
-            >
-              <button className="card-eye-icon" onClick={(e) => { e.stopPropagation(); openExpandedCard('gas'); }}>
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
-                  <circle cx="12" cy="12" r="3"></circle>
-                </svg>
-              </button>
-              <GasReadingsCard gasReadings={gasReadings} />
+              {/* Admin Management */}
+              <div
+                className="dashboard-card"
+                onClick={() => openExpandedCard('admin')}
+              >
+                <button className="card-eye-icon" onClick={(e) => { e.stopPropagation(); openExpandedCard('admin'); }}>
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                    <circle cx="12" cy="12" r="3"></circle>
+                  </svg>
+                </button>
+                <AdminManagementCard devices={devicesStatus?.devices || []} />
+              </div>
             </div>
           </div>
 

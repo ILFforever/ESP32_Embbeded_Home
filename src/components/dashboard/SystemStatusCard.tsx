@@ -52,6 +52,16 @@ export function SystemStatusCard({ devicesStatus, isExpanded = false }: SystemSt
     return 'battery-low';
   };
 
+  // Helper function to get battery percentage from device
+  const getBatteryPercent = (device: Device): number | undefined => {
+    // For sensors, battery is in sensor_data.battery_percent
+    if ((device.type === 'sensor' || device.type === 'gas_sensor') && device.sensor_data) {
+      return device.sensor_data.battery_percent;
+    }
+    // For other devices, use the battery field directly
+    return device.battery;
+  };
+
   const isDeviceOffline = (device: Device) => {
     return !device.online;
   };
@@ -119,14 +129,33 @@ export function SystemStatusCard({ devicesStatus, isExpanded = false }: SystemSt
                 <div className="device-status-header">
                   <h3>{device.name?.toUpperCase() || device.type?.toUpperCase()}</h3>
                   <div className="status-group">
-                    <span className={`status-indicator ${getDeviceStatusClass(device.online, device.last_seen, device.type)}`}>
-                      {getDeviceStatusText(device.online, device.last_seen, device.type)}
-                    </span>
-                    {device.battery !== undefined && (
-                      <div className={`battery-indicator ${getBatteryClass(device.battery)}`}>
-                        {getBatteryIcon(device.battery)}
-                        <span>{device.battery}%</span>
-                      </div>
+                    {viewMode === 'sensors' ? (
+                      // For sensors: show OFFLINE or battery
+                      isDeviceOffline(device) ? (
+                        <span className={`status-indicator ${getDeviceStatusClass(device.online, device.last_seen, device.type)}`}>
+                          OFFLINE
+                        </span>
+                      ) : (
+                        getBatteryPercent(device) !== undefined && (
+                          <div className={`battery-indicator ${getBatteryClass(getBatteryPercent(device))}`}>
+                            {getBatteryIcon(getBatteryPercent(device))}
+                            <span>{getBatteryPercent(device)}%</span>
+                          </div>
+                        )
+                      )
+                    ) : (
+                      // For devices: show online status and battery
+                      <>
+                        <span className={`status-indicator ${getDeviceStatusClass(device.online, device.last_seen, device.type)}`}>
+                          {getDeviceStatusText(device.online, device.last_seen, device.type)}
+                        </span>
+                        {getBatteryPercent(device) !== undefined && (
+                          <div className={`battery-indicator ${getBatteryClass(getBatteryPercent(device))}`}>
+                            {getBatteryIcon(getBatteryPercent(device))}
+                            <span>{getBatteryPercent(device)}%</span>
+                          </div>
+                        )}
+                      </>
                     )}
                   </div>
                 </div>
@@ -136,8 +165,8 @@ export function SystemStatusCard({ devicesStatus, isExpanded = false }: SystemSt
                     // Reduced info for sensors
                     <>
                       <p>Device ID: {device.device_id || 'N/A'}</p>
-                      {device.battery !== undefined && (
-                        <p>Battery: {device.battery}%</p>
+                      {getBatteryPercent(device) !== undefined && (
+                        <p>Battery: {getBatteryPercent(device)}%</p>
                       )}
                     </>
                   ) : (
@@ -148,8 +177,8 @@ export function SystemStatusCard({ devicesStatus, isExpanded = false }: SystemSt
                       <p>WiFi Signal: {isDeviceOffline(device) ? '-' : (device.wifi_rssi ? `${device.wifi_rssi} dBm` : 'N/A')}</p>
                       <p>Free Heap: {isDeviceOffline(device) ? '-' : (device.free_heap ? `${(device.free_heap / 1024).toFixed(1)} KB` : 'N/A')}</p>
                       <p>Uptime: {isDeviceOffline(device) ? '-' : (device.uptime_ms ? `${Math.floor(device.uptime_ms / 3600000)}h ${Math.floor((device.uptime_ms % 3600000) / 60000)}m` : 'N/A')}</p>
-                      {device.battery !== undefined && (
-                        <p>Battery: {device.battery}%</p>
+                      {getBatteryPercent(device) !== undefined && (
+                        <p>Battery: {getBatteryPercent(device)}%</p>
                       )}
                     </>
                   )}
@@ -217,10 +246,10 @@ export function SystemStatusCard({ devicesStatus, isExpanded = false }: SystemSt
                 <span className={`status-indicator ${getDeviceStatusClass(doorbellDevice?.online || false, doorbellDevice?.last_seen, doorbellDevice?.type)}`}>
                   {getDeviceStatusText(doorbellDevice?.online || false, doorbellDevice?.last_seen, doorbellDevice?.type)}
                 </span>
-                {doorbellDevice?.battery !== undefined && (
-                  <div className={`battery-indicator ${getBatteryClass(doorbellDevice.battery)}`}>
-                    {getBatteryIcon(doorbellDevice.battery)}
-                    <span>{doorbellDevice.battery}%</span>
+                {doorbellDevice && getBatteryPercent(doorbellDevice) !== undefined && (
+                  <div className={`battery-indicator ${getBatteryClass(getBatteryPercent(doorbellDevice))}`}>
+                    {getBatteryIcon(getBatteryPercent(doorbellDevice))}
+                    <span>{getBatteryPercent(doorbellDevice)}%</span>
                   </div>
                 )}
               </div>
@@ -251,10 +280,10 @@ export function SystemStatusCard({ devicesStatus, isExpanded = false }: SystemSt
                 <span className={`status-indicator ${getDeviceStatusClass(hubDevice?.online || false, hubDevice?.last_seen, hubDevice?.type)}`}>
                   {getDeviceStatusText(hubDevice?.online || false, hubDevice?.last_seen, hubDevice?.type)}
                 </span>
-                {hubDevice?.battery !== undefined && (
-                  <div className={`battery-indicator ${getBatteryClass(hubDevice.battery)}`}>
-                    {getBatteryIcon(hubDevice.battery)}
-                    <span>{hubDevice.battery}%</span>
+                {hubDevice && getBatteryPercent(hubDevice) !== undefined && (
+                  <div className={`battery-indicator ${getBatteryClass(getBatteryPercent(hubDevice))}`}>
+                    {getBatteryIcon(getBatteryPercent(hubDevice))}
+                    <span>{getBatteryPercent(hubDevice)}%</span>
                   </div>
                 )}
               </div>

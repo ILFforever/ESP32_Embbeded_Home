@@ -12,6 +12,22 @@ export interface Device {
   ip_address: string | null;
   battery?: number; // Battery percentage (0-100)
   expireAt: any; // Firebase Timestamp - used by backend to compute online status
+  sensor_data?: {
+    forwarded_by?: string;
+    alert?: boolean;
+    device_type?: string;
+    averaged?: boolean;
+    sample_count?: number;
+    battery_percent?: number;
+    boot_count?: number;
+    battery_voltage?: number;
+    last_updated?: any;
+    light_lux?: number;
+    temperature?: number;
+    humidity?: number;
+    gas_level?: number;
+    timestamp?: any;
+  } | null;
 }
 
 // Backend device type alias (same as Device)
