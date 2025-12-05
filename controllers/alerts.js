@@ -103,7 +103,7 @@ const getAlerts = async (req, res) => {
     const alerts = [];
 
     // Get user/device ID for read status tracking
-    const userId = req.user ? req.user.uid : req.device?.device_id;
+    const userId = req.user ? req.user.id : req.device?.device_id;
 
     // Load read status map for this user/device
     const readStatusMap = new Map();
@@ -279,7 +279,7 @@ const getAlertById = async (req, res) => {
     const db = getFirestore();
 
     // Get user/device ID for read status tracking
-    const userId = req.user ? req.user.uid : req.device?.device_id;
+    const userId = req.user ? req.user.id : req.device?.device_id;
 
     // Check read status
     let isRead = false;
@@ -439,7 +439,7 @@ const createAlert = async (req, res) => {
 const markAlertAsRead = async (req, res) => {
   try {
     const { alert_id } = req.params;
-    const userId = req.user ? req.user.uid : req.device?.device_id;
+    const userId = req.user ? req.user.id : req.device?.device_id;
 
     if (!userId) {
       return res.status(401).json({
@@ -483,7 +483,7 @@ const markAlertAsRead = async (req, res) => {
 const markMultipleAlertsAsRead = async (req, res) => {
   try {
     const { alert_ids } = req.body;
-    const userId = req.user ? req.user.uid : req.device?.device_id;
+    const userId = req.user ? req.user.id : req.device?.device_id;
 
     if (!userId) {
       return res.status(401).json({
