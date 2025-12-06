@@ -1,0 +1,36 @@
+# fly.toml app configuration file generated for embedded-smarthome on 2025-11-13T23:54:18+07:00
+#
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+#
+
+app = 'embedded-smarthome'
+primary_region = 'sin'
+
+[build]
+
+[http_service]
+  internal_port = 5000
+  force_https = false  # Allow HTTP for ESP32 IoT devices (low memory)
+  auto_stop_machines = 'stop'
+  auto_start_machines = true
+  min_machines_running = 0
+  processes = ['app']
+
+  # Connection concurrency settings
+  [http_service.concurrency]
+    type = "connections"
+    hard_limit = 25
+    soft_limit = 20
+
+  # Health check
+  [[http_service.checks]]
+    grace_period = "10s"
+    interval = "30s"
+    method = "GET"
+    timeout = "5s"
+    path = "/info"
+
+[[vm]]
+  memory = '1gb'
+  cpu_kind = 'shared'
+  cpus = 1
