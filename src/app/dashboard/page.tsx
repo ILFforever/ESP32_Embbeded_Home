@@ -30,6 +30,7 @@ export default function DashboardPage() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [activeView, setActiveView] = useState<string>('dashboard');
   const [systemOnline, setSystemOnline] = useState<boolean>(false);
+  const [allDevicesOnline, setAllDevicesOnline] = useState<boolean>(false);
 
   const fetchAlerts = async () => {
     try {
@@ -56,6 +57,10 @@ export default function DashboardPage() {
         // Fetch devices status
         const devices = await getAllDevices();
         setDevicesStatus(devices);
+
+        // Check if all devices are online
+        const allOnline = devices.summary.offline === 0 && devices.summary.total > 0;
+        setAllDevicesOnline(allOnline);
 
         // Fetch gas sensor readings
         const gasData = await getGasReadingsForDashboard();
@@ -84,6 +89,7 @@ export default function DashboardPage() {
       } catch (error) {
         console.error('Error loading devices:', error);
         setSystemOnline(false);
+        setAllDevicesOnline(false);
       } finally {
         setLoading(false);
       }
@@ -312,8 +318,15 @@ export default function DashboardPage() {
 
             <div className="dashboard-header-right">
               <div className="header-info">
-                <span className={`status-dot ${systemOnline ? 'status-online' : 'status-offline'}`}></span>
-                <span>{systemOnline ? 'ALL SYSTEMS OPERATIONAL' : 'SYSTEM OFFLINE'}</span>
+                <span className={`status-dot ${systemOnline && allDevicesOnline ? 'status-online' : 'status-offline'}`}></span>
+                <span>
+                  {!systemOnline
+                    ? 'SYSTEM OFFLINE'
+                    : allDevicesOnline
+                      ? 'ALL SYSTEMS OPERATIONAL'
+                      : `${devicesStatus?.summary.offline || 0} DEVICE(S) OFFLINE`
+                  }
+                </span>
               </div>
             </div>
           </header>
