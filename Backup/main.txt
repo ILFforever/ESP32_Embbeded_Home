@@ -1,0 +1,149 @@
+/***************************************************
+//Web: http://www.buydisplay.com
+EastRising Technology Co.,LTD
+Examples for ER-TFTM050A2-3  text mode 
+Display is Hardward SPI 4-Wire SPI Interface 
+Tested and worked with:
+Works with Arduino 2.3.4 IDE  
+NOTE: test OK:ESP32-WROOM-32 
+****************************************************/
+
+
+/*
+  ==TFT Hardware SPI to ESP32  ==
+    TFT   =>    ESP32
+  *1,2. GND       ->    GND
+  *3,4. VCC       ->    5V    3.3V OR 5V is optional, depending on the voltage of the module purchased 
+  *5. CS        ->       5
+  *6. MISO        ->    19  
+  *7. MOSI       ->    23  
+  *8. SCK       ->    18   
+  *10. INT       ->    14   
+  *11. RES       ->    16   
+*/
+
+#include <SPI.h>
+#include "ER_GFX.h"
+#include "ER_RA8875.h"
+
+
+// ESP32-S3 Pin Configuration
+#define RA8875_INT 14
+#define RA8875_CS 10
+#define RA8875_RESET 14
+
+// SPI pins for ESP32-S3
+#define MOSI_PIN 11
+#define MISO_PIN 13
+#define SCK_PIN 12
+
+ER_RA8875 tft = ER_RA8875(RA8875_CS, RA8875_RESET);
+uint16_t tx, ty;
+
+void setup()
+{
+  Serial.begin(115200);
+  delay(1000);
+  Serial.println("=== ESP32-S3 RA8875 Test ===");
+  Serial.println("Initializing SPI with custom pins...");
+
+  // Initialize SPI with ESP32-S3 pins BEFORE calling tft.begin()
+  // This must be done first because tft.begin() calls SPI.begin() again
+  // but our custom pin configuration will override it
+  SPI.begin(SCK_PIN, MISO_PIN, MOSI_PIN, RA8875_CS);
+
+  // Try different SPI speeds - RA8875 can be picky
+  // Start with 4MHz (safe for most RA8875 modules)
+  SPI.setFrequency(4000000);  // 4MHz
+  SPI.setDataMode(SPI_MODE0);
+  SPI.setBitOrder(MSBFIRST);
+
+  Serial.println("Starting RA8875...");
+
+  /* Initialise the display using 'RA8875_480x272' or 'RA8875_800x480' */
+  // NOTE: tft.begin() will call SPI.begin() internally, but our pins are already set
+  if (!tft.begin(RA8875_800x480)) {
+    Serial.println("RA8875 Not Found!");
+    while (1);
+  }
+
+  Serial.println("RA8875 Found! Configuring display...");
+
+  Serial.println("Turning on display...");
+  tft.displayOn(true);
+  delay(100);
+
+  Serial.println("Enabling GPIOX...");
+  tft.GPIOX(true);      // Enable TFT - display enable tied to GPIOX
+  delay(100);
+
+  Serial.println("Configuring backlight PWM...");
+  tft.PWM1config(true, RA8875_PWM_CLK_DIV1024); // PWM output for backlight
+  delay(10);
+
+  Serial.println("Setting backlight to full brightness...");
+  tft.PWM1out(255);
+  delay(100);
+
+  Serial.println("Filling screen with black...");
+  tft.fillScreen(RA8875_BLACK);
+  delay(500);
+
+  Serial.println("Testing with RED screen...");
+  tft.fillScreen(RA8875_RED);
+  delay(1000);
+
+  Serial.println("Testing with GREEN screen...");
+  tft.fillScreen(RA8875_GREEN);
+  delay(1000);
+
+  Serial.println("Testing with BLUE screen...");
+  tft.fillScreen(RA8875_BLUE);
+  delay(1000);
+
+  Serial.println("Back to BLACK...");
+  tft.fillScreen(RA8875_BLACK);
+
+  /* Switch to text mode */  
+  tft.textMode();
+  
+
+  
+  /* Set a solid for + bg color ... */
+  
+  /* ... or a fore color plus a transparent background */
+
+  
+  /* Set the cursor location (in pixels) */
+  tft.textSetCursor(10, 10);
+  
+  /* Render some text! */
+  char string[18] = "www.buydiplay.com";
+  tft.textTransparent(RA8875_WHITE);
+  tft.textWrite(string);
+  tft.textColor(RA8875_WHITE, RA8875_RED);
+  tft.textWrite(string);
+  tft.textTransparent(RA8875_CYAN);
+  tft.textWrite(string);
+  tft.textTransparent(RA8875_GREEN);
+  tft.textWrite(string);
+  tft.textColor(RA8875_YELLOW, RA8875_CYAN);
+  tft.textWrite(string);
+  tft.textColor(RA8875_BLACK, RA8875_MAGENTA);
+  tft.textWrite(string);
+
+  /* Change the cursor location and color ... */  
+  tft.textSetCursor(100, 100);
+  tft.textTransparent(RA8875_RED);
+  /* If necessary, enlarge the font */
+  tft.textEnlarge(1);
+  /* ... and render some more text! */
+  tft.textWrite(string);
+  tft.textSetCursor(100, 150);
+  tft.textEnlarge(2);
+  tft.textWrite(string);
+}
+
+void loop() 
+{
+}
