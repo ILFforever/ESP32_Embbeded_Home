@@ -97,4 +97,18 @@ struct SensorData {
 // Fetch sensor data for a specific sensor device
 bool fetchSensorData(const char* deviceId, SensorData* sensorData);
 
+// ============================================================================
+// Camera Control Functions
+// ============================================================================
+
+// Send command to doorbell camera (camera_start, camera_stop, start_preview)
+bool sendCameraCommand(const char* deviceId, const char* action);
+
+// Fetch camera snapshot from backend
+// Returns: true if successful, false otherwise
+// imageData: buffer to store JPEG data (caller must provide buffer)
+// maxSize: maximum size of buffer
+// actualSize: actual size of received JPEG data
+bool fetchCameraSnapshot(const char* deviceId, uint8_t* imageData, size_t maxSize, size_t* actualSize);
+
 #endif
