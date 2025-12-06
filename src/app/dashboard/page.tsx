@@ -7,16 +7,16 @@ import ProtectedRoute from '@/components/auth/ProtectedRoute';
 import { AlertsCard } from '@/components/dashboard/AlertsCard';
 import { TemperatureCard } from '@/components/dashboard/TemperatureCard';
 import { GasReadingsCard } from '@/components/dashboard/GasReadingsCard';
-import { DoorsWindowsCard } from '@/components/dashboard/DoorsWindowsCard';
+import { DoorCard } from '@/components/dashboard/DoorCard';
 import { AdminManagementCard } from '@/components/dashboard/AdminManagementCard';
 import { SystemStatusCard } from '@/components/dashboard/SystemStatusCard';
 import {
   getAllDevices,
   getAlerts,
   getGasReadingsForDashboard,
-  generateMockDoorsWindows
+  getLockStatus
 } from '@/services/devices.service';
-import type { DevicesStatus, GasReading, Alert } from '@/types/dashboard';
+import type { DevicesStatus, GasReading, Alert, DoorWindow } from '@/types/dashboard';
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -31,6 +31,7 @@ export default function DashboardPage() {
   const [activeView, setActiveView] = useState<string>('dashboard');
   const [systemOnline, setSystemOnline] = useState<boolean>(false);
   const [allDevicesOnline, setAllDevicesOnline] = useState<boolean>(false);
+  const [doorLockStates, setDoorLockStates] = useState<Record<string, 'locked' | 'unlocked'>>({});
 
   const fetchAlerts = async () => {
     try {
@@ -68,6 +69,21 @@ export default function DashboardPage() {
 
         // Fetch alerts
         await fetchAlerts();
+
+        // Fetch door lock statuses
+        const doorLocks = devices.devices.filter(d => d.device_id.startsWith('dl_'));
+        const lockStates: Record<string, 'locked' | 'unlocked'> = {};
+        for (const lock of doorLocks) {
+          try {
+            const status = await getLockStatus(lock.device_id);
+            if (status) {
+              lockStates[lock.device_id] = status.lock_state;
+            }
+          } catch (error) {
+            console.error(`Error fetching lock status for ${lock.device_id}:`, error);
+          }
+        }
+        setDoorLockStates(lockStates);
 
         // Check system status via /info endpoint
         try {
@@ -162,8 +178,19 @@ export default function DashboardPage() {
     setExpandedCard(null);
   };
 
-  // Generate mock data for features not yet implemented
-  const doorsWindows = generateMockDoorsWindows();
+  // Get real door lock devices from backend (filter for dl_* devices)
+  const doorsWindows = devicesStatus?.devices
+    .filter(device => device.device_id.startsWith('dl_'))
+    .map(device => ({
+      id: device.device_id,
+      name: device.name || device.device_id,
+      location: 'Door',
+      type: 'door' as const,
+      status: doorLockStates[device.device_id] || 'locked',
+      last_changed: device.last_seen || new Date().toISOString(),
+      battery: device.battery,
+      online: device.online
+    })) || [];
 
   if (loading) {
     return (
@@ -193,7 +220,7 @@ export default function DashboardPage() {
         content = <GasReadingsCard gasReadings={gasReadings} isExpanded={true} onRefresh={fetchGasReadings} />;
         break;
       case 'doors':
-        content = <DoorsWindowsCard doorsWindows={doorsWindows} isExpanded={true} />;
+        content = <DoorCard doorsWindows={doorsWindows} isExpanded={true} />;
         break;
       case 'admin':
         // Only admins can view admin management
@@ -400,7 +427,7 @@ export default function DashboardPage() {
                   <circle cx="12" cy="12" r="3"></circle>
                 </svg>
               </button>
-              <DoorsWindowsCard doorsWindows={doorsWindows} />
+              <DoorCard doorsWindows={doorsWindows} />
             </div>
 
             {/* Admin Management - spans 1 row x 2 columns - Only visible to admins */}

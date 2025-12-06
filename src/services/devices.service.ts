@@ -1282,6 +1282,43 @@ export async function getGasReadingsForDashboard(): Promise<GasReading[]> {
 }
 
 // ============================================================================
+// Door Lock API Calls
+// ============================================================================
+
+// Door lock status interface
+export interface DoorLockStatus {
+  status: string;
+  device_id: string;
+  device_name: string;
+  online: boolean;
+  lock_state: 'locked' | 'unlocked';
+  last_action: 'lock' | 'unlock';
+  last_action_time: string;
+  last_heartbeat: string;
+  has_pending_commands: boolean;
+  pending_commands: any[];
+  uptime_ms: number | null;
+  wifi_rssi: number | null;
+}
+
+// Get door lock status
+export async function getLockStatus(deviceId: string): Promise<DoorLockStatus | null> {
+  try {
+    const response = await axios.get<DoorLockStatus>(
+      `${API_URL}/api/v1/devices/${deviceId}/lock/status`,
+      {
+        timeout: 5000,
+        headers: getAuthHeaders()
+      }
+    );
+    return response.data;
+  } catch (error) {
+    console.error(`Error fetching lock status for ${deviceId}:`, error);
+    return null;
+  }
+}
+
+// ============================================================================
 // Device Management Functions
 // ============================================================================
 

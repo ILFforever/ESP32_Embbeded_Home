@@ -19,14 +19,16 @@ export function SystemStatusCard({ devicesStatus, isExpanded = false }: SystemSt
   const allDevices = devicesStatus?.devices || [];
 
   const nonSensorOnlineDevices = allDevices.filter(device =>
-    device.online && device.type !== 'sensor' && device.type !== 'gas_sensor'
+    device.online && device.type !== 'sensor' && device.type !== 'gas_sensor' && !device.device_id.startsWith('dl_')
   ).length;
 
   const onlineSensors = allDevices.filter(device =>
     device.online && (device.type === 'sensor' || device.type === 'gas_sensor')
   ).length;
 
-  const totalNonSensorDevices = allDevices.filter(device => device.type !== 'sensor' && device.type !== 'gas_sensor').length;
+  const totalNonSensorDevices = allDevices.filter(device =>
+    device.type !== 'sensor' && device.type !== 'gas_sensor' && !device.device_id.startsWith('dl_')
+  ).length;
   const totalSensorDevices = allDevices.filter(device => device.type === 'sensor' || device.type === 'gas_sensor').length;
 
   // Helper functions using online boolean from backend
@@ -89,7 +91,7 @@ export function SystemStatusCard({ devicesStatus, isExpanded = false }: SystemSt
   // If expanded (popup mode), show all devices or sensors with toggle
   if (isExpanded) {
     const displayDevices = viewMode === 'devices'
-      ? allDevices.filter(device => device.type !== 'sensor' && device.type !== 'gas_sensor')
+      ? allDevices.filter(device => device.type !== 'sensor' && device.type !== 'gas_sensor' && !device.device_id.startsWith('dl_'))
       : allDevices.filter(device => device.type === 'sensor' || device.type === 'gas_sensor');
 
     return (

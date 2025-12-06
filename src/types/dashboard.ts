@@ -99,6 +99,7 @@ export interface DoorWindow {
   status: 'open' | 'closed' | 'locked' | 'unlocked';
   last_changed: string;
   battery?: number;
+  online?: boolean;
 }
 
 export interface DoorbellControl {
