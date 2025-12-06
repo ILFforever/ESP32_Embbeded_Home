@@ -25,4 +25,7 @@ void processDoorLockMQTT();
 bool isDoorLockMQTTConnected();
 void publishDoorLockStatus(const String& status, bool isLocked);
 
+// External function that must be implemented in main file
+extern void fetchAndExecuteCommands();
+
 #endif // DOORLOCK_MQTT_H

@@ -41,7 +41,7 @@
 // SECURITY CONFIGURATION
 // ============================================================================
 // API Token for backend authentication
-const char* DEVICE_API_TOKEN = "your_doorlock_api_token_here";
+const char* DEVICE_API_TOKEN = "1ccb0937632f6a1eb242d881a211b156f8c3a21fae38ee0e3b2ddad748b3e5ab";
 
 // ============================================================================
 // WIFI CONFIGURATION
@@ -54,7 +54,7 @@ const char* WIFI_PASSWORD = "19283746";
 // ============================================================================
 // Base URL for backend API (will append /pending and /manual-unlock)
 // Example: "http://192.168.1.100:3000/api/v1/devices/commands"
-const char* BACKEND_URL = "http://your-backend-server.com/api/v1/devices/commands";
+const char* BACKEND_URL = "https://embedded-smarthome.fly.dev/api/v1/devices/commands";
 
 // ============================================================================
 // GPIO PIN CONFIGURATION
@@ -164,14 +164,11 @@ void loop() {
   // Maintain MQTT connection and process messages
   processDoorLockMQTT();
 
-  // Periodically fetch commands from backend
-  unsigned long now = millis();
-  if (now - lastCommandFetch >= COMMAND_FETCH_INTERVAL) {
-    lastCommandFetch = now;
-    fetchAndExecuteCommands();
-  }
+  // NOTE: Periodic command fetching DISABLED - only fetch when MQTT notification received
+  // Commands are fetched immediately when MQTT callback receives fetch_commands notification
 
   // Send periodic heartbeat
+  unsigned long now = millis();
   if (now - lastHeartbeat >= HEARTBEAT_INTERVAL) {
     lastHeartbeat = now;
     sendHeartbeat();
