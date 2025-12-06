@@ -2309,12 +2309,12 @@ const updateDoorLockState = async (req, res) => {
     }
 
     const deviceData = deviceDoc.data();
-    if (deviceData.type !== 'door_lock') {
-      return res.status(400).json({
-        status: 'error',
-        message: 'Device is not a door lock'
-      });
-    }
+    // if (deviceData.type !== 'door_lock') {
+    //   return res.status(400).json({
+    //     status: 'error',
+    //     message: 'Device is not a door lock'
+    //   });
+    // }
 
     // Update device state
     const stateData = {
