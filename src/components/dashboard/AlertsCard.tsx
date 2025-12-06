@@ -1,8 +1,9 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { AlertTriangle, Info, XCircle, Check } from 'lucide-react';
 import type { Alert } from '@/types/dashboard';
 import { alertLevelToType } from '@/types/dashboard';
 import { markAlertAsRead } from '@/services/devices.service';
+import { sortAlertsByPriority, getAlertPriorityCategory, type ScoredAlert } from '@/utils/alertScoring';
 
 interface AlertsCardProps {
   alerts: Alert[];
@@ -11,6 +12,9 @@ interface AlertsCardProps {
 }
 
 export function AlertsCard({ alerts, isExpanded = false, onRefresh }: AlertsCardProps) {
+  // Sort alerts by priority score
+  const sortedAlerts = useMemo(() => sortAlertsByPriority(alerts), [alerts]);
+
   const getAlertIcon = (level: 'INFO' | 'WARN' | 'IMPORTANT') => {
     const type = alertLevelToType(level);
     switch (type) {
@@ -67,17 +71,29 @@ export function AlertsCard({ alerts, isExpanded = false, onRefresh }: AlertsCard
     return alert.source || 'Alert';
   };
 
-  const unreadAlerts = alerts.filter(a => !a.read);
-  const readAlerts = alerts.filter(a => a.read);
+  const getPriorityBadge = (alert: ScoredAlert) => {
+    const category = getAlertPriorityCategory(alert.score);
+    const badgeClass = `priority-badge priority-${category}`;
+
+    return (
+      <span className={badgeClass} title={`Priority Score: ${alert.score}`}>
+        {category.toUpperCase()}
+      </span>
+    );
+  };
+
+  const unreadAlerts = sortedAlerts.filter(a => !a.read);
+  const readAlerts = sortedAlerts.filter(a => a.read);
   const criticalCount = alerts.filter(a => a.level === 'IMPORTANT' && !a.read).length;
+  const highPriorityCount = sortedAlerts.filter(a => !a.read && a.score >= 50).length;
 
   return (
     <div className="card">
       <div className="card-header">
         <div className="card-title-group">
           <h3>ALERTS</h3>
-          {criticalCount > 0 && (
-            <span className="badge badge-critical">{criticalCount} CRITICAL</span>
+          {highPriorityCount > 0 && (
+            <span className="badge badge-critical">{highPriorityCount} HIGH PRIORITY</span>
           )}
         </div>
       </div>
@@ -119,6 +135,7 @@ export function AlertsCard({ alerts, isExpanded = false, onRefresh }: AlertsCard
                         {getAlertIcon(alert.level)}
                         <div className="alert-meta">
                           <span className="alert-type">{alert.level}</span>
+                          {getPriorityBadge(alert)}
                           <span className="alert-timestamp">
                             {formatTimestamp(alert.timestamp)}
                           </span>
@@ -127,6 +144,11 @@ export function AlertsCard({ alerts, isExpanded = false, onRefresh }: AlertsCard
                       <div className="alert-body">
                         <h5>{getAlertTitle(alert)}</h5>
                         <p>{alert.message}</p>
+                        {alert.metadata?.confidence !== undefined && alert.metadata.confidence > 0 && (
+                          <p className="alert-confidence">
+                            CFD: {(alert.metadata.confidence * 100).toFixed(1)}%
+                          </p>
+                        )}
                         <div className="alert-tags">
                           {alert.tags.map((tag, idx) => (
                             <span key={idx} className="tag">{tag}</span>
@@ -158,6 +180,7 @@ export function AlertsCard({ alerts, isExpanded = false, onRefresh }: AlertsCard
                         {getAlertIcon(alert.level)}
                         <div className="alert-meta">
                           <span className="alert-type">{alert.level}</span>
+                          {getPriorityBadge(alert)}
                           <span className="alert-timestamp">
                             {formatTimestamp(alert.timestamp)}
                           </span>
@@ -166,6 +189,11 @@ export function AlertsCard({ alerts, isExpanded = false, onRefresh }: AlertsCard
                       <div className="alert-body">
                         <h5>{getAlertTitle(alert)}</h5>
                         <p>{alert.message}</p>
+                        {alert.metadata?.confidence !== undefined && alert.metadata.confidence > 0 && (
+                          <p className="alert-confidence">
+                            CFD: {(alert.metadata.confidence * 100).toFixed(1)}%
+                          </p>
+                        )}
                         <div className="alert-tags">
                           {alert.tags.map((tag, idx) => (
                             <span key={idx} className="tag">{tag}</span>
