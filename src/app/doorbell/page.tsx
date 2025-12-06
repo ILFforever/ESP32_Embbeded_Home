@@ -804,7 +804,7 @@ export default function DoorbellControlPage() {
             </div>
           </div>
           <div className="control-page-grid">
-            {/* Stream Control */}
+            {/* Microphone/Stream Control */}
             <div className="card">
               <div className="card-header">
                 <h3>STREAM CONTROL</h3>
@@ -1033,10 +1033,10 @@ export default function DoorbellControlPage() {
               </div>
             </div>
 
-            {/* Column 2: Amplifier & Face Recognition */}
+            {/* Audio Control & Face Recognition */}
             <div className="card">
               <div className="card-header">
-                <h3>AUDIO AMPLIFIER</h3>
+                <h3>AUDIO CONTROL</h3>
               </div>
               <div className="card-content">
                 <div className="control-panel">
@@ -1649,7 +1649,8 @@ export default function DoorbellControlPage() {
                 </div>
               </div>
             </div>
-            {/* Column 3: System Control & Device Info */}
+
+            {/* System Control & Device Info */}
             <div className="card">
               <div className="card-header">
                 <h3>SYSTEM CONTROL</h3>

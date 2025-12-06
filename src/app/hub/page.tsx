@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import ProtectedRoute from '@/components/auth/ProtectedRoute';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import {
   getAllDevices,
   findHubDevice,
@@ -13,6 +14,7 @@ import {
   getAQICategory,
   getDeviceHistory,
   sendCommand,
+  getSensorReadings,
 } from '@/services/devices.service';
 import type { BackendDevice } from '@/types/dashboard';
 import {
@@ -39,6 +41,12 @@ export default function HubControlPage() {
   const [ampStreaming, setAmpStreaming] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
   const [restarting, setRestarting] = useState(false);
+
+  // Modal states for sensor graphs
+  const [showTemperatureModal, setShowTemperatureModal] = useState(false);
+  const [showHumidityModal, setShowHumidityModal] = useState(false);
+  const [showAirQualityModal, setShowAirQualityModal] = useState(false);
+  const [sensorHistory, setSensorHistory] = useState<any[]>([]);
 
   // Alert form state
   const [alertMessage, setAlertMessage] = useState('');
@@ -318,6 +326,47 @@ export default function HubControlPage() {
     return 'status-safe';
   };
 
+  const openSensorModal = async (sensorType: 'temperature' | 'humidity' | 'airquality') => {
+    if (!hubDevice) return;
+
+    try {
+      // Fetch historical sensor readings (24 hours)
+      const readings = await getSensorReadings(hubDevice.device_id, 24);
+      if (readings?.readings) {
+        setSensorHistory(readings.readings);
+      }
+    } catch (error) {
+      console.error('Error fetching sensor history:', error);
+      setSensorHistory([]);
+    }
+
+    // Open the appropriate modal
+    switch (sensorType) {
+      case 'temperature':
+        setShowTemperatureModal(true);
+        break;
+      case 'humidity':
+        setShowHumidityModal(true);
+        break;
+      case 'airquality':
+        setShowAirQualityModal(true);
+        break;
+    }
+  };
+
+  const closeSensorModal = () => {
+    setShowTemperatureModal(false);
+    setShowHumidityModal(false);
+    setShowAirQualityModal(false);
+  };
+
+  const prepareChartData = (dataKey: 'temperature' | 'humidity' | 'pm2_5' | 'aqi') => {
+    return sensorHistory.map(reading => ({
+      timestamp: new Date(reading.timestamp._seconds * 1000).toLocaleTimeString(),
+      value: Number((reading[dataKey] ?? 0).toFixed(1))
+    }));
+  };
+
   if (loading) {
     return (
       <ProtectedRoute>
@@ -366,7 +415,7 @@ export default function HubControlPage() {
             <div className="card-content">
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '16px' }}>
                 {/* Temperature Card (DHT11) */}
-                <div className="card">
+                <div className="card" style={{ cursor: 'pointer' }} onClick={() => openSensorModal('temperature')}>
                   <div className="card-header">
                     <div className="card-title-group">
                       <Thermometer size={24} />
@@ -426,7 +475,7 @@ export default function HubControlPage() {
                 </div>
 
                 {/* Humidity Card (DHT11) */}
-                <div className="card">
+                <div className="card" style={{ cursor: 'pointer' }} onClick={() => openSensorModal('humidity')}>
                   <div className="card-header">
                     <div className="card-title-group">
                       <Droplets size={24} />
@@ -495,7 +544,7 @@ export default function HubControlPage() {
                 </div>
 
                 {/* Air Quality Card (PM2.5) */}
-                <div className="card">
+                <div className="card" style={{ cursor: 'pointer' }} onClick={() => openSensorModal('airquality')}>
                   <div className="card-header">
                     <div className="card-title-group">
                       <Wind size={24} />
@@ -563,93 +612,6 @@ export default function HubControlPage() {
           </div>
 
           <div className="control-page-grid">
-            {/* Hub Information Card - Spans 2 rows */}
-            <div className="card" style={{ gridRow: 'span 2' }}>
-              <div className="card-header">
-                <div className="card-title-group">
-                  <Activity size={24} />
-                  <h3>HUB INFORMATION</h3>
-                </div>
-              </div>
-              <div className="card-content">
-                {hubDevice ? (
-                  <>
-                    <div className="info-grid">
-                      <div className="info-item">
-                        <span className="info-label">Device ID:</span>
-                        <span className="info-value">{hubDevice.device_id || 'N/A'}</span>
-                      </div>
-                      <div className="info-item">
-                        <span className="info-label">Status:</span>
-                        <span className={`info-value status-indicator ${statusClass}`}>
-                          {hubDevice.online ? 'Online' : 'Offline'}
-                        </span>
-                      </div>
-                      <div className="info-item">
-                        <span className="info-label">Type:</span>
-                        <span className="info-value">{hubDevice.type || 'N/A'}</span>
-                      </div>
-                      <div className="info-item">
-                        <span className="info-label">IP Address:</span>
-                        <span className="info-value">
-                          {hubDevice.online ? (hubDevice.ip_address || 'N/A') : '-'}
-                        </span>
-                      </div>
-                      <div className="info-item">
-                        <span className="info-label">Last Seen:</span>
-                        <span className="info-value">
-                          {hubDevice.last_seen ? new Date(hubDevice.last_seen).toLocaleString() : 'Never'}
-                        </span>
-                      </div>
-                      <div className="info-item">
-                        <span className="info-label">WiFi Signal:</span>
-                        <span className="info-value">
-                          {hubDevice.online ? (hubDevice.wifi_rssi ? `${hubDevice.wifi_rssi} dBm` : 'N/A') : '-'}
-                        </span>
-                      </div>
-                      <div className="info-item">
-                        <span className="info-label">Uptime:</span>
-                        <span className="info-value">
-                          {hubDevice.online ? (hubDevice.uptime_ms ? `${Math.floor(hubDevice.uptime_ms / 3600000)}h ${Math.floor((hubDevice.uptime_ms % 3600000) / 60000)}m` : 'N/A') : '-'}
-                        </span>
-                      </div>
-                      <div className="info-item">
-                        <span className="info-label">Free Heap:</span>
-                        <span className="info-value">
-                          {hubDevice.online ? (hubDevice.free_heap ? `${(hubDevice.free_heap / 1024).toFixed(1)} KB` : 'N/A') : '-'}
-                        </span>
-                      </div>
-                    </div>
-
-                    <div className="action-buttons" style={{ marginTop: '20px' }}>
-                      <button
-                        className="btn-action"
-                        onClick={handleRestart}
-                        disabled={restarting || !hubDevice.online}
-                        style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
-                      >
-                        {restarting ? (
-                          <>
-                            <RefreshCw size={18} className="rotating" />
-                            <span>Restarting...</span>
-                          </>
-                        ) : (
-                          <>
-                            <Power size={18} />
-                            <span>Restart Hub</span>
-                          </>
-                        )}
-                      </button>
-                    </div>
-                  </>
-                ) : (
-                  <div className="no-alerts">
-                    <p>No hub device found</p>
-                  </div>
-                )}
-              </div>
-            </div>
-
             {/* Microphone Control Card */}
             <div className="card">
               <div className="card-header">
@@ -694,12 +656,12 @@ export default function HubControlPage() {
               </div>
             </div>
 
-            {/* Amplifier Control Card */}
+            {/* Audio Control Card */}
             <div className="card">
               <div className="card-header">
                 <div className="card-title-group">
                   <Volume2 size={24} />
-                  <h3>AMPLIFIER CONTROL</h3>
+                  <h3>AUDIO CONTROL</h3>
                 </div>
                 {ampStreaming && (
                   <span className={`status-indicator ${ampStreaming.is_playing ? 'status-online' : 'status-offline'}`}>
@@ -886,8 +848,337 @@ export default function HubControlPage() {
 
               {/* Send Alert to Hub Card - Half Height (commented out) */}
             </div>
+
+            {/* Hub Information Card - Spans 2 rows */}
+            <div className="card" style={{ gridRow: 'span 2' }}>
+              <div className="card-header">
+                <div className="card-title-group">
+                  <Activity size={24} />
+                  <h3>HUB INFORMATION</h3>
+                </div>
+              </div>
+              <div className="card-content">
+                {hubDevice ? (
+                  <>
+                    <div className="info-grid">
+                      <div className="info-item">
+                        <span className="info-label">Device ID:</span>
+                        <span className="info-value">{hubDevice.device_id || 'N/A'}</span>
+                      </div>
+                      <div className="info-item">
+                        <span className="info-label">Status:</span>
+                        <span className={`info-value status-indicator ${statusClass}`}>
+                          {hubDevice.online ? 'Online' : 'Offline'}
+                        </span>
+                      </div>
+                      <div className="info-item">
+                        <span className="info-label">Type:</span>
+                        <span className="info-value">{hubDevice.type || 'N/A'}</span>
+                      </div>
+                      <div className="info-item">
+                        <span className="info-label">IP Address:</span>
+                        <span className="info-value">
+                          {hubDevice.online ? (hubDevice.ip_address || 'N/A') : '-'}
+                        </span>
+                      </div>
+                      <div className="info-item">
+                        <span className="info-label">Last Seen:</span>
+                        <span className="info-value">
+                          {hubDevice.last_seen ? new Date(hubDevice.last_seen).toLocaleString() : 'Never'}
+                        </span>
+                      </div>
+                      <div className="info-item">
+                        <span className="info-label">WiFi Signal:</span>
+                        <span className="info-value">
+                          {hubDevice.online ? (hubDevice.wifi_rssi ? `${hubDevice.wifi_rssi} dBm` : 'N/A') : '-'}
+                        </span>
+                      </div>
+                      <div className="info-item">
+                        <span className="info-label">Uptime:</span>
+                        <span className="info-value">
+                          {hubDevice.online ? (hubDevice.uptime_ms ? `${Math.floor(hubDevice.uptime_ms / 3600000)}h ${Math.floor((hubDevice.uptime_ms % 3600000) / 60000)}m` : 'N/A') : '-'}
+                        </span>
+                      </div>
+                      <div className="info-item">
+                        <span className="info-label">Free Heap:</span>
+                        <span className="info-value">
+                          {hubDevice.online ? (hubDevice.free_heap ? `${(hubDevice.free_heap / 1024).toFixed(1)} KB` : 'N/A') : '-'}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="action-buttons" style={{ marginTop: '20px' }}>
+                      <button
+                        className="btn-action"
+                        onClick={handleRestart}
+                        disabled={restarting || !hubDevice.online}
+                        style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
+                      >
+                        {restarting ? (
+                          <>
+                            <RefreshCw size={18} className="rotating" />
+                            <span>Restarting...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Power size={18} />
+                            <span>Restart Hub</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <div className="no-alerts">
+                    <p>No hub device found</p>
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
         </div>
+
+        {/* Temperature Modal */}
+        {showTemperatureModal && (
+          <div className="modal-overlay" onClick={closeSensorModal}>
+            <button className="modal-close" onClick={closeSensorModal}>✕</button>
+            <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+              <div className="card">
+                <div className="card-header">
+                  <div className="card-title-group">
+                    <Thermometer size={24} />
+                    <h3>TEMPERATURE HISTORY (24H)</h3>
+                  </div>
+                  {tempStatus && (
+                    <span className={`status-indicator ${tempStatus.status}`}>
+                      {tempStatus.text}
+                    </span>
+                  )}
+                </div>
+                <div className="card-content">
+                  {sensorData?.temperature != null && (
+                    <div className="room-details" style={{ marginBottom: '20px' }}>
+                      <div className="detail-item">
+                        <span className="detail-label">CURRENT:</span>
+                        <span className="detail-value" style={{ color: tempStatus?.color }}>
+                          {sensorData.temperature.toFixed(1)}°C
+                        </span>
+                      </div>
+                      <div className="detail-item">
+                        <span className="detail-label">AVG (24H):</span>
+                        <span className="detail-value">
+                          {sensorHistory.length > 0
+                            ? (sensorHistory.reduce((sum, r) => sum + (r.temperature ?? 0), 0) / sensorHistory.length).toFixed(1)
+                            : sensorData.temperature.toFixed(1)}°C
+                        </span>
+                      </div>
+                      <div className="detail-item">
+                        <span className="detail-label">COMFORT RANGE:</span>
+                        <span className="detail-value">18-25°C</span>
+                      </div>
+                    </div>
+                  )}
+                  <ResponsiveContainer width="100%" height={400}>
+                    <LineChart data={prepareChartData('temperature')} margin={{ top: 20, right: 30, left: 20, bottom: 20 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#333" />
+                      <XAxis
+                        dataKey="timestamp"
+                        stroke="#FFF"
+                        tick={{ fill: '#FFF', fontFamily: 'monospace' }}
+                        interval="preserveStartEnd"
+                      />
+                      <YAxis
+                        stroke="#FFF"
+                        tick={{ fill: '#FFF', fontFamily: 'monospace' }}
+                        label={{ value: 'Temperature (°C)', angle: -90, position: 'insideLeft', fill: '#FFF' }}
+                      />
+                      <Tooltip
+                        contentStyle={{
+                          backgroundColor: '#1a1a1a',
+                          border: '2px solid #FF6600',
+                          borderRadius: '4px',
+                          fontFamily: 'monospace',
+                          textTransform: 'uppercase'
+                        }}
+                      />
+                      <Line
+                        type="monotone"
+                        dataKey="value"
+                        stroke={tempStatus?.color || '#FF6600'}
+                        strokeWidth={2}
+                        dot={false}
+                        activeDot={false}
+                        connectNulls={true}
+                      />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Humidity Modal */}
+        {showHumidityModal && (
+          <div className="modal-overlay" onClick={closeSensorModal}>
+            <button className="modal-close" onClick={closeSensorModal}>✕</button>
+            <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+              <div className="card">
+                <div className="card-header">
+                  <div className="card-title-group">
+                    <Droplets size={24} />
+                    <h3>HUMIDITY HISTORY (24H)</h3>
+                  </div>
+                  {humidityStatus && (
+                    <span className={`status-indicator ${humidityStatus.status}`}>
+                      {humidityStatus.text}
+                    </span>
+                  )}
+                </div>
+                <div className="card-content">
+                  {sensorData?.humidity != null && (
+                    <div className="room-details" style={{ marginBottom: '20px' }}>
+                      <div className="detail-item">
+                        <span className="detail-label">CURRENT:</span>
+                        <span className="detail-value" style={{ color: humidityStatus?.color }}>
+                          {sensorData.humidity.toFixed(1)}%
+                        </span>
+                      </div>
+                      <div className="detail-item">
+                        <span className="detail-label">AVG (24H):</span>
+                        <span className="detail-value">
+                          {sensorHistory.length > 0
+                            ? (sensorHistory.reduce((sum, r) => sum + (r.humidity ?? 0), 0) / sensorHistory.length).toFixed(1)
+                            : sensorData.humidity.toFixed(1)}%
+                        </span>
+                      </div>
+                      <div className="detail-item">
+                        <span className="detail-label">COMFORT RANGE:</span>
+                        <span className="detail-value">30-60%</span>
+                      </div>
+                    </div>
+                  )}
+                  <ResponsiveContainer width="100%" height={400}>
+                    <LineChart data={prepareChartData('humidity')} margin={{ top: 20, right: 30, left: 20, bottom: 20 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#333" />
+                      <XAxis
+                        dataKey="timestamp"
+                        stroke="#FFF"
+                        tick={{ fill: '#FFF', fontFamily: 'monospace' }}
+                        interval="preserveStartEnd"
+                      />
+                      <YAxis
+                        stroke="#FFF"
+                        tick={{ fill: '#FFF', fontFamily: 'monospace' }}
+                        label={{ value: 'Humidity (%)', angle: -90, position: 'insideLeft', fill: '#FFF' }}
+                      />
+                      <Tooltip
+                        contentStyle={{
+                          backgroundColor: '#1a1a1a',
+                          border: '2px solid #4FC3F7',
+                          borderRadius: '4px',
+                          fontFamily: 'monospace',
+                          textTransform: 'uppercase'
+                        }}
+                      />
+                      <Line
+                        type="monotone"
+                        dataKey="value"
+                        stroke={humidityStatus?.color || '#4FC3F7'}
+                        strokeWidth={2}
+                        dot={false}
+                        activeDot={false}
+                        connectNulls={true}
+                      />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Air Quality Modal */}
+        {showAirQualityModal && (
+          <div className="modal-overlay" onClick={closeSensorModal}>
+            <button className="modal-close" onClick={closeSensorModal}>✕</button>
+            <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+              <div className="card">
+                <div className="card-header">
+                  <div className="card-title-group">
+                    <Wind size={24} />
+                    <h3>AIR QUALITY HISTORY (24H)</h3>
+                  </div>
+                  {aqiData && (
+                    <span className={`status-indicator ${aqiData.status}`}>
+                      {aqiData.category}
+                    </span>
+                  )}
+                </div>
+                <div className="card-content">
+                  {sensorData?.pm25 != null && (
+                    <div className="room-details" style={{ marginBottom: '20px' }}>
+                      <div className="detail-item">
+                        <span className="detail-label">CURRENT PM2.5:</span>
+                        <span className="detail-value" style={{ color: aqiData?.color }}>
+                          {sensorData.pm25.toFixed(1)} μg/m³
+                        </span>
+                      </div>
+                      <div className="detail-item">
+                        <span className="detail-label">AQI:</span>
+                        <span className="detail-value" style={{ color: aqiData?.color }}>
+                          {sensorData.aqi}
+                        </span>
+                      </div>
+                      <div className="detail-item">
+                        <span className="detail-label">AVG (24H):</span>
+                        <span className="detail-value">
+                          {sensorHistory.length > 0
+                            ? (sensorHistory.reduce((sum, r) => sum + (r.pm25 ?? 0), 0) / sensorHistory.length).toFixed(1)
+                            : sensorData.pm25.toFixed(1)} μg/m³
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                  <ResponsiveContainer width="100%" height={400}>
+                    <LineChart data={prepareChartData('pm2_5')} margin={{ top: 20, right: 30, left: 20, bottom: 20 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#333" />
+                      <XAxis
+                        dataKey="timestamp"
+                        stroke="#FFF"
+                        tick={{ fill: '#FFF', fontFamily: 'monospace' }}
+                        interval="preserveStartEnd"
+                      />
+                      <YAxis
+                        stroke="#FFF"
+                        tick={{ fill: '#FFF', fontFamily: 'monospace' }}
+                        label={{ value: 'PM2.5 (μg/m³)', angle: -90, position: 'insideLeft', fill: '#FFF' }}
+                      />
+                      <Tooltip
+                        contentStyle={{
+                          backgroundColor: '#1a1a1a',
+                          border: `2px solid ${aqiData?.color || '#00FF88'}`,
+                          borderRadius: '4px',
+                          fontFamily: 'monospace',
+                          textTransform: 'uppercase'
+                        }}
+                      />
+                      <Line
+                        type="monotone"
+                        dataKey="value"
+                        stroke={aqiData?.color || '#00FF88'}
+                        strokeWidth={2}
+                        dot={false}
+                        activeDot={false}
+                        connectNulls={true}
+                      />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </ProtectedRoute>
   );
