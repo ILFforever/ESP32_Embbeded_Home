@@ -7,6 +7,7 @@ node_modules/
 .env.development.local
 .env.test.local
 .env.production.local
+*.env
 
 # Firebase credentials and service account keys
 *firebase-adminsdk*.json
@@ -35,7 +36,9 @@ coverage/
 .nyc_output/
 
 # IDE and editor files
-.vscode/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
 .idea/
 *.swp
 *.swo
@@ -52,6 +55,9 @@ build/
 tmp/
 temp/
 *.tmp
+*.temp
+*.bak
+*.backup
 
 # Optional npm cache directory
 .npm
@@ -64,3 +70,31 @@ temp/
 
 # OS files
 Thumbs.db
+desktop.ini
+
+# PlatformIO
+.pio/
+.vscode/.browse.c_cpp.db*
+.vscode/c_cpp_properties.json
+.vscode/launch.json
+.vscode/ipch
+
+# PlatformIO build outputs
+*.o
+*.a
+*.elf
+*.bin
+*.hex
+*.map
+
+# PlatformIO dependencies
+.pioenvs
+.piolibdeps
+lib/
+
+# Python (for PlatformIO scripts)
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
