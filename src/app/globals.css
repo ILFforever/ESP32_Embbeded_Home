@@ -366,7 +366,7 @@ h6 { font-size: var(--font-size-sm); }
 .card-eye-icon {
   position: absolute;
   top: var(--spacing-md);
-  right: var(--spacing-md);
+  right: calc(var(--spacing-md) + 44px); /* Position to the left of refresh icon */
   background: rgba(255, 255, 255, 0.1);
   border: 1px solid rgba(255, 255, 255, 0.2);
   color: var(--text-primary);
@@ -404,11 +404,11 @@ h6 { font-size: var(--font-size-sm); }
   box-shadow: 0 0 20px rgba(16, 185, 129, 0.5);
 }
 
-/* Refresh Icon (positioned next to eye icon) */
+/* Refresh Icon (positioned rightmost) */
 .card-refresh-icon {
   position: absolute;
   top: var(--spacing-md);
-  right: calc(var(--spacing-md) + 44px); /* Position to the left of eye icon */
+  right: var(--spacing-md);
   background: rgba(255, 255, 255, 0.1);
   border: 1px solid rgba(255, 255, 255, 0.2);
   color: var(--text-primary);
