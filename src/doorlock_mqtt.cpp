@@ -119,40 +119,6 @@ bool connectDoorLockMQTT() {
 }
 
 // ============================================================================
-// Publish door lock status
-// ============================================================================
-void publishDoorLockStatus(const String& status, bool isLocked) {
-  if (!mqttClient.connected()) {
-    Serial.println("[MQTT] Not connected - attempting to reconnect before publish");
-    if (!connectDoorLockMQTT()) {
-      Serial.println("[MQTT] ✗ Failed to publish - no connection");
-      return;
-    }
-  }
-
-  // Create JSON payload with device ID, status, and timestamp
-  StaticJsonDocument<256> doc;
-  doc["device_id"] = doorlockDeviceId;
-  doc["status"] = status;
-  doc["is_locked"] = isLocked;
-  doc["timestamp"] = millis();
-
-  String payload;
-  serializeJson(doc, payload);
-
-  // Publish to topic
-  bool success = mqttClient.publish(TOPIC_DOORLOCK_STATUS, payload.c_str());
-
-  if (success) {
-    Serial.println("[MQTT] ✓ Door lock status published!");
-    Serial.printf("  Topic: %s\n", TOPIC_DOORLOCK_STATUS);
-    Serial.printf("  Payload: %s\n", payload.c_str());
-  } else {
-    Serial.println("[MQTT] ✗ Failed to publish door lock status");
-  }
-}
-
-// ============================================================================
 // Process MQTT (maintains connection, call in loop)
 // ============================================================================
 void processDoorLockMQTT() {

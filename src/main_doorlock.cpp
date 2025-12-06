@@ -23,6 +23,7 @@
 #include <ArduinoJson.h>
 #include <ESP32Servo.h>
 #include "doorlock_mqtt.h"
+#include "heartbeat.h"
 
 // ============================================================================
 // DEVICE IDENTIFICATION
@@ -31,7 +32,7 @@
 #define DEVICE_ID "dl_001"
 #endif
 #ifndef DEVICE_TYPE
-#define DEVICE_TYPE "doorlock"
+#define DEVICE_TYPE "actuator"
 #endif
 #ifndef LOCATION_NAME
 #define LOCATION_NAME "Front Door"
@@ -52,9 +53,9 @@ const char* WIFI_PASSWORD = "19283746";
 // ============================================================================
 // BACKEND SERVER CONFIGURATION
 // ============================================================================
-// Base URL for backend API (will append /pending and /manual-unlock)
-// Example: "http://192.168.1.100:3000/api/v1/devices/commands"
-const char* BACKEND_URL = "https://embedded-smarthome.fly.dev/api/v1/devices/commands";
+// Base URL for backend API (ends at /api/v1)
+// Example: "http://192.168.1.100:3000/api/v1"
+const char* BACKEND_URL = "https://embedded-smarthome.fly.dev/api/v1";
 
 // ============================================================================
 // GPIO PIN CONFIGURATION
@@ -83,7 +84,7 @@ const char* BACKEND_URL = "https://embedded-smarthome.fly.dev/api/v1/devices/com
 // ============================================================================
 #define COMMAND_FETCH_INTERVAL  5000   // Fetch commands every 5 seconds
 #define WIFI_CONNECT_TIMEOUT    10000  // 10 seconds WiFi timeout
-#define HEARTBEAT_INTERVAL      30000  // Send heartbeat every 30 seconds
+#define HEARTBEAT_INTERVAL      120000  // Send heartbeat every 120 seconds
 
 // ============================================================================
 // GLOBAL OBJECTS
@@ -151,6 +152,10 @@ void setup() {
   // Initialize to locked state for security
   Serial.println("[INIT] Setting initial state to LOCKED");
   lockDoor();
+
+  // Send initial heartbeat to register device online
+  Serial.println("[INIT] Sending initial heartbeat...");
+  sendHeartbeat();
 
   Serial.println("[SETUP] ✓ All systems initialized\n");
 }
@@ -266,11 +271,6 @@ void lockDoor(const String& commandId) {
   // Visual feedback
   blinkLED(2, 100);
 
-  // Publish status to MQTT
-  Serial.println("[LOCK] → Publishing status to MQTT");
-  Serial.flush();
-  publishDoorLockStatus("locked", true);
-
   // If this was a command from backend, acknowledge it and update status
   if (commandId.length() > 0) {
     Serial.println("[LOCK] → Sending acknowledgment to backend");
@@ -304,11 +304,6 @@ void unlockDoor(const String& commandId) {
   // Visual feedback
   blinkLED(3, 100);
 
-  // Publish status to MQTT
-  Serial.println("[LOCK] → Publishing status to MQTT");
-  Serial.flush();
-  publishDoorLockStatus("unlocked", false);
-
   // If this was a command from backend, acknowledge it and update status
   if (commandId.length() > 0) {
     Serial.println("[LOCK] → Sending acknowledgment to backend");
@@ -338,9 +333,6 @@ void unlockDoorManual() {
 
   // Visual feedback - longer blink pattern
   blinkLED(5, 100);
-
-  // Publish status to MQTT
-  publishDoorLockStatus("unlocked_manual", false);
 
   // Update device status with manual_trigger = true
   Serial.println("[LOCK] → Updating device status on backend (manual trigger)");
@@ -393,8 +385,8 @@ void fetchAndExecuteCommands() {
 
   HTTPClient http;
 
-  // Build URL - POST to /pending endpoint (same as doorbell)
-  String url = String(BACKEND_URL) + "/pending";
+  // Build URL - POST to /devices/commands/pending endpoint
+  String url = String(BACKEND_URL) + "/devices/commands/pending";
 
   http.begin(url);
   http.addHeader("Content-Type", "application/json");
@@ -489,7 +481,7 @@ void executeCommand(const String& action, const String& commandId) {
                    (currentLockState == UNLOCKED) ? "unlocked" : "unknown";
     Serial.printf("[CMD] → Reporting status: %s\n", status.c_str());
     Serial.flush();
-    publishDoorLockStatus(status, currentLockState == LOCKED);
+    // Status is reported via backend HTTP API only
   }
   else {
     Serial.printf("[CMD] ⚠ Unknown action: %s\n", action.c_str());
@@ -507,12 +499,17 @@ void sendHeartbeat() {
     return;
   }
 
-  Serial.println("[HEARTBEAT] Sending status update...");
+  // Build heartbeat URL
+  String heartbeatUrl = String(BACKEND_URL) + "/devices/heartbeat";
 
-  String status = (currentLockState == LOCKED) ? "locked" :
-                 (currentLockState == UNLOCKED) ? "unlocked" : "unknown";
+  // Send heartbeat to backend
+  bool success = sendHeartbeatToBackend(DEVICE_ID, DEVICE_API_TOKEN, heartbeatUrl.c_str(), DEVICE_TYPE);
 
-  publishDoorLockStatus(status, currentLockState == LOCKED);
+  if (success) {
+    String status = (currentLockState == LOCKED) ? "locked" :
+                   (currentLockState == UNLOCKED) ? "unlocked" : "unknown";
+    Serial.printf("[HEARTBEAT] ✓ Current status: %s\n", status.c_str());
+  }
 }
 
 // ============================================================================
@@ -558,7 +555,7 @@ void acknowledgeCommand(const String& commandId, bool success, const String& act
   HTTPClient http;
 
   // Build URL for command acknowledgment
-  String url = String(BACKEND_URL) + "/ack";
+  String url = String(BACKEND_URL) + "/devices/commands/ack";
 
   http.begin(url);
   http.addHeader("Content-Type", "application/json");
@@ -625,13 +622,7 @@ void updateDeviceStatus(const String& lockState, const String& lastAction, bool 
   HTTPClient http;
 
   // Build URL for status update
-  // Extract base URL up to /api/v1
-  String baseUrl = String(BACKEND_URL);
-  int apiPos = baseUrl.indexOf("/api/");
-  if (apiPos != -1) {
-    baseUrl = baseUrl.substring(0, apiPos);
-  }
-  String url = baseUrl + "/api/v1/devices/" + String(DEVICE_ID) + "/lock/state";
+  String url = String(BACKEND_URL) + "/devices/" + String(DEVICE_ID) + "/lock/state";
 
   http.begin(url);
   http.addHeader("Content-Type", "application/json");

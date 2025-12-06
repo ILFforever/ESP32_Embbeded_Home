@@ -23,7 +23,6 @@ void initDoorLockMQTT(const char* deviceId);
 bool connectDoorLockMQTT();
 void processDoorLockMQTT();
 bool isDoorLockMQTTConnected();
-void publishDoorLockStatus(const String& status, bool isLocked);
 
 // External function that must be implemented in main file
 extern void fetchAndExecuteCommands();
