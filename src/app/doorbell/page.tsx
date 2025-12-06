@@ -1474,10 +1474,10 @@ export default function DoorbellControlPage() {
               </div>
             </div>
 
-            {/* Sub Module Command & Recent Activity */}
+            {/* SubModule Command & Recent Activity */}
             <div className="card">
               <div className="card-header">
-                <h3>SUB MODULE COMMAND</h3>
+                <h3>SUBMODULE COMMAND</h3>
               </div>
               <div className="card-content">
                 <div className="control-panel">
