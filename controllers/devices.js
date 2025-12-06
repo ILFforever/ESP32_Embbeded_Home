@@ -2275,6 +2275,286 @@ const getLatestSensorData = async (req, res) => {
   }
 };
 
+// ============================================================================
+// Door Lock Specific Endpoints
+// ============================================================================
+
+// @desc    Update door lock state (called by ESP32 after executing command)
+// @route   POST /api/v1/devices/:device_id/lock/state
+// @access  Private (requires device token)
+const updateDoorLockState = async (req, res) => {
+  try {
+    const { device_id } = req.params;
+    const { lock_state, last_action, manual_trigger } = req.body;
+
+    // Validate lock_state
+    const validStates = ['locked', 'unlocked', 'unknown'];
+    if (!lock_state || !validStates.includes(lock_state)) {
+      return res.status(400).json({
+        status: 'error',
+        message: `Invalid lock_state. Must be one of: ${validStates.join(', ')}`
+      });
+    }
+
+    const db = getFirestore();
+    const deviceRef = db.collection('devices').doc(device_id);
+
+    // Verify device exists and is a door lock
+    const deviceDoc = await deviceRef.get();
+    if (!deviceDoc.exists) {
+      return res.status(404).json({
+        status: 'error',
+        message: 'Device not found'
+      });
+    }
+
+    const deviceData = deviceDoc.data();
+    if (deviceData.type !== 'actuator') {
+      return res.status(400).json({
+        status: 'error',
+        message: 'Device is not a door lock'
+      });
+    }
+
+    // Update device state
+    const stateData = {
+      lock_state,
+      last_action: last_action || lock_state,
+      last_action_time: admin.firestore.FieldValue.serverTimestamp(),
+      updated_at: admin.firestore.FieldValue.serverTimestamp()
+    };
+
+    if (manual_trigger !== undefined) {
+      stateData.manual_trigger = manual_trigger;
+    }
+
+    await deviceRef
+      .collection('live_status')
+      .doc('device_state')
+      .set(stateData, { merge: true });
+
+    console.log(`[DoorLockState] ${device_id} - State updated: ${lock_state}${manual_trigger ? ' (manual)' : ''}`);
+
+    // If manual trigger, also log it
+    if (manual_trigger) {
+      const logEntry = {
+        level: 'info',
+        message: `Manual ${lock_state === 'locked' ? 'lock' : 'unlock'} button pressed`,
+        data: {
+          lock_state,
+          action: last_action || lock_state,
+          manual_trigger: true
+        },
+        created_at: admin.firestore.FieldValue.serverTimestamp()
+      };
+
+      await deviceRef.collection('device_logs').add(logEntry);
+      console.log(`[DoorLockState] ${device_id} - Manual trigger event logged`);
+    }
+
+    res.json({
+      status: 'ok',
+      message: 'Lock state updated successfully',
+      device_id,
+      lock_state
+    });
+
+  } catch (error) {
+    console.error('[updateDoorLockState] Error:', error);
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+};
+
+// @desc    Lock the door
+// @route   POST /api/v1/devices/:device_id/lock
+// @access  Private (requires user token)
+const lockDoor = async (req, res) => {
+  try {
+    const { device_id } = req.params;
+
+    // Verify device exists and is a door lock
+    const db = getFirestore();
+    const deviceDoc = await db.collection('devices').doc(device_id).get();
+
+    if (!deviceDoc.exists) {
+      return res.status(404).json({
+        status: 'error',
+        message: 'Device not found'
+      });
+    }
+
+    const deviceData = deviceDoc.data();
+    if (deviceData.type !== 'actuator') {
+      return res.status(400).json({
+        status: 'error',
+        message: 'Device is not a door lock'
+      });
+    }
+
+    // Queue lock command
+    const result = await queueCommand(device_id, 'lock', {});
+
+    if (!result.success) {
+      return res.status(500).json({
+        status: 'error',
+        message: 'Failed to queue lock command',
+        error: result.error
+      });
+    }
+
+    console.log(`[DoorLock] ${device_id} - Lock command queued (ID: ${result.commandId})`);
+
+    res.json({
+      status: 'ok',
+      message: 'Lock command sent successfully',
+      device_id,
+      command_id: result.commandId,
+      action: 'lock'
+    });
+
+  } catch (error) {
+    console.error('[lockDoor] Error:', error);
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+};
+
+// @desc    Unlock the door
+// @route   POST /api/v1/devices/:device_id/unlock
+// @access  Private (requires user token)
+const unlockDoor = async (req, res) => {
+  try {
+    const { device_id } = req.params;
+    const { duration } = req.body; // Optional: auto-lock after duration (seconds)
+
+    // Verify device exists and is a door lock
+    const db = getFirestore();
+    const deviceDoc = await db.collection('devices').doc(device_id).get();
+
+    if (!deviceDoc.exists) {
+      return res.status(404).json({
+        status: 'error',
+        message: 'Device not found'
+      });
+    }
+
+    const deviceData = deviceDoc.data();
+    if (deviceData.type !== 'actuator') {
+      return res.status(400).json({
+        status: 'error',
+        message: 'Device is not a door lock'
+      });
+    }
+
+    // Queue unlock command with optional duration
+    const params = duration ? { duration: parseInt(duration) } : {};
+    const result = await queueCommand(device_id, 'unlock', params);
+
+    if (!result.success) {
+      return res.status(500).json({
+        status: 'error',
+        message: 'Failed to queue unlock command',
+        error: result.error
+      });
+    }
+
+    console.log(`[DoorLock] ${device_id} - Unlock command queued (ID: ${result.commandId})${duration ? ` with duration: ${duration}s` : ''}`);
+
+    res.json({
+      status: 'ok',
+      message: 'Unlock command sent successfully',
+      device_id,
+      command_id: result.commandId,
+      action: 'unlock',
+      ...(duration && { duration: parseInt(duration) })
+    });
+
+  } catch (error) {
+    console.error('[unlockDoor] Error:', error);
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+};
+
+// @desc    Get door lock status
+// @route   GET /api/v1/devices/:device_id/lock/status
+// @access  Private (requires user token)
+const getDoorLockStatus = async (req, res) => {
+  try {
+    const { device_id } = req.params;
+
+    const db = getFirestore();
+    const deviceDoc = await db.collection('devices').doc(device_id).get();
+
+    if (!deviceDoc.exists) {
+      return res.status(404).json({
+        status: 'error',
+        message: 'Device not found'
+      });
+    }
+
+    const deviceData = deviceDoc.data();
+    if (deviceData.type !== 'actuator') {
+      return res.status(400).json({
+        status: 'error',
+        message: 'Device is not a door lock'
+      });
+    }
+
+    // Get device online status
+    const heartbeatDoc = await db.collection('devices')
+      .doc(device_id)
+      .collection('live_status')
+      .doc('heartbeat')
+      .get();
+
+    const online = heartbeatDoc.exists;
+    const heartbeatData = heartbeatDoc.exists ? heartbeatDoc.data() : {};
+
+    // Get device state (lock status)
+    const stateDoc = await db.collection('devices')
+      .doc(device_id)
+      .collection('live_status')
+      .doc('device_state')
+      .get();
+
+    const stateData = stateDoc.exists ? stateDoc.data() : {};
+
+    // Check for pending commands
+    const pendingCommands = await db.collection('devices')
+      .doc(device_id)
+      .collection('commands')
+      .where('status', '==', 'pending')
+      .get();
+
+    const hasPendingCommands = !pendingCommands.empty;
+    const pendingCommandsList = pendingCommands.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data(),
+      created_at: doc.data().created_at?.toDate().toISOString()
+    }));
+
+    console.log(`[DoorLockStatus] ${device_id} - Status retrieved - Online: ${online}, Lock State: ${stateData.lock_state || 'unknown'}`);
+
+    res.json({
+      status: 'ok',
+      device_id,
+      device_name: deviceData.name,
+      online,
+      lock_state: stateData.lock_state || 'unknown', // 'locked', 'unlocked', 'unknown'
+      last_action: stateData.last_action || null,
+      last_action_time: stateData.last_action_time?.toDate().toISOString() || null,
+      last_heartbeat: heartbeatData.last_heartbeat?.toDate().toISOString() || null,
+      has_pending_commands: hasPendingCommands,
+      pending_commands: pendingCommandsList,
+      uptime_ms: heartbeatData.uptime_ms || null,
+      wifi_rssi: heartbeatData.wifi_rssi || null
+    });
+
+  } catch (error) {
+    console.error('[getDoorLockStatus] Error:', error);
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+};
+
 module.exports = {
   registerDevice,
   handleHeartbeat,
@@ -2315,5 +2595,10 @@ module.exports = {
   // Sensor readings
   getSensorReadings,
   // Latest sensor reading
-  getLatestSensorData
+  getLatestSensorData,
+  // Door lock specific
+  lockDoor,
+  unlockDoor,
+  getDoorLockStatus,
+  updateDoorLockState
 };

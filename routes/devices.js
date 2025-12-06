@@ -40,7 +40,12 @@ const {
   getHubAmpStreaming,
   // Sensor readings
   getSensorReadings,
-  getLatestSensorData
+  getLatestSensorData,
+  // Door lock specific
+  lockDoor,
+  unlockDoor,
+  getDoorLockStatus,
+  updateDoorLockState
 } = require('../controllers/devices');
 const { authenticateDevice } = require('../middleware/deviceAuth');
 const { protect } = require('../middleware/auth');
@@ -285,6 +290,30 @@ router.get('/:device_id/sensor/sensors', protect, getLatestSensorData);
 // @desc    Get the latest raw sensor data (for ESP32 with device auth)
 // @access  Private (requires device token)
 router.get('/:device_id/sensor/sensors/device', authenticateDevice, getLatestSensorData);
+
+// ============================================================================
+// Door Lock Specific Routes
+// ============================================================================
+
+// @route   POST /api/v1/devices/:device_id/lock
+// @desc    Lock the door
+// @access  Private (requires user token)
+router.post('/:device_id/lock', protect, lockDoor);
+
+// @route   POST /api/v1/devices/:device_id/unlock
+// @desc    Unlock the door (optional duration for auto-lock)
+// @access  Private (requires user token)
+router.post('/:device_id/unlock', protect, unlockDoor);
+
+// @route   GET /api/v1/devices/:device_id/lock/status
+// @desc    Get door lock status (locked/unlocked, online, etc.)
+// @access  Private (requires user token)
+router.get('/:device_id/lock/status', protect, getDoorLockStatus);
+
+// @route   POST /api/v1/devices/:device_id/lock/state
+// @desc    Update door lock state (called by ESP32 after executing command)
+// @access  Private (requires device token)
+router.post('/:device_id/lock/state', authenticateDevice, updateDoorLockState);
 
 // ============================================================================
 // Note: Hub also uses the following generic endpoints:
