@@ -249,7 +249,7 @@ export function TemperatureCard({ isExpanded = false, refreshInterval = 5000 }: 
                         stroke={colors[idx % colors.length]}
                         strokeWidth={2}
                         dot={false}
-                        activeDot={false}
+                        activeDot={{ r: 6 }}
                         connectNulls={true}
                       />
                     ))}
@@ -319,7 +319,7 @@ export function TemperatureCard({ isExpanded = false, refreshInterval = 5000 }: 
                               dataKey="temperature"
                               stroke={roomColor}
                               strokeWidth={2}
-                              dot={{ r: 3 }}
+                              dot={false}
                               activeDot={{ r: 6 }}
                               connectNulls={true}
                             />

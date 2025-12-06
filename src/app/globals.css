@@ -252,7 +252,7 @@ h6 { font-size: var(--font-size-sm); }
     "system-status system-status alerts alerts"
     "system-status system-status alerts alerts"
     "temperature temperature gas gas"
-    "doors doors admin admin";
+    "doors music admin admin";
 }
 
 /* Grid area assignments */
@@ -278,6 +278,10 @@ h6 { font-size: var(--font-size-sm); }
 
 .grid-admin {
   grid-area: admin;
+}
+
+.grid-music {
+  grid-area: music;
 }
 
 @keyframes fadeInUp {
@@ -2048,7 +2052,8 @@ h6 { font-size: var(--font-size-sm); }
       "system-status alerts"
       "system-status alerts"
       "temperature gas"
-      "doors admin";
+      "doors music"
+      "admin admin";
   }
 
   .sidebar {

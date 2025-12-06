@@ -210,17 +210,33 @@ export function DoorCard({ doorsWindows, isExpanded = false }: DoorCardProps) {
                           <button
                             className="btn-action btn-unlock"
                             onClick={() => handleLockAction(door.id, 'unlock')}
-                            disabled={loadingStates[door.id]}
+                            disabled={loadingStates[door.id] || !door.online}
+                            style={{
+                              backgroundColor: !door.online ? 'var(--bg-secondary)' : undefined,
+                              color: !door.online ? '#000000' : undefined,
+                              cursor: !door.online ? 'not-allowed' : undefined,
+                              opacity: !door.online ? 0.6 : undefined,
+                              fontSize: !door.online ? '18px' : undefined,
+                              fontWeight: !door.online ? '700' : undefined
+                            }}
                           >
-                            {loadingStates[door.id] ? 'UNLOCKING...' : 'UNLOCK'}
+                            {loadingStates[door.id] ? 'UNLOCKING...' : !door.online ? 'OFFLINE' : 'UNLOCK'}
                           </button>
                         ) : (
                           <button
                             className="btn-action btn-lock"
                             onClick={() => handleLockAction(door.id, 'lock')}
-                            disabled={loadingStates[door.id]}
+                            disabled={loadingStates[door.id] || !door.online}
+                            style={{
+                              backgroundColor: !door.online ? 'var(--bg-secondary)' : undefined,
+                              color: !door.online ? '#000000' : undefined,
+                              cursor: !door.online ? 'not-allowed' : undefined,
+                              opacity: !door.online ? 0.6 : undefined,
+                              fontSize: !door.online ? '18px' : undefined,
+                              fontWeight: !door.online ? '700' : undefined
+                            }}
                           >
-                            {loadingStates[door.id] ? 'LOCKING...' : 'LOCK'}
+                            {loadingStates[door.id] ? 'LOCKING...' : !door.online ? 'OFFLINE' : 'LOCK'}
                           </button>
                         )}
                       </div>
