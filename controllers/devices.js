@@ -1134,6 +1134,10 @@ const sendDeviceCommand = async (req, res) => {
       'amp_list',
       'amp_wifi',
       'system_restart',
+      // Doorlock actions
+      'lock',
+      'unlock',
+      'status',
     ];
 
     if (!action || !validActions.includes(action)) {
@@ -1290,6 +1294,63 @@ const acknowledgeCommand = async (req, res) => {
 
   } catch (error) {
     console.error('[AckCommand] Error:', error);
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+};
+
+// ============================================================================
+// @route   POST /api/v1/devices/commands/manual-unlock
+// @desc    Handle manual unlock notification from doorlock device
+// @access  Private (requires device token)
+// ============================================================================
+const handleManualUnlock = async (req, res) => {
+  try {
+    const { device_id, device_type, location, action, timestamp, api_token } = req.body;
+
+    // Validation
+    if (!device_id) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'device_id is required'
+      });
+    }
+
+    console.log(`[ManualUnlock] ${device_id} - Manual unlock event received`);
+    console.log(`  Location: ${location || 'Unknown'}`);
+    console.log(`  Timestamp: ${timestamp || Date.now()}`);
+
+    const db = getFirestore();
+    const deviceRef = db.collection('devices').doc(device_id);
+
+    // Log the manual unlock event to device logs
+    const logEntry = {
+      level: 'info',
+      message: 'Manual unlock button pressed',
+      data: {
+        device_type: device_type || 'doorlock',
+        location: location || 'Unknown',
+        action: action || 'manual_unlock',
+        manual_trigger: true
+      },
+      timestamp: timestamp ? admin.firestore.Timestamp.fromMillis(timestamp) : admin.firestore.FieldValue.serverTimestamp(),
+      created_at: admin.firestore.FieldValue.serverTimestamp()
+    };
+
+    // Write log to device_logs collection
+    const logRef = await deviceRef.collection('device_logs').add(logEntry);
+
+    console.log(`[ManualUnlock] ${device_id} - Event logged with ID: ${logRef.id}`);
+
+    // Optionally: Create a notification or trigger other actions
+    // For example, you could publish to MQTT to notify other devices
+
+    res.json({
+      status: 'ok',
+      message: 'Manual unlock event recorded'
+    });
+
+  } catch (error) {
+    console.error('[ManualUnlock] Error:', error);
     res.status(500).json({ status: 'error', message: error.message });
   }
 };
@@ -2230,6 +2291,7 @@ module.exports = {
   sendDeviceCommand,
   fetchPendingCommands,
   acknowledgeCommand,
+  handleManualUnlock,
   // Amplifier Global Control
   playAmplifierAll,
   stopAmplifierAll,

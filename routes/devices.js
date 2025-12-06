@@ -17,6 +17,7 @@ const {
   sendDeviceCommand,
   fetchPendingCommands,
   acknowledgeCommand,
+  handleManualUnlock,
   // Amplifier Global Control
   playAmplifierAll,
   stopAmplifierAll,
@@ -143,6 +144,11 @@ router.post('/commands/pending', authenticateDevice, fetchPendingCommands);
 // @desc    Device acknowledges command execution
 // @access  Private (requires device token)
 router.post('/commands/ack', authenticateDevice, acknowledgeCommand);
+
+// @route   POST /api/v1/devices/commands/manual-unlock
+// @desc    Handle manual unlock notification from doorlock device
+// @access  Private (requires device token)
+router.post('/commands/manual-unlock', authenticateDevice, handleManualUnlock);
 
 // ============================================================================
 // Face Management Routes
