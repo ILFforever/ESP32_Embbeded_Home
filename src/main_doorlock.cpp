@@ -68,7 +68,7 @@ const char* BACKEND_URL = "https://embedded-smarthome.fly.dev/api/v1/devices/com
 // SERVO CONFIGURATION
 // ============================================================================
 #define SERVO_LOCKED_POS    0    // Servo angle for locked position (0°)
-#define SERVO_UNLOCKED_POS  90   // Servo angle for unlocked position (90°)
+#define SERVO_UNLOCKED_POS  180   // Servo angle for unlocked position (90°)
 
 // ============================================================================
 // BUZZER TONES (in Hz)
@@ -113,19 +113,20 @@ const unsigned long DEBOUNCE_DELAY = 500;  // 500ms debounce
 void setupPins();
 void setupWiFi();
 void setupServo();
-void lockDoor();
-void unlockDoor();
+void lockDoor(const String& commandId = "");
+void unlockDoor(const String& commandId = "");
 void unlockDoorManual();
 void playTone(int frequency, int duration);
 void playLockedTone();
 void playUnlockedTone();
 void playErrorTone();
 void fetchAndExecuteCommands();
-void executeCommand(const String& action);
+void executeCommand(const String& action, const String& commandId);
 void sendHeartbeat();
-void notifyServerManualUnlock();
 void checkUnlockButton();
 void blinkLED(int times, int delayMs);
+void acknowledgeCommand(const String& commandId, bool success, const String& action, const String& lockState);
+void updateDeviceStatus(const String& lockState, const String& lastAction, bool manualTrigger = false);
 
 // ============================================================================
 // SETUP
@@ -245,46 +246,80 @@ void setupWiFi() {
 // LOCK CONTROL FUNCTIONS
 // ============================================================================
 
-void lockDoor() {
+void lockDoor(const String& commandId) {
   Serial.println("[LOCK] 🔒 Locking door...");
+  Serial.flush();
 
   // Move servo to locked position
+  Serial.printf("[LOCK] → Moving servo to LOCKED position (%d degrees)\n", SERVO_LOCKED_POS);
+  Serial.flush();
   doorLockServo.write(SERVO_LOCKED_POS);
   delay(500);  // Wait for servo to reach position
 
   currentLockState = LOCKED;
 
   // Audio feedback
+  Serial.println("[LOCK] → Playing locked tone");
+  Serial.flush();
   playLockedTone();
 
   // Visual feedback
   blinkLED(2, 100);
 
   // Publish status to MQTT
+  Serial.println("[LOCK] → Publishing status to MQTT");
+  Serial.flush();
   publishDoorLockStatus("locked", true);
 
+  // If this was a command from backend, acknowledge it and update status
+  if (commandId.length() > 0) {
+    Serial.println("[LOCK] → Sending acknowledgment to backend");
+    acknowledgeCommand(commandId, true, "lock", "locked");
+
+    Serial.println("[LOCK] → Updating device status on backend");
+    updateDeviceStatus("locked", "lock");
+  }
+
   Serial.println("[LOCK] ✓ Door is LOCKED");
+  Serial.flush();
 }
 
-void unlockDoor() {
+void unlockDoor(const String& commandId) {
   Serial.println("[LOCK] 🔓 Unlocking door (remote)...");
+  Serial.flush();
 
   // Move servo to unlocked position
+  Serial.printf("[LOCK] → Moving servo to UNLOCKED position (%d degrees)\n", SERVO_UNLOCKED_POS);
+  Serial.flush();
   doorLockServo.write(SERVO_UNLOCKED_POS);
   delay(500);  // Wait for servo to reach position
 
   currentLockState = UNLOCKED;
 
   // Audio feedback
+  Serial.println("[LOCK] → Playing unlocked tone");
+  Serial.flush();
   playUnlockedTone();
 
   // Visual feedback
   blinkLED(3, 100);
 
   // Publish status to MQTT
+  Serial.println("[LOCK] → Publishing status to MQTT");
+  Serial.flush();
   publishDoorLockStatus("unlocked", false);
 
+  // If this was a command from backend, acknowledge it and update status
+  if (commandId.length() > 0) {
+    Serial.println("[LOCK] → Sending acknowledgment to backend");
+    acknowledgeCommand(commandId, true, "unlock", "unlocked");
+
+    Serial.println("[LOCK] → Updating device status on backend");
+    updateDeviceStatus("unlocked", "unlock");
+  }
+
   Serial.println("[LOCK] ✓ Door is UNLOCKED");
+  Serial.flush();
 }
 
 void unlockDoorManual() {
@@ -307,8 +342,9 @@ void unlockDoorManual() {
   // Publish status to MQTT
   publishDoorLockStatus("unlocked_manual", false);
 
-  // Notify server about manual unlock
-  notifyServerManualUnlock();
+  // Update device status with manual_trigger = true
+  Serial.println("[LOCK] → Updating device status on backend (manual trigger)");
+  updateDeviceStatus("unlocked", "unlock", true);
 
   Serial.println("[LOCK] ✓ Door is UNLOCKED (Manual)");
 }
@@ -414,10 +450,7 @@ void fetchAndExecuteCommands() {
             Serial.printf("[CMD] Executing command ID: %s, Action: %s\n",
                          commandId.c_str(), action.c_str());
 
-            executeCommand(action);
-
-            // TODO: Optionally send acknowledgment back to server
-            // acknowledgeCommand(commandId, true, action);
+            executeCommand(action, commandId);
           }
         } else {
           Serial.println("[CMD] No pending commands");
@@ -432,23 +465,35 @@ void fetchAndExecuteCommands() {
   http.end();
 }
 
-void executeCommand(const String& action) {
-  Serial.printf("[CMD] Executing action: %s\n", action.c_str());
+void executeCommand(const String& action, const String& commandId) {
+  Serial.printf("[CMD] Executing action: %s (command_id: %s)\n", action.c_str(), commandId.c_str());
+  Serial.flush();  // Ensure message is printed
 
   if (action == "lock" || action == "LOCK") {
-    lockDoor();
+    Serial.println("[CMD] → Calling lockDoor()");
+    Serial.flush();
+    lockDoor(commandId);
+    Serial.println("[CMD] ✓ lockDoor() completed");
+    Serial.flush();
   }
   else if (action == "unlock" || action == "UNLOCK") {
-    unlockDoor();
+    Serial.println("[CMD] → Calling unlockDoor()");
+    Serial.flush();
+    unlockDoor(commandId);
+    Serial.println("[CMD] ✓ unlockDoor() completed");
+    Serial.flush();
   }
   else if (action == "status" || action == "STATUS") {
     // Report current status
     String status = (currentLockState == LOCKED) ? "locked" :
                    (currentLockState == UNLOCKED) ? "unlocked" : "unknown";
+    Serial.printf("[CMD] → Reporting status: %s\n", status.c_str());
+    Serial.flush();
     publishDoorLockStatus(status, currentLockState == LOCKED);
   }
   else {
     Serial.printf("[CMD] ⚠ Unknown action: %s\n", action.c_str());
+    Serial.flush();
     playErrorTone();
   }
 }
@@ -486,59 +531,145 @@ void checkUnlockButton() {
     if (now - lastButtonPress > DEBOUNCE_DELAY) {
       lastButtonPress = now;
 
-      Serial.println("[BUTTON] Unlock button pressed!");
+      Serial.println("[BUTTON] Toggle button pressed!");
 
-      // Only unlock if currently locked
+      // Toggle lock state: if locked, unlock; if unlocked, lock
       if (currentLockState == LOCKED) {
         unlockDoorManual();
       } else {
-        Serial.println("[BUTTON] Door already unlocked");
-        playErrorTone();
+        lockDoor();
       }
     }
   }
 }
 
-void notifyServerManualUnlock() {
+// ============================================================================
+// COMMAND ACKNOWLEDGMENT AND STATUS UPDATE
+// ============================================================================
+
+void acknowledgeCommand(const String& commandId, bool success, const String& action, const String& lockState) {
   if (WiFi.status() != WL_CONNECTED) {
-    Serial.println("[SERVER] WiFi not connected - cannot notify server");
+    Serial.println("[ACK] WiFi not connected - cannot send acknowledgment");
     return;
   }
 
-  Serial.println("[SERVER] Notifying backend of manual unlock...");
+  Serial.printf("[ACK] Sending acknowledgment for command: %s\n", commandId.c_str());
 
   HTTPClient http;
 
-  // Build notification URL
-  String url = String(BACKEND_URL) + "/manual-unlock";
+  // Build URL for command acknowledgment
+  String url = String(BACKEND_URL) + "/ack";
 
   http.begin(url);
   http.addHeader("Content-Type", "application/json");
 
-  // Create JSON payload
-  StaticJsonDocument<256> doc;
+  // Add Authorization header with Bearer token
+  if (DEVICE_API_TOKEN && strlen(DEVICE_API_TOKEN) > 0) {
+    String authHeader = String("Bearer ") + DEVICE_API_TOKEN;
+    http.addHeader("Authorization", authHeader.c_str());
+  }
+
+  http.setTimeout(5000);
+
+  // Build JSON payload
+  StaticJsonDocument<512> doc;
   doc["device_id"] = DEVICE_ID;
-  doc["device_type"] = DEVICE_TYPE;
-  doc["location"] = LOCATION_NAME;
-  doc["action"] = "manual_unlock";
-  doc["timestamp"] = millis();
-  doc["api_token"] = DEVICE_API_TOKEN;
+  doc["command_id"] = commandId;
+  doc["success"] = success;
+
+  JsonObject result = doc.createNestedObject("result");
+  result["lock_state"] = lockState;
+
+  String message;
+  if (action == "lock" || action == "LOCK") {
+    message = "Door locked successfully";
+  } else if (action == "unlock" || action == "UNLOCK") {
+    message = "Door unlocked successfully";
+  } else {
+    message = "Action executed: " + action;
+  }
+  result["message"] = message;
 
   String payload;
   serializeJson(doc, payload);
+
+  Serial.printf("[ACK] Payload: %s\n", payload.c_str());
 
   // Send POST request
   int httpCode = http.POST(payload);
 
   if (httpCode > 0) {
-    Serial.printf("[SERVER] HTTP Response: %d\n", httpCode);
+    Serial.printf("[ACK] HTTP Response: %d\n", httpCode);
 
     if (httpCode == HTTP_CODE_OK || httpCode == HTTP_CODE_CREATED) {
       String response = http.getString();
-      Serial.printf("[SERVER] ✓ Server notified: %s\n", response.c_str());
+      Serial.printf("[ACK] ✓ Command acknowledged: %s\n", response.c_str());
+    } else {
+      Serial.printf("[ACK] ⚠ Unexpected response code: %d\n", httpCode);
     }
   } else {
-    Serial.printf("[SERVER] ✗ HTTP request failed: %s\n", http.errorToString(httpCode).c_str());
+    Serial.printf("[ACK] ✗ HTTP request failed: %s\n", http.errorToString(httpCode).c_str());
+  }
+
+  http.end();
+}
+
+void updateDeviceStatus(const String& lockState, const String& lastAction, bool manualTrigger) {
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("[STATUS] WiFi not connected - cannot update status");
+    return;
+  }
+
+  Serial.printf("[STATUS] Updating device status: %s (action: %s)\n", lockState.c_str(), lastAction.c_str());
+
+  HTTPClient http;
+
+  // Build URL for status update
+  // Extract base URL up to /api/v1
+  String baseUrl = String(BACKEND_URL);
+  int apiPos = baseUrl.indexOf("/api/");
+  if (apiPos != -1) {
+    baseUrl = baseUrl.substring(0, apiPos);
+  }
+  String url = baseUrl + "/api/v1/devices/" + String(DEVICE_ID) + "/lock/state";
+
+  http.begin(url);
+  http.addHeader("Content-Type", "application/json");
+
+  // Add Authorization header with Bearer token
+  if (DEVICE_API_TOKEN && strlen(DEVICE_API_TOKEN) > 0) {
+    String authHeader = String("Bearer ") + DEVICE_API_TOKEN;
+    http.addHeader("Authorization", authHeader.c_str());
+  }
+
+  http.setTimeout(5000);
+
+  // Build JSON payload for live_status/device_state update
+  JsonDocument doc;
+  doc["lock_state"] = lockState;
+  doc["last_action"] = lastAction;
+  doc["manual_trigger"] = manualTrigger;
+  // Note: last_action_time will be set by the server using serverTimestamp
+
+  String payload;
+  serializeJson(doc, payload);
+
+  Serial.printf("[STATUS] Payload: %s\n", payload.c_str());
+
+  // Send POST request
+  int httpCode = http.POST(payload);
+
+  if (httpCode > 0) {
+    Serial.printf("[STATUS] HTTP Response: %d\n", httpCode);
+
+    if (httpCode == HTTP_CODE_OK || httpCode == HTTP_CODE_CREATED) {
+      String response = http.getString();
+      Serial.printf("[STATUS] ✓ Status updated: %s\n", response.c_str());
+    } else {
+      Serial.printf("[STATUS] ⚠ Unexpected response code: %d\n", httpCode);
+    }
+  } else {
+    Serial.printf("[STATUS] ✗ HTTP request failed: %s\n", http.errorToString(httpCode).c_str());
   }
 
   http.end();
