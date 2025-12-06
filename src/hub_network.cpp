@@ -1036,3 +1036,130 @@ bool fetchSensorData(const char* deviceId, SensorData* sensorData) {
     return false;
   }
 }
+
+// ============================================================================
+// Camera Control Functions
+// ============================================================================
+
+// Send command to doorbell camera (camera_start, camera_stop, start_preview)
+bool sendCameraCommand(const char* deviceId, const char* action) {
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("[CameraCmd] WiFi not connected");
+    return false;
+  }
+
+  HTTPClient http;
+  String url = String(BACKEND_SERVER_URL) + "/api/v1/devices/" + deviceId + "/command";
+
+  Serial.printf("[CameraCmd] Sending %s command to %s\n", action, deviceId);
+  Serial.printf("[CameraCmd] URL: %s\n", url.c_str());
+
+  http.begin(url);
+  http.addHeader("Content-Type", "application/json");
+
+  // Add Authorization header with hub's API token
+  String authHeader = String("Bearer ") + HUB_API_TOKEN;
+  http.addHeader("Authorization", authHeader.c_str());
+
+  http.setTimeout(10000);  // 10 second timeout
+
+  // Build JSON payload
+  JsonDocument doc;
+  doc["action"] = action;
+
+  String jsonString;
+  serializeJson(doc, jsonString);
+
+  Serial.printf("[CameraCmd] Request: %s\n", jsonString.c_str());
+
+  int httpCode = http.POST(jsonString);
+
+  if (httpCode > 0) {
+    Serial.printf("[CameraCmd] HTTP Response: %d\n", httpCode);
+
+    if (httpCode == HTTP_CODE_OK) {
+      String response = http.getString();
+      Serial.printf("[CameraCmd] ✓ Response: %s\n", response.c_str());
+      http.end();
+      return true;
+    }
+  } else {
+    Serial.printf("[CameraCmd] ✗ HTTP request failed: %s\n", http.errorToString(httpCode).c_str());
+  }
+
+  http.end();
+  return false;
+}
+
+// Fetch camera snapshot from backend
+bool fetchCameraSnapshot(const char* deviceId, uint8_t* imageData, size_t maxSize, size_t* actualSize) {
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("[Snapshot] WiFi not connected");
+    return false;
+  }
+
+  HTTPClient http;
+  String url = String(BACKEND_SERVER_URL) + "/api/v1/stream/snapshot/" + deviceId;
+
+  Serial.printf("[Snapshot] Fetching snapshot for %s\n", deviceId);
+  Serial.printf("[Snapshot] URL: %s\n", url.c_str());
+
+  http.begin(url);
+  http.setTimeout(15000);  // 15 second timeout for image download
+
+  int httpCode = http.GET();
+
+  if (httpCode > 0) {
+    Serial.printf("[Snapshot] HTTP Response: %d\n", httpCode);
+
+    if (httpCode == HTTP_CODE_OK) {
+      WiFiClient* stream = http.getStreamPtr();
+      size_t len = http.getSize();
+
+      Serial.printf("[Snapshot] Image size: %d bytes\n", len);
+
+      if (len > maxSize) {
+        Serial.printf("[Snapshot] ✗ Image too large! %d > %d\n", len, maxSize);
+        http.end();
+        return false;
+      }
+
+      // Read the image data
+      size_t totalRead = 0;
+      uint8_t buff[512];
+
+      while (http.connected() && (len > 0 || len == -1)) {
+        size_t size = stream->available();
+
+        if (size) {
+          int c = stream->readBytes(buff, ((size > sizeof(buff)) ? sizeof(buff) : size));
+
+          if (totalRead + c <= maxSize) {
+            memcpy(imageData + totalRead, buff, c);
+            totalRead += c;
+          }
+
+          if (len > 0) {
+            len -= c;
+          }
+        }
+
+        delay(1);
+      }
+
+      *actualSize = totalRead;
+      Serial.printf("[Snapshot] ✓ Downloaded %d bytes\n", totalRead);
+
+      http.end();
+      return true;
+    } else {
+      String response = http.getString();
+      Serial.printf("[Snapshot] ✗ Error response: %s\n", response.c_str());
+    }
+  } else {
+    Serial.printf("[Snapshot] ✗ HTTP request failed: %s\n", http.errorToString(httpCode).c_str());
+  }
+
+  http.end();
+  return false;
+}
