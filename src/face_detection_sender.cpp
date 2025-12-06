@@ -4,6 +4,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/queue.h"
+#include "esp_task_wdt.h"
 
 // External backend configuration from heartbeat.h
 extern const char* BACKEND_SERVER_URL;
@@ -29,6 +30,9 @@ static void sendFaceDetectionBlocking(FaceDetectionEvent* event) {
         return;
     }
 
+    // Note: Camera should already be stopped by caller to free SPI buffer
+    // This reduces heap fragmentation during WiFiClient operations
+
     // Parse backend URL
     String serverUrl = String(BACKEND_SERVER_URL);
     serverUrl.replace("http://", "");
@@ -53,8 +57,9 @@ static void sendFaceDetectionBlocking(FaceDetectionEvent* event) {
     Serial.printf("[FaceDetectionSender] Connecting to %s:%d%s\n", host.c_str(), port, path.c_str());
 
     WiFiClient client;
+    client.setTimeout(5000);  // 5 second timeout for reads/writes
 
-    if (!client.connect(host.c_str(), port)) {
+    if (!client.connect(host.c_str(), port, 5000)) {  // 5 second connection timeout
         Serial.println("[FaceDetectionSender] ✗ Connection failed");
         stats.totalFailed++;
         return;
@@ -102,6 +107,7 @@ static void sendFaceDetectionBlocking(FaceDetectionEvent* event) {
     size_t contentLength = formData.length() + imageHeader.length() + event->imageSize + 2 + footer.length();
 
     // Send HTTP headers
+    Serial.printf("[FaceDetectionSender] Sending headers (Content-Length: %u)\n", contentLength);
     client.print("POST " + path + " HTTP/1.1\r\n");
     client.print("Host: " + host + "\r\n");
     client.print("Content-Type: multipart/form-data; boundary=" + boundary + "\r\n");
@@ -112,6 +118,7 @@ static void sendFaceDetectionBlocking(FaceDetectionEvent* event) {
     client.print("Connection: close\r\n\r\n");
 
     // Send form data
+    Serial.printf("[FaceDetectionSender] Sending form data (%u bytes)\n", formData.length());
     client.print(formData);
 
     // Send image in chunks
@@ -123,30 +130,56 @@ static void sendFaceDetectionBlocking(FaceDetectionEvent* event) {
 
         Serial.printf("[FaceDetectionSender] Sending %u bytes\n", event->imageSize);
 
+        int writeRetries = 0;
         while (sent < event->imageSize) {
+            // Feed watchdog regularly during upload
+            esp_task_wdt_reset();
+
             if (!client.connected()) {
                 Serial.printf("[FaceDetectionSender] ✗ Connection lost at %u/%u\n", sent, event->imageSize);
                 stats.totalFailed++;
+                client.flush();
                 client.stop();
+                delay(10);  // Give WiFi stack time to clean up
                 return;
             }
 
             size_t toSend = min(CHUNK_SIZE, event->imageSize - sent);
             size_t written = client.write(event->imageData + sent, toSend);
 
+            if (written == 0) {
+                // Socket buffer full (EAGAIN) - wait and retry
+                writeRetries++;
+                if (writeRetries > 10) {
+                    Serial.printf("[FaceDetectionSender] ✗ Write timeout at %u/%u (buffer full)\n", sent, event->imageSize);
+                    stats.totalFailed++;
+                    client.flush();
+                    client.stop();
+                    delay(10);
+                    return;
+                }
+                Serial.println("[FaceDetectionSender] ⚠ Socket buffer full, retrying...");
+                esp_task_wdt_reset();  // Feed watchdog during retry
+                vTaskDelay(pdMS_TO_TICKS(100));  // Wait for buffer to drain
+                continue;  // Retry this chunk
+            }
+
             if (written != toSend) {
-                Serial.printf("[FaceDetectionSender] ✗ Write failed at %u/%u\n", sent, event->imageSize);
+                Serial.printf("[FaceDetectionSender] ✗ Partial write at %u/%u (wrote %u/%u)\n",
+                             sent, event->imageSize, written, toSend);
                 stats.totalFailed++;
+                client.flush();
                 client.stop();
+                delay(10);
                 return;
             }
 
             sent += written;
-            client.flush();
+            writeRetries = 0;  // Reset retry counter on success
 
-            // Yield to other tasks while sending
+            // Yield to other tasks while sending (removed flush - it blocks)
             if (sent < event->imageSize) {
-                vTaskDelay(pdMS_TO_TICKS(50));  // Use FreeRTOS delay instead of Arduino delay
+                vTaskDelay(pdMS_TO_TICKS(10));  // Reduced delay for faster upload
             }
 
             if (sent % 2048 == 0) {
@@ -163,16 +196,29 @@ static void sendFaceDetectionBlocking(FaceDetectionEvent* event) {
     client.print(footer);
     client.flush();
 
+    Serial.printf("[FaceDetectionSender] ✓ Upload complete, waiting for response (connected: %d)\n", client.connected());
+
     // Wait for response
     unsigned long timeout = millis();
     while (client.available() == 0) {
-        if (millis() - timeout > 15000) {
-            Serial.println("[FaceDetectionSender] ✗ Timeout");
+        if (!client.connected()) {
+            Serial.println("[FaceDetectionSender] ✗ Server closed connection before response");
             stats.totalFailed++;
+            client.flush();
             client.stop();
+            delay(10);
             return;
         }
-        vTaskDelay(pdMS_TO_TICKS(10));  // Use FreeRTOS delay
+        if (millis() - timeout > 10000) {  // 10 seconds timeout to prevent watchdog
+            Serial.println("[FaceDetectionSender] ✗ Timeout waiting for response (10s)");
+            stats.totalFailed++;
+            client.flush();
+            client.stop();
+            delay(10);
+            return;
+        }
+        esp_task_wdt_reset();  // Feed watchdog while waiting
+        vTaskDelay(pdMS_TO_TICKS(100));  // Longer delay to reduce CPU usage
     }
 
     // Read response
@@ -180,6 +226,7 @@ static void sendFaceDetectionBlocking(FaceDetectionEvent* event) {
     bool headersEnd = false;
 
     while (client.available() && !headersEnd) {
+        esp_task_wdt_reset();  // Feed watchdog while reading headers
         String line = client.readStringUntil('\n');
         if (line.startsWith("HTTP/1.")) {
             int spaceIdx = line.indexOf(' ');
@@ -194,10 +241,18 @@ static void sendFaceDetectionBlocking(FaceDetectionEvent* event) {
 
     String responseBody = "";
     while (client.available()) {
-        responseBody += client.readString();
+        esp_task_wdt_reset();  // Feed watchdog while reading body
+        char c = client.read();
+        if (c != -1) {
+            responseBody += (char)c;
+        }
+        vTaskDelay(pdMS_TO_TICKS(1));  // Small yield to prevent CPU hogging
     }
 
+    // Explicit cleanup to prevent socket leaks
+    client.flush();
     client.stop();
+    delay(10);  // Give WiFi stack time to clean up socket
 
     unsigned long duration = millis() - startTime;
     stats.lastSendDurationMs = duration;
@@ -258,8 +313,8 @@ void initFaceDetectionSender(uint32_t stackSize, UBaseType_t priority, BaseType_
         return;
     }
 
-    // Create queue (holds up to 3 events)
-    faceDetectionQueue = xQueueCreate(3, sizeof(FaceDetectionEvent));
+    // Create queue (reduced to 1 to prevent piling up when backend is slow)
+    faceDetectionQueue = xQueueCreate(1, sizeof(FaceDetectionEvent));
     if (faceDetectionQueue == NULL) {
         Serial.println("[FaceDetectionSender] ✗ Failed to create queue");
         return;
@@ -309,13 +364,29 @@ bool queueFaceDetection(bool recognized, const char* name, float confidence,
 
     // Copy image data to heap (freed after sending)
     if (imageData != nullptr && imageSize > 0) {
+        // Memory pressure check: Skip if heap is low
+        size_t freeHeap = ESP.getFreeHeap();
+        size_t largestBlock = ESP.getMaxAllocHeap();
+        const size_t MIN_FREE_HEAP = 20000;  // Require 20KB free minimum
+
+        if (freeHeap < MIN_FREE_HEAP || largestBlock < imageSize) {
+            Serial.printf("[FaceDetectionSender] ⚠ Skipping due to low memory (free: %u, largest: %u, need: %u)\n",
+                         freeHeap, largestBlock, imageSize);
+            stats.totalFailed++;
+            return false;
+        }
+
         event.imageData = (uint8_t*)malloc(imageSize);
         if (event.imageData == NULL) {
-            Serial.println("[FaceDetectionSender] ✗ Failed to allocate image buffer");
+            Serial.printf("[FaceDetectionSender] ✗ Failed to allocate %u bytes (free heap: %u, largest block: %u)\n",
+                         imageSize, freeHeap, largestBlock);
+            stats.totalFailed++;
             return false;
         }
         memcpy(event.imageData, imageData, imageSize);
         event.imageSize = imageSize;
+        Serial.printf("[FaceDetectionSender] ✓ Allocated %u bytes (free: %u → %u)\n",
+                     imageSize, freeHeap, ESP.getFreeHeap());
     } else {
         event.imageData = nullptr;
         event.imageSize = 0;

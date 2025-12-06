@@ -224,41 +224,41 @@ void handleUARTResponse(String line)
         }
       }
 
-      // Update LCD status and video area BEFORE sending to show system is working (not frozen)
-      if (recognized)
-      {
-        char msg[64];
-        snprintf(msg, sizeof(msg), "Uploading data...");
-        updateStatusMsg(msg, false); // Non-temporary message during upload
-      }
-      else
-      {
-        updateStatusMsg("Uploading data...", false);
-      }
-      
-      // Send face detection event to backend (saves to Firebase + publishes to Hub via MQTT)
-      // Sends raw JPEG binary - much more efficient than Base64!
-      // Using async version to avoid blocking the UI during upload
+      // STEP 1: Stop camera immediately to prevent new frame allocations
+      Serial.println("[FaceDetection] Stopping camera before upload");
+      sendUARTCommand("camera_control", "camera_stop");
+
+      // STEP 2: Show "Sending to server..." screen and start timer
+      updateStatusMsg("Sending to server...", false);
+      showUploadingScreen();
+      show_upload_screen = true;
+      upload_screen_start_time = millis();
+
+      // STEP 3: Queue upload (copies frame data internally)
+      Serial.println("[FaceDetection] Queueing upload to backend");
       sendFaceDetectionAsync(recognized, name, confidence, frameData, frameSize);
 
-      // Fill video area with uploading screen
-      showUploadingScreen();
+      // STEP 4: Free SPI buffer immediately after copying (critical for memory)
+      if (spiMaster.isFrameReady())
+      {
+        Serial.println("[FaceDetection] Freeing SPI buffer after upload queued");
+        spiMaster.ackFrame();
+      }
 
-      // Update LCD status with recognition result
+      // STEP 5: Prepare welcome/error message (will be shown by timer task)
       if (recognized)
       {
         sendUART2Command("play", "success");
-        char msg[64];
-        snprintf(msg, sizeof(msg), "Welcome %s!", name);
-        updateStatusMsg(msg, true, "Doorbell Active");
+        snprintf(welcome_message, sizeof(welcome_message), "Welcome %s!", name);
         recognition_state = 1; // Success
       }
       else
       {
         sendUART2Command("play", "error");
-        updateStatusMsg("Unknown Person : Try again", true, "Doorbell Active");
+        snprintf(welcome_message, sizeof(welcome_message), "Unknown Person");
         recognition_state = 2; // Failure
       }
+      // Note: Actual UI transitions handled by taskManageUIFlow() in main.cpp
     }
     return;
   }

@@ -31,6 +31,13 @@ extern unsigned long lastFaceDetectionTime;
 extern unsigned long face_recognition_start_time;
 extern bool face_recognition_active;
 
+// UI flow timing for upload/welcome screen
+extern unsigned long upload_screen_start_time;
+extern unsigned long welcome_screen_start_time;
+extern bool show_upload_screen;
+extern bool show_welcome_screen;
+extern char welcome_message[64];
+
 // Send command to Slave (with automatic mode tracking)
 void sendUARTCommand(const char *cmd, const char *param = nullptr, int value = -1);
 

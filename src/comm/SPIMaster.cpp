@@ -1,5 +1,6 @@
 // SPIMaster.cpp - SPI Master implementation for TaskScheduler
 #include "SPIMaster.h"
+#include "esp_heap_caps.h"
 
 SPIMaster::SPIMaster()
     : _spi(HSPI),
@@ -82,11 +83,10 @@ void SPIMaster::update()
         break;
 
     case SPI_ERROR:
-        // Reset to idle
+        // Reset to idle and free buffer
         _state = SPI_IDLE;
-        if (_frameBuffer != nullptr)
-        {
-            delete[] _frameBuffer;
+        if (_frameBuffer != nullptr) {
+            free(_frameBuffer);
             _frameBuffer = nullptr;
         }
         break;
@@ -123,29 +123,40 @@ bool SPIMaster::_receiveHeader()
     _frameSize = _parseBE32((uint8_t *)&header.frame_size);
     _frameTimestamp = _parseBE32((uint8_t *)&header.timestamp);
 
-    // Validate frame size (allow up to 200KB for RGB frames)
-    if (_frameSize == 0 || _frameSize > 200000)
+    // Validate frame size
+    if (_frameSize == 0 || _frameSize > SPI_MAX_FRAME_SIZE)
     {
-        Serial.print("[SPI] ERROR: Invalid frame size: ");
-        Serial.println(_frameSize);
+        Serial.printf("[SPI] ERROR: Invalid frame size: %u (max: %u)\n", _frameSize, SPI_MAX_FRAME_SIZE);
         _state = SPI_ERROR;
         return false;
     }
 
-    // Allocate buffer - use nothrow to prevent exception
+    // Free old buffer immediately before allocating new one
     if (_frameBuffer != nullptr)
     {
-        Serial.println("[SPI] WARNING: Dropping previous frame");
-        delete[] _frameBuffer;
+        free(_frameBuffer);
         _frameBuffer = nullptr;
         _framesDropped++;
+        delay(5);  // Give heap time to consolidate
     }
 
-    _frameBuffer = new (std::nothrow) uint8_t[_frameSize];
+    // Try heap_caps_malloc first (better for finding contiguous blocks)
+    _frameBuffer = (uint8_t*)heap_caps_malloc(_frameSize, MALLOC_CAP_8BIT | MALLOC_CAP_INTERNAL);
+
+    // Fallback to regular malloc if heap_caps fails
     if (_frameBuffer == nullptr)
     {
-        Serial.printf("[SPI] ERROR: Failed to allocate %u bytes (free heap: %u, largest block: %u)\n",
-                     _frameSize, ESP.getFreeHeap(), ESP.getMaxAllocHeap());
+        _frameBuffer = (uint8_t*)malloc(_frameSize);
+    }
+
+    if (_frameBuffer == nullptr)
+    {
+        Serial.printf("[SPI] ✗ Alloc failed: %u bytes\n", _frameSize);
+        Serial.printf("      Free heap: %u, Largest block: %u\n",
+                     ESP.getFreeHeap(), ESP.getMaxAllocHeap());
+        Serial.printf("      DRAM: %u, 8-bit capable: %u\n",
+                     heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
+                     heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
         _state = SPI_ERROR;
         return false;
     }
@@ -196,13 +207,12 @@ void SPIMaster::ackFrame()
 {
     if (_state == SPI_COMPLETE)
     {
-        // Free buffer
+        // Free buffer and reset to idle
         if (_frameBuffer != nullptr)
         {
-            delete[] _frameBuffer;
+            free(_frameBuffer);
             _frameBuffer = nullptr;
         }
-
         _frameSize = 0;
         _bytesReceived = 0;
         _state = SPI_IDLE;

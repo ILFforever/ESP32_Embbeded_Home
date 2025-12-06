@@ -13,6 +13,10 @@
 
 #define SPI_SPEED 20000000  // 20 MHz
 
+// Memory optimization: Reduced max frame size to prevent fragmentation
+// Typical JPEG frames are 30-60KB, so 60KB limit should be sufficient
+#define SPI_MAX_FRAME_SIZE 60000  // 60KB max per frame
+
 // Transfer states
 enum SPITransferState {
     SPI_IDLE,
@@ -59,7 +63,7 @@ public:
 
     // Acknowledge frame received (frees for next)
     void ackFrame();
-    
+
     // Statistics
     uint32_t getFramesReceived() { return _framesReceived; }
     uint32_t getFramesDropped() { return _framesDropped; }
@@ -68,7 +72,7 @@ private:
     SPIClass _spi;
     SPITransferState _state;
 
-    // Frame data
+    // Frame data - dynamic allocation (static would overflow DRAM)
     uint8_t* _frameBuffer;
     uint32_t _frameSize;
     uint16_t _frameId;

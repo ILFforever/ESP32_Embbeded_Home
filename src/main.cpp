@@ -4,7 +4,7 @@
 #include <TFT_eSPI.h>
 #include <SPI.h>
 #include <WiFi.h>
-//#include "WiFiServer.h"
+// #include "WiFiServer.h"
 #include <TaskScheduler.h>
 #include "uart_commands.h"
 #include "lcd_helper.h"
@@ -49,6 +49,13 @@ int recognition_state = 0;            // 0=none, 1=success, 2=failure
 bool card_success = false;
 String status_msg_fallback = "";          // Message to display after temporary message is shown once
 unsigned long status_msg_last_update = 0; // Timestamp of last status message update
+
+// UI flow timing for upload/welcome screen (non-blocking)
+unsigned long upload_screen_start_time = 0;
+unsigned long welcome_screen_start_time = 0;
+bool show_upload_screen = false;
+bool show_welcome_screen = false;
+char welcome_message[64] = "";
 
 Scheduler myscheduler;
 HardwareSerial MasterSerial(1); // Use UART1
@@ -1387,14 +1394,16 @@ void updateButtonState(ButtonState &btn, int pin, const char *buttonName)
             Serial.println("[BTN] Starting stream to backend");
 
             // Send stream control commands (action in params.name, id=0)
-            //sendUARTCommand("stream_control", "mic_start", 0);
-            //delay(100);
+            sendUARTCommand("stream_control", "mic_start", 0);
+            sendUARTCommand("mic_gain", "gain", 1 );
 
-            sendUARTCommand("stream_control", "camera_start", 0);
+            // delay(100);
+
+            // sendUARTCommand("stream_control", "camera_start", 0);
             delay(100);
 
             // Set desired camera state to running
-            setDesiredMode(1);
+            setDesiredMode(0);
 
             isStreaming = true;
             updateStatusMsg("Streaming active", true, "Streaming");
@@ -1459,6 +1468,33 @@ void checkTimers()
     sendUARTCommand("camera_control", "camera_stop");
     face_recognition_active = false;
     preview_mode_active = false; // Exit preview mode on timeout
+  }
+
+  // Manage UI flow for upload/welcome screen (non-blocking)
+  if (show_upload_screen)
+  {
+    // After 1.5 seconds, hide upload screen and show welcome message
+    if (millis() - upload_screen_start_time > 1500)
+    {
+      Serial.println("[UIFlow] Upload screen timeout - switching to clock mode");
+      show_upload_screen = false;
+      slave_status = 0; // Switch to clock mode
+
+      // Show welcome/error message
+      updateStatusMsg(welcome_message, true, "Ready");
+      show_welcome_screen = true;
+      welcome_screen_start_time = millis();
+    }
+  }
+
+  if (show_welcome_screen)
+  {
+    // After 2.5 seconds, clear welcome message flag
+    if (millis() - welcome_screen_start_time > 2500)
+    {
+      Serial.println("[UIFlow] Welcome screen timeout - returning to normal");
+      show_welcome_screen = false;
+    }
   }
 }
 
