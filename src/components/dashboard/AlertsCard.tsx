@@ -1,5 +1,5 @@
-import React, { useMemo } from 'react';
-import { AlertTriangle, Info, XCircle, Check } from 'lucide-react';
+import React, { useMemo, useState } from 'react';
+import { AlertTriangle, Info, XCircle, Check, ChevronLeft, ChevronRight } from 'lucide-react';
 import type { Alert } from '@/types/dashboard';
 import { alertLevelToType } from '@/types/dashboard';
 import { markAlertAsRead } from '@/services/devices.service';
@@ -14,6 +14,10 @@ interface AlertsCardProps {
 export function AlertsCard({ alerts, isExpanded = false, onRefresh }: AlertsCardProps) {
   // Sort alerts by priority score
   const sortedAlerts = useMemo(() => sortAlertsByPriority(alerts), [alerts]);
+
+  // Pagination state for read alerts
+  const [readAlertsPage, setReadAlertsPage] = useState(1);
+  const readAlertsPerPage = 5;
 
   const getAlertIcon = (level: 'INFO' | 'WARN' | 'IMPORTANT') => {
     const type = alertLevelToType(level);
@@ -86,6 +90,20 @@ export function AlertsCard({ alerts, isExpanded = false, onRefresh }: AlertsCard
   const readAlerts = sortedAlerts.filter(a => a.read);
   const criticalCount = alerts.filter(a => a.level === 'IMPORTANT' && !a.read).length;
   const highPriorityCount = sortedAlerts.filter(a => !a.read && a.score >= 50).length;
+
+  // Pagination calculations for read alerts
+  const totalReadPages = Math.ceil(readAlerts.length / readAlertsPerPage);
+  const startIndex = (readAlertsPage - 1) * readAlertsPerPage;
+  const endIndex = startIndex + readAlertsPerPage;
+  const paginatedReadAlerts = readAlerts.slice(startIndex, endIndex);
+
+  const handlePreviousPage = () => {
+    setReadAlertsPage(prev => Math.max(1, prev - 1));
+  };
+
+  const handleNextPage = () => {
+    setReadAlertsPage(prev => Math.min(totalReadPages, prev + 1));
+  };
 
   return (
     <div className="card">
@@ -174,7 +192,7 @@ export function AlertsCard({ alerts, isExpanded = false, onRefresh }: AlertsCard
               <div className="alerts-section">
                 <h4>READ ({readAlerts.length})</h4>
                 <div className="alerts-list">
-                  {readAlerts.map(alert => (
+                  {paginatedReadAlerts.map(alert => (
                     <div key={alert.id} className={`alert-item-detailed alert-${alertLevelToType(alert.level)} acknowledged`}>
                       <div className="alert-header">
                         {getAlertIcon(alert.level)}
@@ -209,6 +227,29 @@ export function AlertsCard({ alerts, isExpanded = false, onRefresh }: AlertsCard
                     </div>
                   ))}
                 </div>
+                {totalReadPages > 1 && (
+                  <div className="pagination-controls">
+                    <button
+                      className="pagination-btn"
+                      onClick={handlePreviousPage}
+                      disabled={readAlertsPage === 1}
+                    >
+                      <ChevronLeft size={16} />
+                      Previous
+                    </button>
+                    <span className="pagination-info">
+                      Page {readAlertsPage} of {totalReadPages}
+                    </span>
+                    <button
+                      className="pagination-btn"
+                      onClick={handleNextPage}
+                      disabled={readAlertsPage === totalReadPages}
+                    >
+                      Next
+                      <ChevronRight size={16} />
+                    </button>
+                  </div>
+                )}
               </div>
             )}
           </div>
