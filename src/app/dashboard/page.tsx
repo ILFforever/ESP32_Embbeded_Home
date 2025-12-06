@@ -10,6 +10,7 @@ import { GasReadingsCard } from '@/components/dashboard/GasReadingsCard';
 import { DoorCard } from '@/components/dashboard/DoorCard';
 import { AdminManagementCard } from '@/components/dashboard/AdminManagementCard';
 import { SystemStatusCard } from '@/components/dashboard/SystemStatusCard';
+import { MusicBroadcastCard } from '@/components/dashboard/MusicBroadcastCard';
 import {
   getAllDevices,
   getAlerts,
@@ -230,6 +231,9 @@ export default function DashboardPage() {
           content = null;
         }
         break;
+      case 'music':
+        content = <MusicBroadcastCard isExpanded={true} />;
+        break;
       default:
         content = null;
     }
@@ -445,6 +449,20 @@ export default function DashboardPage() {
                 <AdminManagementCard devices={devicesStatus?.devices || []} />
               </div>
             )}
+
+            {/* Music Broadcast - spans 1 row x 2 columns */}
+            <div
+              className="dashboard-card grid-music"
+              onClick={() => openExpandedCard('music')}
+            >
+              <button className="card-eye-icon" onClick={(e) => { e.stopPropagation(); openExpandedCard('music'); }}>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                  <circle cx="12" cy="12" r="3"></circle>
+                </svg>
+              </button>
+              <MusicBroadcastCard />
+            </div>
           </div>
 
           {/* Expanded Card Modal */}
