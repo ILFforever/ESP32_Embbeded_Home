@@ -81,6 +81,24 @@ public:
      */
     esp_err_t read_audio(int16_t* buffer, size_t buffer_size, size_t* bytes_read, uint32_t timeout_ms = 100);
 
+    /**
+     * Set software gain/amplification (multiplier)
+     * @param gain Gain multiplier (1.0 = no change, 2.0 = double volume, max 8.0)
+     */
+    void set_gain(float gain);
+
+    /**
+     * Get current gain setting
+     * @return Current gain multiplier
+     */
+    float get_gain() const { return m_gain; }
+
+    /**
+     * Get current DC offset
+     * @return DC offset value
+     */
+    int32_t get_dc_offset() const { return m_dc_offset; }
+
 private:
     // Configuration
     uint32_t m_sample_rate;
@@ -96,6 +114,12 @@ private:
     // Audio statistics
     uint32_t m_last_rms;
     uint32_t m_last_peak;
+
+    // Software gain control
+    float m_gain;
+
+    // DC offset removal (high-pass filter)
+    int32_t m_dc_offset;
 
     // Audio buffer size (1024 samples = 64ms @ 16kHz)
     static const size_t BUFFER_SIZE = 1024;

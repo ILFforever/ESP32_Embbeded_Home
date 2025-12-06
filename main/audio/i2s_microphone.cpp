@@ -14,6 +14,8 @@ I2SMicrophone::I2SMicrophone(uint32_t sample_rate, int clk_gpio, int data_gpio)
     , m_is_running(false)
     , m_last_rms(0)
     , m_last_peak(0)
+    , m_gain(1.0f)  // Default 1x gain (no amplification)
+    , m_dc_offset(0)  // DC offset starts at 0, will adapt
 {
 }
 
@@ -155,12 +157,53 @@ esp_err_t I2SMicrophone::read_audio(int16_t* buffer, size_t buffer_size, size_t*
     esp_err_t ret = i2s_channel_read(m_rx_chan, buffer, buffer_size, bytes_read, pdMS_TO_TICKS(timeout_ms));
 
     if (ret == ESP_OK && *bytes_read > 0) {
-        // Update audio levels for status monitoring
         size_t samples_read = *bytes_read / sizeof(int16_t);
+
+        // Calculate average DC offset from this buffer (simple moving average)
+        int32_t sum = 0;
+        for (size_t i = 0; i < samples_read; i++) {
+            sum += buffer[i];
+        }
+        int32_t buffer_avg = sum / samples_read;
+
+        // Update DC offset with exponential moving average (alpha = 0.1)
+        m_dc_offset = (m_dc_offset * 9 + buffer_avg) / 10;
+
+        // Remove DC offset and apply gain
+        for (size_t i = 0; i < samples_read; i++) {
+            // Remove DC offset
+            int32_t sample = buffer[i] - m_dc_offset;
+
+            // Apply gain
+            sample = static_cast<int32_t>(sample * m_gain);
+
+            // Clip to prevent overflow
+            if (sample > 32767) {
+                buffer[i] = 32767;
+            } else if (sample < -32768) {
+                buffer[i] = -32768;
+            } else {
+                buffer[i] = static_cast<int16_t>(sample);
+            }
+        }
+
+        // Update audio levels for status monitoring (after DC removal and gain)
         calculate_audio_levels(buffer, samples_read);
     }
 
     return ret;
+}
+
+void I2SMicrophone::set_gain(float gain)
+{
+    if (gain < 0.1f) {
+        gain = 0.1f;  // Minimum 0.1x
+    } else if (gain > 8.0f) {
+        gain = 8.0f;  // Maximum 8x
+    }
+
+    m_gain = gain;
+    ESP_LOGI(TAG, "Gain set to %.1fx", m_gain);
 }
 
 void I2SMicrophone::print_audio_stats()
@@ -169,9 +212,9 @@ void I2SMicrophone::print_audio_stats()
     float rms_percent = (m_last_rms / 32767.0f) * 100.0f;
     float peak_percent = (m_last_peak / 32767.0f) * 100.0f;
 
-    ESP_LOGI(TAG, "Audio: RMS=%lu (%.1f%%) Peak=%lu (%.1f%%)",
+    ESP_LOGI(TAG, "Audio: RMS=%lu (%.1f%%) Peak=%lu (%.1f%%) Gain=%.1fx",
              m_last_rms, rms_percent,
-             m_last_peak, peak_percent);
+             m_last_peak, peak_percent, m_gain);
 }
 
 } // namespace audio

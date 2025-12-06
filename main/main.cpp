@@ -15,6 +15,8 @@
 #include "spi/slave_spi.hpp"
 #include "jpeg/JpegEncoder.hpp"
 #include "esp_camera.h" // defines PIXFORMAT_JPEG and pixformat_t
+#include "lwip/netdb.h" // For DNS resolution (getaddrinfo)
+#include "esp_netif.h"  // For checking WiFi connection status
 
 using namespace who::frame_cap;
 using namespace who::app;
@@ -169,7 +171,65 @@ static esp_err_t init_backend_streaming()
 
     ESP_LOGI(TAG, "Initializing backend streaming...");
     init_wifi_and_server();
-    vTaskDelay(pdMS_TO_TICKS(2000)); // Wait for WiFi to connect
+
+    // Wait for WiFi to actually connect (check for IP address)
+    ESP_LOGI(TAG, "Waiting for WiFi connection...");
+    esp_netif_t *netif = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
+
+    int retry_count = 0;
+    const int max_retries = 20; // 10 seconds total
+    esp_netif_ip_info_t ip_info;
+
+    while (retry_count < max_retries)
+    {
+        if (netif && esp_netif_get_ip_info(netif, &ip_info) == ESP_OK)
+        {
+            if (ip_info.ip.addr != 0)
+            {
+                ESP_LOGI(TAG, "WiFi connected! IP: " IPSTR, IP2STR(&ip_info.ip));
+                break;
+            }
+        }
+        vTaskDelay(pdMS_TO_TICKS(500));
+        retry_count++;
+    }
+
+    if (retry_count >= max_retries)
+    {
+        ESP_LOGE(TAG, "WiFi connection timeout - no IP address assigned");
+        g_uart->send_status("error", "WiFi connection failed - check SSID/password");
+        stop_webserver_and_wifi();
+        return ESP_FAIL;
+    }
+
+    // Additional delay for DNS to be ready
+    vTaskDelay(pdMS_TO_TICKS(500));
+
+    // Test DNS resolution before starting WebSocket
+    ESP_LOGI(TAG, "Testing DNS resolution for %s...", BACKEND_SERVER_HOST);
+    struct addrinfo hints = {}, *res;
+    hints.ai_family = AF_INET;
+    hints.ai_socktype = SOCK_STREAM;
+
+    int dns_err = getaddrinfo(BACKEND_SERVER_HOST, NULL, &hints, &res);
+    if (dns_err != 0 || res == NULL)
+    {
+        ESP_LOGE(TAG, "DNS resolution failed for %s (error: %d)", BACKEND_SERVER_HOST, dns_err);
+        g_uart->send_status("error", "DNS resolution failed - check network/DNS config");
+        stop_webserver_and_wifi();
+        return ESP_FAIL;
+    }
+
+    struct sockaddr_in *addr = (struct sockaddr_in *)res->ai_addr;
+    char ip_str[16];
+    inet_ntoa_r(addr->sin_addr, ip_str, sizeof(ip_str));
+    ESP_LOGI(TAG, "DNS OK: %s -> %s", BACKEND_SERVER_HOST, ip_str);
+
+    char dns_msg[100];
+    snprintf(dns_msg, sizeof(dns_msg), "DNS OK: %s -> %s", BACKEND_SERVER_HOST, ip_str);
+    g_uart->send_status("info", dns_msg);
+
+    freeaddrinfo(res);
 
     esp_err_t stream_ret = backend_stream::init();
     if (stream_ret != ESP_OK)
@@ -723,6 +783,57 @@ void create_uart_commands()
             backend_stream::start_audio_streaming();
             g_uart->send_status("stream_event", "Audio streaming started");
 } });
+
+    // Microphone gain control command
+    // Usage: sendUARTCommand("mic_gain", nullptr, 6) -> sets gain to 6x
+    //        {"cmd": "mic_gain", "params": {"id": 6}} -> sets gain to 6x
+    //        {"cmd": "mic_gain"} -> returns current gain
+    g_uart->register_command("mic_gain", [](const char *cmd, cJSON *params)
+    {
+        if (!g_microphone)
+        {
+            g_uart->send_status("error", "Microphone not initialized");
+            return;
+        }
+
+        if (!params)
+        {
+            // Return current gain
+            float current_gain = g_microphone->get_gain();
+            char msg[64];
+            snprintf(msg, sizeof(msg), "Current gain: %.1fx", current_gain);
+            g_uart->send_status("mic_gain", msg);
+            return;
+        }
+
+        // Try to get gain from "id" field (for sendUARTCommand compatibility)
+        cJSON *id_obj = cJSON_GetObjectItem(params, "id");
+        if (id_obj && cJSON_IsNumber(id_obj))
+        {
+            float gain = (float)id_obj->valueint;
+            g_microphone->set_gain(gain);
+
+            char msg[64];
+            snprintf(msg, sizeof(msg), "Microphone gain set to %.1fx", gain);
+            g_uart->send_status("mic_gain", msg);
+            return;
+        }
+
+        // Fallback: try "gain" field for direct JSON usage
+        cJSON *gain_obj = cJSON_GetObjectItem(params, "gain");
+        if (gain_obj && cJSON_IsNumber(gain_obj))
+        {
+            float gain = (float)gain_obj->valuedouble;
+            g_microphone->set_gain(gain);
+
+            char msg[64];
+            snprintf(msg, sizeof(msg), "Microphone gain set to %.1fx", gain);
+            g_uart->send_status("mic_gain", msg);
+            return;
+        }
+
+        g_uart->send_status("error", "Missing 'id' or 'gain' parameter");
+    });
 }
 
 // ============================================================
@@ -962,7 +1073,7 @@ static void audio_streamer_task(void *pvParameters)
     }
 
     uint32_t sequence = 0;
-    const int16_t gain = 4; // Audio gain multiplier
+    uint32_t last_debug_time = 0;
 
     while (true)
     {
@@ -977,22 +1088,33 @@ static void audio_streamer_task(void *pvParameters)
             {
                 size_t samples_read = bytes_read / sizeof(int16_t);
 
-                // Apply gain to boost volume
-                for (size_t i = 0; i < samples_read; i++)
-                {
-                    int32_t sample = audio_buffer[i] * gain;
-                    if (sample > 32767)
-                        sample = 32767;
-                    if (sample < -32768)
-                        sample = -32768;
-                    audio_buffer[i] = (int16_t)sample;
-                }
+                // NOTE: Gain is now applied in I2SMicrophone::read_audio()
+                // No need to apply it again here to avoid double-amplification
 
                 // Queue audio chunk to backend
                 backend_stream::queue_audio_chunk(
                     (const uint8_t *)audio_buffer,
                     samples_read * sizeof(int16_t),
                     sequence++);
+
+                // Print audio levels every second
+                uint32_t now = xTaskGetTickCount() * portTICK_PERIOD_MS;
+                if (now - last_debug_time >= 1000)
+                {
+                    uint32_t rms = g_microphone->get_rms_level();
+                    uint32_t peak = g_microphone->get_peak_level();
+                    float gain_setting = g_microphone->get_gain();
+                    int32_t dc_offset = g_microphone->get_dc_offset();
+                    float rms_percent = (rms / 32767.0f) * 100.0f;
+                    float peak_percent = (peak / 32767.0f) * 100.0f;
+
+                    // Sample first few values for debugging
+                    ESP_LOGI(TAG, "🎤 Audio: RMS=%lu (%.1f%%) Peak=%lu (%.1f%%) Gain=%.1fx DC=%ld | Samples[0-2]=%d,%d,%d",
+                             rms, rms_percent, peak, peak_percent, gain_setting, dc_offset,
+                             audio_buffer[0], audio_buffer[1], audio_buffer[2]);
+
+                    last_debug_time = now;
+                }
             }
             else if (ret == ESP_ERR_TIMEOUT)
             {

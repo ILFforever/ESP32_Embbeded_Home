@@ -18,12 +18,6 @@ static const char *TAG = "HTTP_SERVER";
 #define WIFI_SSID "ILFforever2"
 #define WIFI_PASS "19283746"
 
-// Static IP configuration for camera
-#define CAMERA_STATIC_IP      "192.168.1.50"
-#define CAMERA_GATEWAY        "192.168.1.1"
-#define CAMERA_SUBNET         "255.255.255.0"
-#define CAMERA_DNS            "192.168.1.1"
-
 // Global references
 static who::standby::XiaoStandbyControl *g_standby_ctrl = nullptr;
 static who::recognition::WhoRecognition *g_recognition = nullptr;
@@ -228,23 +222,9 @@ void init_wifi_and_server()
         }
     }
 
-    // Configure static IP
-    esp_netif_dhcpc_stop(g_sta_netif);  // Stop DHCP client
-
-    esp_netif_ip_info_t ip_info;
-    ip_info.ip.addr = esp_ip4addr_aton(CAMERA_STATIC_IP);
-    ip_info.gw.addr = esp_ip4addr_aton(CAMERA_GATEWAY);
-    ip_info.netmask.addr = esp_ip4addr_aton(CAMERA_SUBNET);
-
-    ESP_ERROR_CHECK(esp_netif_set_ip_info(g_sta_netif, &ip_info));
-
-    // Set DNS server
-    esp_netif_dns_info_t dns_info;
-    dns_info.ip.u_addr.ip4.addr = esp_ip4addr_aton(CAMERA_DNS);
-    dns_info.ip.type = ESP_IPADDR_TYPE_V4;
-    ESP_ERROR_CHECK(esp_netif_set_dns_info(g_sta_netif, ESP_NETIF_DNS_MAIN, &dns_info));
-
-    ESP_LOGI(TAG, "Static IP configured: %s", CAMERA_STATIC_IP);
+    // Use DHCP - works with both router and phone hotspot
+    // Static IP doesn't work with phone hotspots (different subnet)
+    ESP_LOGI(TAG, "Using DHCP to obtain IP address");
 
     // Use minimal WiFi config to reduce memory usage (audio streaming only)
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
@@ -276,7 +256,7 @@ void init_wifi_and_server()
 
     g_wifi_initialized = true;
 
-    ESP_LOGI(TAG, "WiFi initialized. Connecting to %s with static IP %s...", WIFI_SSID, CAMERA_STATIC_IP);
+    ESP_LOGI(TAG, "WiFi initialized. Connecting to %s with DHCP...", WIFI_SSID);
 }
 
 // Stop webserver and deinit WiFi (called when mic stops)
