@@ -20,7 +20,7 @@ import type { DevicesStatus, GasReading, Alert } from '@/types/dashboard';
 
 export default function DashboardPage() {
   const router = useRouter();
-  const { logout } = useAuth();
+  const { logout, user } = useAuth();
   const [devicesStatus, setDevicesStatus] = useState<DevicesStatus | null>(null);
   const [gasReadings, setGasReadings] = useState<GasReading[]>([]);
   const [alerts, setAlerts] = useState<Alert[]>([]);
@@ -126,10 +126,16 @@ export default function DashboardPage() {
         openExpandedCard('system-status');
         break;
       case 'devices':
-        openExpandedCard('admin');
+        // Only admins can access device management
+        if (user?.role === 'admin') {
+          openExpandedCard('admin');
+        }
         break;
       case 'settings':
-        openExpandedCard('admin');
+        // Only admins can access settings
+        if (user?.role === 'admin') {
+          openExpandedCard('admin');
+        }
         break;
       default:
         // Dashboard view - close any expanded cards
@@ -184,7 +190,12 @@ export default function DashboardPage() {
         content = <DoorsWindowsCard doorsWindows={doorsWindows} isExpanded={true} />;
         break;
       case 'admin':
-        content = <AdminManagementCard devices={devicesStatus?.devices || []} isExpanded={true} />;
+        // Only admins can view admin management
+        if (user?.role === 'admin') {
+          content = <AdminManagementCard devices={devicesStatus?.devices || []} isExpanded={true} />;
+        } else {
+          content = null;
+        }
         break;
       default:
         content = null;
@@ -244,16 +255,18 @@ export default function DashboardPage() {
                 <span>Analytics</span>
               </div>
             </li>
-            <li className="sidebar-nav-item">
-              <div
-                className={`sidebar-nav-link ${activeView === 'settings' ? 'active' : ''}`}
-                onClick={() => handleMenuClick('settings')}
-                style={{ cursor: 'pointer' }}
-              >
-                <span className="sidebar-nav-icon">⚙️</span>
-                <span>Settings</span>
-              </div>
-            </li>
+            {user?.role === 'admin' && (
+              <li className="sidebar-nav-item">
+                <div
+                  className={`sidebar-nav-link ${activeView === 'settings' ? 'active' : ''}`}
+                  onClick={() => handleMenuClick('settings')}
+                  style={{ cursor: 'pointer' }}
+                >
+                  <span className="sidebar-nav-icon">⚙️</span>
+                  <span>Settings</span>
+                </div>
+              </li>
+            )}
           </ul>
         </nav>
 
@@ -377,19 +390,21 @@ export default function DashboardPage() {
               <DoorsWindowsCard doorsWindows={doorsWindows} />
             </div>
 
-            {/* Admin Management - spans 1 row x 2 columns */}
-            <div
-              className="dashboard-card grid-admin"
-              onClick={() => openExpandedCard('admin')}
-            >
-              <button className="card-eye-icon" onClick={(e) => { e.stopPropagation(); openExpandedCard('admin'); }}>
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
-                  <circle cx="12" cy="12" r="3"></circle>
-                </svg>
-              </button>
-              <AdminManagementCard devices={devicesStatus?.devices || []} />
-            </div>
+            {/* Admin Management - spans 1 row x 2 columns - Only visible to admins */}
+            {user?.role === 'admin' && (
+              <div
+                className="dashboard-card grid-admin"
+                onClick={() => openExpandedCard('admin')}
+              >
+                <button className="card-eye-icon" onClick={(e) => { e.stopPropagation(); openExpandedCard('admin'); }}>
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                    <circle cx="12" cy="12" r="3"></circle>
+                  </svg>
+                </button>
+                <AdminManagementCard devices={devicesStatus?.devices || []} />
+              </div>
+            )}
           </div>
 
           {/* Expanded Card Modal */}

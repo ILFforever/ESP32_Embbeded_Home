@@ -1134,7 +1134,7 @@ export default function HubControlPage() {
                         <span className="detail-label">AVG (24H):</span>
                         <span className="detail-value">
                           {sensorHistory.length > 0
-                            ? (sensorHistory.reduce((sum, r) => sum + (r.pm25 ?? 0), 0) / sensorHistory.length).toFixed(1)
+                            ? (sensorHistory.reduce((sum, r) => sum + (r.pm2_5 ?? 0), 0) / sensorHistory.length).toFixed(1)
                             : sensorData.pm25.toFixed(1)} μg/m³
                         </span>
                       </div>
