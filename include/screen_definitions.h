@@ -17,7 +17,8 @@ enum Screen
   SCREEN_TEMP_2 = 10,
   SCREEN_MASTER_MENU = 11,
   SCREEN_NOTIFICATION_LOG = 12,
-  SCREEN_COUNT = 13 // Total number of screens
+  SCREEN_CAMERA_VIEW = 13,
+  SCREEN_COUNT = 14 // Total number of screens
 };
 
 // Helper function to get screen name (for debugging)
@@ -51,6 +52,8 @@ inline const char *getScreenName(int screen)
     return "Master Menu";
   case SCREEN_NOTIFICATION_LOG:
     return "Notification Log";
+  case SCREEN_CAMERA_VIEW:
+    return "Camera View";
   default:
     return "Unknown";
   }
