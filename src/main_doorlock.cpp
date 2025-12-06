@@ -54,7 +54,7 @@ const char* WIFI_PASSWORD = "19283746";
 // ============================================================================
 // Base URL for backend API (will append /pending and /manual-unlock)
 // Example: "http://192.168.1.100:3000/api/v1/devices/commands"
-const char* BACKEND_URL = "http://your-backend-server.com/api/v1/devices/commands";
+const char* BACKEND_URL = "https://embedded-smarthome.fly.dev/api/v1/devices/commands";
 
 // ============================================================================
 // GPIO PIN CONFIGURATION
