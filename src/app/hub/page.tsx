@@ -694,26 +694,92 @@ export default function HubControlPage() {
                     </div>
                   )}
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '16px' }}>
-                    <div>
-                      <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', color: 'var(--text-secondary)' }}>
-                        Stream URL
-                      </label>
+                    <div style={{ position: 'relative', width: '100%' }}>
                       <input
-                        type="url"
+                        type="text"
                         value={streamUrl}
                         onChange={(e) => setStreamUrl(e.target.value)}
-                        placeholder="http://stream.url/audio.mp3"
+                        placeholder="Enter stream URL (e.g., http://stream.example.com/audio)"
+                        className="control-input"
                         disabled={!hubDevice?.online}
                         style={{
                           width: '100%',
-                          padding: '12px',
-                          background: 'rgba(0,0,0,0.3)',
-                          border: '1px solid rgba(var(--primary-color-rgb), 0.3)',
-                          borderRadius: '4px',
-                          color: '#FFF',
-                          fontSize: '14px'
+                          padding: '10px 45px 10px 12px',
+                          borderRadius: '6px',
+                          border: '2px solid #e0e0e0',
+                          fontSize: '13px',
+                          fontFamily: 'monospace',
+                          transition: 'all 0.2s ease',
+                          outline: 'none',
+                          backgroundColor: '#f8f9fa'
+                        }}
+                        onFocus={(e) => {
+                          e.target.style.borderColor = '#2196F3';
+                          e.target.style.backgroundColor = '#fff';
+                        }}
+                        onBlur={(e) => {
+                          e.target.style.borderColor = '#e0e0e0';
+                          e.target.style.backgroundColor = '#f8f9fa';
                         }}
                       />
+                      <select
+                        onChange={(e) => setStreamUrl(e.target.value)}
+                        value=""
+                        className="stream-selector"
+                        disabled={!hubDevice?.online}
+                        style={{
+                          position: 'absolute',
+                          right: '4px',
+                          top: '50%',
+                          transform: 'translateY(-50%)',
+                          padding: '6px 8px',
+                          borderRadius: '4px',
+                          border: '1px solid #e0e0e0',
+                          fontSize: '13px',
+                          backgroundColor: '#fff',
+                          cursor: 'pointer',
+                          outline: 'none',
+                          transition: 'all 0.2s ease',
+                          appearance: 'none',
+                          WebkitAppearance: 'none',
+                          MozAppearance: 'none',
+                          backgroundImage: 'url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 24 24\' fill=\'none\' stroke=\'%23333\' stroke-width=\'2\' stroke-linecap=\'round\' stroke-linejoin=\'round\'%3e%3cpolyline points=\'6 9 12 15 18 9\'%3e%3c/polyline%3e%3c/svg%3e")',
+                          backgroundRepeat: 'no-repeat',
+                          backgroundPosition: 'center',
+                          backgroundSize: '18px',
+                          width: '32px',
+                          height: '32px',
+                          color: 'transparent'
+                        }}
+                        onMouseEnter={(e) => {
+                          (e.target as HTMLSelectElement).style.backgroundColor = '#f0f0f0';
+                        }}
+                        onMouseLeave={(e) => {
+                          (e.target as HTMLSelectElement).style.backgroundColor = '#fff';
+                        }}
+                      >
+                        <option value="" style={{ color: '#000' }}>
+                          Select Station
+                        </option>
+                        <option
+                          value="https://stream.live.vc.bbcmedia.co.uk/bbc_world_service_east_asia"
+                          style={{ color: '#000' }}
+                        >
+                          BBC World Service
+                        </option>
+                        <option
+                          value="https://play.streamafrica.net/japancitypop"
+                          style={{ color: '#000' }}
+                        >
+                          Japan City Pop
+                        </option>
+                        <option
+                          value="http://stream.radioparadise.com/aac-128"
+                          style={{ color: '#000' }}
+                        >
+                          Radio Paradise
+                        </option>
+                      </select>
                     </div>
                     <div>
                       <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', color: 'var(--text-secondary)' }}>
