@@ -878,8 +878,9 @@ const handleFaceDetection = async (req, res) => {
 
     console.log(`[FaceDetection] ${device_id} - Saved to Firebase with ID: ${eventRef.id}`);
 
-    // Send email notification for unknown faces (security alert)
+    // Send email notification for all face detections
     if (!faceDetectionEvent.recognized) {
+      // Unknown face - security alert
       console.log(`[FaceDetection] ${device_id} - Unknown face detected, sending email notification`);
       sendAlertNotification({
         id: `${device_id}_face_${eventRef.id}`,
@@ -889,6 +890,27 @@ const handleFaceDetection = async (req, res) => {
         tags: ['face-detection', 'unknown', 'security'],
         metadata: {
           event_id: eventRef.id,
+          image_url: imageUrl,
+          confidence: confidence ? parseFloat(confidence) : null
+        },
+        timestamp: new Date(),
+        created_at: new Date()
+      }).catch(error => {
+        console.error('[FaceDetection] Failed to send email notification:', error);
+        // Non-blocking - event still saved
+      });
+    } else {
+      // Recognized face - informational alert
+      console.log(`[FaceDetection] ${device_id} - Known face detected (${name}), sending email notification`);
+      sendAlertNotification({
+        id: `${device_id}_face_${eventRef.id}`,
+        level: ALERT_LEVELS.INFO,
+        message: `${name || 'Known person'} detected at ${device_id}`,
+        source: device_id,
+        tags: ['face-detection', 'recognized'],
+        metadata: {
+          event_id: eventRef.id,
+          name: name || 'Unknown',
           image_url: imageUrl,
           confidence: confidence ? parseFloat(confidence) : null
         },
@@ -1409,9 +1431,10 @@ const acknowledgeCommand = async (req, res) => {
 
     console.log(`[AckCommand] ${device_id} - Command ${command_id} ${success ? 'completed' : 'failed'}`);
 
-    // Send email notification for failed commands
+    // Send email notification for all commands (both success and failure)
+    const commandData = commandDoc.data();
     if (!success) {
-      const commandData = commandDoc.data();
+      // Failed command - error alert
       console.log(`[AckCommand] ${device_id} - Command failed, sending email notification`);
       sendAlertNotification({
         id: `${device_id}_cmd_${command_id}`,
@@ -1424,6 +1447,27 @@ const acknowledgeCommand = async (req, res) => {
           status: 'failed',
           params: commandData.params,
           error: error
+        },
+        timestamp: new Date(),
+        created_at: new Date()
+      }).catch(err => {
+        console.error('[AckCommand] Failed to send email notification:', err);
+        // Non-blocking
+      });
+    } else {
+      // Successful command - success alert
+      console.log(`[AckCommand] ${device_id} - Command succeeded, sending email notification`);
+      sendAlertNotification({
+        id: `${device_id}_cmd_${command_id}`,
+        level: ALERT_LEVELS.SUCCESS,
+        message: `${device_id}: Command '${commandData.action}' completed successfully`,
+        source: device_id,
+        tags: ['command', commandData.action, 'completed'],
+        metadata: {
+          action: commandData.action,
+          status: 'completed',
+          params: commandData.params,
+          result: result
         },
         timestamp: new Date(),
         created_at: new Date()
