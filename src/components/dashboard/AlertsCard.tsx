@@ -1,19 +1,39 @@
 import React, { useMemo, useState } from 'react';
-import { AlertTriangle, Info, XCircle, Check, ChevronLeft, ChevronRight } from 'lucide-react';
+import { AlertTriangle, Info, XCircle, Check, ChevronLeft, ChevronRight, Users, Shield, HardDrive, AlertCircle, ToyBrick, KeyRound, Siren, Move, Bell, Computer } from 'lucide-react';
 import type { Alert } from '@/types/dashboard';
 import { alertLevelToType } from '@/types/dashboard';
 import { markAlertAsRead } from '@/services/devices.service';
 import { sortAlertsByPriority, getAlertPriorityCategory, type ScoredAlert } from '@/utils/alertScoring';
+import { AlertCategoryCard } from './AlertCategoryCard';
 
 interface AlertsCardProps {
   alerts: Alert[];
   isExpanded?: boolean;
   onRefresh?: () => void;
+  onExpand?: () => void;
 }
 
-export function AlertsCard({ alerts, isExpanded = false, onRefresh }: AlertsCardProps) {
-  // Sort alerts by priority score
-  const sortedAlerts = useMemo(() => sortAlertsByPriority(alerts), [alerts]);
+export function AlertsCard({ alerts, isExpanded = false, onRefresh, onExpand }: AlertsCardProps) {
+  // Sort and filter alerts
+  const sortedAlerts = useMemo(() => {
+    const allSortedAlerts = sortAlertsByPriority(alerts);
+
+    // Separate unread unknown person alerts
+    const unreadUnknownFaceAlerts = allSortedAlerts.filter(
+      alert => !alert.read && alert.tags.includes('face-detection') && alert.tags.includes('unknown')
+    );
+
+    // Get the other alerts
+    const otherAlerts = allSortedAlerts.filter(
+      alert => !unreadUnknownFaceAlerts.some(unknown => unknown.id === alert.id)
+    );
+
+    // Limit the number of unknown person alerts to the last 3
+    const limitedUnknownAlerts = unreadUnknownFaceAlerts.slice(0, 3);
+
+    // Re-combine and sort the alerts to maintain overall order
+    return [...limitedUnknownAlerts, ...otherAlerts].sort((a, b) => b.score - a.score);
+  }, [alerts]);
 
   // Pagination state for read alerts
   const [readAlertsPage, setReadAlertsPage] = useState(1);
@@ -88,7 +108,6 @@ export function AlertsCard({ alerts, isExpanded = false, onRefresh }: AlertsCard
 
   const unreadAlerts = sortedAlerts.filter(a => !a.read);
   const readAlerts = sortedAlerts.filter(a => a.read);
-  const criticalCount = alerts.filter(a => a.level === 'IMPORTANT' && !a.read).length;
   const highPriorityCount = sortedAlerts.filter(a => !a.read && a.score >= 50).length;
 
   // Pagination calculations for read alerts
@@ -105,6 +124,79 @@ export function AlertsCard({ alerts, isExpanded = false, onRefresh }: AlertsCard
     setReadAlertsPage(prev => Math.min(totalReadPages, prev + 1));
   };
 
+  const getAlertCategory = (alert: Alert): string => {
+    if (alert.tags.includes('face-detection') && alert.tags.includes('unknown')) {
+      return 'Unknown Faces';
+    }
+    if (alert.tags.includes('face-detection')) {
+      return 'Known Faces';
+    }
+    if (alert.tags.includes('motion-detected')) {
+      return 'Motion Detected';
+    }
+    if (alert.source === 'doorbell') {
+      return 'Doorbell';
+    }
+    if (alert.tags.includes('device-restart') || alert.tags.includes('device-offline')) {
+      return 'Device Status';
+    }
+    if (alert.tags.includes('device-log')) {
+      return 'Board Errors';
+    }
+    if (alert.tags.includes('door-unlocked') || alert.tags.includes('window-opened')) {
+      return 'Security';
+    }
+    if (alert.tags.includes('gas-leak') || alert.tags.includes('smoke-detected')) {
+      return 'Safety';
+    }
+    if (alert.source === 'system') {
+        return 'System';
+    }
+    return 'General';
+  };
+
+  const alertCategories = useMemo(() => {
+    const categories: Record<string, Alert[]> = {};
+
+    unreadAlerts.forEach(alert => {
+      const category = getAlertCategory(alert);
+      if (!categories[category]) {
+        categories[category] = [];
+      }
+      categories[category].push(alert);
+    });
+
+    return Object.entries(categories)
+      .map(([name, alerts]) => ({ name, alerts, count: alerts.length }))
+      .filter(category => category.count > 0)
+      .sort((a, b) => b.count - a.count); // Also sort by count
+  }, [unreadAlerts]);
+
+  const getCategoryIcon = (categoryName: string) => {
+    switch (categoryName) {
+      case 'Unknown Faces':
+        return <Users />;
+      case 'Known Faces':
+        return <Users />;
+      case 'Motion Detected':
+        return <Move />;
+      case 'Doorbell':
+        return <Bell />;
+      case 'Device Status':
+        return <HardDrive />;
+      case 'Board Errors':
+        return <ToyBrick />;
+      case 'Security':
+        return <KeyRound />;
+      case 'Safety':
+        return <Siren />;
+      case 'System':
+        return <Computer />;
+      default:
+        return <AlertCircle />;
+    }
+  };
+
   return (
     <div className="card">
       <div className="card-header">
@@ -118,24 +210,20 @@ export function AlertsCard({ alerts, isExpanded = false, onRefresh }: AlertsCard
 
       <div className="card-content">
         {!isExpanded ? (
-          <div className="alerts-compact">
+          <div className="alerts-compact-categories">
             {unreadAlerts.length === 0 ? (
               <p className="no-alerts">NO ACTIVE ALERTS</p>
             ) : (
-              <div className="alerts-list">
-                {unreadAlerts.slice(0, 4).map(alert => (
-                  <div key={alert.id} className={`alert-item alert-${alertLevelToType(alert.level)}`}>
-                    {getAlertIcon(alert.level)}
-                    <div className="alert-content">
-                      <p className="alert-title">{getAlertTitle(alert)}</p>
-                      <p className="alert-message">{alert.message}</p>
-                      <p className="alert-time">{formatTimestamp(alert.timestamp)}</p>
-                    </div>
-                  </div>
+              <div className="category-cards-grid">
+                {alertCategories.map(category => (
+                  <AlertCategoryCard
+                    key={category.name}
+                    category={category.name}
+                    count={category.count}
+                    icon={getCategoryIcon(category.name)}
+                    onClick={() => onExpand && onExpand()}
+                  />
                 ))}
-                {unreadAlerts.length > 4 && (
-                  <p className="alert-more">+{unreadAlerts.length - 5} more alerts</p>
-                )}
               </div>
             )}
           </div>
