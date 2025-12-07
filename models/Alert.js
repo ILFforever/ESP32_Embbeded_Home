@@ -1,17 +1,23 @@
 const { getFirestore, admin } = require('../config/firebase');
 
 // Alert levels
+// SUCCESS: Positive important events (door locked, commands completed successfully)
+// INFO: General informational updates (low humidity, recognized faces)
+// WARN: Warnings that need attention (high temp, unknown faces, moderate air quality)
+// ERROR: Errors and failures (command failures, device errors, critical thresholds)
 const ALERT_LEVELS = {
+  SUCCESS: 'SUCCESS',
   INFO: 'INFO',
   WARN: 'WARN',
-  IMPORTANT: 'IMPORTANT'
+  ERROR: 'ERROR'
 };
 
 // Alert priorities (for sorting)
 const ALERT_PRIORITIES = {
-  IMPORTANT: 3,
-  WARN: 2,
-  INFO: 1
+  ERROR: 3,    // Highest priority - needs immediate attention (same as old IMPORTANT)
+  SUCCESS: 3,  // Same priority as ERROR - important positive events
+  WARN: 2,     // Medium priority - concerning issues
+  INFO: 1      // Low priority - general information
 };
 
 class Alert {
@@ -139,7 +145,7 @@ class Alert {
 
     // Sort alerts
     if (sortBy === 'priority') {
-      // Sort by priority first (IMPORTANT > WARN > INFO), then by timestamp (newest first)
+      // Sort by priority first (ERROR/SUCCESS > WARN > INFO), then by timestamp (newest first)
       alerts.sort((a, b) => {
         const priorityDiff = Alert.getPriority(b.level) - Alert.getPriority(a.level);
         if (priorityDiff !== 0) return priorityDiff;

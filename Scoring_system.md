@@ -1,8 +1,9 @@
 ## Scoring System
 Base Priority Points:
-IMPORTANT (errors) = 1000 points
+ERROR (errors, critical issues) = 1000 points
+SUCCESS (successful lock/unlock commands) = 1000 points
 WARN (warnings, unknown faces) = 500 points
-INFO (recognized faces) = 100 points
+INFO (recognized faces, general info) = 100 points
 Time Decay Weights:
 0-1 hour ago: 100% weight (full priority)
 1-6 hours ago: 80% weight
@@ -11,8 +12,9 @@ Time Decay Weights:
 72+ hours ago: 5% weight
 Example Scores:
 Alert	Level	Age	Score	Priority
-System restart	IMPORTANT	30 min	1000	🔴 Highest
-Camera error	IMPORTANT	2 days	200	🟡 Medium
+Door locked	SUCCESS	5 min	1000	🟢 Highest
+System restart	ERROR	30 min	1000	🔴 Highest
+Camera error	ERROR	2 days	200	🟡 Medium
 Unknown person	WARN	10 min	500	🟠 High
 Unknown person	WARN	5 days	25	⚪ Low
 Known face	INFO	1 hour	80	⚪ Low

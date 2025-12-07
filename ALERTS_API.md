@@ -7,7 +7,7 @@ The Alerts system provides a centralized way to track and display important even
 Each alert contains the following fields:
 
 - `id` - Unique identifier (auto-generated)
-- `level` - Alert severity: `INFO`, `WARN`, or `IMPORTANT`
+- `level` - Alert severity: `SUCCESS`, `INFO`, `WARN`, or `ERROR`
 - `message` - Human-readable alert message
 - `source` - Where the alert came from (device_id or 'system')
 - `tags` - Array of tags for filtering (e.g., ['face-detection', 'unknown'])
@@ -35,7 +35,7 @@ GET /api/v1/alerts/device?device_id=Main_lcd_001
 **Authentication:** Requires device token in Authorization header
 
 **Query Parameters:**
-- `level` - Filter by level (INFO, WARN, IMPORTANT)
+- `level` - Filter by level (SUCCESS, INFO, WARN, ERROR)
 - `source` - Filter by source (device_id)
 - `tags` - Filter by tags (comma-separated, e.g., "face-detection,unknown")
 - `read` - Filter by read status ("true" or "false")
@@ -49,7 +49,7 @@ GET /api/v1/alerts/device?device_id=Main_lcd_001
   "alerts": [
     {
       "id": "abc123",
-      "level": "IMPORTANT",
+      "level": "ERROR",
       "message": "doorbell_001: Camera connection lost",
       "source": "doorbell_001",
       "tags": ["device-log", "error"],
@@ -88,8 +88,12 @@ GET /api/v1/alerts/device?device_id=Main_lcd_001
 GET /api/v1/alerts
 Authorization: Bearer <USER_JWT_TOKEN>
 
-# Frontend - Get only IMPORTANT alerts
-GET /api/v1/alerts?level=IMPORTANT
+# Frontend - Get only ERROR alerts
+GET /api/v1/alerts?level=ERROR
+Authorization: Bearer <USER_JWT_TOKEN>
+
+# Frontend - Get SUCCESS alerts (positive important events)
+GET /api/v1/alerts?level=SUCCESS
 Authorization: Bearer <USER_JWT_TOKEN>
 
 # ESP32 - Get unread alerts (with device token and device_id)
@@ -190,18 +194,25 @@ Alerts are automatically created for the following events:
 - **Metadata:** Includes event_id, name, confidence, image_url
 
 ### Device Logs (Errors & Warnings)
-- **Level:** `IMPORTANT` for errors, `WARN` for warnings
+- **Level:** `ERROR` for errors, `WARN` for warnings
 - **Source:** Device ID
 - **Tags:** ['device-log', 'error'] or ['device-log', 'warning']
 - **Metadata:** Includes log_level, data, error_message
+
+### Command Completion Events
+- **Level:** `SUCCESS` for successful lock/unlock commands, `ERROR` for failed commands, `INFO` for other completed commands
+- **Source:** Device ID
+- **Tags:** ['command', action, status, 'doorlock'] (for lock/unlock commands)
+- **Metadata:** Includes action, status, params, result, error
 
 ## Sorting & Prioritization
 
 Alerts are sorted by:
 1. **Priority** (highest first):
-   - IMPORTANT = 3
-   - WARN = 2
-   - INFO = 1
+   - ERROR = 3 (Critical issues requiring attention)
+   - SUCCESS = 3 (Important positive events - same priority as ERROR)
+   - WARN = 2 (Warnings and concerns)
+   - INFO = 1 (General information)
 2. **Timestamp** (newest first for same priority)
 
 This ensures that important and new events appear at the top of the list.
@@ -266,8 +277,11 @@ Test the endpoints with curl:
 # Get all alerts
 curl http://localhost:5000/api/v1/alerts
 
-# Get IMPORTANT alerts only
-curl "http://localhost:5000/api/v1/alerts?level=IMPORTANT"
+# Get ERROR alerts only
+curl "http://localhost:5000/api/v1/alerts?level=ERROR"
+
+# Get SUCCESS alerts only (positive important events)
+curl "http://localhost:5000/api/v1/alerts?level=SUCCESS"
 
 # Create alert (requires auth token)
 curl -X POST http://localhost:5000/api/v1/alerts \

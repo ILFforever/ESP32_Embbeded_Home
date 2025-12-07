@@ -5,7 +5,7 @@ const { ALERT_LEVELS } = require('../models/Alert');
 function mapLogLevelToAlertLevel(logLevel) {
   switch (logLevel) {
     case 'error':
-      return ALERT_LEVELS.IMPORTANT;
+      return ALERT_LEVELS.ERROR;
     case 'warning':
       return ALERT_LEVELS.WARN;
     case 'info':
@@ -18,7 +18,8 @@ function mapLogLevelToAlertLevel(logLevel) {
 // Helper: Get base priority value for alert level
 function getBasePriority(level) {
   const priorities = {
-    IMPORTANT: 1000,
+    ERROR: 1000,
+    SUCCESS: 1000,  // Same priority as ERROR
     WARN: 500,
     INFO: 100
   };
@@ -82,7 +83,7 @@ function calculateAlertScore(level, timestamp, alertType, alertTypeCounts) {
 //          Sources: device_logs, face_detections, commands, sensor thresholds
 //          Scoring: Combines priority level, time decay, and diversity (prevents type monopolization)
 // @access  Protected (for frontend and ESP32 LCD)
-// @query   level - Filter by level (INFO, WARN, IMPORTANT)
+// @query   level - Filter by level (SUCCESS, INFO, WARN, ERROR)
 // @query   source - Filter by source device_id
 // @query   tags - Filter by tags (comma-separated)
 //          Available tags: device-log, face-detection, command, sensor, doorlock,
@@ -185,7 +186,7 @@ const getAlerts = async (req, res) => {
 
         alerts.push({
           id: alertId,
-          level: isManualUnlock ? ALERT_LEVELS.IMPORTANT : alertLevel,
+          level: isManualUnlock ? ALERT_LEVELS.WARN : alertLevel,
           message: isManualUnlock
             ? `${deviceId}: Manual ${logData.data?.action || 'action'} triggered`
             : `${deviceId}: ${logData.message}`,
@@ -266,9 +267,9 @@ const getAlerts = async (req, res) => {
         // Determine alert level
         let alertLevel = ALERT_LEVELS.INFO;
         if (isFailed) {
-          alertLevel = ALERT_LEVELS.WARN;
+          alertLevel = ALERT_LEVELS.ERROR; // Failed commands are errors
         } else if (isLockCommand) {
-          alertLevel = ALERT_LEVELS.IMPORTANT; // Lock/unlock commands are important
+          alertLevel = ALERT_LEVELS.SUCCESS; // Successful lock/unlock commands
         }
 
         // Apply level filter
@@ -349,7 +350,7 @@ const getAlerts = async (req, res) => {
             const pm25 = sensorData.pm2_5 || 0;
 
             if (aqi > 150 || pm25 > 55) {
-              violations.push({ type: 'air-quality', level: ALERT_LEVELS.IMPORTANT, message: `Unhealthy air quality (AQI: ${aqi})` });
+              violations.push({ type: 'air-quality', level: ALERT_LEVELS.ERROR, message: `Unhealthy air quality (AQI: ${aqi})` });
             } else if (aqi > 100 || pm25 > 35) {
               violations.push({ type: 'air-quality', level: ALERT_LEVELS.WARN, message: `Moderate air quality (AQI: ${aqi})` });
             }
@@ -405,7 +406,7 @@ const getAlerts = async (req, res) => {
     });
 
     // Sort by score (combines priority, recency, and diversity)
-    // Recent IMPORTANT alerts score highest, old INFO alerts score lowest
+    // Recent ERROR/SUCCESS alerts score highest, old INFO alerts score lowest
     // Diversity factor prevents one type from dominating
     filteredAlerts.sort((a, b) => {
       const scoreA = calculateAlertScore(a.level, a.timestamp, a.type || 'other', alertTypeCounts);
