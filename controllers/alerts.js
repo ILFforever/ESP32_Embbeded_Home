@@ -172,7 +172,9 @@ const getAlerts = async (req, res) => {
         if (level && alertLevel !== level) return;
 
         // Check if this is a manual unlock event (special handling)
+        // Support both old manual_trigger field and new trigger enum
         const isManualUnlock = logData.data?.manual_trigger === true ||
+                               logData.data?.trigger === 'manual' ||
                                logData.message?.toLowerCase().includes('manual');
 
         const tags = ['device-log', logData.level];

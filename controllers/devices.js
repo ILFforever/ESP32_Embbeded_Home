@@ -891,6 +891,57 @@ const handleFaceDetection = async (req, res) => {
       // Non-blocking - event still saved to Firebase
     }
 
+    // If known face detected, unlock door dl_001 and update database
+    if (faceDetectionEvent.recognized) {
+      console.log(`[FaceDetection] ${device_id} - Known face detected (${name}), unlocking door dl_001`);
+
+      try {
+        // Send unlock command to door lock dl_001
+        const unlockResult = await queueCommand('dl_001', 'unlock', {});
+
+        if (unlockResult.success) {
+          console.log(`[FaceDetection] ${device_id} - Door unlock command queued for dl_001 (Command ID: ${unlockResult.commandId})`);
+
+          // Update door lock state with trigger type 'face_detect'
+          const doorLockRef = db.collection('devices').doc('dl_001');
+          await doorLockRef
+            .collection('live_status')
+            .doc('device_state')
+            .set({
+              lock_state: 'unlocked',
+              last_action: 'unlock',
+              last_action_time: admin.firestore.FieldValue.serverTimestamp(),
+              trigger: 'face_detect',
+              triggered_by_face: name || 'Unknown',
+              face_detection_event_id: eventRef.id,
+              updated_at: admin.firestore.FieldValue.serverTimestamp()
+            }, { merge: true });
+
+          console.log(`[FaceDetection] ${device_id} - Door state updated with trigger: face_detect`);
+
+          // Log the face-triggered unlock event
+          await doorLockRef.collection('device_logs').add({
+            level: 'info',
+            message: `Door unlocked by face detection - ${name}`,
+            data: {
+              lock_state: 'unlocked',
+              action: 'unlock',
+              trigger: 'face_detect',
+              triggered_by_face: name || 'Unknown',
+              face_detection_event_id: eventRef.id,
+              doorbell_device_id: device_id
+            },
+            created_at: admin.firestore.FieldValue.serverTimestamp()
+          });
+        } else {
+          console.error(`[FaceDetection] ${device_id} - Failed to queue unlock command for dl_001:`, unlockResult.error);
+        }
+      } catch (unlockError) {
+        console.error(`[FaceDetection] ${device_id} - Error unlocking door dl_001:`, unlockError);
+        // Non-blocking - face detection event still saved
+      }
+    }
+
     // Respond to doorbell device
     res.json({
       status: 'ok',
@@ -1322,7 +1373,7 @@ const handleManualUnlock = async (req, res) => {
     const db = getFirestore();
     const deviceRef = db.collection('devices').doc(device_id);
 
-    // Log the manual unlock event to device logs
+    // Log the manual unlock event to device logs with new trigger enum
     const logEntry = {
       level: 'info',
       message: 'Manual unlock button pressed',
@@ -1330,7 +1381,7 @@ const handleManualUnlock = async (req, res) => {
         device_type: device_type || 'doorlock',
         location: location || 'Unknown',
         action: action || 'manual_unlock',
-        manual_trigger: true
+        trigger: 'manual'
       },
       timestamp: timestamp ? admin.firestore.Timestamp.fromMillis(timestamp) : admin.firestore.FieldValue.serverTimestamp(),
       created_at: admin.firestore.FieldValue.serverTimestamp()
@@ -2285,7 +2336,7 @@ const getLatestSensorData = async (req, res) => {
 const updateDoorLockState = async (req, res) => {
   try {
     const { device_id } = req.params;
-    const { lock_state, last_action, manual_trigger } = req.body;
+    const { lock_state, last_action, trigger, manual_trigger } = req.body;
 
     // Validate lock_state
     const validStates = ['locked', 'unlocked', 'unknown'];
@@ -2293,6 +2344,23 @@ const updateDoorLockState = async (req, res) => {
       return res.status(400).json({
         status: 'error',
         message: `Invalid lock_state. Must be one of: ${validStates.join(', ')}`
+      });
+    }
+
+    // Validate trigger (new enum field)
+    const validTriggers = ['manual', 'frontend', 'face_detect'];
+    let triggerValue = trigger;
+
+    // Backward compatibility: convert manual_trigger boolean to trigger enum
+    if (manual_trigger !== undefined && !trigger) {
+      triggerValue = manual_trigger ? 'manual' : 'frontend';
+      console.log(`[DoorLockState] ${device_id} - Converting manual_trigger=${manual_trigger} to trigger=${triggerValue}`);
+    }
+
+    if (triggerValue && !validTriggers.includes(triggerValue)) {
+      return res.status(400).json({
+        status: 'error',
+        message: `Invalid trigger. Must be one of: ${validTriggers.join(', ')}`
       });
     }
 
@@ -2324,8 +2392,8 @@ const updateDoorLockState = async (req, res) => {
       updated_at: admin.firestore.FieldValue.serverTimestamp()
     };
 
-    if (manual_trigger !== undefined) {
-      stateData.manual_trigger = manual_trigger;
+    if (triggerValue) {
+      stateData.trigger = triggerValue;
     }
 
     await deviceRef
@@ -2333,30 +2401,37 @@ const updateDoorLockState = async (req, res) => {
       .doc('device_state')
       .set(stateData, { merge: true });
 
-    console.log(`[DoorLockState] ${device_id} - State updated: ${lock_state}${manual_trigger ? ' (manual)' : ''}`);
+    console.log(`[DoorLockState] ${device_id} - State updated: ${lock_state} (trigger: ${triggerValue || 'none'})`);
 
-    // If manual trigger, also log it
-    if (manual_trigger) {
+    // Log the trigger event
+    if (triggerValue) {
+      const logMessages = {
+        manual: `Manual ${lock_state === 'locked' ? 'lock' : 'unlock'} button pressed`,
+        frontend: `${lock_state === 'locked' ? 'Lock' : 'Unlock'} triggered from frontend`,
+        face_detect: `${lock_state === 'locked' ? 'Lock' : 'Unlock'} triggered by face detection`
+      };
+
       const logEntry = {
         level: 'info',
-        message: `Manual ${lock_state === 'locked' ? 'lock' : 'unlock'} button pressed`,
+        message: logMessages[triggerValue] || `${lock_state} triggered`,
         data: {
           lock_state,
           action: last_action || lock_state,
-          manual_trigger: true
+          trigger: triggerValue
         },
         created_at: admin.firestore.FieldValue.serverTimestamp()
       };
 
       await deviceRef.collection('device_logs').add(logEntry);
-      console.log(`[DoorLockState] ${device_id} - Manual trigger event logged`);
+      console.log(`[DoorLockState] ${device_id} - Trigger event logged: ${triggerValue}`);
     }
 
     res.json({
       status: 'ok',
       message: 'Lock state updated successfully',
       device_id,
-      lock_state
+      lock_state,
+      trigger: triggerValue
     });
 
   } catch (error) {
