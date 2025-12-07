@@ -1318,6 +1318,52 @@ export async function getLockStatus(deviceId: string): Promise<DoorLockStatus | 
   }
 }
 
+// Lock all doors
+export async function lockAllDoors(): Promise<{
+  success: boolean;
+  results: PromiseSettledResult<any>[];
+}> {
+  try {
+    const { devices } = await getAllDevices();
+    const doorDevices = devices.filter(d => d.device_id.startsWith('dl_'));
+
+    const lockPromises = doorDevices.map(door =>
+      sendCommand(door.device_id, 'lock')
+    );
+
+    const results = await Promise.allSettled(lockPromises);
+    const allSucceeded = results.every(r => r.status === 'fulfilled');
+
+    return { success: allSucceeded, results };
+  } catch (error) {
+    console.error('An error occurred while locking all doors:', error);
+    return { success: false, results: [] };
+  }
+}
+
+// Unlock all doors
+export async function unlockAllDoors(): Promise<{
+  success: boolean;
+  results: PromiseSettledResult<any>[];
+}> {
+  try {
+    const { devices } = await getAllDevices();
+    const doorDevices = devices.filter(d => d.device_id.startsWith('dl_'));
+
+    const unlockPromises = doorDevices.map(door =>
+      sendCommand(door.device_id, 'unlock')
+    );
+
+    const results = await Promise.allSettled(unlockPromises);
+    const allSucceeded = results.every(r => r.status === 'fulfilled');
+
+    return { success: allSucceeded, results };
+  } catch (error) {
+    console.error('An error occurred while unlocking all doors:', error);
+    return { success: false, results: [] };
+  }
+}
+
 // ============================================================================
 // Device Management Functions
 // ============================================================================
