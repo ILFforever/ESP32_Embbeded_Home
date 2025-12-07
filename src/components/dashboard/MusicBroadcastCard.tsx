@@ -444,74 +444,7 @@ export function MusicBroadcastCard({ isExpanded = false }: MusicBroadcastCardPro
               </button>
             </div>
 
-            {/* Device Status Section */}
-            <div style={{
-              padding: '20px',
-              background: 'var(--bg-secondary)',
-              borderRadius: '12px',
-              border: '1px solid var(--border-color)'
-            }}>
-              <h4 style={{
-                fontSize: '13px',
-                fontWeight: '700',
-                color: 'var(--text-primary)',
-                textTransform: 'uppercase',
-                letterSpacing: '1px',
-                marginBottom: '16px'
-              }}>
-                Device Status
-              </h4>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                <div style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  padding: '12px 16px',
-                  background: 'var(--bg-card)',
-                  borderRadius: '8px',
-                  border: `1px solid ${doorbellDevice?.online ? 'var(--success)' : 'var(--danger)'}`
-                }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                    <span style={{ fontSize: '20px' }}>🔔</span>
-                    <span style={{ fontSize: '14px', fontWeight: '600', color: 'var(--text-primary)' }}>Doorbell</span>
-                  </div>
-                  <span className={doorbellDevice?.online ? 'status-online' : 'status-offline'} style={{
-                    fontSize: '12px',
-                    fontWeight: '700',
-                    padding: '4px 12px',
-                    borderRadius: '12px',
-                    background: doorbellDevice?.online ? 'rgba(0, 255, 136, 0.15)' : 'rgba(239, 68, 68, 0.15)',
-                    color: doorbellDevice?.online ? 'var(--success)' : 'var(--danger)'
-                  }}>
-                    {doorbellDevice?.online ? '● ONLINE' : '● OFFLINE'}
-                  </span>
-                </div>
-                <div style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  padding: '12px 16px',
-                  background: 'var(--bg-card)',
-                  borderRadius: '8px',
-                  border: `1px solid ${hubDevice?.online ? 'var(--success)' : 'var(--danger)'}`
-                }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                    <span style={{ fontSize: '20px' }}>🏠</span>
-                    <span style={{ fontSize: '14px', fontWeight: '600', color: 'var(--text-primary)' }}>Hub</span>
-                  </div>
-                  <span className={hubDevice?.online ? 'status-online' : 'status-offline'} style={{
-                    fontSize: '12px',
-                    fontWeight: '700',
-                    padding: '4px 12px',
-                    borderRadius: '12px',
-                    background: hubDevice?.online ? 'rgba(0, 255, 136, 0.15)' : 'rgba(239, 68, 68, 0.15)',
-                    color: hubDevice?.online ? 'var(--success)' : 'var(--danger)'
-                  }}>
-                    {hubDevice?.online ? '● ONLINE' : '● OFFLINE'}
-                  </span>
-                </div>
-              </div>
-            </div>
+
           </div>
         )}
       </div>
