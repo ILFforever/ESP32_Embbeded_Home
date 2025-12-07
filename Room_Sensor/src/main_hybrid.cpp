@@ -42,13 +42,13 @@
 // DEVICE IDENTIFICATION
 // ============================================================================
 #ifndef DEVICE_ID
-#define DEVICE_ID "ss_001"
+#define DEVICE_ID "ss_003"
 #endif
 #ifndef DEVICE_TYPE
 #define DEVICE_TYPE "sensor"
 #endif
 #ifndef ROOM_NAME
-#define ROOM_NAME "Living Room"
+#define ROOM_NAME "Bedroom"
 #endif
 
 // ============================================================================
@@ -57,7 +57,7 @@
 // API Token for backend authentication
 // This token is sent with sensor data to authenticate with the backend server
 // IMPORTANT: Change this to match the token configured in your backend for this device
-const char *DEVICE_API_TOKEN = "4d5c3d05ccfcaecdc30e2f8e38b55207cd7f9054b2db7b6bf8e47813dd0c9d87";
+const char *DEVICE_API_TOKEN = "186800884910f83ab404b35af3a177378f9a444c1c44ec3110ec967798556061";
 
 // ============================================================================
 // GPIO PIN CONFIGURATION
