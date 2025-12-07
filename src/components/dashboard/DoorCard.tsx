@@ -1,7 +1,13 @@
 import React, { useState } from 'react';
 import { DoorOpen, DoorClosed, Lock, Unlock, RefreshCw, X } from 'lucide-react';
 import type { DoorWindow } from '@/types/dashboard';
-import { sendCommand, getLockStatus, type DoorLockStatus } from '@/services/devices.service';
+import {
+  sendCommand,
+  getLockStatus,
+  lockAllDoors,
+  unlockAllDoors,
+  type DoorLockStatus,
+} from '@/services/devices.service';
 
 interface DoorCardProps {
   doorsWindows: DoorWindow[];
@@ -10,6 +16,7 @@ interface DoorCardProps {
 
 export function DoorCard({ doorsWindows, isExpanded = false }: DoorCardProps) {
   const [loadingStates, setLoadingStates] = useState<Record<string, boolean>>({});
+  const [loadingAll, setLoadingAll] = useState<null | 'lock' | 'unlock'>(null);
   const [showStatusModal, setShowStatusModal] = useState(false);
   const [selectedDoorId, setSelectedDoorId] = useState<string | null>(null);
   const [lockStatus, setLockStatus] = useState<DoorLockStatus | null>(null);
@@ -101,6 +108,33 @@ export function DoorCard({ doorsWindows, isExpanded = false }: DoorCardProps) {
     }
   };
 
+  const handleLockAll = async () => {
+    setLoadingAll('lock');
+    try {
+      await lockAllDoors();
+      // Optionally, refresh state after a delay
+    } catch (error) {
+      console.error('Failed to lock all doors', error);
+      alert('One or more doors failed to lock. Please check their status.');
+    } finally {
+      setLoadingAll(null);
+    }
+  };
+
+  const handleUnlockAll = async () => {
+    setLoadingAll('unlock');
+    try {
+      await unlockAllDoors();
+      // Optionally, refresh state after a delay
+    } catch (error) {
+      console.error('Failed to unlock all doors', error);
+      alert('One or more doors failed to unlock. Please check their status.');
+    } finally {
+      setLoadingAll(null);
+    }
+  };
+
+
   const fetchLockStatus = async (doorId: string) => {
     try {
       setFetchingStatus(true);
@@ -170,12 +204,88 @@ export function DoorCard({ doorsWindows, isExpanded = false }: DoorCardProps) {
                   </div>
                 </div>
               ))}
+              {/* Buttons for Lock All / Unlock All */}
+              <div style={{ gridColumn: '1 / -1', display: 'flex', gap: 'var(--spacing-md)', marginTop: 'var(--spacing-md)' }}>
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    padding: '6px',
+                    background: 'linear-gradient(135deg, rgba(255, 152, 0, 0.1) 0%, rgba(248, 150, 30, 0.1) 100%)',
+                    borderRadius: '8px',
+                    border: '1px solid rgba(255, 152, 0, 0.3)',
+                    flex: 1,
+                    minWidth: 0,
+                  }}
+                >
+                  <Unlock size={20} style={{ flexShrink: 0, color: 'var(--warning)' }} />
+                  <button
+                    className="btn-control"
+                    onClick={handleUnlockAll}
+                    disabled={loadingAll !== null}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '4px',
+                      flex: 1,
+                      minWidth: 0,
+                      width: '100%',
+                      background: 'rgba(0, 0, 0, 0.4)',
+                      border: '1px solid rgba(255, 255, 255, 0.2)',
+                      color: '#fff',
+                      whiteSpace: 'nowrap',
+                      fontSize: '12px',
+                      padding: '8px 12px',
+                    }}
+                  >
+                    {loadingAll === 'unlock' ? 'UNLOCKING...' : 'UNLOCK ALL'}
+                  </button>
+                </div>
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    padding: '6px',
+                    background: 'linear-gradient(135deg, rgba(0, 212, 170, 0.1) 0%, rgba(0, 168, 120, 0.1) 100%)',
+                    borderRadius: '8px',
+                    border: '1px solid rgba(0, 212, 170, 0.3)',
+                    flex: 1,
+                    minWidth: 0,
+                  }}
+                >
+                  <Lock size={20} style={{ flexShrink: 0, color: 'var(--success)' }} />
+                  <button
+                    className="btn-control"
+                    onClick={handleLockAll}
+                    disabled={loadingAll !== null}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '4px',
+                      flex: 1,
+                      minWidth: 0,
+                      width: '100%',
+                      background: 'rgba(0, 0, 0, 0.4)',
+                      border: '1px solid rgba(255, 255, 255, 0.2)',
+                      color: '#fff',
+                      whiteSpace: 'nowrap',
+                      fontSize: '12px',
+                      padding: '8px 12px',
+                    }}
+                  >
+                    {loadingAll === 'lock' ? 'LOCKING...' : 'LOCK ALL'}
+                  </button>
+                </div>
+              </div>
             </div>
           ) : (
             /* Expanded view */
             <div className="doors-windows-expanded">
               <div className="section">
-                <h4>DOORS ({doors.length})</h4>
                 <div className="items-grid">
                   {doors.map(door => (
                     <div key={door.id} className="door-window-card">

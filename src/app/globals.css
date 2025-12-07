@@ -246,8 +246,7 @@ h6 { font-size: var(--font-size-sm); }
   grid-template-columns: repeat(4, 1fr);
   grid-template-rows: repeat(4, auto);
   gap: var(--spacing-lg);
-  animation: fadeInUp 0.6s ease-out 0.2s both;
-  align-items: start;
+  align-items: stretch;
   grid-template-areas:
     "system-status system-status alerts alerts"
     "system-status system-status alerts alerts"
@@ -2426,6 +2425,120 @@ h6 { font-size: var(--font-size-sm); }
 :root[data-theme="green"] .modal-close:hover {
   border-color: var(--primary);
   box-shadow: 0 0 20px rgba(0, 255, 136, 0.5);
+}
+
+/* Sensor Detail Modal */
+.sensor-detail-modal {
+  background: var(--bg-card);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: var(--radius-lg);
+  padding: 0;
+  max-width: 800px;
+  width: 100%;
+  max-height: 90vh;
+  overflow-y: auto;
+  animation: modalSlideIn 0.4s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+  box-shadow: var(--shadow-xl);
+}
+
+.sensor-detail-modal .modal-header {
+  position: sticky;
+  top: 0;
+  background: var(--bg-secondary);
+  padding: var(--spacing-lg);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  z-index: 10;
+}
+
+.sensor-detail-modal .modal-header h2 {
+  font-size: var(--font-size-xl);
+  font-weight: 700;
+  color: var(--primary);
+  margin: 0;
+}
+
+.sensor-detail-modal .modal-close {
+  position: static;
+  margin: 0;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.sensor-detail-modal .modal-body {
+  padding: var(--spacing-lg);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-lg);
+}
+
+.sensor-detail-section {
+  background: rgba(0, 0, 0, 0.2);
+  padding: var(--spacing-md);
+  border-radius: var(--radius-md);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.sensor-detail-section h3 {
+  font-size: var(--font-size-md);
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: var(--spacing-md);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  padding-bottom: var(--spacing-sm);
+}
+
+.sensor-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: var(--spacing-md);
+}
+
+.sensor-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+
+.sensor-field .field-label {
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+}
+
+.sensor-field .field-value {
+  font-size: var(--font-size-md);
+  color: var(--text-primary);
+  font-weight: 600;
+  padding: var(--spacing-xs) var(--spacing-sm);
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.sensor-field .field-value.status-indicator {
+  width: fit-content;
+}
+
+/* Responsive modal */
+@media (max-width: 768px) {
+  .sensor-detail-modal {
+    max-width: 100%;
+    max-height: 100vh;
+    border-radius: 0;
+  }
+
+  .sensor-detail-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 /* Theme Switcher - Compact for Header */

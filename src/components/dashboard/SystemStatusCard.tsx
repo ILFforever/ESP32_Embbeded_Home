@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Battery, Info, List, Cpu, Radio } from 'lucide-react';
+import { Battery, Info, List, Cpu, Radio, X, Droplet, Thermometer, Wind, Zap } from 'lucide-react';
 import type { DevicesStatus, Device } from '@/types/dashboard';
 import { getDeviceStatusClass as getStatusClass, getDeviceStatusText as getStatusText } from '@/services/devices.service';
 
@@ -12,6 +12,7 @@ interface SystemStatusCardProps {
 export function SystemStatusCard({ devicesStatus, isExpanded = false }: SystemStatusCardProps) {
   const router = useRouter();
   const [viewMode, setViewMode] = useState<'devices' | 'sensors'>('devices');
+  const [selectedSensor, setSelectedSensor] = useState<Device | null>(null);
 
   // Extract doorbell and hub devices from the devices array
   const doorbellDevice = devicesStatus?.devices?.find(d => d.type === 'doorbell');
@@ -88,6 +89,54 @@ export function SystemStatusCard({ devicesStatus, isExpanded = false }: SystemSt
     }
   };
 
+  const handleSensorClick = (sensor: Device) => (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setSelectedSensor(sensor);
+  };
+
+  const closeSensorModal = () => {
+    setSelectedSensor(null);
+  };
+
+  // Helper function to format Firebase timestamp
+  const formatTimestamp = (timestamp: any): string => {
+    if (!timestamp) return '-';
+    try {
+      let date: Date;
+
+      // Check if it's a Firebase Timestamp with seconds property
+      if (timestamp.seconds) {
+        date = new Date(timestamp.seconds * 1000);
+      }
+      // Check if it has toDate method (Firebase Timestamp)
+      else if (timestamp.toDate && typeof timestamp.toDate === 'function') {
+        date = timestamp.toDate();
+      }
+      // Try to parse as regular date string
+      else {
+        date = new Date(timestamp);
+      }
+
+      if (isNaN(date.getTime())) return '-';
+
+      // Format: "December 6, 2025 at 8:42:23 PM UTC+7"
+      const options: Intl.DateTimeFormatOptions = {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: true,
+        timeZoneName: 'longOffset'
+      };
+
+      return date.toLocaleString('en-US', options).replace(',', ' at');
+    } catch (error) {
+      return '-';
+    }
+  };
+
   // If expanded (popup mode), show all devices or sensors with toggle
   if (isExpanded) {
     const displayDevices = viewMode === 'devices'
@@ -124,7 +173,11 @@ export function SystemStatusCard({ devicesStatus, isExpanded = false }: SystemSt
                 className="device-status-item device-clickable"
                 onClick={(e) => {
                   e.stopPropagation();
-                  handleDeviceClick(device)(e);
+                  if (viewMode === 'sensors') {
+                    handleSensorClick(device)(e);
+                  } else {
+                    handleDeviceClick(device)(e);
+                  }
                 }}
                 style={{ cursor: 'pointer' }}
               >
@@ -224,6 +277,183 @@ export function SystemStatusCard({ devicesStatus, isExpanded = false }: SystemSt
           </div>
           </div>
         </div>
+
+        {/* Sensor Detail Modal */}
+        {selectedSensor && (
+          <div className="modal-overlay" onClick={closeSensorModal}>
+            <div className="modal-content sensor-detail-modal" onClick={(e) => e.stopPropagation()}>
+              <div className="modal-header">
+                <h2>{selectedSensor.name?.toUpperCase() || 'SENSOR DETAILS'}</h2>
+                <button className="modal-close" onClick={closeSensorModal}>
+                  <X size={24} />
+                </button>
+              </div>
+              <div className="modal-body">
+                {/* Status Section */}
+                <div className="sensor-detail-section">
+                  <h3>STATUS</h3>
+                  <div className="sensor-detail-grid">
+                    <div className="sensor-field">
+                      <span className="field-label">Connection Status:</span>
+                      <span className={`field-value status-indicator ${getDeviceStatusClass(selectedSensor.online, selectedSensor.last_seen, selectedSensor.type)}`}>
+                        {selectedSensor.online ? 'ONLINE' : 'OFFLINE'}
+                      </span>
+                    </div>
+                    <div className="sensor-field">
+                      <span className="field-label">Device ID:</span>
+                      <span className="field-value">{selectedSensor.device_id || '-'}</span>
+                    </div>
+                    <div className="sensor-field">
+                      <span className="field-label">Device Type:</span>
+                      <span className="field-value">{selectedSensor.sensor_data?.device_type || selectedSensor.type || '-'}</span>
+                    </div>
+                    <div className="sensor-field">
+                      <span className="field-label">Last Updated:</span>
+                      <span className="field-value">
+                        {formatTimestamp(selectedSensor.last_seen)}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Power Section */}
+                <div className="sensor-detail-section">
+                  <h3>POWER</h3>
+                  <div className="sensor-detail-grid">
+                    <div className="sensor-field">
+                      <span className="field-label">Battery Level:</span>
+                      <span className="field-value">
+                        {!selectedSensor.online
+                          ? '-'
+                          : (getBatteryPercent(selectedSensor) !== undefined
+                              ? `${getBatteryPercent(selectedSensor)}%`
+                              : '-')}
+                      </span>
+                    </div>
+                    <div className="sensor-field">
+                      <span className="field-label">Battery Voltage:</span>
+                      <span className="field-value">
+                        {!selectedSensor.online
+                          ? '-'
+                          : (selectedSensor.sensor_data?.battery_voltage
+                              ? `${selectedSensor.sensor_data.battery_voltage.toFixed(2)}V`
+                              : '-')}
+                      </span>
+                    </div>
+                    <div className="sensor-field">
+                      <span className="field-label">Boot Count:</span>
+                      <span className="field-value">
+                        {!selectedSensor.online
+                          ? '-'
+                          : (selectedSensor.sensor_data?.boot_count ?? '-')}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Sensor Readings */}
+                {(selectedSensor.type === 'sensor' || selectedSensor.type === 'gas_sensor') && (
+                  <div className="sensor-detail-section">
+                    <h3>SENSOR READINGS</h3>
+                    <div className="sensor-detail-grid">
+                      {selectedSensor.sensor_data?.temperature !== undefined && (
+                        <div className="sensor-field">
+                          <span className="field-label">
+                            <Thermometer size={16} style={{ display: 'inline', marginRight: '4px' }} />
+                            Temperature:
+                          </span>
+                          <span className="field-value">
+                            {!selectedSensor.online
+                              ? '-'
+                              : `${selectedSensor.sensor_data.temperature.toFixed(1)}°C`}
+                          </span>
+                        </div>
+                      )}
+                      {selectedSensor.sensor_data?.humidity !== undefined && (
+                        <div className="sensor-field">
+                          <span className="field-label">
+                            <Droplet size={16} style={{ display: 'inline', marginRight: '4px' }} />
+                            Humidity:
+                          </span>
+                          <span className="field-value">
+                            {!selectedSensor.online
+                              ? '-'
+                              : `${selectedSensor.sensor_data.humidity.toFixed(1)}%`}
+                          </span>
+                        </div>
+                      )}
+                      {selectedSensor.sensor_data?.light_lux !== undefined && (
+                        <div className="sensor-field">
+                          <span className="field-label">
+                            <Zap size={16} style={{ display: 'inline', marginRight: '4px' }} />
+                            Light Level:
+                          </span>
+                          <span className="field-value">
+                            {!selectedSensor.online
+                              ? '-'
+                              : `${selectedSensor.sensor_data.light_lux.toFixed(0)} lux`}
+                          </span>
+                        </div>
+                      )}
+                      {selectedSensor.sensor_data?.gas_level !== undefined && (
+                        <div className="sensor-field">
+                          <span className="field-label">
+                            <Wind size={16} style={{ display: 'inline', marginRight: '4px' }} />
+                            Gas Level:
+                          </span>
+                          <span className="field-value">
+                            {!selectedSensor.online
+                              ? '-'
+                              : `${selectedSensor.sensor_data.gas_level} ppm`}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Additional Info */}
+                <div className="sensor-detail-section">
+                  <h3>ADDITIONAL INFO</h3>
+                  <div className="sensor-detail-grid">
+                    <div className="sensor-field">
+                      <span className="field-label">Forwarded By:</span>
+                      <span className="field-value">
+                        {!selectedSensor.online
+                          ? '-'
+                          : (selectedSensor.sensor_data?.forwarded_by || '-')}
+                      </span>
+                    </div>
+                    <div className="sensor-field">
+                      <span className="field-label">Alert Status:</span>
+                      <span className="field-value">
+                        {!selectedSensor.online
+                          ? '-'
+                          : (selectedSensor.sensor_data?.alert ? 'ACTIVE' : 'NORMAL')}
+                      </span>
+                    </div>
+                    <div className="sensor-field">
+                      <span className="field-label">Data Averaged:</span>
+                      <span className="field-value">
+                        {!selectedSensor.online
+                          ? '-'
+                          : (selectedSensor.sensor_data?.averaged ? 'Yes' : 'No')}
+                      </span>
+                    </div>
+                    <div className="sensor-field">
+                      <span className="field-label">Sample Count:</span>
+                      <span className="field-value">
+                        {!selectedSensor.online
+                          ? '-'
+                          : (selectedSensor.sensor_data?.sample_count ?? '-')}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
