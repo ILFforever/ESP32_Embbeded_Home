@@ -25,9 +25,10 @@ function getBasePriority(level) {
   return priorities[level] || 0;
 }
 
-// Helper: Calculate time-based score decay
+// Helper: Calculate time-based score decay with diversity bonus
 // Recent alerts get higher scores, older alerts decay exponentially
-function calculateAlertScore(level, timestamp) {
+// Add diversity bonus to prevent alert type monopolization
+function calculateAlertScore(level, timestamp, alertType, alertTypeCounts) {
   const basePriority = getBasePriority(level);
 
   // Calculate age in hours
@@ -35,38 +36,57 @@ function calculateAlertScore(level, timestamp) {
   const alertTime = timestamp instanceof Date ? timestamp.getTime() : new Date(timestamp).getTime();
   const ageInHours = (now - alertTime) / (1000 * 60 * 60);
 
-  // Decay factor: alerts lose value over time
+  // Decay factor: alerts lose value over time (exponential decay)
   // - 0-1 hour: 100% weight
-  // - 1-6 hours: 80% weight
-  // - 6-24 hours: 50% weight
-  // - 24-72 hours: 20% weight
+  // - 1-6 hours: 70% weight
+  // - 6-24 hours: 40% weight
+  // - 24-72 hours: 15% weight
   // - 72+ hours: 5% weight
   let timeWeight = 1.0;
   if (ageInHours < 1) {
     timeWeight = 1.0;
   } else if (ageInHours < 6) {
-    timeWeight = 0.8;
+    timeWeight = 0.7;
   } else if (ageInHours < 24) {
-    timeWeight = 0.5;
+    timeWeight = 0.4;
   } else if (ageInHours < 72) {
-    timeWeight = 0.2;
+    timeWeight = 0.15;
   } else {
     timeWeight = 0.05;
   }
 
-  // Final score = base priority * time weight
-  const score = basePriority * timeWeight;
+  // Diversity bonus: reduce score for over-represented alert types
+  // This prevents one type from dominating the feed
+  const totalAlerts = Object.values(alertTypeCounts).reduce((sum, count) => sum + count, 0);
+  const typeCount = alertTypeCounts[alertType] || 0;
+  const typeRatio = totalAlerts > 0 ? typeCount / totalAlerts : 0;
+
+  // Apply penalty for over-representation (max 30% penalty)
+  // If a type is >50% of alerts, penalize it
+  let diversityMultiplier = 1.0;
+  if (typeRatio > 0.5) {
+    diversityMultiplier = 0.7; // 30% penalty
+  } else if (typeRatio > 0.3) {
+    diversityMultiplier = 0.85; // 15% penalty
+  }
+
+  // Final score = base priority * time weight * diversity multiplier
+  const score = basePriority * timeWeight * diversityMultiplier;
 
   return score;
 }
 
 // ============================================================================
 // @route   GET /api/v1/alerts
-// @desc    Get alerts by querying device_logs and face_detections in real-time
+// @desc    Get alerts from multiple sources with intelligent scoring
+//          Sources: device_logs, face_detections, commands, sensor thresholds
+//          Scoring: Combines priority level, time decay, and diversity (prevents type monopolization)
 // @access  Protected (for frontend and ESP32 LCD)
 // @query   level - Filter by level (INFO, WARN, IMPORTANT)
 // @query   source - Filter by source device_id
 // @query   tags - Filter by tags (comma-separated)
+//          Available tags: device-log, face-detection, command, sensor, doorlock,
+//                         manual-trigger, recognized, unknown, temperature, humidity, air-quality
 // @query   limit - Max alerts to return (default 50, max 100)
 // @query   read - Filter by read status (true/false)
 // ============================================================================
@@ -127,15 +147,16 @@ const getAlerts = async (req, res) => {
       ? (devicesSnapshot.exists ? [{ id: source, data: devicesSnapshot.data() }] : [])
       : devicesSnapshot.docs.map(doc => ({ id: doc.id, data: doc.data() }));
 
-    // Query device_logs (errors and warnings only)
+    // Query multiple alert sources from each device
     for (const device of devices) {
       const deviceId = device.id;
+      const deviceType = device.data?.type || 'unknown';
 
-      // Get device logs - query without filter first, then filter in memory to avoid index requirement
+      // 1. Get device logs (errors and warnings only)
       const logsSnapshot = await db.collection('devices').doc(deviceId)
         .collection('device_logs')
         .orderBy('created_at', 'desc')
-        .limit(limitNum * 2) // Get more to account for filtering
+        .limit(limitNum) // Reduced since we're adding more sources
         .get();
 
       logsSnapshot.docs.forEach(doc => {
@@ -149,18 +170,28 @@ const getAlerts = async (req, res) => {
         // Apply level filter
         if (level && alertLevel !== level) return;
 
-        // Apply tags filter (device-log tag)
-        if (tagArray && !tagArray.includes('device-log') && !tagArray.includes(logData.level)) return;
+        // Check if this is a manual unlock event (special handling)
+        const isManualUnlock = logData.data?.manual_trigger === true ||
+                               logData.message?.toLowerCase().includes('manual');
+
+        const tags = ['device-log', logData.level];
+        if (isManualUnlock) tags.push('manual-trigger', 'doorlock');
+
+        // Apply tags filter
+        if (tagArray && !tags.some(tag => tagArray.includes(tag))) return;
 
         const alertId = `${deviceId}_log_${doc.id}`;
         const isRead = readStatusMap.has(alertId);
 
         alerts.push({
           id: alertId,
-          level: alertLevel,
-          message: `${deviceId}: ${logData.message}`,
+          level: isManualUnlock ? ALERT_LEVELS.IMPORTANT : alertLevel,
+          message: isManualUnlock
+            ? `${deviceId}: Manual ${logData.data?.action || 'action'} triggered`
+            : `${deviceId}: ${logData.message}`,
           source: deviceId,
-          tags: ['device-log', logData.level],
+          tags,
+          type: isManualUnlock ? 'manual-unlock' : 'device-log',
           metadata: {
             log_level: logData.level,
             data: logData.data,
@@ -172,7 +203,7 @@ const getAlerts = async (req, res) => {
         });
       });
 
-      // Get face detections
+      // 2. Get face detections
       const faceSnapshot = await db.collection('devices').doc(deviceId)
         .collection('face_detections')
         .orderBy('detected_at', 'desc')
@@ -187,9 +218,10 @@ const getAlerts = async (req, res) => {
         // Apply level filter
         if (level && alertLevel !== level) return;
 
-        // Apply tags filter (face-detection tag)
-        if (tagArray && !tagArray.includes('face-detection') &&
-            !tagArray.includes(isRecognized ? 'recognized' : 'unknown')) return;
+        const tags = ['face-detection', isRecognized ? 'recognized' : 'unknown'];
+
+        // Apply tags filter
+        if (tagArray && !tags.some(tag => tagArray.includes(tag))) return;
 
         const alertId = `${deviceId}_face_${doc.id}`;
         const isRead = readStatusMap.has(alertId);
@@ -201,7 +233,8 @@ const getAlerts = async (req, res) => {
             ? `Face detected: ${faceData.name || 'Unknown'}`
             : 'Unknown person detected at door',
           source: deviceId,
-          tags: ['face-detection', isRecognized ? 'recognized' : 'unknown'],
+          tags,
+          type: 'face-detection',
           metadata: {
             event_id: doc.id,
             name: faceData.name,
@@ -213,6 +246,149 @@ const getAlerts = async (req, res) => {
           read: isRead
         });
       });
+
+      // 3. Get recent commands (completed and failed commands are noteworthy)
+      const commandsSnapshot = await db.collection('devices').doc(deviceId)
+        .collection('commands')
+        .orderBy('created_at', 'desc')
+        .limit(20) // Get recent commands
+        .get();
+
+      commandsSnapshot.docs.forEach(doc => {
+        const cmdData = doc.data();
+
+        // Only include completed or failed commands (skip pending)
+        if (cmdData.status === 'pending') return;
+
+        const isFailed = cmdData.status === 'failed';
+        const isLockCommand = cmdData.action === 'lock' || cmdData.action === 'unlock';
+
+        // Determine alert level
+        let alertLevel = ALERT_LEVELS.INFO;
+        if (isFailed) {
+          alertLevel = ALERT_LEVELS.WARN;
+        } else if (isLockCommand) {
+          alertLevel = ALERT_LEVELS.IMPORTANT; // Lock/unlock commands are important
+        }
+
+        // Apply level filter
+        if (level && alertLevel !== level) return;
+
+        const tags = ['command', cmdData.action, cmdData.status];
+        if (isLockCommand) tags.push('doorlock');
+
+        // Apply tags filter
+        if (tagArray && !tags.some(tag => tagArray.includes(tag))) return;
+
+        const alertId = `${deviceId}_cmd_${doc.id}`;
+        const isRead = readStatusMap.has(alertId);
+
+        // Format message based on command type
+        let message = '';
+        if (isLockCommand) {
+          message = `${deviceId}: Door ${cmdData.action}ed ${isFailed ? '(failed)' : 'successfully'}`;
+        } else {
+          message = `${deviceId}: Command '${cmdData.action}' ${isFailed ? 'failed' : 'completed'}`;
+        }
+
+        alerts.push({
+          id: alertId,
+          level: alertLevel,
+          message,
+          source: deviceId,
+          tags,
+          type: 'command',
+          metadata: {
+            action: cmdData.action,
+            status: cmdData.status,
+            params: cmdData.params,
+            result: cmdData.result,
+            error: cmdData.error
+          },
+          timestamp: cmdData.executed_at?.toDate?.() || cmdData.created_at?.toDate?.() || cmdData.created_at,
+          created_at: cmdData.created_at?.toDate?.() || cmdData.created_at,
+          read: isRead
+        });
+      });
+
+      // 4. Get sensor threshold violations (if device has sensors)
+      if (deviceType.includes('sensor') || deviceType === 'hb') {
+        const sensorDoc = await db.collection('devices').doc(deviceId)
+          .collection('sensors')
+          .doc('current')
+          .get();
+
+        if (sensorDoc.exists) {
+          const sensorData = sensorDoc.data();
+          const sensorTimestamp = sensorData.last_updated?.toDate?.() || sensorData.timestamp?.toDate?.() || new Date();
+
+          // Check for threshold violations
+          const violations = [];
+
+          // Temperature checks
+          if (sensorData.temperature != null) {
+            if (sensorData.temperature > 35) {
+              violations.push({ type: 'temperature', level: ALERT_LEVELS.WARN, message: `High temperature: ${sensorData.temperature}°C` });
+            } else if (sensorData.temperature < 10) {
+              violations.push({ type: 'temperature', level: ALERT_LEVELS.WARN, message: `Low temperature: ${sensorData.temperature}°C` });
+            }
+          }
+
+          // Humidity checks
+          if (sensorData.humidity != null) {
+            if (sensorData.humidity > 80) {
+              violations.push({ type: 'humidity', level: ALERT_LEVELS.WARN, message: `High humidity: ${sensorData.humidity}%` });
+            } else if (sensorData.humidity < 20) {
+              violations.push({ type: 'humidity', level: ALERT_LEVELS.INFO, message: `Low humidity: ${sensorData.humidity}%` });
+            }
+          }
+
+          // Air quality checks (PM2.5)
+          if (sensorData.pm2_5 != null || sensorData.aqi != null) {
+            const aqi = sensorData.aqi || 0;
+            const pm25 = sensorData.pm2_5 || 0;
+
+            if (aqi > 150 || pm25 > 55) {
+              violations.push({ type: 'air-quality', level: ALERT_LEVELS.IMPORTANT, message: `Unhealthy air quality (AQI: ${aqi})` });
+            } else if (aqi > 100 || pm25 > 35) {
+              violations.push({ type: 'air-quality', level: ALERT_LEVELS.WARN, message: `Moderate air quality (AQI: ${aqi})` });
+            }
+          }
+
+          // Add violations as alerts (only if recent - within last 6 hours)
+          const ageInHours = (Date.now() - sensorTimestamp.getTime()) / (1000 * 60 * 60);
+          if (ageInHours < 6) {
+            violations.forEach(violation => {
+              // Apply level filter
+              if (level && violation.level !== level) return;
+
+              const tags = ['sensor', violation.type];
+
+              // Apply tags filter
+              if (tagArray && !tags.some(tag => tagArray.includes(tag))) return;
+
+              const alertId = `${deviceId}_sensor_${violation.type}`;
+              const isRead = readStatusMap.has(alertId);
+
+              alerts.push({
+                id: alertId,
+                level: violation.level,
+                message: `${deviceId}: ${violation.message}`,
+                source: deviceId,
+                tags,
+                type: 'sensor-threshold',
+                metadata: {
+                  sensor_type: violation.type,
+                  sensor_data: sensorData
+                },
+                timestamp: sensorTimestamp,
+                created_at: sensorTimestamp,
+                read: isRead
+              });
+            });
+          }
+        }
+      }
     }
 
     // Apply read filter if specified
@@ -221,23 +397,51 @@ const getAlerts = async (req, res) => {
       filteredAlerts = alerts.filter(alert => alert.read === readFilter);
     }
 
-    // Sort by score (combines priority and recency)
+    // Calculate alert type distribution for diversity scoring
+    const alertTypeCounts = {};
+    filteredAlerts.forEach(alert => {
+      const type = alert.type || 'other';
+      alertTypeCounts[type] = (alertTypeCounts[type] || 0) + 1;
+    });
+
+    // Sort by score (combines priority, recency, and diversity)
     // Recent IMPORTANT alerts score highest, old INFO alerts score lowest
+    // Diversity factor prevents one type from dominating
     filteredAlerts.sort((a, b) => {
-      const scoreA = calculateAlertScore(a.level, a.timestamp);
-      const scoreB = calculateAlertScore(b.level, b.timestamp);
+      const scoreA = calculateAlertScore(a.level, a.timestamp, a.type || 'other', alertTypeCounts);
+      const scoreB = calculateAlertScore(b.level, b.timestamp, b.type || 'other', alertTypeCounts);
       return scoreB - scoreA; // Higher score = more important
     });
 
     // Apply limit
     const limitedAlerts = filteredAlerts.slice(0, limitNum);
 
-    console.log(`[Alerts] Returning ${limitedAlerts.length} alerts (filtered from ${alerts.length})`);
+    // Calculate summary statistics
+    const summary = {
+      total: limitedAlerts.length,
+      by_level: {
+        IMPORTANT: limitedAlerts.filter(a => a.level === ALERT_LEVELS.IMPORTANT).length,
+        WARN: limitedAlerts.filter(a => a.level === ALERT_LEVELS.WARN).length,
+        INFO: limitedAlerts.filter(a => a.level === ALERT_LEVELS.INFO).length
+      },
+      by_type: {},
+      unread_count: limitedAlerts.filter(a => !a.read).length
+    };
 
-    // Return alerts
+    // Count by type
+    limitedAlerts.forEach(alert => {
+      const type = alert.type || 'other';
+      summary.by_type[type] = (summary.by_type[type] || 0) + 1;
+    });
+
+    console.log(`[Alerts] Returning ${limitedAlerts.length} alerts (filtered from ${alerts.length})`);
+    console.log(`[Alerts] Summary:`, summary);
+
+    // Return alerts with summary
     res.json({
       status: 'ok',
       count: limitedAlerts.length,
+      summary,
       alerts: limitedAlerts
     });
 
