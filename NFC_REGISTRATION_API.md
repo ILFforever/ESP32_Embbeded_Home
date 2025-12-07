@@ -97,3 +97,43 @@ Authorization: Bearer <device_api_token>
 -   **401 Unauthorized:** Invalid or missing device token.
 -   **404 Not Found:** The registration session does not exist.
 -   **409 Conflict:** The scanned card is already registered to a different user.
+
+---
+
+## 3. Cancel NFC Registration
+
+This endpoint is called by the frontend (typically by an admin) to cancel all active/pending registration sessions on a specific device. This is useful if the registration process was started by mistake or needs to be aborted.
+
+**Endpoint:** `POST /api/v1/devices/nfc/register/cancel/:deviceId`
+
+**Authentication:** Requires admin authentication token (`protect` and `authorize('admin')`).
+
+**Headers:**
+```
+Authorization: Bearer <admin_token>
+```
+
+**URL Parameters:**
+- `deviceId` (required): The ID of the NFC scanner device for which to cancel pending sessions.
+
+**Body:** (empty)
+
+#### cURL Example
+```bash
+curl -X POST https://embedded-smarthome.fly.dev/api/v1/devices/nfc/register/cancel/doorbell_001 \
+  -H "Authorization: Bearer <admin_token>"
+```
+
+#### Success Response
+```json
+{
+    "success": true,
+    "message": "Cancelled 1 pending NFC registration session(s) for device doorbell_001."
+}
+```
+
+#### Error Responses
+- **400 Bad Request:** `deviceId` is missing from the URL.
+- **401 Unauthorized:** Invalid or missing admin token.
+- **403 Forbidden:** User is not an admin.
+- **404 Not Found:** No pending registration sessions were found for the specified device.

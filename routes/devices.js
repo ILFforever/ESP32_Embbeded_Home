@@ -22,6 +22,7 @@ const {
   handleNfcRegisterScan,
   initiateNfcRegistration,
   handleDeviceNfcScan,
+  cancelNfcRegistration,
   // Amplifier Global Control
   playAmplifierAll,
   stopAmplifierAll,
@@ -207,6 +208,11 @@ router.post('/nfc/register/initiate/admin/:userId', protect, authorize('admin'),
 // @desc    Device sends scanned NFC card details to complete registration
 // @access  Private (requires device token)
 router.post('/nfc/register/scan', authenticateDevice, handleDeviceNfcScan);
+
+// @route   POST /api/v1/devices/nfc/register/cancel/:deviceId
+// @desc    Admin cancels all pending NFC registrations for a device
+// @access  Private (Admin only)
+router.post('/nfc/register/cancel/:deviceId', protect, authorize('admin'), cancelNfcRegistration);
 
 // ============================================================================
 // Face Management Routes
