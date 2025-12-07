@@ -130,8 +130,8 @@ struct SensorData
 // ============================================================================
 RTC_DATA_ATTR uint32_t bootCount = 0;
 RTC_DATA_ATTR uint32_t wakesSinceTransmission = 0;
-RTC_DATA_ATTR bool micsCalibrated = false;
-RTC_DATA_ATTR int16_t mics_r0 = 2048;  // Baseline resistance (calibrated in clean air)
+RTC_DATA_ATTR bool micsCalibrated = true;
+RTC_DATA_ATTR int16_t mics_r0 = 3990;  // Baseline resistance (calibrated in clean air)
 
 // Circular buffer for sensor history
 RTC_DATA_ATTR struct

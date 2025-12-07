@@ -1,0 +1,8 @@
+ss_001
+R0 (Baseline): 3978
+
+ss_002
+R0 (Baseline): 3896
+
+ss_003
+R0 (Baseline): 3990
