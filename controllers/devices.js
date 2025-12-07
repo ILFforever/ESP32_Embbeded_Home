@@ -3062,6 +3062,129 @@ const handleNfcRegisterScan = async (req, res) => {
     }
 };
 
+const initiateNfcRegistration = async (req, res) => {
+  try {
+    const { deviceId } = req.body;
+    let userId;
+
+    // Admin route will have userId in params, user route will use req.user.id
+    if (req.params.userId) {
+      userId = req.params.userId;
+    } else {
+      userId = req.user.id;
+    }
+
+    if (!deviceId) {
+      return res.status(400).json({ success: false, message: 'Please provide a deviceId' });
+    }
+
+    const db = getFirestore();
+
+    // Create a registration session
+    const sessionRef = await db.collection('nfcRegistrationSessions').add({
+      userId,
+      deviceId,
+      status: 'pending',
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      expiresAt: new Date(Date.now() + 5 * 60 * 1000) // Expires in 5 minutes
+    });
+
+    // Queue command for the device
+    await queueCommand(deviceId, 'start_nfc_registration', { sessionId: sessionRef.id });
+
+    res.json({
+      success: true,
+      message: 'NFC registration initiated. Please scan the card on the device.',
+      sessionId: sessionRef.id
+    });
+  } catch (error) {
+    console.error('[NFC Initiate] Error initiating NFC registration:', error);
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+};
+
+const handleDeviceNfcScan = async (req, res) => {
+  try {
+    const { card_id, sessionId } = req.body;
+
+    if (!card_id || !sessionId) {
+      return res.status(400).json({ success: false, message: 'Please provide card_id and sessionId' });
+    }
+
+    const db = getFirestore();
+    const sessionRef = db.collection('nfcRegistrationSessions').doc(sessionId);
+    const sessionDoc = await sessionRef.get();
+
+    if (!sessionDoc.exists) {
+      return res.status(404).json({ success: false, message: 'Registration session not found' });
+    }
+
+    const session = sessionDoc.data();
+
+    if (session.status !== 'pending') {
+      return res.status(400).json({ success: false, message: `Session already ${session.status}` });
+    }
+
+    if (session.expiresAt.toDate() < new Date()) {
+      await sessionRef.update({ status: 'expired' });
+      return res.status(400).json({ success: false, message: 'Registration session expired' });
+    }
+
+    const { userId, deviceId } = session;
+    const usersRef = db.collection('users');
+
+    // Check if the card is already assigned to another user
+    const existingCardSnapshot = await usersRef.where('nfc_cards', 'array-contains', card_id).get();
+    if (!existingCardSnapshot.empty) {
+      const existingUserDoc = existingCardSnapshot.docs[0];
+      if (existingUserDoc.id !== userId) {
+        await queueCommand(deviceId, 'nfc_registration_fail');
+        return res.status(409).json({
+          success: false,
+          message: `Card is already registered to another user.`
+        });
+      }
+    }
+
+    const userRef = usersRef.doc(userId);
+    const userDoc = await userRef.get();
+
+    if (!userDoc.exists) {
+      await queueCommand(deviceId, 'nfc_registration_fail');
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    const user = new User({ id: userDoc.id, ...userDoc.data() });
+
+    if (user.nfc_cards.includes(card_id)) {
+      await queueCommand(deviceId, 'nfc_registration_fail');
+      return res.status(400).json({
+        success: false,
+        message: 'Card is already registered to this user.'
+      });
+    }
+
+    const updatedCards = [...user.nfc_cards, card_id];
+    await userRef.update({ nfc_cards: updatedCards });
+
+    await sessionRef.update({ status: 'completed', cardId: card_id });
+    
+    await queueCommand(deviceId, 'nfc_registration_success');
+
+    console.log(`[NFC Device Scan] Successfully assigned card ${card_id} to user ${user.name}.`);
+
+    res.json({
+      success: true,
+      message: 'NFC card successfully registered.'
+    });
+
+  } catch (error) {
+    console.error('[NFC Device Scan] Error handling device NFC scan:', error);
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+};
+
+
 module.exports = {
   registerDevice,
   handleHeartbeat,
@@ -3081,6 +3204,8 @@ module.exports = {
   handleManualUnlock,
   handleNfcAccessScan,
   handleNfcRegisterScan,
+  initiateNfcRegistration,
+  handleDeviceNfcScan,
   // Amplifier Global Control
   playAmplifierAll,
   stopAmplifierAll,

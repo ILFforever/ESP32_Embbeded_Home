@@ -20,6 +20,8 @@ const {
   handleManualUnlock,
   handleNfcAccessScan,
   handleNfcRegisterScan,
+  initiateNfcRegistration,
+  handleDeviceNfcScan,
   // Amplifier Global Control
   playAmplifierAll,
   stopAmplifierAll,
@@ -51,7 +53,7 @@ const {
   updateDoorLockState
 } = require('../controllers/devices');
 const { authenticateDevice } = require('../middleware/deviceAuth');
-const { protect } = require('../middleware/auth');
+const { protect, authorize } = require('../middleware/auth');
 
 // Configure multer for in-memory file storage (for face detection images)
 // Increased limits for ESP32 reliability
@@ -191,10 +193,20 @@ router.post('/commands/manual-unlock', authenticateDevice, handleManualUnlock);
 // @access  Private (requires device token)
 router.post('/nfc/scan/access', authenticateDevice, handleNfcAccessScan);
 
-// @route   POST /api/v1/devices/nfc/scan/register
-// @desc    Register a new NFC card for the logged-in user
+// @route   POST /api/v1/devices/nfc/register/initiate
+// @desc    Initiate NFC card registration for the logged-in user
 // @access  Private (requires user token)
-router.post('/nfc/scan/register', protect, handleNfcRegisterScan);
+router.post('/nfc/register/initiate', protect, initiateNfcRegistration);
+
+// @route   POST /api/v1/devices/nfc/register/initiate/admin/:userId
+// @desc    Admin initiates NFC card registration for a specific user
+// @access  Private (Admin only)
+router.post('/nfc/register/initiate/admin/:userId', protect, authorize('admin'), initiateNfcRegistration);
+
+// @route   POST /api/v1/devices/nfc/register/scan
+// @desc    Device sends scanned NFC card details to complete registration
+// @access  Private (requires device token)
+router.post('/nfc/register/scan', authenticateDevice, handleDeviceNfcScan);
 
 // ============================================================================
 // Face Management Routes
