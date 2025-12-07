@@ -2421,14 +2421,19 @@ const updateDoorLockState = async (req, res) => {
       stateData.trigger = finalTrigger;
     }
 
-    // Preserve face detection metadata if it exists
+    // Handle face detection metadata based on trigger
     if (existingTrigger === 'face_detect' && !triggerValue) {
+      // Preserve face detection metadata if no new trigger provided
       if (existingState.triggered_by_face) {
         stateData.triggered_by_face = existingState.triggered_by_face;
       }
       if (existingState.face_detection_event_id) {
         stateData.face_detection_event_id = existingState.face_detection_event_id;
       }
+    } else if (triggerValue && triggerValue !== 'face_detect') {
+      // Clear face detection metadata if trigger changed to manual or frontend
+      stateData.triggered_by_face = admin.firestore.FieldValue.delete();
+      stateData.face_detection_event_id = admin.firestore.FieldValue.delete();
     }
 
     await deviceRef
@@ -2515,6 +2520,7 @@ const lockDoor = async (req, res) => {
     console.log(`[DoorLock] ${device_id} - Lock command queued (ID: ${result.commandId})`);
 
     // Update state immediately with frontend trigger
+    // Clear face detection metadata when locked from frontend
     await db.collection('devices')
       .doc(device_id)
       .collection('live_status')
@@ -2523,6 +2529,8 @@ const lockDoor = async (req, res) => {
         lock_state: 'locked',
         last_action: 'lock',
         trigger: 'frontend',
+        triggered_by_face: admin.firestore.FieldValue.delete(),
+        face_detection_event_id: admin.firestore.FieldValue.delete(),
         last_action_time: admin.firestore.FieldValue.serverTimestamp(),
         updated_at: admin.firestore.FieldValue.serverTimestamp()
       }, { merge: true });
@@ -2583,6 +2591,7 @@ const unlockDoor = async (req, res) => {
     console.log(`[DoorLock] ${device_id} - Unlock command queued (ID: ${result.commandId})${duration ? ` with duration: ${duration}s` : ''}`);
 
     // Update state immediately with frontend trigger
+    // Clear face detection metadata when unlocked from frontend
     await db.collection('devices')
       .doc(device_id)
       .collection('live_status')
@@ -2591,6 +2600,8 @@ const unlockDoor = async (req, res) => {
         lock_state: 'unlocked',
         last_action: 'unlock',
         trigger: 'frontend',
+        triggered_by_face: admin.firestore.FieldValue.delete(),
+        face_detection_event_id: admin.firestore.FieldValue.delete(),
         last_action_time: admin.firestore.FieldValue.serverTimestamp(),
         updated_at: admin.firestore.FieldValue.serverTimestamp()
       }, { merge: true });
