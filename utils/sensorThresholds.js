@@ -5,7 +5,7 @@ const { sendAlertNotification } = require('./emailNotifications');
 // Thresholds configuration
 const THRESHOLDS = {
   TEMPERATURE: {
-    MAX: 20, // Celsius
+    MAX: 35, // Celsius
     WARN: 'temperature',
   },
   HUMIDITY: {
