@@ -1,6 +1,8 @@
 const { getFirestore, admin } = require('../config/firebase');
 const { publishFaceDetection, publishDeviceCommand } = require('../config/mqtt');
 const crypto = require('crypto');
+const { sendAlertNotification } = require('../utils/emailNotifications');
+const { ALERT_LEVELS } = require('../models/Alert');
 
 // ============================================================================
 // In-Memory Cache for Throttling (reduces Firebase writes by 95%)
@@ -876,6 +878,28 @@ const handleFaceDetection = async (req, res) => {
 
     console.log(`[FaceDetection] ${device_id} - Saved to Firebase with ID: ${eventRef.id}`);
 
+    // Send email notification for unknown faces (security alert)
+    if (!faceDetectionEvent.recognized) {
+      console.log(`[FaceDetection] ${device_id} - Unknown face detected, sending email notification`);
+      sendAlertNotification({
+        id: `${device_id}_face_${eventRef.id}`,
+        level: ALERT_LEVELS.WARN,
+        message: `Unknown person detected at ${device_id}`,
+        source: device_id,
+        tags: ['face-detection', 'unknown', 'security'],
+        metadata: {
+          event_id: eventRef.id,
+          image_url: imageUrl,
+          confidence: confidence ? parseFloat(confidence) : null
+        },
+        timestamp: new Date(),
+        created_at: new Date()
+      }).catch(error => {
+        console.error('[FaceDetection] Failed to send email notification:', error);
+        // Non-blocking - event still saved
+      });
+    }
+
     // Publish to MQTT for instant hub notification
     try {
       await publishFaceDetection({
@@ -1005,7 +1029,7 @@ const handleDeviceLog = async (req, res) => {
     }
 
     // Write log to Firebase (in device_logs collection)
-    await deviceRef.collection('device_logs').add(logEntry);
+    const logRef = await deviceRef.collection('device_logs').add(logEntry);
 
     // If it's an error, also update device status
     if (level === 'error') {
@@ -1013,6 +1037,47 @@ const handleDeviceLog = async (req, res) => {
         last_error: message,
         last_error_time: admin.firestore.FieldValue.serverTimestamp()
       }, { merge: true });
+
+      // Send email notification for errors
+      console.log(`[DeviceLog] ${device_id} - Error logged, sending email notification`);
+      sendAlertNotification({
+        id: `${device_id}_log_${logRef.id}`,
+        level: ALERT_LEVELS.ERROR,
+        message: `${device_id}: ${message}`,
+        source: device_id,
+        tags: ['device-log', 'error'],
+        metadata: {
+          log_level: level,
+          data: data,
+          error_message: metadata?.error_message
+        },
+        timestamp: new Date(),
+        created_at: new Date()
+      }).catch(error => {
+        console.error('[DeviceLog] Failed to send email notification:', error);
+        // Non-blocking - log still saved
+      });
+    }
+
+    // Send email notification for warnings too
+    if (level === 'warning') {
+      console.log(`[DeviceLog] ${device_id} - Warning logged, sending email notification`);
+      sendAlertNotification({
+        id: `${device_id}_log_${logRef.id}`,
+        level: ALERT_LEVELS.WARN,
+        message: `${device_id}: ${message}`,
+        source: device_id,
+        tags: ['device-log', 'warning'],
+        metadata: {
+          log_level: level,
+          data: data
+        },
+        timestamp: new Date(),
+        created_at: new Date()
+      }).catch(error => {
+        console.error('[DeviceLog] Failed to send email notification:', error);
+        // Non-blocking - log still saved
+      });
     }
 
     // Respond to device
@@ -1343,6 +1408,30 @@ const acknowledgeCommand = async (req, res) => {
     });
 
     console.log(`[AckCommand] ${device_id} - Command ${command_id} ${success ? 'completed' : 'failed'}`);
+
+    // Send email notification for failed commands
+    if (!success) {
+      const commandData = commandDoc.data();
+      console.log(`[AckCommand] ${device_id} - Command failed, sending email notification`);
+      sendAlertNotification({
+        id: `${device_id}_cmd_${command_id}`,
+        level: ALERT_LEVELS.ERROR,
+        message: `${device_id}: Command '${commandData.action}' failed`,
+        source: device_id,
+        tags: ['command', commandData.action, 'failed'],
+        metadata: {
+          action: commandData.action,
+          status: 'failed',
+          params: commandData.params,
+          error: error
+        },
+        timestamp: new Date(),
+        created_at: new Date()
+      }).catch(err => {
+        console.error('[AckCommand] Failed to send email notification:', err);
+        // Non-blocking
+      });
+    }
 
     res.json({
       status: 'ok',
