@@ -126,6 +126,9 @@ export function GasReadingsCard({ gasReadings, isExpanded = false, onRefresh }: 
                       </div>
                       <div className="sensor-details">
                         <p>ID: {reading.sensor_id}</p>
+                        {reading.gas_level !== undefined && (
+                          <p>GAS LEVEL: {reading.gas_level.toFixed(0)}</p>
+                        )}
                         <p>SAFE: &lt;100 PPM</p>
                         <p>WARNING: 100-150 PPM</p>
                         <p>DANGER: &gt;150 PPM</p>
@@ -164,6 +167,14 @@ export function GasReadingsCard({ gasReadings, isExpanded = false, onRefresh }: 
                             {(reading.history.reduce((sum, h) => sum + h.value, 0) / reading.history.length).toFixed(0)} PPM
                           </span>
                         </div>
+                        {reading.gas_level !== undefined && (
+                          <div className="detail-item">
+                            <span className="detail-label">GAS LEVEL:</span>
+                            <span className="detail-value">
+                              {reading.gas_level.toFixed(0)}
+                            </span>
+                          </div>
+                        )}
                       </div>
                       <h4>GAS LEVELS HISTORY - {reading.location.toUpperCase()} (24H)</h4>
                       <ResponsiveContainer width="100%" height={400}>

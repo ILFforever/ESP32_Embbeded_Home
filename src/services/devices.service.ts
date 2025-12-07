@@ -928,6 +928,7 @@ export interface HistoricalSensorReading {
   humidity: number;
   light_lux?: number;
   gas_level?: number;
+  co_ppm?: number;
   battery_voltage?: number;
   battery_percent?: number;
   averaged?: boolean;
@@ -1175,6 +1176,7 @@ interface SensorCurrentResponse {
     temperature?: number;
     humidity?: number;
     gas_level?: number;
+    co_ppm?: number;
     timestamp?: string;
   };
 }
@@ -1250,9 +1252,9 @@ export async function getGasReadingsForDashboard(): Promise<GasReading[]> {
           continue;
         }
 
-        // Check if device has gas_level data
-        if (currentData.sensors.gas_level === undefined && currentData.sensors.gas_level === null) {
-          console.log(`Device ${device.device_id} has no gas_level data`);
+        // Check if device has co_ppm data
+        if (currentData.sensors.co_ppm === undefined || currentData.sensors.co_ppm === null) {
+          console.log(`Device ${device.device_id} has no co_ppm data`);
           continue;
         }
 
@@ -1261,8 +1263,14 @@ export async function getGasReadingsForDashboard(): Promise<GasReading[]> {
         // Get historical data
         const historyData = await getSensorReadingsHistory(device.device_id, 24);
 
-        // Transform history to SensorReading format
+        // Transform history to SensorReading format for co_ppm
         const history: SensorReading[] = historyData?.readings?.map(reading => ({
+          timestamp: new Date(reading.timestamp._seconds * 1000).toISOString(),
+          value: reading.co_ppm || 0
+        })) || [];
+
+        // Transform history to SensorReading format for gas_level
+        const gas_level_history: SensorReading[] = historyData?.readings?.map(reading => ({
           timestamp: new Date(reading.timestamp._seconds * 1000).toISOString(),
           value: reading.gas_level || 0
         })) || [];
@@ -1271,15 +1279,23 @@ export async function getGasReadingsForDashboard(): Promise<GasReading[]> {
         if (history.length === 0) {
           history.push({
             timestamp: new Date().toISOString(),
+            value: currentData.sensors.co_ppm || 0
+          });
+        }
+
+        // If no gas_level history, use current reading
+        if (gas_level_history.length === 0) {
+          gas_level_history.push({
+            timestamp: new Date().toISOString(),
             value: currentData.sensors.gas_level || 0
           });
         }
 
-        // Calculate status based on gas level
-        const gasLevel = currentData.sensors.gas_level || 0;
+        // Calculate status based on co_ppm level
+        const coPpm = currentData.sensors.co_ppm || 0;
         let status: 'safe' | 'warning' | 'danger' = 'safe';
-        if (gasLevel > 150) status = 'danger';
-        else if (gasLevel > 100) status = 'warning';
+        if (coPpm > 150) status = 'danger';
+        else if (coPpm > 100) status = 'warning';
 
         // Extract sensor number from device_id (e.g., ss_001 → 1, ss_002 → 2)
         const match = device.device_id.match(/ss_(\d+)/);
@@ -1289,9 +1305,11 @@ export async function getGasReadingsForDashboard(): Promise<GasReading[]> {
         gasReadings.push({
           sensor_id: device.device_id,
           location: locationName,
-          ppm: gasLevel,
+          ppm: coPpm,
+          gas_level: currentData.sensors.gas_level || 0,
           status,
-          history
+          history,
+          gas_level_history
         });
 
       } catch (error) {

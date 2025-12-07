@@ -26,6 +26,7 @@ export interface Device {
     temperature?: number;
     humidity?: number;
     gas_level?: number;
+    co_ppm?: number;
     timestamp?: any;
   } | null;
 }
@@ -90,8 +91,10 @@ export interface GasReading {
   sensor_id: string;
   location: string;
   ppm: number;
+  gas_level?: number;
   status: 'safe' | 'warning' | 'danger';
   history: SensorReading[];
+  gas_level_history?: SensorReading[];
 }
 
 export interface DoorWindow {
