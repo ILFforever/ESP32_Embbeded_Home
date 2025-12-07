@@ -78,6 +78,8 @@ export default function DoorbellControlPage() {
   const [streamError, setStreamError] = useState<string | null>(null);
   const [audioMuted, setAudioMuted] = useState(false);
   const [streamConnecting, setStreamConnecting] = useState(false);
+  const [audioContext, setAudioContext] = useState<AudioContext | null>(null);
+  const [audioDebugInfo, setAudioDebugInfo] = useState<string>("Initializing...");
 
   // Load saved device_id from localStorage on mount
   useEffect(() => {
@@ -87,6 +89,169 @@ export default function DoorbellControlPage() {
       setCustomDeviceId(saved);
     }
   }, []);
+
+  // Handle raw PCM audio streaming
+  useEffect(() => {
+    let abortController: AbortController | null = null;
+    let audioQueue: AudioBufferSourceNode[] = [];
+    let nextStartTime = 0;
+
+    const streamAudio = async () => {
+      if (!micActive || audioMuted || !audioContext) {
+        return;
+      }
+
+      abortController = new AbortController();
+
+      // Retry logic - wait for stream to become available
+      const MAX_RETRIES = 20;
+      const RETRY_DELAY = 1000; // 1 second between retries
+      let retryCount = 0;
+      let response: Response | null = null;
+
+      setAudioDebugInfo("Waiting for audio stream to start...");
+
+      while (retryCount < MAX_RETRIES && !abortController.signal.aborted) {
+        try {
+          console.log(`[Audio] Attempt ${retryCount + 1}/${MAX_RETRIES} - Connecting to stream...`);
+          setAudioDebugInfo(`Connecting... (attempt ${retryCount + 1}/${MAX_RETRIES})`);
+
+          response = await fetch(
+            "https://embedded-smarthome.fly.dev/api/v1/stream/audio/db_001",
+            { signal: abortController.signal }
+          );
+
+          if (response.ok) {
+            console.log(`[Audio] ✓ Stream connected on attempt ${retryCount + 1}`);
+            break;
+          }
+
+          console.log(`[Audio] Stream not ready (status: ${response.status}), retrying...`);
+          retryCount++;
+
+          if (retryCount < MAX_RETRIES) {
+            await new Promise(resolve => setTimeout(resolve, RETRY_DELAY));
+          }
+        } catch (error: any) {
+          if (error.name === 'AbortError') {
+            console.log("[Audio] Connection aborted");
+            return;
+          }
+          console.log(`[Audio] Connection error on attempt ${retryCount + 1}:`, error.message);
+          retryCount++;
+
+          if (retryCount < MAX_RETRIES) {
+            await new Promise(resolve => setTimeout(resolve, RETRY_DELAY));
+          }
+        }
+      }
+
+      if (!response || !response.ok) {
+        const errorMsg = `Failed to connect after ${MAX_RETRIES} attempts. Please ensure mic is streaming.`;
+        console.error("[Audio]", errorMsg);
+        setAudioDebugInfo(errorMsg);
+        setStreamError(errorMsg);
+        return;
+      }
+
+      try {
+        setAudioDebugInfo("Connected! Processing audio...");
+        const reader = response.body?.getReader();
+
+        if (!reader) {
+          throw new Error("Failed to get reader from response");
+        }
+
+        const CHUNK_SIZE = 1024; // Process 1024 samples (2048 bytes) at a time
+        let buffer = new Uint8Array(0);
+
+        while (true) {
+          const { done, value } = await reader.read();
+
+          if (done) {
+            console.log("[Audio] Stream ended");
+            setAudioDebugInfo("Stream ended");
+            break;
+          }
+
+          // Append new data to buffer
+          const newBuffer = new Uint8Array(buffer.length + value.length);
+          newBuffer.set(buffer);
+          newBuffer.set(value, buffer.length);
+          buffer = newBuffer;
+
+          // Process complete chunks
+          while (buffer.length >= CHUNK_SIZE * 2) {
+            // Extract chunk (2 bytes per sample for 16-bit audio)
+            const chunkBytes = buffer.slice(0, CHUNK_SIZE * 2);
+            buffer = buffer.slice(CHUNK_SIZE * 2);
+
+            // Convert bytes to 16-bit PCM samples
+            const samples = new Int16Array(chunkBytes.buffer);
+
+            // Create audio buffer
+            const audioBuffer = audioContext.createBuffer(1, samples.length, 16000);
+            const channelData = audioBuffer.getChannelData(0);
+
+            // Convert Int16 to Float32 (normalize to -1.0 to 1.0)
+            for (let i = 0; i < samples.length; i++) {
+              channelData[i] = samples[i] / 32768.0;
+            }
+
+            // Create and schedule audio source
+            const source = audioContext.createBufferSource();
+            source.buffer = audioBuffer;
+            source.connect(audioContext.destination);
+
+            // Schedule playback
+            const currentTime = audioContext.currentTime;
+            if (nextStartTime < currentTime) {
+              nextStartTime = currentTime;
+            }
+            source.start(nextStartTime);
+            nextStartTime += audioBuffer.duration;
+
+            audioQueue.push(source);
+
+            // Clean up old sources
+            if (audioQueue.length > 10) {
+              const oldSource = audioQueue.shift();
+              oldSource?.disconnect();
+            }
+
+            setAudioDebugInfo(`Playing audio (${audioQueue.length} buffers queued)`);
+          }
+        }
+      } catch (error: any) {
+        if (error.name !== 'AbortError') {
+          console.error("[Audio] Stream error:", error);
+          setAudioDebugInfo("Error: " + error.message);
+          setStreamError("Audio stream error: " + error.message);
+        }
+      }
+    };
+
+    if (micActive && !audioMuted && audioContext) {
+      streamAudio();
+    }
+
+    // Cleanup function
+    return () => {
+      if (abortController) {
+        abortController.abort();
+      }
+      audioQueue.forEach(source => {
+        try {
+          source.stop();
+          source.disconnect();
+        } catch (e) {
+          // Ignore errors when stopping
+        }
+      });
+      audioQueue = [];
+      nextStartTime = 0;
+    };
+  }, [micActive, audioMuted, audioContext]);
 
   // Get the effective device_id (custom or from backend)
   const getEffectiveDeviceId = () => {
@@ -286,12 +451,20 @@ export default function DoorbellControlPage() {
 
     try {
       if (cameraActive) {
-        // Stopping camera - simple case
+        // Stopping camera - also deactivate mic and clean up audio
         await sendCommand(deviceId, 'camera_stop');
         setCameraActive(false);
+        setMicActive(false);
+
+        // Clean up audio context
+        if (audioContext) {
+          audioContext.close();
+          setAudioContext(null);
+        }
+        setAudioDebugInfo("Audio stopped");
       } else {
         // Starting camera - need to wait for stream to be ready
-        console.log("[Camera] Sending camera_start command...");
+        console.log("[Camera] Sending camera_start command (backend will also start mic)...");
         await sendCommand(deviceId, 'camera_start');
 
         // Show connecting state
@@ -306,6 +479,19 @@ export default function DoorbellControlPage() {
         if (isReady) {
           console.log("[Camera] ✓ Stream endpoint is ready, activating camera display");
           setCameraActive(true);
+
+          // Activate mic (backend already started it) and initialize audio context
+          setMicActive(true);
+          console.log("[Mic] ✓ Mic activated (via camera_start), audio will start streaming");
+          setAudioDebugInfo("Starting audio stream...");
+
+          // Initialize audio context
+          if (!audioContext) {
+            const ctx = new (window.AudioContext || (window as any).webkitAudioContext)({
+              sampleRate: 16000,
+            });
+            setAudioContext(ctx);
+          }
         } else {
           console.error("[Camera] ✗ Stream did not start in time");
           setStreamError("Camera started but stream is not available yet. Please wait a moment and try again.");
@@ -337,33 +523,23 @@ export default function DoorbellControlPage() {
     }
   };
 
-  // Microphone control handlers
-  const handleMicToggle = async () => {
-    const deviceId = getEffectiveDeviceId();
-    if (!deviceId) return;
+  // Microphone mute/unmute handler (frontend only, no backend command)
+  const handleMicToggle = () => {
+    if (!micActive) {
+      // Mic is not started via camera, can't just mute/unmute
+      console.log("[Mic] Cannot toggle - mic only works when camera stream is active");
+      return;
+    }
 
-    setCommandLoading("mic");
-    setStreamError(null);
+    // Toggle mute state
+    setAudioMuted(!audioMuted);
 
-    try {
-      const action = micActive ? 'mic_stop' : 'mic_start';
-      console.log(`[Mic] Sending ${action} command...`);
-      await sendCommand(deviceId, action);
-
-      // Toggle mic state immediately
-      // The audio element will connect and wait for audio data
-      setMicActive(!micActive);
-
-      if (!micActive) {
-        console.log("[Mic] ✓ Mic activated, audio element will connect and wait for stream");
-      } else {
-        console.log("[Mic] ✓ Mic deactivated");
-      }
-    } catch (error) {
-      console.error("Error toggling mic:", error);
-      setStreamError("Failed to toggle microphone. Please try again.");
-    } finally {
-      setCommandLoading(null);
+    if (!audioMuted) {
+      console.log("[Mic] ✓ Audio muted (frontend only)");
+      setAudioDebugInfo("Audio muted");
+    } else {
+      console.log("[Mic] ✓ Audio unmuted (frontend only)");
+      setAudioDebugInfo("Starting audio stream...");
     }
   };
 
@@ -846,10 +1022,10 @@ export default function DoorbellControlPage() {
                         : "START STREAM"}
                   </button>
                   <button
-                    className={`btn-control ${micActive ? "btn-stop" : "btn-start"
+                    className={`btn-control ${audioMuted ? "btn-start" : "btn-stop"
                       }`}
                     onClick={handleMicToggle}
-                    disabled={commandLoading === "mic" || isDeviceOffline()}
+                    disabled={!micActive || isDeviceOffline()}
                     style={{
                       flex: 1,
                       display: "flex",
@@ -862,11 +1038,11 @@ export default function DoorbellControlPage() {
                     }}
                   >
                     <Mic size={18} />
-                    {commandLoading === "mic"
-                      ? "PROCESSING..."
-                      : micActive
-                        ? "MIC OFF"
-                        : "MIC ON"}
+                    {!micActive
+                      ? "MIC (AUTO)"
+                      : audioMuted
+                        ? "UNMUTE"
+                        : "MUTE"}
                   </button>
                 </div>
 
@@ -1028,6 +1204,95 @@ export default function DoorbellControlPage() {
                     >
                       Streaming from device: <span style={{ fontFamily: "monospace", color: "#2196F3" }}>{getEffectiveDeviceId()}</span>
                     </div>
+                  )}
+
+                  {/* Audio Stream Active */}
+                  {getEffectiveDeviceId() && micActive && (
+                    <div
+                      style={{
+                        width: "100%",
+                        padding: "16px",
+                        backgroundColor: "rgba(33, 150, 243, 0.1)",
+                        border: "1px solid rgba(33, 150, 243, 0.3)",
+                        borderRadius: "8px",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        gap: "16px",
+                        marginTop: "16px",
+                      }}
+                    >
+                      <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                        <Mic size={24} color="#2196F3" />
+                        <div>
+                          <div style={{ fontSize: "14px", fontWeight: "600", color: "#2196F3" }}>
+                            Audio Stream Active
+                          </div>
+                          <div style={{ fontSize: "12px", color: "#666" }}>
+                            PCM Audio Stream (16kHz, 16-bit, Mono) - {audioMuted ? "Muted" : "Playing"}
+                          </div>
+                        </div>
+                      </div>
+                      <div style={{
+                        padding: "8px 16px",
+                        fontSize: "13px",
+                        fontWeight: "600",
+                        color: audioMuted ? "#f44336" : "#4caf50",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "6px",
+                      }}>
+                        {audioMuted ? "🔇 MUTED" : "🔊 PLAYING"}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Audio Processor Status */}
+                  {getEffectiveDeviceId() && micActive && !audioMuted && (
+                    <>
+                      <div
+                        style={{
+                          width: "100%",
+                          marginTop: "16px",
+                          padding: "12px",
+                          backgroundColor: "rgba(76, 175, 80, 0.1)",
+                          border: "1px solid rgba(76, 175, 80, 0.3)",
+                          borderRadius: "8px",
+                          fontSize: "12px",
+                          fontFamily: "monospace",
+                          color: "#4caf50",
+                        }}
+                      >
+                        <div style={{ fontWeight: "600", marginBottom: "8px" }}>
+                          🎵 RAW PCM AUDIO PROCESSOR
+                        </div>
+                        <div>
+                          Status: {audioDebugInfo}
+                        </div>
+                        <div>
+                          Stream URL: https://embedded-smarthome.fly.dev/api/v1/stream/audio/db_001
+                        </div>
+                        <div>
+                          Format: PCM s16le, 16kHz, mono
+                        </div>
+                        <div style={{ marginTop: "8px", fontSize: "11px", color: "#666" }}>
+                          Using Web Audio API for raw PCM processing
+                        </div>
+                      </div>
+                      <div
+                        style={{
+                          width: "100%",
+                          marginTop: "8px",
+                          padding: "8px",
+                          backgroundColor: "rgba(33, 150, 243, 0.05)",
+                          borderRadius: "6px",
+                          fontSize: "11px",
+                          color: "#666",
+                        }}
+                      >
+                        💡 Raw PCM audio is being converted to playable format in real-time. Check browser console for detailed logs.
+                      </div>
+                    </>
                   )}
                 </div>
               </div>
@@ -1217,83 +1482,6 @@ export default function DoorbellControlPage() {
                     </div>
                   </div>
                 </div>
-
-                {/* Audio Stream Controls */}
-                {getEffectiveDeviceId() && micActive && (
-                  <div
-                    style={{
-                      width: "100%",
-                      padding: "16px",
-                      backgroundColor: "rgba(33, 150, 243, 0.1)",
-                      border: "1px solid rgba(33, 150, 243, 0.3)",
-                      borderRadius: "8px",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "space-between",
-                      gap: "16px",
-                      marginTop: "16px",
-                    }}
-                  >
-                    <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-                      <Mic size={24} color="#2196F3" />
-                      <div>
-                        <div style={{ fontSize: "14px", fontWeight: "600", color: "#2196F3" }}>
-                          Audio Stream Active
-                        </div>
-                        <div style={{ fontSize: "12px", color: "#666" }}>
-                          PCM Audio Stream (16kHz, 16-bit, Mono)
-                        </div>
-                      </div>
-                    </div>
-                    <button
-                      onClick={() => setAudioMuted(!audioMuted)}
-                      className="btn-control"
-                      style={{
-                        padding: "8px 16px",
-                        fontSize: "13px",
-                        fontWeight: "600",
-                        backgroundColor: audioMuted ? "#f44336" : "#4caf50",
-                        borderColor: audioMuted ? "#f44336" : "#4caf50",
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "6px",
-                      }}
-                    >
-                      {audioMuted ? "🔇 MUTED" : "🔊 UNMUTED"}
-                    </button>
-                  </div>
-                )}
-
-                {/* Audio Element */}
-                {getEffectiveDeviceId() && micActive && !audioMuted && (
-                  <audio
-                    autoPlay
-                    controls
-                    style={{ width: "100%", marginTop: "16px" }}
-                    onCanPlay={() => {
-                      console.log("[Audio] Stream can play - audio data received");
-                      setStreamError(null);
-                    }}
-                    onWaiting={() => {
-                      console.log("[Audio] Waiting for audio data...");
-                    }}
-                    onPlaying={() => {
-                      console.log("[Audio] Audio is now playing");
-                      setStreamError(null);
-                    }}
-                    onError={(e) => {
-                      console.error("[Audio] Stream error:", e);
-                      // Don't show error immediately - audio might still be starting
-                    }}
-                  >
-                    <source
-                      src={`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000"
-                        }/api/v1/stream/audio/${getEffectiveDeviceId()}`}
-                      type="audio/wav"
-                    />
-                    Your browser does not support audio streaming.
-                  </audio>
-                )}
 
                 <div className="control-divider"></div>
 
