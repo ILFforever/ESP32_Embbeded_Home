@@ -12,8 +12,10 @@ import {
   Settings,
   Database,
   ArrowLeft,
+  UserPlus,
 } from "lucide-react";
 import ProtectedRoute from "@/components/auth/ProtectedRoute";
+import { useAuth } from "@/context/AuthContext";
 import {
   getAllDevices,
   getDeviceHistory,
@@ -39,6 +41,7 @@ interface ActivityEvent {
 
 export default function DoorbellControlPage() {
   const router = useRouter();
+  const { user } = useAuth();
   const [doorbellDevice, setDoorbellDevice] = useState<Device | null>(null);
   const [loading, setLoading] = useState(true);
   const [commandLoading, setCommandLoading] = useState<string | null>(null);
@@ -73,6 +76,10 @@ export default function DoorbellControlPage() {
   const [showSettings, setShowSettings] = useState(false);
   const [customDeviceId, setCustomDeviceId] = useState("");
   const [savedDeviceId, setSavedDeviceId] = useState<string | null>(null);
+
+  // Add face modal
+  const [showAddFaceModal, setShowAddFaceModal] = useState(false);
+  const [newFaceName, setNewFaceName] = useState("");
 
   // Stream display states
   const [streamError, setStreamError] = useState<string | null>(null);
@@ -687,6 +694,63 @@ export default function DoorbellControlPage() {
     } catch (error) {
       console.error("Error syncing database:", error);
       alert("Failed to sync database.");
+    } finally {
+      setCommandLoading(null);
+    }
+  };
+
+  const handleAddFace = () => {
+    setShowAddFaceModal(true);
+  };
+
+  const handleSubmitAddFace = async () => {
+    const deviceId = getEffectiveDeviceId();
+    if (!deviceId) return;
+
+    if (!newFaceName || !newFaceName.trim()) {
+      alert("Please enter a name for the face.");
+      return;
+    }
+
+    setCommandLoading("add_face");
+    try {
+      const authToken = getCookie("auth_token");
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000"}/api/v1/devices/${deviceId}/face/enroll`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${authToken || ""}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            user_name: newFaceName.trim(),
+          }),
+        }
+      );
+
+      const data = await response.json();
+
+      if (response.ok && data.status === "ok") {
+        console.log(`✓ Face enrollment command queued:`, data);
+        alert(
+          `Face enrollment started for "${newFaceName}"!\n\nCommand ID: ${data.command_id}\n\nPlease position your face in front of the camera.\n\n${data.message}`
+        );
+
+        // Reset form and close modal
+        setNewFaceName("");
+        setShowAddFaceModal(false);
+
+        // Refresh face database info after adding
+        const faceDbInfo = await getFaceDatabaseInfo(deviceId);
+        setFaceDatabaseInfo(faceDbInfo);
+      } else {
+        console.error("Failed to enroll face:", data);
+        alert(`Failed to start face enrollment: ${data.message || "Unknown error"}`);
+      }
+    } catch (error) {
+      console.error("Error adding face:", error);
+      alert("Failed to start face enrollment. Please try again.");
     } finally {
       setCommandLoading(null);
     }
@@ -1540,6 +1604,24 @@ export default function DoorbellControlPage() {
                         ? "SYNCING..."
                         : "SYNC DATABASE"}
                     </button>
+                    {user?.role === "admin" && (
+                      <button
+                        className="btn-control btn-start"
+                        onClick={handleAddFace}
+                        disabled={commandLoading === "add_face"}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "6px",
+                          flex: "1 1 auto",
+                        }}
+                      >
+                        <UserPlus size={16} />
+                        {commandLoading === "add_face"
+                          ? "ADDING..."
+                          : "ADD FACE"}
+                      </button>
+                    )}
                   </div>
 
                   {/* Face Database Info Display */}
@@ -2034,6 +2116,174 @@ export default function DoorbellControlPage() {
                     flex: 1,
                     fontSize: "14px",
                     padding: "10px",
+                    backgroundColor: "#6c757d",
+                    borderColor: "#6c757d",
+                  }}
+                >
+                  CANCEL
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add Face Modal */}
+      {showAddFaceModal && (
+        <div
+          onClick={() => {
+            if (commandLoading !== "add_face") {
+              setShowAddFaceModal(false);
+              setNewFaceName("");
+            }
+          }}
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: "rgba(0, 0, 0, 0.6)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 1000,
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              backgroundColor: "white",
+              borderRadius: "12px",
+              padding: "28px",
+              maxWidth: "450px",
+              width: "90%",
+              boxShadow: "0 8px 24px rgba(0, 0, 0, 0.15)",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "12px",
+                marginBottom: "20px",
+              }}
+            >
+              <UserPlus size={28} color="#4CAF50" />
+              <h3 style={{ margin: 0, color: "#333", fontSize: "20px" }}>
+                Add New Face
+              </h3>
+            </div>
+            <div
+              style={{ display: "flex", flexDirection: "column", gap: "16px" }}
+            >
+              <div>
+                <label
+                  style={{
+                    display: "block",
+                    fontSize: "13px",
+                    fontWeight: "600",
+                    color: "#555",
+                    marginBottom: "6px",
+                  }}
+                >
+                  Name *
+                </label>
+                <input
+                  type="text"
+                  value={newFaceName}
+                  onChange={(e) => setNewFaceName(e.target.value)}
+                  placeholder="Enter person's name"
+                  className="control-input"
+                  disabled={commandLoading === "add_face"}
+                  style={{
+                    width: "100%",
+                    padding: "12px",
+                    fontSize: "14px",
+                    borderRadius: "6px",
+                    border: "2px solid #e0e0e0",
+                    outline: "none",
+                    transition: "border-color 0.2s ease",
+                  }}
+                  onFocus={(e) => {
+                    e.target.style.borderColor = "#4CAF50";
+                  }}
+                  onBlur={(e) => {
+                    e.target.style.borderColor = "#e0e0e0";
+                  }}
+                />
+              </div>
+              <div
+                style={{
+                  backgroundColor: "rgba(33, 150, 243, 0.1)",
+                  padding: "12px",
+                  borderRadius: "6px",
+                  border: "1px solid rgba(33, 150, 243, 0.3)",
+                  fontSize: "12px",
+                  color: "#555",
+                  lineHeight: "1.5",
+                }}
+              >
+                <strong style={{ color: "#2196F3" }}>Instructions:</strong>
+                <br />
+                After clicking "Start Enrollment", position the person's face
+                in front of the doorbell camera. The device will capture and save the face data.
+              </div>
+              <div
+                style={{
+                  display: "flex",
+                  gap: "10px",
+                  marginTop: "8px",
+                }}
+              >
+                <button
+                  className="btn-control btn-start"
+                  onClick={handleSubmitAddFace}
+                  disabled={commandLoading === "add_face"}
+                  style={{
+                    flex: 1,
+                    fontSize: "14px",
+                    padding: "12px",
+                    fontWeight: "600",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: "8px",
+                  }}
+                >
+                  {commandLoading === "add_face" ? (
+                    <>
+                      <div
+                        style={{
+                          width: "16px",
+                          height: "16px",
+                          border: "2px solid rgba(255, 255, 255, 0.3)",
+                          borderTopColor: "#fff",
+                          borderRadius: "50%",
+                          animation: "spin 1s linear infinite",
+                        }}
+                      />
+                      PROCESSING...
+                    </>
+                  ) : (
+                    <>
+                      <UserPlus size={16} />
+                      START ENROLLMENT
+                    </>
+                  )}
+                </button>
+                <button
+                  className="btn-control"
+                  onClick={() => {
+                    setShowAddFaceModal(false);
+                    setNewFaceName("");
+                  }}
+                  disabled={commandLoading === "add_face"}
+                  style={{
+                    flex: 1,
+                    fontSize: "14px",
+                    padding: "12px",
+                    fontWeight: "600",
                     backgroundColor: "#6c757d",
                     borderColor: "#6c757d",
                   }}
