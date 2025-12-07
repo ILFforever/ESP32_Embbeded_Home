@@ -31,10 +31,7 @@ I2SMicrophone::~I2SMicrophone()
 
 esp_err_t I2SMicrophone::init()
 {
-    ESP_LOGI(TAG, "Initializing I2S PDM microphone...");
-    ESP_LOGI(TAG, "  Sample rate: %lu Hz", m_sample_rate);
-    ESP_LOGI(TAG, "  CLK GPIO: %d", m_clk_gpio);
-    ESP_LOGI(TAG, "  DATA GPIO: %d", m_data_gpio);
+
 
     // Create I2S RX channel with smaller buffers for lower latency
     i2s_chan_config_t chan_cfg = I2S_CHANNEL_DEFAULT_CONFIG(I2S_NUM_0, I2S_ROLE_MASTER);
@@ -47,10 +44,16 @@ esp_err_t I2SMicrophone::init()
         return ret;
     }
 
-    // Configure PDM RX mode
+    // Configure PDM RX mode - match Arduino I2S.h library defaults
+    i2s_pdm_rx_slot_config_t slot_cfg = I2S_PDM_RX_SLOT_DEFAULT_CONFIG(I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_MONO);
+
+    // Use 8x downsampling (default) instead of 16x
+    i2s_pdm_rx_clk_config_t clk_cfg = I2S_PDM_RX_CLK_DEFAULT_CONFIG(m_sample_rate);
+    // clk_cfg.dn_sample_mode defaults to I2S_PDM_DSR_8S - don't override it
+
     i2s_pdm_rx_config_t pdm_rx_cfg = {
-        .clk_cfg = I2S_PDM_RX_CLK_DEFAULT_CONFIG(m_sample_rate),
-        .slot_cfg = I2S_PDM_RX_SLOT_DEFAULT_CONFIG(I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_MONO),
+        .clk_cfg = clk_cfg,
+        .slot_cfg = slot_cfg,
         .gpio_cfg = {
             .clk = static_cast<gpio_num_t>(m_clk_gpio),
             .din = static_cast<gpio_num_t>(m_data_gpio),
@@ -68,7 +71,7 @@ esp_err_t I2SMicrophone::init()
         return ret;
     }
 
-    ESP_LOGI(TAG, "I2S PDM microphone initialized successfully");
+
     return ESP_OK;
 }
 
@@ -92,7 +95,7 @@ bool I2SMicrophone::start()
     }
 
     m_is_running = true;
-    ESP_LOGI(TAG, "Microphone started - streaming audio");
+
     return true;
 }
 
@@ -102,15 +105,7 @@ void I2SMicrophone::stop()
         return;
     }
 
-    ESP_LOGI(TAG, "Stopping microphone...");
-    m_is_running = false;
 
-    // Disable I2S channel
-    if (m_rx_chan) {
-        i2s_channel_disable(m_rx_chan);
-    }
-
-    ESP_LOGI(TAG, "Microphone stopped");
 }
 
 void I2SMicrophone::calculate_audio_levels(const int16_t* samples, size_t count)
@@ -119,27 +114,59 @@ void I2SMicrophone::calculate_audio_levels(const int16_t* samples, size_t count)
         return;
     }
 
-    uint64_t sum_squares = 0;
-    int16_t peak = 0;
+    // Filter invalid samples (matches working Arduino code)
+    static const size_t MAX_VALID = 1024;
+    int16_t valid_samples[MAX_VALID];
+    size_t valid_count = 0;
 
-    for (size_t i = 0; i < count; i++) {
+    for (size_t i = 0; i < count && valid_count < MAX_VALID; i++) {
         int16_t sample = samples[i];
-
-        // Calculate squared value for RMS
-        int32_t squared = static_cast<int32_t>(sample) * sample;
-        sum_squares += squared;
-
-        // Track peak
-        int16_t abs_sample = abs(sample);
-        if (abs_sample > peak) {
-            peak = abs_sample;
+        // Filter out invalid samples (0, -1, 1) - matches Arduino code
+        if (sample != 0 && sample != -1 && sample != 1) {
+            valid_samples[valid_count++] = sample;
         }
     }
 
-    // Calculate RMS (Root Mean Square)
-    uint32_t mean_square = sum_squares / count;
-    m_last_rms = static_cast<uint32_t>(sqrt(mean_square));
-    m_last_peak = peak;
+    if (valid_count < 10) {
+        // Not enough valid samples
+        m_last_rms = 0;
+        m_last_peak = 0;
+        m_dc_offset = 0;
+        return;
+    }
+
+    // Calculate DC offset (mean) for THIS buffer - matches Arduino code
+    int64_t sum = 0;
+    for (size_t i = 0; i < valid_count; i++) {
+        sum += valid_samples[i];
+    }
+    int32_t mean = sum / valid_count;
+
+    // Calculate RMS and peak with DC offset removed (AC-coupled) - matches Arduino code
+    int64_t sum_squares = 0;
+    int16_t maxVal = -32768;
+    int16_t minVal = 32767;
+
+    for (size_t i = 0; i < valid_count; i++) {
+        // Remove DC offset to get AC component
+        int32_t ac_sample = valid_samples[i] - mean;
+
+        // Calculate squared value for RMS (AC component only)
+        sum_squares += ac_sample * ac_sample;
+
+        // Track original min/max
+        if (valid_samples[i] > maxVal) maxVal = valid_samples[i];
+        if (valid_samples[i] < minVal) minVal = valid_samples[i];
+    }
+
+    // Calculate RMS (AC component only)
+    m_last_rms = static_cast<uint32_t>(sqrt(sum_squares / valid_count));
+
+    // Peak-to-peak amplitude
+    m_last_peak = maxVal - minVal;
+
+    // Store DC offset for monitoring
+    m_dc_offset = mean;
 }
 
 esp_err_t I2SMicrophone::read_audio(int16_t* buffer, size_t buffer_size, size_t* bytes_read, uint32_t timeout_ms)
@@ -159,36 +186,24 @@ esp_err_t I2SMicrophone::read_audio(int16_t* buffer, size_t buffer_size, size_t*
     if (ret == ESP_OK && *bytes_read > 0) {
         size_t samples_read = *bytes_read / sizeof(int16_t);
 
-        // Calculate average DC offset from this buffer (simple moving average)
-        int32_t sum = 0;
-        for (size_t i = 0; i < samples_read; i++) {
-            sum += buffer[i];
-        }
-        int32_t buffer_avg = sum / samples_read;
+        // Calculate audio levels on RAW samples (calculate_audio_levels handles DC offset internally)
+        calculate_audio_levels(buffer, samples_read);
 
-        // Update DC offset with exponential moving average (alpha = 0.1)
-        m_dc_offset = (m_dc_offset * 9 + buffer_avg) / 10;
+        // Optional: Apply software gain if needed (for output/streaming, not for level calculation)
+        if (m_gain != 1.0f) {
+            for (size_t i = 0; i < samples_read; i++) {
+                int32_t sample = static_cast<int32_t>(buffer[i] * m_gain);
 
-        // Remove DC offset and apply gain
-        for (size_t i = 0; i < samples_read; i++) {
-            // Remove DC offset
-            int32_t sample = buffer[i] - m_dc_offset;
-
-            // Apply gain
-            sample = static_cast<int32_t>(sample * m_gain);
-
-            // Clip to prevent overflow
-            if (sample > 32767) {
-                buffer[i] = 32767;
-            } else if (sample < -32768) {
-                buffer[i] = -32768;
-            } else {
-                buffer[i] = static_cast<int16_t>(sample);
+                // Clip to prevent overflow
+                if (sample > 32767) {
+                    buffer[i] = 32767;
+                } else if (sample < -32768) {
+                    buffer[i] = -32768;
+                } else {
+                    buffer[i] = static_cast<int16_t>(sample);
+                }
             }
         }
-
-        // Update audio levels for status monitoring (after DC removal and gain)
-        calculate_audio_levels(buffer, samples_read);
     }
 
     return ret;
@@ -204,17 +219,6 @@ void I2SMicrophone::set_gain(float gain)
 
     m_gain = gain;
     ESP_LOGI(TAG, "Gain set to %.1fx", m_gain);
-}
-
-void I2SMicrophone::print_audio_stats()
-{
-    // Kept for debugging purposes (can be called manually)
-    float rms_percent = (m_last_rms / 32767.0f) * 100.0f;
-    float peak_percent = (m_last_peak / 32767.0f) * 100.0f;
-
-    ESP_LOGI(TAG, "Audio: RMS=%lu (%.1f%%) Peak=%lu (%.1f%%) Gain=%.1fx",
-             m_last_rms, rms_percent,
-             m_last_peak, peak_percent, m_gain);
 }
 
 } // namespace audio

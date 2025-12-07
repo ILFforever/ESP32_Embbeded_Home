@@ -8,9 +8,11 @@
 #include "network/http_server.h"
 #include "uart/uart_comm.hpp"
 #include "recognition/face_db_reader.hpp"
-#include "audio/i2s_microphone.hpp"
+// Use Arduino-based I2S microphone for better compatibility
+#include "audio/i2s_microphone_arduino.hpp"
 #include "backend/backend_stream.hpp"
 #include <cstdio>
+#include <cstring>
 #include <sys/stat.h>
 #include "spi/slave_spi.hpp"
 #include "jpeg/JpegEncoder.hpp"
@@ -49,11 +51,17 @@ who::uart::UartComm *g_uart = nullptr;
 static who::app::XiaoRecognitionAppTerm *g_recognition_app = nullptr;
 static who::frame_cap::WhoFrameCap *g_frame_cap = nullptr;
 static FaceDbReader *g_face_db_reader = nullptr;
-static I2SMicrophone *g_microphone = nullptr;
+static I2SMicrophoneArduino *g_microphone = nullptr;
 static bool g_camera_running = false;
 static TaskHandle_t g_spi_sender_task_handle = nullptr;
 static TaskHandle_t g_audio_streamer_task_handle = nullptr;
 static uint16_t g_frame_id = 0;
+
+// Pending name assignment for recognize-and-name workflow
+static char *g_pending_recognition_name = nullptr;
+
+// Pending name assignment for enroll-and-name workflow
+static char *g_pending_enrollment_name = nullptr;
 
 // ============================================================
 // Main Entry Point
@@ -356,8 +364,7 @@ void create_uart_commands()
     // Face Management Commands
     // ============================================================
 
-    // Enroll face with optional name (auto-renames after enrollment if name provided)
-    // Enroll face (native ESP-WHO - no name support)
+    // Enroll face (native ESP-WHO - no name support, just enrolls without naming)
     g_uart->register_command("enroll_face", [](const char *cmd, cJSON *params)
                              {
         if (g_button_handler) {
@@ -366,6 +373,44 @@ void create_uart_commands()
         } else {
             g_uart->send_status("error", "Button handler not available");
         } });
+
+    // Enroll and name face (enrolls new face and applies the provided name to it)
+    // Usage: {"cmd": "enroll_and_name", "params": {"name": "John"}}
+    g_uart->register_command("enroll_and_name", [](const char *cmd, cJSON *params)
+                             {
+        if (!g_button_handler || !g_recognition_app || !g_face_db_reader) {
+            g_uart->send_status("error", "System not fully initialized");
+            return;
+        }
+
+        if (!params) {
+            g_uart->send_status("error", "Missing parameters");
+            return;
+        }
+
+        cJSON* name_obj = cJSON_GetObjectItem(params, "name");
+        if (!cJSON_IsString(name_obj)) {
+            g_uart->send_status("error", "Missing or invalid 'name' parameter");
+            return;
+        }
+
+        const char* name = name_obj->valuestring;
+
+        // Store the pending enrollment name in the global variable
+        if (g_pending_enrollment_name) {
+            free(g_pending_enrollment_name);
+        }
+        g_pending_enrollment_name = strdup(name);
+
+        // Set the pending name in the recognition app (will be used in enrollment callback)
+        g_recognition_app->set_pending_recognition_name(g_pending_enrollment_name);
+
+        // Trigger enrollment
+        g_button_handler->trigger_enroll();
+
+        char msg[128];
+        snprintf(msg, sizeof(msg), "Enrollment mode activated. Will name new face as '%s'", name);
+        g_uart->send_status("ok", msg); });
 
     // Recognize face (one-shot recognition)
     g_uart->register_command("recognize_face", [](const char *cmd, cJSON *params)
@@ -377,20 +422,123 @@ void create_uart_commands()
             g_uart->send_status("error", "Button handler not available");
         } });
 
+    // Recognize and name face (recognizes first person and applies the provided name)
+    // Usage: {"cmd": "recognize_and_name", "params": {"name": "John"}}
+    g_uart->register_command("recognize_and_name", [](const char *cmd, cJSON *params)
+                             {
+        ESP_LOGI(TAG, "=== recognize_and_name command received ===");
+
+        if (!g_button_handler || !g_recognition_app || !g_face_db_reader) {
+            ESP_LOGE(TAG, "System not initialized: button=%p, app=%p, db=%p",
+                     g_button_handler, g_recognition_app, g_face_db_reader);
+            g_uart->send_status("error", "System not fully initialized");
+            return;
+        }
+
+        if (!params) {
+            ESP_LOGE(TAG, "Missing parameters in recognize_and_name");
+            g_uart->send_status("error", "Missing parameters");
+            return;
+        }
+
+        cJSON* name_obj = cJSON_GetObjectItem(params, "name");
+        if (!cJSON_IsString(name_obj)) {
+            ESP_LOGE(TAG, "Invalid or missing 'name' parameter");
+            g_uart->send_status("error", "Missing or invalid 'name' parameter");
+            return;
+        }
+
+        const char* name = name_obj->valuestring;
+        ESP_LOGI(TAG, "Name to assign: '%s'", name);
+
+        // Store the pending name in the global variable
+        if (g_pending_recognition_name) {
+            ESP_LOGW(TAG, "Freeing previous pending name: '%s'", g_pending_recognition_name);
+            free(g_pending_recognition_name);
+        }
+        g_pending_recognition_name = strdup(name);
+        ESP_LOGI(TAG, "Global pending name set to: '%s'", g_pending_recognition_name);
+
+        // Set the pending name in the recognition app
+        g_recognition_app->set_pending_recognition_name(g_pending_recognition_name);
+        ESP_LOGI(TAG, "Pending name passed to recognition app");
+
+        // Verify it was set
+        const char* verify = g_recognition_app->get_pending_recognition_name();
+        ESP_LOGI(TAG, "Verification - app pending name: '%s'", verify ? verify : "(null)");
+
+        // Trigger recognition
+        g_button_handler->trigger_recognize();
+        ESP_LOGI(TAG, "Recognition triggered, waiting for face...");
+
+        char msg[128];
+        snprintf(msg, sizeof(msg), "Recognition triggered. Will name recognized face as '%s'", name);
+        g_uart->send_status("ok", msg);
+        ESP_LOGI(TAG, "=== recognize_and_name setup complete ==="); });
+
     // Delete last enrolled face (native ESP-WHO only supports delete_last)
+    // Usage: {"cmd": "delete_last"}
     g_uart->register_command("delete_last", [](const char *cmd, cJSON *params)
                              {
-        if (g_button_handler && g_face_db_reader) {
-            // Delete the face from ESP-WHO database
-            g_button_handler->trigger_delete();
+        ESP_LOGI(TAG, "=== delete_last command received ===");
 
-            // Also delete the name mapping for the deleted face
-            g_face_db_reader->delete_last_name();
+        if (!g_button_handler || !g_face_db_reader || !g_recognition_app)
+        {
+            ESP_LOGE(TAG, "System not initialized for delete operation");
+            g_uart->send_status("error", "System not fully initialized");
+            return;
+        }
 
-            g_uart->send_status("ok", "Deleted last enrolled face and its name");
-        } else {
-            g_uart->send_status("error", "Button handler not available");
-        } });
+        bool was_recognition_active = g_button_handler->is_ready();
+
+        // Ensure recognition system is active before attempting to delete.
+        if (!was_recognition_active)
+        {
+            ESP_LOGI(TAG, "Recognition task not active, restarting it for deletion...");
+            if (!g_recognition_app->get_recognition()->restart())
+            {
+                ESP_LOGE(TAG, "Failed to restart recognition system for deletion.");
+                g_uart->send_status("error", "Failed to start recognition for deletion");
+                return;
+            }
+            // Wait for the recognition task to initialize fully.
+            vTaskDelay(pdMS_TO_TICKS(500));
+            ESP_LOGI(TAG, "Recognition system restarted.");
+        }
+
+        ESP_LOGI(TAG, "Triggering deletion of last enrolled face...");
+
+        // This sends an event to the recognition task to delete the last face.
+        g_button_handler->trigger_delete();
+
+        // Deletion in ESP-WHO is asynchronous. We need to wait for it to complete
+        // before deleting our corresponding name mapping, otherwise the wrong ID may be deleted.
+        ESP_LOGI(TAG, "Waiting for ESP-WHO deletion to process...");
+        vTaskDelay(pdMS_TO_TICKS(200));
+
+        // Now, delete the corresponding name mapping from our separate database.
+        esp_err_t ret = g_face_db_reader->delete_last_name();
+        if (ret == ESP_OK)
+        {
+            ESP_LOGI(TAG, "Name mapping deleted successfully.");
+            g_uart->send_status("ok", "Deleted last enrolled face and its name.");
+        }
+        else
+        {
+            // This can happen if no name was ever assigned to the deleted face.
+            ESP_LOGW(TAG, "Failed to delete name mapping (it may not have existed).");
+            g_uart->send_status("warning", "Face deleted, but no corresponding name mapping was found to delete.");
+        }
+
+        // If recognition was off before, turn it back off to prevent unwanted recognitions.
+        if (!was_recognition_active)
+        {
+            ESP_LOGI(TAG, "Shutting down recognition system to restore original state...");
+            g_recognition_app->get_recognition()->shutdown();
+            ESP_LOGI(TAG, "Recognition system shut down.");
+        }
+
+        ESP_LOGI(TAG, "Delete operation complete."); });
 
     // Force reset database (delete database file)
     g_uart->register_command("reset_database", [](const char *cmd, cJSON *params)
@@ -530,14 +678,19 @@ void create_uart_commands()
     // ============================================================
 
     // Set name for a face ID
+    // Usage: {"cmd": "set_name", "params": {"id": 1, "name": "John"}}
     g_uart->register_command("set_name", [](const char *cmd, cJSON *params)
                              {
+        ESP_LOGI(TAG, "=== set_name command received ===");
+
         if (!g_face_db_reader) {
+            ESP_LOGE(TAG, "Face database reader not initialized");
             g_uart->send_status("error", "Face database reader not initialized");
             return;
         }
 
         if (!params) {
+            ESP_LOGE(TAG, "Missing parameters in set_name");
             g_uart->send_status("error", "Missing parameters");
             return;
         }
@@ -546,6 +699,7 @@ void create_uart_commands()
         cJSON* name_obj = cJSON_GetObjectItem(params, "name");
 
         if (!cJSON_IsNumber(id_obj)) {
+            ESP_LOGE(TAG, "Missing or invalid 'id' parameter");
             g_uart->send_status("error", "Missing or invalid 'id' parameter");
             return;
         }
@@ -553,13 +707,66 @@ void create_uart_commands()
         int id = id_obj->valueint;
         const char* name = cJSON_IsString(name_obj) ? name_obj->valuestring : nullptr;
 
+        ESP_LOGI(TAG, "Setting name for ID %d to '%s'", id, name ? name : "(removed)");
+
         esp_err_t ret = g_face_db_reader->set_name(id, name);
         if (ret == ESP_OK) {
             char msg[128];
             snprintf(msg, sizeof(msg), "Set name for ID %d: %s", id, name ? name : "(removed)");
+            ESP_LOGI(TAG, "Success: %s", msg);
             g_uart->send_status("ok", msg);
         } else {
+            ESP_LOGE(TAG, "Failed to set name for ID %d", id);
             g_uart->send_status("error", "Failed to set name");
+        } });
+
+    // Rename face (alias for set_name - more intuitive name)
+    // Usage: {"cmd": "rename_face", "params": {"id": 1, "name": "NewName"}}
+    g_uart->register_command("rename_face", [](const char *cmd, cJSON *params)
+                             {
+        ESP_LOGI(TAG, "=== rename_face command received ===");
+
+        if (!g_face_db_reader) {
+            ESP_LOGE(TAG, "Face database reader not initialized");
+            g_uart->send_status("error", "Face database reader not initialized");
+            return;
+        }
+
+        if (!params) {
+            ESP_LOGE(TAG, "Missing parameters in rename_face");
+            g_uart->send_status("error", "Missing parameters");
+            return;
+        }
+
+        cJSON* id_obj = cJSON_GetObjectItem(params, "id");
+        cJSON* name_obj = cJSON_GetObjectItem(params, "name");
+
+        if (!cJSON_IsNumber(id_obj)) {
+            ESP_LOGE(TAG, "Missing or invalid 'id' parameter");
+            g_uart->send_status("error", "Missing or invalid 'id' parameter");
+            return;
+        }
+
+        if (!cJSON_IsString(name_obj)) {
+            ESP_LOGE(TAG, "Missing or invalid 'name' parameter");
+            g_uart->send_status("error", "Missing or invalid 'name' parameter");
+            return;
+        }
+
+        int id = id_obj->valueint;
+        const char* name = name_obj->valuestring;
+
+        ESP_LOGI(TAG, "Renaming face ID %d to '%s'", id, name);
+
+        esp_err_t ret = g_face_db_reader->set_name(id, name);
+        if (ret == ESP_OK) {
+            char msg[128];
+            snprintf(msg, sizeof(msg), "Renamed face ID %d to '%s'", id, name);
+            ESP_LOGI(TAG, "Success: %s", msg);
+            g_uart->send_status("ok", msg);
+        } else {
+            ESP_LOGE(TAG, "Failed to rename face ID %d", id);
+            g_uart->send_status("error", "Failed to rename face");
         } });
 
     // Get name for a face ID
@@ -587,21 +794,6 @@ void create_uart_commands()
         char msg[128];
         snprintf(msg, sizeof(msg), "ID %d: %s", id, name.c_str());
         g_uart->send_status("ok", msg); });
-
-    // Enroll face with optional name TODO
-    g_uart->register_command("enroll_with_name", [](const char *cmd, cJSON *params)
-                             {
-        if (!g_button_handler) {
-            g_uart->send_status("error", "Button handler not available");
-            return;
-        }
-
-        // Trigger enrollment
-        g_button_handler->trigger_enroll();
-
-        // If name provided, we'll set it after enrollment completes
-        // For now, user must call set_name separately after enrollment
-        g_uart->send_status("ok", "Enrollment triggered. Use set_name command after enrollment completes."); });
 
     // ============================================================
     // Backend Streaming Control Commands
@@ -738,7 +930,7 @@ void create_uart_commands()
                 // Create microphone if needed
                 if (!g_microphone)
                 {
-                    g_microphone = new I2SMicrophone();
+                    g_microphone = new I2SMicrophoneArduino();
                     esp_err_t ret = g_microphone->init();
                     if (ret != ESP_OK)
                     {
@@ -789,7 +981,7 @@ void create_uart_commands()
     //        {"cmd": "mic_gain", "params": {"id": 6}} -> sets gain to 6x
     //        {"cmd": "mic_gain"} -> returns current gain
     g_uart->register_command("mic_gain", [](const char *cmd, cJSON *params)
-    {
+                             {
         if (!g_microphone)
         {
             g_uart->send_status("error", "Microphone not initialized");
@@ -799,9 +991,8 @@ void create_uart_commands()
         if (!params)
         {
             // Return current gain
-            float current_gain = g_microphone->get_gain();
-            char msg[64];
-            snprintf(msg, sizeof(msg), "Current gain: %.1fx", current_gain);
+            float current_gain = g_microphone->get_gain();            char msg[64];
+        snprintf(msg, sizeof(msg), "Current gain: %.1fx", current_gain);
             g_uart->send_status("mic_gain", msg);
             return;
         }
@@ -832,8 +1023,7 @@ void create_uart_commands()
             return;
         }
 
-        g_uart->send_status("error", "Missing 'id' or 'gain' parameter");
-    });
+        g_uart->send_status("error", "Missing 'id' or 'gain' parameter"); });
 }
 
 // ============================================================
@@ -1097,21 +1287,16 @@ static void audio_streamer_task(void *pvParameters)
                     samples_read * sizeof(int16_t),
                     sequence++);
 
-                // Print audio levels every second
+                // Optional: Print audio levels for debugging (every 5 seconds)
                 uint32_t now = xTaskGetTickCount() * portTICK_PERIOD_MS;
-                if (now - last_debug_time >= 1000)
+                if (now - last_debug_time >= 5000)
                 {
                     uint32_t rms = g_microphone->get_rms_level();
                     uint32_t peak = g_microphone->get_peak_level();
-                    float gain_setting = g_microphone->get_gain();
-                    int32_t dc_offset = g_microphone->get_dc_offset();
                     float rms_percent = (rms / 32767.0f) * 100.0f;
                     float peak_percent = (peak / 32767.0f) * 100.0f;
 
-                    // Sample first few values for debugging
-                    ESP_LOGI(TAG, "🎤 Audio: RMS=%lu (%.1f%%) Peak=%lu (%.1f%%) Gain=%.1fx DC=%ld | Samples[0-2]=%d,%d,%d",
-                             rms, rms_percent, peak, peak_percent, gain_setting, dc_offset,
-                             audio_buffer[0], audio_buffer[1], audio_buffer[2]);
+                    ESP_LOGI(TAG, "Audio: RMS=%.1f%% Peak=%.1f%%", rms_percent, peak_percent);
 
                     last_debug_time = now;
                 }

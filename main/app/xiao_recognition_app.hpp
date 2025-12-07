@@ -28,6 +28,12 @@ public:
     // Set face DB reader for getting names
     void set_face_db_reader(recognition::FaceDbReader* reader) { m_face_db_reader = reader; }
 
+    // Set pending name to apply after next recognition (for recognize-and-name workflow)
+    void set_pending_recognition_name(const char* name);
+
+    // Get pending name (for debugging)
+    const char* get_pending_recognition_name() const { return m_pending_name; }
+
 protected:
     void recognition_result_cb(const std::string &result);
     void detect_result_cb(const detect::WhoDetect::result_t &result);
@@ -37,6 +43,7 @@ private:
     button::WhoRecognitionButton* m_recognition_button;
     uart::UartComm* m_uart;
     recognition::FaceDbReader* m_face_db_reader;
+    const char* m_pending_name;
 };
 
 } // namespace app

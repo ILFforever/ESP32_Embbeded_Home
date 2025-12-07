@@ -334,17 +334,31 @@ std::string FaceDbReader::get_names_file_path()
 
 esp_err_t FaceDbReader::delete_last_name()
 {
-    // Get current face count from database
-    if (!ensure_initialized()) {
-        ESP_LOGW(TAG, "Database not available, cannot determine last face ID");
-        // Still try to delete the highest ID in name table
+    // Don't call ensure_initialized() here because it would reinitialize the recognizer
+    // and read the updated (reduced) face count from disk, which would give us the wrong ID
+    // Instead, use the recognizer if available, or find the highest ID in the name table
+
+    int id_to_delete = 0;
+
+    if (m_recognizer) {
+        // Get current face count from the IN-MEMORY recognizer
+        // This should be called AFTER ESP-WHO delete_last, so face_count is already reduced
+        int face_count = m_recognizer->get_num_feats();
+
+        // After delete_last in ESP-WHO, the face_count will be one less
+        // So we need to delete the name mapping for face_count + 1
+        id_to_delete = face_count + 1;
+        ESP_LOGI(TAG, "Current face count after deletion: %d, deleting name for ID: %d", face_count, id_to_delete);
+    } else {
+        ESP_LOGE(TAG, "Recognizer not available - cannot determine which face ID was deleted");
+        ESP_LOGW(TAG, "Name mapping NOT deleted (we don't know which ID to delete)");
+        return ESP_FAIL;
     }
 
-    int face_count = m_recognizer ? m_recognizer->get_num_feats() : 0;
-
-    // After delete_last in ESP-WHO, the face_count will be one less
-    // So we need to delete the name mapping for face_count + 1
-    int id_to_delete = face_count + 1;
+    if (id_to_delete == 0) {
+        ESP_LOGW(TAG, "No face ID to delete (database may be empty)");
+        return ESP_OK;
+    }
 
     // Check if this ID exists in name table
     auto it = m_name_table.find(id_to_delete);

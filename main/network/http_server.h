@@ -4,7 +4,7 @@
 #include "xiao_standby_control.hpp"
 #include "who_recognition.hpp"
 #include "recognition/face_db_reader.hpp"
-#include "i2s_microphone.hpp"
+#include "i2s_microphone_arduino.hpp"
 #include "who_frame_cap.hpp"
 
 #ifdef __cplusplus
@@ -21,5 +21,5 @@ void stop_webserver_and_wifi(void);
 void set_http_server_refs(who::standby::XiaoStandbyControl *standby,
                           who::recognition::WhoRecognition *recognition,
                           who::recognition::FaceDbReader *face_db_reader,
-                          who::audio::I2SMicrophone *microphone,
+                          who::audio::I2SMicrophoneArduino *microphone,
                           who::frame_cap::WhoFrameCap *frame_cap);

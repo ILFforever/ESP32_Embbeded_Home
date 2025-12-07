@@ -11,7 +11,7 @@ namespace who
     {
 
         XiaoRecognitionAppTerm::XiaoRecognitionAppTerm(frame_cap::WhoFrameCap *frame_cap)
-            : WhoRecognitionAppBase(frame_cap), m_uart(nullptr), m_face_db_reader(nullptr)
+            : WhoRecognitionAppBase(frame_cap), m_uart(nullptr), m_face_db_reader(nullptr), m_pending_name(nullptr)
         {
             init_led();
 
@@ -143,6 +143,99 @@ namespace who
         void XiaoRecognitionAppTerm::recognition_result_cb(const std::string &result)
         {
             ESP_LOGI(TAG, "Recognition: %s", result.c_str());
+            ESP_LOGI(TAG, "Pending name check: m_pending_name=%s", m_pending_name ? m_pending_name : "(null)");
+
+            // Check if this is an enrollment result (format: "id: X enrolled.")
+            if (result.find("enrolled") != std::string::npos)
+            {
+                ESP_LOGI(TAG, "Enrollment callback received: %s", result.c_str());
+
+                // Parse enrolled face ID
+                int enrolled_id = -1;
+                size_t id_pos = result.find("id:");
+                if (id_pos != std::string::npos)
+                {
+                    size_t start_pos = id_pos + 3;
+                    while (start_pos < result.length() && result[start_pos] == ' ')
+                    {
+                        start_pos++;
+                    }
+
+                    size_t end_pos = result.find(" ", start_pos);
+                    std::string id_str = result.substr(start_pos, end_pos - start_pos);
+                    enrolled_id = std::stoi(id_str);
+                }
+
+                // Check if there's a pending enrollment name
+                if (m_pending_name != nullptr && enrolled_id > 0 && m_face_db_reader)
+                {
+                    ESP_LOGI(TAG, "Applying pending name '%s' to enrolled face ID %d", m_pending_name, enrolled_id);
+                    esp_err_t ret = m_face_db_reader->set_name(enrolled_id, m_pending_name);
+                    if (ret == ESP_OK)
+                    {
+                        ESP_LOGI(TAG, "Successfully named enrolled face ID %d as '%s'", enrolled_id, m_pending_name);
+                        if (m_uart)
+                        {
+                            char success_msg[128];
+                            snprintf(success_msg, sizeof(success_msg),
+                                    "Face ID %d enrolled and named '%s'", enrolled_id, m_pending_name);
+                            m_uart->send_status("ok", success_msg);
+
+                            // Send face_enrolled event to trigger camera stop on LCD
+                            cJSON *enroll_data = cJSON_CreateObject();
+                            cJSON_AddNumberToObject(enroll_data, "id", enrolled_id);
+                            cJSON_AddStringToObject(enroll_data, "name", m_pending_name);
+                            cJSON_AddStringToObject(enroll_data, "event", "enrollment_complete");
+
+                            char *json_str = cJSON_PrintUnformatted(enroll_data);
+                            if (json_str)
+                            {
+                                ESP_LOGI(TAG, "Sending enrollment complete event: %s", json_str);
+                                m_uart->send_event("face_enrolled", json_str);
+                                free(json_str);
+                            }
+                            cJSON_Delete(enroll_data);
+                        }
+                    }
+                    else
+                    {
+                        ESP_LOGE(TAG, "Failed to name enrolled face ID %d", enrolled_id);
+                        if (m_uart)
+                        {
+                            m_uart->send_status("error", "Face enrolled but naming failed");
+                        }
+                    }
+                    m_pending_name = nullptr; // Clear pending name
+                }
+                else if (enrolled_id > 0)
+                {
+                    // No pending name, just send enrollment success
+                    ESP_LOGI(TAG, "Face ID %d enrolled (no pending name)", enrolled_id);
+                    if (m_uart)
+                    {
+                        char msg[64];
+                        snprintf(msg, sizeof(msg), "Face ID %d enrolled successfully", enrolled_id);
+                        m_uart->send_status("ok", msg);
+
+                        // Send face_enrolled event to trigger camera stop on LCD
+                        cJSON *enroll_data = cJSON_CreateObject();
+                        cJSON_AddNumberToObject(enroll_data, "id", enrolled_id);
+                        cJSON_AddStringToObject(enroll_data, "name", "Unknown");
+                        cJSON_AddStringToObject(enroll_data, "event", "enrollment_complete");
+
+                        char *json_str = cJSON_PrintUnformatted(enroll_data);
+                        if (json_str)
+                        {
+                            ESP_LOGI(TAG, "Sending enrollment complete event: %s", json_str);
+                            m_uart->send_event("face_enrolled", json_str);
+                            free(json_str);
+                        }
+                        cJSON_Delete(enroll_data);
+                    }
+                }
+
+                return; // Don't process as recognition result
+            }
 
             // Send recognition result via UART
             if (m_uart)
@@ -216,6 +309,36 @@ namespace who
                     confidence = std::stof(sim_str);
                 }
 
+                // Check if there's a pending name assignment (for recognize-and-name workflow)
+                if (m_pending_name != nullptr && id > 0 && m_face_db_reader)
+                {
+                    ESP_LOGI(TAG, "Applying pending name '%s' to recognized face ID %d", m_pending_name, id);
+                    esp_err_t ret = m_face_db_reader->set_name(id, m_pending_name);
+                    if (ret == ESP_OK)
+                    {
+                        name = m_pending_name; // Update the name to be sent in the response
+                        ESP_LOGI(TAG, "Successfully set name for ID %d", id);
+
+                        // Send success message via UART
+                        if (m_uart)
+                        {
+                            char success_msg[128];
+                            snprintf(success_msg, sizeof(success_msg),
+                                    "Face ID %d recognized and named '%s'", id, m_pending_name);
+                            m_uart->send_status("ok", success_msg);
+                        }
+                    }
+                    else
+                    {
+                        ESP_LOGE(TAG, "Failed to set name for ID %d", id);
+                        if (m_uart)
+                        {
+                            m_uart->send_status("error", "Failed to assign name to recognized face");
+                        }
+                    }
+                    m_pending_name = nullptr; // Clear pending name
+                }
+
                 // Create JSON event
                 cJSON *rec_data = cJSON_CreateObject();
                 cJSON_AddNumberToObject(rec_data, "id", id);
@@ -235,6 +358,12 @@ namespace who
                 }
                 cJSON_Delete(rec_data);
             }
+        }
+
+        void XiaoRecognitionAppTerm::set_pending_recognition_name(const char* name)
+        {
+            m_pending_name = name;
+            ESP_LOGI(TAG, "Pending recognition name set to: %s", name ? name : "(null)");
         }
 
         void XiaoRecognitionAppTerm::restore_detection_callback()

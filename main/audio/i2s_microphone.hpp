@@ -127,7 +127,6 @@ private:
 
     // Internal methods
     void calculate_audio_levels(const int16_t* samples, size_t count);
-    void print_audio_stats();
 };
 
 } // namespace audio

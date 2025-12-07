@@ -8,7 +8,7 @@
 #include "esp_heap_caps.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/event_groups.h"
-#include "i2s_microphone.hpp"
+#include "i2s_microphone_arduino.hpp"
 #include "JpegEncoder.hpp"
 #include "backend/backend_stream.hpp"
 #include <cstring>
@@ -22,7 +22,7 @@ static const char *TAG = "HTTP_SERVER";
 static who::standby::XiaoStandbyControl *g_standby_ctrl = nullptr;
 static who::recognition::WhoRecognition *g_recognition = nullptr;
 static who::recognition::FaceDbReader *g_face_db_reader = nullptr;
-static who::audio::I2SMicrophone *g_microphone = nullptr;
+static who::audio::I2SMicrophoneArduino *g_microphone = nullptr;
 static who::frame_cap::WhoFrameCap *g_frame_cap = nullptr;
 
 // Track server and WiFi state
@@ -295,7 +295,7 @@ void stop_webserver_and_wifi()
 void set_http_server_refs(who::standby::XiaoStandbyControl *standby,
                           who::recognition::WhoRecognition *recognition,
                           who::recognition::FaceDbReader *face_db_reader,
-                          who::audio::I2SMicrophone *microphone,
+                          who::audio::I2SMicrophoneArduino *microphone,
                           who::frame_cap::WhoFrameCap *frame_cap)
 {
     g_standby_ctrl = standby;
