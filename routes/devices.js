@@ -18,7 +18,8 @@ const {
   fetchPendingCommands,
   acknowledgeCommand,
   handleManualUnlock,
-  handleNfcScan,
+  handleNfcAccessScan,
+  handleNfcRegisterScan,
   // Amplifier Global Control
   playAmplifierAll,
   stopAmplifierAll,
@@ -185,10 +186,15 @@ router.post('/commands/ack', authenticateDevice, acknowledgeCommand);
 // @access  Private (requires device token)
 router.post('/commands/manual-unlock', authenticateDevice, handleManualUnlock);
 
-// @route   POST /api/v1/devices/nfc/scan
-// @desc    Receive NFC scan from a device
+// @route   POST /api/v1/devices/nfc/scan/access
+// @desc    Receive NFC scan for access control
 // @access  Private (requires device token)
-router.post('/nfc/scan', authenticateDevice, handleNfcScan);
+router.post('/nfc/scan/access', authenticateDevice, handleNfcAccessScan);
+
+// @route   POST /api/v1/devices/nfc/scan/register
+// @desc    Register a new NFC card for the logged-in user
+// @access  Private (requires user token)
+router.post('/nfc/scan/register', protect, handleNfcRegisterScan);
 
 // ============================================================================
 // Face Management Routes

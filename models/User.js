@@ -14,7 +14,6 @@ class User {
         this.createdAt = data.createdAt || new Date();
         this.role = data.role || 'user';
         this.nfc_cards = data.nfc_cards || [];
-        this.is_adding_card = data.is_adding_card || false;
     }
 
     // Validation
@@ -102,8 +101,7 @@ class User {
             createdAt: new Date(),
             resetPasswordToken: null,
             resetPasswordExpire: null,
-            nfc_cards: userData.nfc_cards || [],
-            is_adding_card: false
+            nfc_cards: userData.nfc_cards || []
         };
 
         const docRef = await db.collection('users').add(newUser);
