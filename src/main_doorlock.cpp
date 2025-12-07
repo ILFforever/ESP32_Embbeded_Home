@@ -62,7 +62,8 @@ const char* BACKEND_URL = "https://embedded-smarthome.fly.dev/api/v1";
 // ============================================================================
 #define SERVO_PIN           12  // PWM pin for servo
 #define BUZZER_PIN          14  // Pin for buzzer
-#define STATUS_LED_PIN      2   // Onboard LED
+#define GREEN_LED_PIN       25  // Green LED - Unlocked indicator
+#define YELLOW_LED_PIN      26  // Yellow LED - Locked indicator
 #define UNLOCK_BUTTON_PIN   13  // Physical button to unlock door
 
 // ============================================================================
@@ -116,6 +117,7 @@ void setupWiFi();
 void setupServo();
 void lockDoor(const String& commandId = "");
 void unlockDoor(const String& commandId = "");
+void lockDoorManual();
 void unlockDoorManual();
 void playTone(int frequency, int duration);
 void playLockedTone();
@@ -186,7 +188,7 @@ void loop() {
     setupWiFi();
   }
 
-  delay(100);  // Small delay to prevent busy loop
+  delay(10);  // Small delay to prevent busy loop
 }
 
 // ============================================================================
@@ -197,11 +199,13 @@ void setupPins() {
   Serial.println("[SETUP] Configuring GPIO pins...");
 
   pinMode(BUZZER_PIN, OUTPUT);
-  pinMode(STATUS_LED_PIN, OUTPUT);
+  pinMode(GREEN_LED_PIN, OUTPUT);
+  pinMode(YELLOW_LED_PIN, OUTPUT);
   pinMode(UNLOCK_BUTTON_PIN, INPUT);  // Button with pull-up (active LOW)
 
   digitalWrite(BUZZER_PIN, LOW);
-  digitalWrite(STATUS_LED_PIN, LOW);
+  digitalWrite(GREEN_LED_PIN, LOW);
+  digitalWrite(YELLOW_LED_PIN, LOW);
 
   Serial.println("[SETUP] ✓ GPIO configured");
   Serial.println("[SETUP] ✓ Unlock button ready (GPIO 34)");
@@ -259,9 +263,13 @@ void lockDoor(const String& commandId) {
   Serial.printf("[LOCK] → Moving servo to LOCKED position (%d degrees)\n", SERVO_LOCKED_POS);
   Serial.flush();
   doorLockServo.write(SERVO_LOCKED_POS);
-  delay(500);  // Wait for servo to reach position
+  delay(50);  // Wait for servo to reach position
 
   currentLockState = LOCKED;
+
+  // LED indicators: Yellow ON (locked), Green OFF (unlocked)
+  digitalWrite(YELLOW_LED_PIN, HIGH);
+  digitalWrite(GREEN_LED_PIN, LOW);
 
   // Audio feedback
   Serial.println("[LOCK] → Playing locked tone");
@@ -292,9 +300,13 @@ void unlockDoor(const String& commandId) {
   Serial.printf("[LOCK] → Moving servo to UNLOCKED position (%d degrees)\n", SERVO_UNLOCKED_POS);
   Serial.flush();
   doorLockServo.write(SERVO_UNLOCKED_POS);
-  delay(500);  // Wait for servo to reach position
+  delay(50);  // Wait for servo to reach position
 
   currentLockState = UNLOCKED;
+
+  // LED indicators: Green ON (unlocked), Yellow OFF (locked)
+  digitalWrite(GREEN_LED_PIN, HIGH);
+  digitalWrite(YELLOW_LED_PIN, LOW);
 
   // Audio feedback
   Serial.println("[LOCK] → Playing unlocked tone");
@@ -317,14 +329,46 @@ void unlockDoor(const String& commandId) {
   Serial.flush();
 }
 
+void lockDoorManual() {
+  Serial.println("[LOCK] 🔒 Locking door (MANUAL BUTTON)...");
+
+  // Move servo to locked position
+  doorLockServo.write(SERVO_LOCKED_POS);
+  delay(50);  // Wait for servo to reach position
+
+  currentLockState = LOCKED;
+
+  // LED indicators: Yellow ON (locked), Green OFF (unlocked)
+  digitalWrite(YELLOW_LED_PIN, HIGH);
+  digitalWrite(GREEN_LED_PIN, LOW);
+
+  // Audio feedback - double beep for manual lock
+  playLockedTone();
+  delay(200);
+  playLockedTone();
+
+  // Visual feedback - longer blink pattern
+  blinkLED(5, 100);
+
+  // Update device status with manual_trigger = true
+  Serial.println("[LOCK] → Updating device status on backend (manual trigger)");
+  updateDeviceStatus("locked", "lock", true);
+
+  Serial.println("[LOCK] ✓ Door is LOCKED (Manual)");
+}
+
 void unlockDoorManual() {
   Serial.println("[LOCK] 🔓 Unlocking door (MANUAL BUTTON)...");
 
   // Move servo to unlocked position
   doorLockServo.write(SERVO_UNLOCKED_POS);
-  delay(500);  // Wait for servo to reach position
+  delay(50);  // Wait for servo to reach position
 
   currentLockState = UNLOCKED;
+
+  // LED indicators: Green ON (unlocked), Yellow OFF (locked)
+  digitalWrite(GREEN_LED_PIN, HIGH);
+  digitalWrite(YELLOW_LED_PIN, LOW);
 
   // Audio feedback - double beep for manual unlock
   playUnlockedTone();
@@ -534,7 +578,7 @@ void checkUnlockButton() {
       if (currentLockState == LOCKED) {
         unlockDoorManual();
       } else {
-        lockDoor();
+        lockDoorManual();
       }
     }
   }
@@ -566,7 +610,7 @@ void acknowledgeCommand(const String& commandId, bool success, const String& act
     http.addHeader("Authorization", authHeader.c_str());
   }
 
-  http.setTimeout(5000);
+  http.setTimeout(1000);
 
   // Build JSON payload
   StaticJsonDocument<512> doc;
@@ -633,7 +677,7 @@ void updateDeviceStatus(const String& lockState, const String& lastAction, bool 
     http.addHeader("Authorization", authHeader.c_str());
   }
 
-  http.setTimeout(5000);
+  http.setTimeout(1000);
 
   // Build JSON payload for live_status/device_state update
   JsonDocument doc;
@@ -671,10 +715,19 @@ void updateDeviceStatus(const String& lockState, const String& lastAction, bool 
 // ============================================================================
 
 void blinkLED(int times, int delayMs) {
+  // Save current LED states
+  int greenState = digitalRead(GREEN_LED_PIN);
+  int yellowState = digitalRead(YELLOW_LED_PIN);
+
+  // Blink the green LED
   for (int i = 0; i < times; i++) {
-    digitalWrite(STATUS_LED_PIN, HIGH);
+    digitalWrite(GREEN_LED_PIN, HIGH);
     delay(delayMs);
-    digitalWrite(STATUS_LED_PIN, LOW);
+    digitalWrite(GREEN_LED_PIN, LOW);
     delay(delayMs);
   }
+
+  // Restore original LED states
+  digitalWrite(GREEN_LED_PIN, greenState);
+  digitalWrite(YELLOW_LED_PIN, yellowState);
 }
