@@ -29,6 +29,7 @@
 #include <Adafruit_VEML7700.h>
 #include <Adafruit_AHTX0.h>
 #include <ArduinoJson.h>
+#include <DFRobot_MICS.h>
 
 // ============================================================================
 // MESH CONFIGURATION (Must match Main_mesh settings)
@@ -41,13 +42,13 @@
 // DEVICE IDENTIFICATION
 // ============================================================================
 #ifndef DEVICE_ID
-#define DEVICE_ID "ss_003"
+#define DEVICE_ID "ss_001"
 #endif
 #ifndef DEVICE_TYPE
 #define DEVICE_TYPE "sensor"
 #endif
 #ifndef ROOM_NAME
-#define ROOM_NAME "Bedroom"
+#define ROOM_NAME "Living Room"
 #endif
 
 // ============================================================================
@@ -56,7 +57,7 @@
 // API Token for backend authentication
 // This token is sent with sensor data to authenticate with the backend server
 // IMPORTANT: Change this to match the token configured in your backend for this device
-const char *DEVICE_API_TOKEN = "186800884910f83ab404b35af3a177378f9a444c1c44ec3110ec967798556061";
+const char *DEVICE_API_TOKEN = "4d5c3d05ccfcaecdc30e2f8e38b55207cd7f9054b2db7b6bf8e47813dd0c9d87";
 
 // ============================================================================
 // GPIO PIN CONFIGURATION
@@ -107,6 +108,7 @@ Scheduler userScheduler;
 painlessMesh mesh;
 Adafruit_VEML7700 veml = Adafruit_VEML7700();
 Adafruit_AHTX0 aht;
+DFRobot_MICS_ADC mics(MICS5524_ANALOG_PIN, MICS5524_HEATER_PIN);
 
 // ============================================================================
 // SENSOR DATA STRUCTURE
@@ -116,7 +118,8 @@ struct SensorData
   float temperature = 0.0;
   float humidity = 0.0;
   float lightLevel = 0.0;
-  uint16_t gasLevel = 0;
+  uint16_t gasLevel = 0;      // Raw ADC value
+  float coPPM = 0.0;           // Carbon Monoxide in PPM
   float batteryVoltage = 0.0;
   uint8_t batteryPercent = 0;
   bool temperatureValid = false;
@@ -130,8 +133,8 @@ struct SensorData
 // ============================================================================
 RTC_DATA_ATTR uint32_t bootCount = 0;
 RTC_DATA_ATTR uint32_t wakesSinceTransmission = 0;
-RTC_DATA_ATTR bool micsCalibrated = true;
-RTC_DATA_ATTR int16_t mics_r0 = 3990;  // Baseline resistance (calibrated in clean air)
+RTC_DATA_ATTR bool micsCalibrated = false;  // Set to true after running warmUpTime()
+RTC_DATA_ATTR bool micsWarmedUp = false;    // Tracks if sensor has been warmed up
 
 // Circular buffer for sensor history
 RTC_DATA_ATTR struct
@@ -139,7 +142,8 @@ RTC_DATA_ATTR struct
   float temperature[5];
   float humidity[5];
   float light[5];
-  uint16_t gas[5];
+  uint16_t gas[5];      // Raw ADC values
+  float coPPM[5];       // CO PPM values
   uint8_t index;
   uint8_t count;
 } sensorHistory;
@@ -149,6 +153,7 @@ RTC_DATA_ATTR float lastSentTemp = 0.0;
 RTC_DATA_ATTR float lastSentHumidity = 0.0;
 RTC_DATA_ATTR float lastSentLight = 0.0;
 RTC_DATA_ATTR uint16_t lastSentGas = 0;
+RTC_DATA_ATTR float lastSentCO = 0.0;
 
 // Statistics
 RTC_DATA_ATTR uint32_t totalTransmissions = 0;
@@ -178,6 +183,7 @@ struct AveragedData
   float humidity;
   float light;
   uint16_t gas;
+  float coPPM;
 };
 AveragedData calculateAverages();
 bool sendDataToMesh(String jsonStr);
@@ -303,6 +309,7 @@ void loop()
     doc["sensors"]["humidity"] = serialized(String(currentData.humidity, 2));
     doc["sensors"]["light_lux"] = serialized(String(currentData.lightLevel, 2));
     doc["sensors"]["gas_level"] = currentData.gasLevel;
+    doc["sensors"]["co_ppm"] = serialized(String(currentData.coPPM, 1));
     alertTransmissions++;
   }
   else if (timeToAverage)
@@ -316,6 +323,7 @@ void loop()
     doc["sensors"]["humidity"] = serialized(String(avg.humidity, 2));
     doc["sensors"]["light_lux"] = serialized(String(avg.light, 2));
     doc["sensors"]["gas_level"] = avg.gas;
+    doc["sensors"]["co_ppm"] = serialized(String(avg.coPPM, 1));
     averageTransmissions++;
   }
 
@@ -338,6 +346,7 @@ void loop()
     lastSentHumidity = currentData.humidity;
     lastSentLight = currentData.lightLevel;
     lastSentGas = currentData.gasLevel;
+    lastSentCO = currentData.coPPM;
 
     // Reset counters
     wakesSinceTransmission = 0;
@@ -419,23 +428,51 @@ void setupSensors()
     Serial.println("[VEML7700] ✓ Initialized");
   }
 
-  // Check if MICS5524 has been calibrated
-  if (!micsCalibrated)
+  // Initialize MICS5524 with DFRobot library
+  if (!mics.begin())
   {
-    Serial.println("\n========================================");
-    Serial.println("[MICS5524] ✗ SENSOR NOT CALIBRATED!");
-    Serial.println("========================================");
-    Serial.println("Please run calibrate_mics.cpp first:");
-    Serial.println("1. Upload calibrate_mics.cpp");
-    Serial.println("2. Run in clean air for 20 minutes");
-    Serial.println("3. R0 will be stored in RTC memory");
-    Serial.println("4. Upload this code again");
-    Serial.println("========================================");
-    Serial.printf("[MICS5524] Using default R0: %d (INACCURATE!)\n", mics_r0);
+    Serial.println("[MICS5524] ✗ Failed to initialize!");
   }
   else
   {
-    Serial.printf("[MICS5524] ✓ Using calibrated R0: %d\n", mics_r0);
+    Serial.println("[MICS5524] ✓ Initialized");
+
+    // Wake up sensor if in sleep mode
+    uint8_t mode = mics.getPowerState();
+    if (mode == SLEEP_MODE)
+    {
+      mics.wakeUpMode();
+      Serial.println("[MICS5524] ✓ Sensor woken up");
+    }
+
+    // Calibrate sensor on first boot (warm-up in clean air)
+    if (!micsWarmedUp)
+    {
+      Serial.println("\n========================================");
+      Serial.println("[MICS5524] FIRST BOOT - CALIBRATING");
+      Serial.println("========================================");
+      Serial.println("Warming up sensor in clean air...");
+      Serial.println("This takes 3 minutes. Please wait...");
+
+      // Warm up for 3 minutes (calibration time)
+      if (mics.warmUpTime(3))
+      {
+        micsWarmedUp = true;
+        micsCalibrated = true;
+        Serial.println("[MICS5524] ✓ Calibration complete!");
+        Serial.println("========================================");
+      }
+      else
+      {
+        Serial.println("[MICS5524] ⚠ Calibration in progress...");
+        Serial.println("Note: Readings may be inaccurate until calibration completes");
+        Serial.println("========================================");
+      }
+    }
+    else
+    {
+      Serial.println("[MICS5524] ✓ Using previous calibration");
+    }
   }
 
   Serial.println("[SETUP] ✓ Sensors ready");
@@ -525,39 +562,18 @@ bool readMICS5524()
   Serial.println("[MICS5524] Heating sensor...");
   heatGasSensor(GAS_HEAT_TIME_MS);
 
-  uint32_t sum = 0;
-  const int numReadings = 10;
+  // Use DFRobot library to get CO concentration in PPM
+  currentData.coPPM = mics.getGasData(CO);
 
-  for (int i = 0; i < numReadings; i++)
-  {
-    sum += analogRead(MICS5524_ANALOG_PIN);
-    delay(10);
-  }
+  // Store raw ADC value for reference (library reads this internally)
+  int16_t adcValue = mics.getADCData(RED_MODE);
+  currentData.gasLevel = adcValue;
 
-  currentData.gasLevel = sum / numReadings;
   stopGasHeating();
 
-  // Calculate CO PPM using DFRobot formula with calibrated R0
-  // Step 1: Invert ADC (library uses 1023-ADC for 10-bit, we use 4095-ADC for 12-bit)
-  int16_t invertedADC = 4095 - currentData.gasLevel;
-
-  // Step 2: Calculate RS/R0 ratio (normalized sensor resistance)
-  // Use calibrated R0 from RTC memory
-  float rs_r0 = (float)invertedADC / (float)mics_r0;
-
-  // Step 3: Apply DFRobot CO formula: PPM = (0.425 - RS_R0) / 0.000405
-  float co_ppm = 0.0;
-  if (rs_r0 > 0.425) {
-    co_ppm = 0.0;  // Below detection threshold
-  } else {
-    co_ppm = (0.425 - rs_r0) / 0.000405;
-    if (co_ppm > 1000.0) co_ppm = 1000.0;
-    if (co_ppm < 1.0) co_ppm = 0.0;
-  }
-
   currentData.gasValid = true;
-  Serial.printf("[MICS5524] ✓ ADC: %d (R0: %d), CO: %.1f PPM\n",
-                currentData.gasLevel, mics_r0, co_ppm);
+  Serial.printf("[MICS5524] ✓ ADC: %d, CO: %.1f PPM\n",
+                currentData.gasLevel, currentData.coPPM);
 
   return true;
 }
@@ -638,6 +654,7 @@ void logSensorData()
   sensorHistory.humidity[idx] = currentData.humidity;
   sensorHistory.light[idx] = currentData.lightLevel;
   sensorHistory.gas[idx] = currentData.gasLevel;
+  sensorHistory.coPPM[idx] = currentData.coPPM;
 
   sensorHistory.index = (idx + 1) % 5;
   if (sensorHistory.count < 5)
@@ -685,7 +702,7 @@ bool isAlertCondition()
 
 AveragedData calculateAverages()
 {
-  AveragedData avg = {0, 0, 0, 0};
+  AveragedData avg = {0, 0, 0, 0, 0};
 
   if (sensorHistory.count == 0)
   {
@@ -698,16 +715,18 @@ AveragedData calculateAverages()
     avg.humidity += sensorHistory.humidity[i];
     avg.light += sensorHistory.light[i];
     avg.gas += sensorHistory.gas[i];
+    avg.coPPM += sensorHistory.coPPM[i];
   }
 
   avg.temperature /= sensorHistory.count;
   avg.humidity /= sensorHistory.count;
   avg.light /= sensorHistory.count;
   avg.gas /= sensorHistory.count;
+  avg.coPPM /= sensorHistory.count;
 
   Serial.printf("[AVG] Averaged %d readings:\n", sensorHistory.count);
-  Serial.printf("  Temp: %.2f°C, Humidity: %.2f%%, Light: %.2f lux, Gas: %d\n",
-                avg.temperature, avg.humidity, avg.light, avg.gas);
+  Serial.printf("  Temp: %.2f°C, Humidity: %.2f%%, Light: %.2f lux, Gas: %d, CO: %.1f PPM\n",
+                avg.temperature, avg.humidity, avg.light, avg.gas, avg.coPPM);
 
   return avg;
 }
