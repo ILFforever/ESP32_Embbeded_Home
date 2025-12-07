@@ -18,15 +18,108 @@ static TaskHandle_t faceDetectionTaskHandle = NULL;
 // Statistics
 static FaceDetectionStats stats = {0, 0, 0, 0, 0};
 
+// Global flag to pause other WiFi operations during upload
+volatile bool faceDetectionUploadInProgress = false;
+
+// ============================================================================
+// Internal: Send face detection event as JSON (fallback, no image)
+// ============================================================================
+static void sendFaceDetectionJson(FaceDetectionEvent* event) {
+    if (WiFi.status() != WL_CONNECTED) {
+        Serial.println("[FaceDetectionSender] (JSON) WiFi not connected - skipping fallback");
+        return;
+    }
+
+    // Parse backend URL
+    String serverUrl = String(BACKEND_SERVER_URL);
+    serverUrl.replace("http://", "");
+    serverUrl.replace("https://", "");
+
+    int colonIdx = serverUrl.indexOf(':');
+    int slashIdx = serverUrl.indexOf('/');
+
+    String host = (colonIdx > 0) ? serverUrl.substring(0, colonIdx) :
+                  (slashIdx > 0) ? serverUrl.substring(0, slashIdx) : serverUrl;
+    int port = (colonIdx > 0) ? serverUrl.substring(colonIdx + 1, (slashIdx > 0) ? slashIdx : serverUrl.length()).toInt() : 80;
+    String path = (slashIdx > 0) ? serverUrl.substring(slashIdx) : "";
+
+    if (path.length() == 0 || path == "/") {
+        path = "/api/v1/devices/doorbell/face-detection";
+    } else if (path.endsWith("/")) {
+        path += "api/v1/devices/doorbell/face-detection";
+    } else {
+        path += "/api/v1/devices/doorbell/face-detection";
+    }
+
+    WiFiClient client;
+    client.setTimeout(5000);
+
+    if (!client.connect(host.c_str(), port, 5000)) {
+        Serial.println("[FaceDetectionSender] (JSON) ✗ Connection failed");
+        return;
+    }
+
+    Serial.println("[FaceDetectionSender] (JSON) ✓ Connected for fallback");
+
+    // Create JSON payload
+    StaticJsonDocument<256> doc;
+    doc["device_id"] = DEVICE_ID;
+    doc["recognized"] = event->recognized;
+    doc["name"] = event->name;
+    doc["confidence"] = event->confidence;
+    doc["timestamp"] = event->timestamp;
+    doc["image_upload_failed"] = true;
+
+    String payload;
+    serializeJson(doc, payload);
+
+    // Send HTTP headers
+    client.print("POST " + path + " HTTP/1.1\r\n");
+    client.print("Host: " + host + "\r\n");
+    client.print("Content-Type: application/json\r\n");
+    client.print("Content-Length: " + String(payload.length()) + "\r\n");
+    if (DEVICE_API_TOKEN && strlen(DEVICE_API_TOKEN) > 0) {
+        client.print("Authorization: Bearer " + String(DEVICE_API_TOKEN) + "\r\n");
+    }
+    client.print("Connection: close\r\n\r\n");
+    client.print(payload);
+    client.flush();
+
+    Serial.println("[FaceDetectionSender] (JSON) ✓ Fallback request sent. Waiting for response...");
+
+    unsigned long responseTimeout = millis();
+    while (client.available() == 0) {
+        if (!client.connected() || millis() - responseTimeout > 5000) {
+            Serial.println("[FaceDetectionSender] (JSON) ✗ No response or timeout.");
+            client.stop();
+            return;
+        }
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
+
+    // Read response to confirm
+    int httpCode = 0;
+    if (client.find("HTTP/1.1 ")) {
+        httpCode = client.parseInt();
+    }
+    
+    client.stop();
+    Serial.printf("[FaceDetectionSender] (JSON) ✓ Fallback response code: %d\n", httpCode);
+}
+
 // ============================================================================
 // Internal: Send face detection event (blocking, but runs in dedicated task)
 // ============================================================================
 static void sendFaceDetectionBlocking(FaceDetectionEvent* event) {
+    // Set flag to pause other WiFi operations
+    faceDetectionUploadInProgress = true;
+
     unsigned long startTime = millis();
 
     if (WiFi.status() != WL_CONNECTED) {
         Serial.println("[FaceDetectionSender] WiFi not connected - skipping");
         stats.totalFailed++;
+        faceDetectionUploadInProgress = false;
         return;
     }
 
@@ -62,6 +155,7 @@ static void sendFaceDetectionBlocking(FaceDetectionEvent* event) {
     if (!client.connect(host.c_str(), port, 5000)) {  // 5 second connection timeout
         Serial.println("[FaceDetectionSender] ✗ Connection failed");
         stats.totalFailed++;
+        faceDetectionUploadInProgress = false;
         return;
     }
 
@@ -141,6 +235,7 @@ static void sendFaceDetectionBlocking(FaceDetectionEvent* event) {
                 client.flush();
                 client.stop();
                 delay(10);  // Give WiFi stack time to clean up
+                faceDetectionUploadInProgress = false;
                 return;
             }
 
@@ -156,6 +251,7 @@ static void sendFaceDetectionBlocking(FaceDetectionEvent* event) {
                     client.flush();
                     client.stop();
                     delay(10);
+                    faceDetectionUploadInProgress = false;
                     return;
                 }
                 Serial.println("[FaceDetectionSender] ⚠ Socket buffer full, retrying...");
@@ -171,6 +267,7 @@ static void sendFaceDetectionBlocking(FaceDetectionEvent* event) {
                 client.flush();
                 client.stop();
                 delay(10);
+                faceDetectionUploadInProgress = false;
                 return;
             }
 
@@ -207,6 +304,7 @@ static void sendFaceDetectionBlocking(FaceDetectionEvent* event) {
             client.flush();
             client.stop();
             delay(10);
+            faceDetectionUploadInProgress = false;
             return;
         }
         if (millis() - timeout > 10000) {  // 10 seconds timeout to prevent watchdog
@@ -214,7 +312,15 @@ static void sendFaceDetectionBlocking(FaceDetectionEvent* event) {
             stats.totalFailed++;
             client.flush();
             client.stop();
-            delay(10);
+            delay(10); // Give stack time to clean up
+
+            // If an image was part of the request, try sending metadata only
+            if (event->imageData != nullptr && event->imageSize > 0) {
+                Serial.println("[FaceDetectionSender] ☛ Timed out with image, attempting fallback without image...");
+                sendFaceDetectionJson(event);
+            }
+
+            faceDetectionUploadInProgress = false;
             return;
         }
         esp_task_wdt_reset();  // Feed watchdog while waiting
@@ -272,6 +378,9 @@ static void sendFaceDetectionBlocking(FaceDetectionEvent* event) {
         Serial.printf("[FaceDetectionSender] Response: %s\n", responseBody.c_str());
         stats.totalFailed++;
     }
+
+    // Clear flag to resume other WiFi operations
+    faceDetectionUploadInProgress = false;
 }
 
 // ============================================================================

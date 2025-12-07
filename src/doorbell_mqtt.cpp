@@ -1,5 +1,6 @@
 #include "doorbell_mqtt.h"
 #include "heartbeat.h"
+#include "face_detection_sender.h"
 #include <WiFi.h>
 #include <ArduinoJson.h>
 
@@ -82,6 +83,11 @@ void initDoorbellMQTT(const char* deviceId) {
 // Connect to MQTT Broker
 // ============================================================================
 bool connectDoorbellMQTT() {
+  // Skip if face detection upload in progress
+  if (faceDetectionUploadInProgress) {
+    return mqttClient.connected();  // Return current connection status without trying to reconnect
+  }
+
   if (mqttClient.connected()) {
     return true;
   }
@@ -122,6 +128,12 @@ bool connectDoorbellMQTT() {
 // Publish doorbell ring event
 // ============================================================================
 void publishDoorbellRing() {
+  // Skip if face detection upload in progress
+  if (faceDetectionUploadInProgress) {
+    Serial.println("[MQTT] Skipping publish - face detection upload in progress");
+    return;
+  }
+
   if (!mqttClient.connected()) {
     Serial.println("[MQTT] Not connected - attempting to reconnect before publish");
     if (!connectDoorbellMQTT()) {

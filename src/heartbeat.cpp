@@ -1,3 +1,5 @@
+extern bool scanNFCandSend;
+
 #include "heartbeat.h"
 #include "face_detection_sender.h"
 #include "uart_commands.h"
@@ -7,6 +9,9 @@
 #include <ArduinoJson.h>
 #include "slave_state_manager.h"
 #include "streaming_state.h"
+#include "lcd_helper.h"
+
+extern bool scanNFCandSend;
 
 // Configuration variables (set via initHeartbeat)
 const char *BACKEND_SERVER_URL = "";
@@ -40,6 +45,13 @@ void initHeartbeat(const char *serverUrl, const char *deviceId, const char *devi
 // ============================================================================
 void sendHeartbeat()
 {
+  // Skip if face detection upload in progress to prevent socket exhaustion
+  if (faceDetectionUploadInProgress)
+  {
+    Serial.println("[Heartbeat] Skipping - face detection upload in progress");
+    return;
+  }
+
   // Check WiFi connection
   if (WiFi.status() != WL_CONNECTED)
   {
@@ -141,6 +153,13 @@ void sendHeartbeat()
 // ============================================================================
 void sendDisconnectWarning(const char *module_name, bool isDisconnected)
 {
+  // Skip if face detection upload in progress
+  if (faceDetectionUploadInProgress)
+  {
+    Serial.println("[Warning] Skipping - face detection upload in progress");
+    return;
+  }
+
   if (WiFi.status() != WL_CONNECTED)
   {
     Serial.println("[Warning] WiFi not connected - cannot send warning");
@@ -208,6 +227,13 @@ void sendDisconnectWarning(const char *module_name, bool isDisconnected)
 // ============================================================================
 void sendDoorbellRing()
 {
+  // Skip if face detection upload in progress
+  if (faceDetectionUploadInProgress)
+  {
+    Serial.println("[Doorbell] Skipping ring - face detection upload in progress");
+    return;
+  }
+
   if (WiFi.status() != WL_CONNECTED)
   {
     Serial.println("[Doorbell] WiFi not connected - skipping ring event");
@@ -277,6 +303,13 @@ void sendDoorbellRing()
 // ============================================================================
 void sendDoorbellStatus(bool camera_active, bool mic_active)
 {
+  // Skip if face detection upload in progress
+  if (faceDetectionUploadInProgress)
+  {
+    Serial.println("[DoorbellStatus] Skipping - face detection upload in progress");
+    return;
+  }
+
   if (WiFi.status() != WL_CONNECTED)
   {
     Serial.println("[DoorbellStatus] WiFi not connected - skipping");
@@ -846,6 +879,12 @@ bool executeCommand(String action, JsonObject params)
       const char *url = params["url"];
       Serial.printf("[Commands] Playing amplifier URL: %s\n", url);
       sendUART2Command("play", url);
+      // Send URL twice if it starts with http
+      if (strncmp(url, "http", 4) == 0)
+      {
+        delay(100);
+        sendUART2Command("play", url);
+      }
       return true;
     }
     else
@@ -961,11 +1000,69 @@ bool executeCommand(String action, JsonObject params)
     // Execute all three face database commands in sequence
     Serial.println("[Commands] Syncing face database - executing all three commands...");
     sendUARTCommand("face_count");
-    delay(500); // Small delay between commands
+    delay(250); // Small delay between commands
     sendUARTCommand("check_face_db");
-    delay(500); // Small delay between commands
+    delay(250); // Small delay between commands
     sendUARTCommand("list_faces");
     Serial.println("[Commands] ✓ All face database commands sent");
+    return true;
+  }
+  else if (action == "face_enroll")
+  {
+    if (params.containsKey("user_name"))
+    {
+      const char *userName = params["user_name"];
+      Serial.printf("[Commands] Enrolling new face for user: %s\n", userName);
+      updateStatusMsg("Enrolling new face...", true, "Enrolling");
+      sendUARTCommand("camera_control", "camera_start");
+      delay(100);
+      sendUARTCommand("resume_detection");
+      delay(100);
+      sendUARTCommand("enroll_and_name", userName);
+      return true;
+    }
+    else
+    {
+      Serial.println("[Commands] face_enroll requires 'user_name' parameter");
+      return false;
+    }
+  }
+  else if (action == "rename_face")
+  {
+    if (params.containsKey("face_id") && params.containsKey("new_name"))
+    {
+      int faceId = params["face_id"];
+      const char *newName = params["new_name"];
+      Serial.printf("[Commands] Renaming face ID %d to: %s\n", faceId, newName);
+      sendRenameFace(faceId, newName);
+      return true;
+    }
+    else
+    {
+      Serial.println("[Commands] rename_face requires 'face_id' and 'new_name' parameters");
+      return false;
+    }
+  }
+  else if (action == "set_face_name")
+  {
+    if (params.containsKey("face_id") && params.containsKey("name"))
+    {
+      int faceId = params["face_id"];
+      const char *name = params["name"];
+      Serial.printf("[Commands] Setting name for face ID %d to: %s\n", faceId, name);
+      sendSetName(faceId, name);
+      return true;
+    }
+    else
+    {
+      Serial.println("[Commands] set_face_name requires 'face_id' and 'name' parameters");
+      return false;
+    }
+  }
+  else if (action == "delete_last_face")
+  {
+    Serial.println("[Commands] Deleting last enrolled face");
+    sendDeleteLastFace();
     return true;
   }
 
@@ -1005,7 +1102,17 @@ bool executeCommand(String action, JsonObject params)
   {
     // Step 2: Button pressed again - trigger face recognition
     Serial.println("[Commands] Triggering face recognition");
+    sendUARTCommand("camera_control", "camera_start");
+    delay(100);
     sendUARTCommand("recognize_face");
+    return true;
+  }
+  else if (action == "nfc_scan_mode")
+  {
+    // Enable NFC scan mode
+    Serial.println("[Commands] Enabling NFC scan mode adding next card to db");
+    updateStatusMsg("Tap card on scanner", true, "Scanning");
+    scanNFCandSend = true;
     return true;
   }
 

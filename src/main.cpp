@@ -100,6 +100,10 @@ bool both_buttons_hold_handled = false;
 // Preview mode state (for two-step doorbell interaction)
 bool preview_mode_active = false;
 
+// NFC scan mode state (for backend-triggered scans)
+bool scanNFCandSend = false;
+bool isNfcAddCardMode = false;
+
 // UI state
 bool uiNeedsUpdate = true; // Flag to redraw UI elements
 #define VIDEO_Y_OFFSET 40  // Reserve top 20px for status bar
@@ -1180,6 +1184,13 @@ void onCardDetected(NFCCardData card)
   Serial.print("Card ID: ");
   Serial.println(card.cardId);
 
+  if (scanNFCandSend)
+  {
+    Serial.println("Scan and add to db");
+    scanNFCandSend = false;
+    return;
+  }
+
   // Send to hub -> hub validate id -> hub send back -> open
   // For now
   card_success = true;
@@ -1395,15 +1406,15 @@ void updateButtonState(ButtonState &btn, int pin, const char *buttonName)
 
             // Send stream control commands (action in params.name, id=0)
             sendUARTCommand("stream_control", "mic_start", 0);
-            sendUARTCommand("mic_gain", "gain", 1 );
+            sendUARTCommand("mic_gain", "gain", 6 );
 
-            // delay(100);
+             delay(100);
 
-            // sendUARTCommand("stream_control", "camera_start", 0);
+             sendUARTCommand("stream_control", "camera_start", 0);
             delay(100);
 
             // Set desired camera state to running
-            setDesiredMode(0);
+            setDesiredMode(1);
 
             isStreaming = true;
             updateStatusMsg("Streaming active", true, "Streaming");

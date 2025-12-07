@@ -38,6 +38,9 @@ bool sendFaceDetectionAsync(bool recognized, const char* name, float confidence,
 // Send face database result to backend (face_count, face_list, face_check)
 void sendFaceDatabaseResult(const char* type, int count = -1, JsonArray faces = JsonArray(), const char* status = nullptr, const char* message = nullptr);
 
+// Send NFC scan data to the backend
+void sendNfcScan(String cardId, bool isAdding);
+
 // Get last heartbeat status
 bool getLastHeartbeatSuccess();
 unsigned long getLastHeartbeatTime();

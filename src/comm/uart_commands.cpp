@@ -56,6 +56,86 @@ void sendUARTCommand(const char *cmd, const char *param, int value)
   }
 }
 
+// ============================================================
+// Face Management Commands for Camera Slave
+// ============================================================
+
+// Rename an existing face by ID
+// Sends: {"cmd": "rename_face", "params": {"id": 1, "name": "NewName"}}
+void sendRenameFace(int faceId, const char *newName)
+{
+  if (faceId < 1)
+  {
+    Serial.println("❌ Error: Face ID must be >= 1");
+    return;
+  }
+
+  if (newName == nullptr || strlen(newName) == 0)
+  {
+    Serial.println("❌ Error: Name cannot be empty for rename_face");
+    return;
+  }
+
+  StaticJsonDocument<256> doc;
+  doc["cmd"] = "rename_face";
+
+  JsonObject params = doc.createNestedObject("params");
+  params["id"] = faceId;
+  params["name"] = newName;
+
+  String output;
+  serializeJson(doc, output);
+
+  Serial.printf("📤 Sending rename_face: %s\n", output.c_str());
+  MasterSerial.println(output);
+}
+
+// Set/update name for a face ID (can also remove name if name is nullptr)
+// Sends: {"cmd": "set_name", "params": {"id": 1, "name": "John"}}
+void sendSetName(int faceId, const char *name)
+{
+  if (faceId < 1)
+  {
+    Serial.println("❌ Error: Face ID must be >= 1");
+    return;
+  }
+
+  StaticJsonDocument<256> doc;
+  doc["cmd"] = "set_name";
+
+  JsonObject params = doc.createNestedObject("params");
+  params["id"] = faceId;
+
+  if (name != nullptr && strlen(name) > 0)
+  {
+    params["name"] = name;
+  }
+
+  String output;
+  serializeJson(doc, output);
+
+  Serial.printf("📤 Sending set_name: %s\n", output.c_str());
+  MasterSerial.println(output);
+}
+
+// Delete the last enrolled face
+// Sends: {"cmd": "delete_last"}
+void sendDeleteLastFace()
+{
+  StaticJsonDocument<128> doc;
+  doc["cmd"] = "delete_last";
+
+  String output;
+  serializeJson(doc, output);
+
+  Serial.printf("📤 Sending delete_last: %s\n", output.c_str());
+  MasterSerial.println(output);
+}
+
+// ============================================================
+// AMP Board Commands
+// ============================================================
+
 // Send command to AMP board
 void sendUART2Command(const char *cmd, const char *urls)
 {
@@ -259,6 +339,32 @@ void handleUARTResponse(String line)
         recognition_state = 2; // Failure
       }
       // Note: Actual UI transitions handled by taskManageUIFlow() in main.cpp
+    }
+    return;
+  }
+
+  // Handle enrollment event (face_enrolled with ID, name)
+  if (doc.containsKey("event") && doc["event"] == "face_enrolled")
+  {
+    if (doc.containsKey("data"))
+    {
+      JsonObject data = doc["data"];
+      int id = data["id"] | -1;
+      const char *name = data["name"] | "Unknown";
+
+      Serial.printf("Face Enrolled: ID=%d, Name=%s\n", id, name);
+
+      // Stop camera immediately after enrollment
+      Serial.println("[Enrollment] Stopping camera after enrollment complete");
+      sendUARTCommand("camera_control", "camera_stop");
+
+      // Show success message
+      char msg[64];
+      snprintf(msg, sizeof(msg), "%s enrolled!", name);
+      updateStatusMsg(msg, false);
+
+      // Play success sound
+      sendUART2Command("play", "success");
     }
     return;
   }

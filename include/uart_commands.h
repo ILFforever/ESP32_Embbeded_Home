@@ -41,6 +41,12 @@ extern char welcome_message[64];
 // Send command to Slave (with automatic mode tracking)
 void sendUARTCommand(const char *cmd, const char *param = nullptr, int value = -1);
 
+// Face management commands for Camera slave
+void sendRecognizeAndName(const char *name);
+void sendRenameFace(int faceId, const char *newName);
+void sendSetName(int faceId, const char *name);
+void sendDeleteLastFace();
+
 // Send command to Amp board via UART2
 void sendUART2Command(const char *cmd, const char *url);
 

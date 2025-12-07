@@ -72,4 +72,10 @@ struct FaceDetectionStats {
 
 FaceDetectionStats getFaceDetectionStats();
 
+/**
+ * Check if face detection upload is currently in progress
+ * Other WiFi operations should check this and skip if true to prevent socket exhaustion
+ */
+extern volatile bool faceDetectionUploadInProgress;
+
 #endif // FACE_DETECTION_SENDER_H
