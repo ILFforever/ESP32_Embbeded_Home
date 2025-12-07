@@ -23,6 +23,8 @@ const {
   initiateNfcRegistration,
   handleDeviceNfcScan,
   cancelNfcRegistration,
+  removeNfcCard,
+  removeNfcCardAdmin,
   // Amplifier Global Control
   playAmplifierAll,
   stopAmplifierAll,
@@ -209,10 +211,25 @@ router.post('/nfc/register/initiate/admin/:userId', protect, authorize('admin'),
 // @access  Private (requires device token)
 router.post('/nfc/register/scan', authenticateDevice, handleDeviceNfcScan);
 
+// @route   POST /api/v1/devices/nfc/register/cancel
+// @desc    User cancels their own pending NFC registrations (optional: for a specific device)
+// @access  Private (requires user token)
+router.post('/nfc/register/cancel', protect, cancelOwnNfcRegistration);
+
 // @route   POST /api/v1/devices/nfc/register/cancel/:deviceId
 // @desc    Admin cancels all pending NFC registrations for a device
 // @access  Private (Admin only)
 router.post('/nfc/register/cancel/:deviceId', protect, authorize('admin'), cancelNfcRegistration);
+
+// @route   DELETE /api/v1/devices/nfc/cards/:card_id
+// @desc    User removes their own NFC card
+// @access  Private (requires user token)
+router.delete('/nfc/cards/:card_id', protect, removeNfcCard);
+
+// @route   DELETE /api/v1/devices/nfc/cards/:card_id/user/:userId
+// @desc    Admin removes an NFC card from a specific user
+// @access  Private (Admin only)
+router.delete('/nfc/cards/:card_id/user/:userId', protect, authorize('admin'), removeNfcCardAdmin);
 
 // ============================================================================
 // Face Management Routes

@@ -3194,7 +3194,55 @@ const handleDeviceNfcScan = async (req, res) => {
   }
 };
 
-const cancelNfcRegistration = async (req, res) => {
+const cancelOwnNfcRegistration = async (req, res) => {
+  try {
+    const userId = req.user.id; // User ID from protect middleware
+    const { deviceId } = req.body; // Optional deviceId from body
+
+    if (!userId) {
+      return res.status(401).json({ success: false, message: 'Unauthorized: User ID not found.' });
+    }
+
+    const db = getFirestore();
+    const sessionsRef = db.collection('nfcRegistrationSessions');
+    let query = sessionsRef.where('userId', '==', userId).where('status', '==', 'pending');
+
+    if (deviceId) {
+      query = query.where('deviceId', '==', deviceId);
+    }
+
+    const snapshot = await query.get();
+
+    if (snapshot.empty) {
+      return res.status(404).json({ success: false, message: 'No pending NFC registration sessions found for this user.' + (deviceId ? ` on device ${deviceId}.` : '.') });
+    }
+
+    const batch = db.batch();
+    const affectedDeviceIds = new Set();
+    snapshot.docs.forEach(doc => {
+      batch.update(doc.ref, { status: 'cancelled' });
+      affectedDeviceIds.add(doc.data().deviceId);
+    });
+    await batch.commit();
+
+    // Send cancel command to affected device(s)
+    for (const id of affectedDeviceIds) {
+      await queueCommand(id, 'cancel_nfc_registration');
+    }
+
+    res.json({
+      success: true,
+      message: `Cancelled ${snapshot.size} pending NFC registration session(s) for user ${userId}` + (deviceId ? ` on device ${deviceId}.` : '.'),
+      cancelledSessionsCount: snapshot.size
+    });
+
+  } catch (error) {
+    console.error('[NFC Own Cancel] Error cancelling NFC registration:', error);
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+};
+
+const cancelAdminNfcRegistration = async (req, res) => {
   try {
     const { deviceId } = req.params;
 
@@ -3230,6 +3278,83 @@ const cancelNfcRegistration = async (req, res) => {
 };
 
 
+const removeNfcCard = async (req, res) => {
+  try {
+    const { card_id } = req.params;
+    const userId = req.user.id;
+
+    if (!card_id) {
+      return res.status(400).json({ success: false, message: 'Please provide a card_id' });
+    }
+
+    const db = getFirestore();
+    const userRef = db.collection('users').doc(userId);
+    const userDoc = await userRef.get();
+
+    if (!userDoc.exists) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    const user = new User({ id: userDoc.id, ...userDoc.data() });
+
+    if (!user.nfc_cards.includes(card_id)) {
+      return res.status(404).json({ success: false, message: 'Card not found for this user.' });
+    }
+
+    const updatedCards = user.nfc_cards.filter(id => id !== card_id);
+    await userRef.update({ nfc_cards: updatedCards });
+
+    console.log(`[NFC Remove] Successfully removed card ${card_id} from user ${user.name}.`);
+
+    res.json({
+      success: true,
+      message: `NFC card successfully removed from your account.`
+    });
+
+  } catch (error) {
+    console.error('[NFC Remove] Error removing NFC card:', error);
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+};
+
+const removeNfcCardAdmin = async (req, res) => {
+  try {
+    const { card_id, userId } = req.params;
+
+    if (!card_id || !userId) {
+      return res.status(400).json({ success: false, message: 'Please provide a card_id and userId' });
+    }
+
+    const db = getFirestore();
+    const userRef = db.collection('users').doc(userId);
+    const userDoc = await userRef.get();
+
+    if (!userDoc.exists) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    const user = new User({ id: userDoc.id, ...userDoc.data() });
+
+    if (!user.nfc_cards.includes(card_id)) {
+      return res.status(404).json({ success: false, message: 'Card not found for this user.' });
+    }
+
+    const updatedCards = user.nfc_cards.filter(id => id !== card_id);
+    await userRef.update({ nfc_cards: updatedCards });
+
+    console.log(`[NFC Admin Remove] Successfully removed card ${card_id} from user ${user.name}.`);
+
+    res.json({
+      success: true,
+      message: `NFC card successfully removed from user ${user.name}.`
+    });
+
+  } catch (error) {
+    console.error('[NFC Admin Remove] Error removing NFC card:', error);
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+};
+
 module.exports = {
   registerDevice,
   handleHeartbeat,
@@ -3249,9 +3374,12 @@ module.exports = {
   handleManualUnlock,
   handleNfcAccessScan,
   handleNfcRegisterScan,
-  initiateNfcRegistration,
   handleDeviceNfcScan,
-  cancelNfcRegistration,
+  initiateNfcRegistration,
+  cancelOwnNfcRegistration, // New function for user to cancel their own sessions
+  cancelAdminNfcRegistration, // Renamed for admin functionality
+  removeNfcCard,
+  removeNfcCardAdmin,
   // Amplifier Global Control
   playAmplifierAll,
   stopAmplifierAll,
