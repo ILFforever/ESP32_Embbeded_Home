@@ -22,7 +22,8 @@ const {
   handleNfcRegisterScan,
   initiateNfcRegistration,
   handleDeviceNfcScan,
-  cancelNfcRegistration,
+  cancelOwnNfcRegistration,
+  cancelAdminNfcRegistration,
   removeNfcCard,
   removeNfcCardAdmin,
   // Amplifier Global Control
@@ -219,7 +220,7 @@ router.post('/nfc/register/cancel', protect, cancelOwnNfcRegistration);
 // @route   POST /api/v1/devices/nfc/register/cancel/:deviceId
 // @desc    Admin cancels all pending NFC registrations for a device
 // @access  Private (Admin only)
-router.post('/nfc/register/cancel/:deviceId', protect, authorize('admin'), cancelNfcRegistration);
+router.post('/nfc/register/cancel/:deviceId', protect, authorize('admin'), cancelAdminNfcRegistration);
 
 // @route   DELETE /api/v1/devices/nfc/cards/:card_id
 // @desc    User removes their own NFC card
