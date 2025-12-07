@@ -13,6 +13,7 @@ export interface ScoredAlert extends Alert {
     recencyScore: number;
     recognitionScore: number;
     confidenceScore: number;
+    tagBasedScore: number; // New score component
   };
 }
 
@@ -43,6 +44,10 @@ export function calculateAlertScore(alert: Alert, currentTime: Date = new Date()
   const confidenceScore = getConfidenceScore(alert);
   score += confidenceScore;
 
+  // 6. Tag-based Score for specific events (e.g., device restarts)
+  const tagBasedScore = getTagBasedScore(alert);
+  score += tagBasedScore;
+
   return Math.round(score * 10) / 10; // Round to 1 decimal place
 }
 
@@ -55,8 +60,9 @@ export function calculateAlertScoreWithBreakdown(alert: Alert, currentTime: Date
   const recencyScore = getRecencyScore(alert.timestamp, currentTime);
   const recognitionScore = getRecognitionScore(alert);
   const confidenceScore = getConfidenceScore(alert);
+  const tagBasedScore = getTagBasedScore(alert); // Calculate new score
 
-  const totalScore = levelScore + readStatusScore + recencyScore + recognitionScore + confidenceScore;
+  const totalScore = levelScore + readStatusScore + recencyScore + recognitionScore + confidenceScore + tagBasedScore;
 
   return {
     ...alert,
@@ -67,6 +73,7 @@ export function calculateAlertScoreWithBreakdown(alert: Alert, currentTime: Date
       recencyScore,
       recognitionScore,
       confidenceScore,
+      tagBasedScore, // Add to breakdown
     },
   };
 }
@@ -153,6 +160,30 @@ function getConfidenceScore(alert: Alert): number {
   // Invert confidence: lower confidence = higher score
   // Confidence ranges from 0 to 1, score ranges from 10 to 0
   return Math.max(0, 10 * (1 - confidence));
+}
+
+/**
+ * Score based on specific alert tags
+ * This helps prioritize certain events that might not have a high level
+ * but are still important for system monitoring.
+ */
+function getTagBasedScore(alert: Alert): number {
+  if (alert.tags.includes('device-restart')) {
+    return 15; // e.g., a device unexpectedly restarted
+  }
+  if (alert.tags.includes('device-offline')) {
+    return 20; // A device went offline, potentially critical
+  }
+  if (alert.tags.includes('device-online')) {
+    return 5; // A device came back online, good to know but low priority
+  }
+  if (alert.tags.includes('firmware-update')) {
+    return 10; // Firmware update status
+  }
+  if (alert.tags.includes('battery-low')) {
+    return 20; // Low battery is a high-priority warning
+  }
+  return 0;
 }
 
 /**

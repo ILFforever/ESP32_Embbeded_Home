@@ -34,6 +34,7 @@ export default function DashboardPage() {
   const [allDevicesOnline, setAllDevicesOnline] = useState<boolean>(false);
   const [doorLockStates, setDoorLockStates] = useState<Record<string, 'locked' | 'unlocked'>>({});
 
+
   const fetchAlerts = async () => {
     try {
       // Fetch all alerts with a limit of 50
@@ -234,6 +235,7 @@ export default function DashboardPage() {
       case 'music':
         content = <MusicBroadcastCard isExpanded={true} />;
         break;
+
       default:
         content = null;
     }
@@ -433,6 +435,7 @@ export default function DashboardPage() {
               </button>
               <DoorCard doorsWindows={doorsWindows} />
             </div>
+
 
             {/* Admin Management - spans 1 row x 2 columns - Only visible to admins */}
             {user?.role === 'admin' && (
