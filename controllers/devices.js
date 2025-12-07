@@ -3,6 +3,7 @@ const { publishFaceDetection, publishDeviceCommand } = require('../config/mqtt')
 const crypto = require('crypto');
 const { sendAlertNotification } = require('../utils/emailNotifications');
 const { ALERT_LEVELS } = require('../models/Alert');
+const { checkThresholdsAndAlert } = require('../utils/sensorThresholds');
 
 // ============================================================================
 // In-Memory Cache for Throttling (reduces Firebase writes by 95%)
@@ -369,6 +370,9 @@ const handleSensorData = async (req, res) => {
       // }
 
       updateCache(device_id, sensorData, 'sensor');
+
+      // Check thresholds and send alerts if exceeded
+      await checkThresholdsAndAlert(device_id, sensors);
     } else {
       // console.log(`[Sensor] ${device_id} - Throttled (no significant change)`);
     }
@@ -440,6 +444,9 @@ const handleRoomSensorData = async (req, res) => {
 
     // Update cache to track last write
     updateCache(device_id, sensorData, 'sensor');
+
+    // Check thresholds and send alerts if exceeded
+    await checkThresholdsAndAlert(device_id, data);
 
     res.json({
       status: 'ok',
