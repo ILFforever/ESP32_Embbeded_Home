@@ -1690,6 +1690,49 @@ const syncFaceDatabase = async (req, res) => {
   }
 };
 
+// @desc    Enroll a new face (start enrollment mode on camera)
+// @access  Private (requires user token)
+const enrollFace = async (req, res) => {
+  try {
+    const { device_id } = req.params;
+    const { user_name, face_id, timeout } = req.body;
+
+    const db = getFirestore();
+    const deviceRef = db.collection('devices').doc(device_id);
+
+    // Prepare command parameters
+    const params = {};
+    if (user_name) params.user_name = user_name;
+    if (face_id) params.face_id = face_id;
+    if (timeout) params.timeout = timeout;
+
+    // Queue face_enroll command
+    const commandRef = await deviceRef.collection('commands').add({
+      action: 'face_enroll',
+      params,
+      status: 'pending',
+      created_at: admin.firestore.FieldValue.serverTimestamp(),
+      executed_at: null,
+      result: null
+    });
+
+    console.log(`[FaceManagement] ${device_id} - Enroll face command queued (ID: ${commandRef.id})`, params);
+
+    // Notify device via MQTT
+    await publishDeviceCommand(device_id, commandRef.id);
+
+    res.json({
+      status: 'ok',
+      message: 'Face enrollment command queued and device notified',
+      command_id: commandRef.id,
+      params
+    });
+  } catch (error) {
+    console.error('[FaceManagement] Error enrolling face:', error);
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+};
+
 // @desc    Receive face database results from device (face_count, face_list, face_check)
 // @access  Private (requires device token)
 const handleFaceDatabaseResult = async (req, res) => {
@@ -2866,6 +2909,7 @@ module.exports = {
   listFaces,
   checkFaceDatabase,
   syncFaceDatabase,
+  enrollFace,
   handleFaceDatabaseResult,
   getFaceDatabaseInfo,
   // Device info

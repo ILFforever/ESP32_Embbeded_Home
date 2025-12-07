@@ -29,6 +29,7 @@ const {
   listFaces,
   checkFaceDatabase,
   syncFaceDatabase,
+  enrollFace,
   handleFaceDatabaseResult,
   getFaceDatabaseInfo,
   // Device info
@@ -212,6 +213,11 @@ router.post('/:device_id/face/check', protect, checkFaceDatabase);
 // @desc    Queue face database sync command (runs all three: count, list, check)
 // @access  Private (requires user token)
 router.post('/:device_id/face/sync', protect, syncFaceDatabase);
+
+// @route   POST /api/v1/devices/:device_id/face/enroll
+// @desc    Queue face enrollment command (start camera enrollment mode)
+// @access  Private (requires user token)
+router.post('/:device_id/face/enroll', protect, enrollFace);
 
 // @route   POST /api/v1/devices/:device_id/face-database/result
 // @desc    Receive face database results from device (face_count, face_list, face_check)

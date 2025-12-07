@@ -1,0 +1,183 @@
+# Face Enrollment API
+
+API endpoint for starting face enrollment mode on the doorbell camera to add new faces to the recognition database.
+
+## Endpoint
+
+**POST** `/api/v1/devices/:device_id/face/enroll`
+
+Queues a command to start face enrollment mode on the specified doorbell camera device.
+
+## Authentication
+
+Requires user authentication token (protected route).
+
+**Headers:**
+```
+Authorization: Bearer <user_token>
+```
+
+## Parameters
+
+### URL Parameters
+- `device_id` (required) - The device ID of the doorbell camera (e.g., "db_001")
+
+### Body Parameters (optional)
+```json
+{
+  "user_name": "John Doe",
+  "face_id": "user_001",
+  "timeout": 30
+}
+```
+
+- `user_name` (optional) - Name/label for the person being enrolled
+- `face_id` (optional) - Unique identifier for the face
+- `timeout` (optional) - Timeout in seconds for enrollment mode (default handled by ESP32)
+
+## Request Example
+
+### cURL
+```bash
+curl -X POST https://embedded-smarthome.fly.dev/api/v1/devices/db_001/face/enroll \
+  -H "Authorization: Bearer <your_user_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "user_name": "John Doe",
+    "face_id": "user_001",
+    "timeout": 30
+  }'
+```
+
+### JavaScript (Fetch)
+```javascript
+const response = await fetch('/api/v1/devices/db_001/face/enroll', {
+  method: 'POST',
+  headers: {
+    'Authorization': `Bearer ${userToken}`,
+    'Content-Type': 'application/json'
+  },
+  body: JSON.stringify({
+    user_name: 'John Doe',
+    face_id: 'user_001',
+    timeout: 30
+  })
+});
+
+const result = await response.json();
+console.log(result);
+```
+
+### React Example
+```jsx
+const enrollNewFace = async (deviceId, userName) => {
+  try {
+    const response = await fetch(`/api/v1/devices/${deviceId}/face/enroll`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${localStorage.getItem('token')}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        user_name: userName,
+        timeout: 30
+      })
+    });
+
+    const data = await response.json();
+
+    if (data.status === 'ok') {
+      console.log('Enrollment started:', data.command_id);
+      // Show user message to position themselves in front of camera
+      alert('Please stand in front of the camera. Enrollment mode activated.');
+    }
+  } catch (error) {
+    console.error('Failed to start enrollment:', error);
+  }
+};
+
+// Usage
+<button onClick={() => enrollNewFace('db_001', 'John Doe')}>
+  Enroll New Face
+</button>
+```
+
+## Response
+
+### Success Response
+```json
+{
+  "status": "ok",
+  "message": "Face enrollment command queued and device notified",
+  "command_id": "abc123xyz",
+  "params": {
+    "user_name": "John Doe",
+    "face_id": "user_001",
+    "timeout": 30
+  }
+}
+```
+
+### Error Response
+```json
+{
+  "status": "error",
+  "message": "Error message here"
+}
+```
+
+## How It Works
+
+1. **Frontend** calls this endpoint with optional parameters
+2. **Backend** creates a command in Firebase with action `'face_enroll'`
+3. **Backend** notifies the ESP32 device via MQTT
+4. **ESP32** fetches the pending command on next heartbeat
+5. **ESP32** enters enrollment mode and captures face data
+6. **ESP32** adds the face to local database
+7. **ESP32** acknowledges the command with success/failure result
+
+## Device-Side Implementation
+
+The ESP32 device should handle the `face_enroll` command by:
+1. Activating the camera in enrollment mode
+2. Capturing multiple face images from different angles
+3. Processing and enrolling the face in the local face recognition database
+4. Sending acknowledgment back to the server
+
+Example ESP32 command handler:
+```cpp
+if (command.action == "face_enroll") {
+  String userName = command.params["user_name"];
+  int timeout = command.params["timeout"] || 30;
+
+  // Start enrollment mode
+  bool success = startFaceEnrollment(userName, timeout);
+
+  // Acknowledge command
+  acknowledgeCommand(commandId, success ? "completed" : "failed");
+}
+```
+
+## Related Endpoints
+
+- `POST /api/v1/devices/:device_id/face/count` - Get count of enrolled faces
+- `POST /api/v1/devices/:device_id/face/list` - List all enrolled faces
+- `POST /api/v1/devices/:device_id/face/sync` - Sync face database info
+- `GET /api/v1/devices/:device_id/face-database/info` - Get face database info
+
+## Frontend Usage Flow
+
+1. User clicks "Add New Face" button in UI
+2. Frontend calls enrollment endpoint
+3. Frontend displays message: "Please position yourself in front of the camera"
+4. Frontend starts polling `/face-database/info` to check when enrollment completes
+5. ESP32 completes enrollment and updates face count
+6. Frontend detects count increase and shows success message
+
+## Notes
+
+- This endpoint only **queues** the command; it doesn't directly control the camera
+- The ESP32 device must be online and polling for commands
+- Enrollment success depends on the ESP32 implementation
+- The command will remain "pending" in Firebase until the device processes it
+- Use the command queue system to track command execution status
