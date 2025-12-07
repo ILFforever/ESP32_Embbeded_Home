@@ -73,7 +73,7 @@ function shouldWriteToFirebase(deviceId, newData, dataType = 'heartbeat') {
         if (oldValue !== undefined) {
           const percentChange = Math.abs((value - oldValue) / oldValue) * 100;
           if (percentChange >= SENSOR_DELTA_THRESHOLD) {
-            console.log(`[Throttle] Sensor ${key} changed by ${percentChange.toFixed(1)}% - writing`);
+            // console.log(`[Throttle] Sensor ${key} changed by ${percentChange.toFixed(1)}% - writing`);
             return true;
           }
         }
@@ -287,7 +287,7 @@ const handleHeartbeat = async (req, res) => {
       // Update cache
       updateCache(device_id, heartbeatData, 'heartbeat');
     } else {
-      console.log(`[Heartbeat] ${device_id} - Throttled (no Firebase write)`);
+      //console.log(`[Heartbeat] ${device_id} - Throttled (no Firebase write)`);
     }
 
     // Check for pending commands (lightweight query)
@@ -348,7 +348,7 @@ const handleSensorData = async (req, res) => {
     const shouldWrite = shouldWriteToFirebase(device_id, sensorData, 'sensor');
 
     if (shouldWrite) {
-      console.log(`[Sensor] ${device_id} - Writing to Firebase`);
+      // console.log(`[Sensor] ${device_id} - Writing to Firebase`);
 
       const db = getFirestore();
       const deviceRef = db.collection('devices').doc(device_id);
@@ -362,13 +362,13 @@ const handleSensorData = async (req, res) => {
 
       // Store in history (30-minute intervals for graphing)
       const historyWritten = await storeSensorHistory(deviceRef, sensors, sensorData.timestamp, device_id);
-      if (historyWritten) {
-        console.log(`[Sensor] ${device_id} - Stored in history (30min interval)`);
-      }
+      // if (historyWritten) {
+      //   console.log(`[Sensor] ${device_id} - Stored in history (30min interval)`);
+      // }
 
       updateCache(device_id, sensorData, 'sensor');
     } else {
-      console.log(`[Sensor] ${device_id} - Throttled (no significant change)`);
+      // console.log(`[Sensor] ${device_id} - Throttled (no significant change)`);
     }
 
     res.json({
@@ -416,7 +416,7 @@ const handleRoomSensorData = async (req, res) => {
     // Room sensors already throttle on ESP32 side - always write to Firebase
     const shouldWrite = true;
 
-    console.log(`[RoomSensor] ${device_id} - Writing to Firebase (forwarded by: ${forwarded_by})`);
+    // console.log(`[RoomSensor] ${device_id} - Writing to Firebase (forwarded by: ${forwarded_by})`);
 
     const db = getFirestore();
     const deviceRef = db.collection('devices').doc(device_id);
@@ -432,9 +432,9 @@ const handleRoomSensorData = async (req, res) => {
 
     // Store in history (30-minute intervals for graphing)
     const historyWritten = await storeSensorHistory(deviceRef, data, sensorData.timestamp, device_id);
-    if (historyWritten) {
-      console.log(`[RoomSensor] ${device_id} - Stored in history (30min interval)`);
-    }
+    // if (historyWritten) {
+    //   console.log(`[RoomSensor] ${device_id} - Stored in history (30min interval)`);
+    // }
 
     // Update cache to track last write
     updateCache(device_id, sensorData, 'sensor');
@@ -1195,6 +1195,11 @@ const sendDeviceCommand = async (req, res) => {
       'lock',
       'unlock',
       'status',
+      // Face management actions
+      'recognize_and_name',    // Recognize face and automatically apply name
+      'rename_face',           // Rename existing face by ID
+      'set_face_name',         // Set or update name for a face ID
+      'delete_last_face',      // Delete the last enrolled face
     ];
 
     if (!action || !validActions.includes(action)) {
@@ -1218,7 +1223,7 @@ const sendDeviceCommand = async (req, res) => {
 
     // Create command document
     const commandRef = await deviceRef.collection('commands').add({
-      action : action,
+      action: action,
       params: params || {},
       status: 'pending',
       created_at: admin.firestore.FieldValue.serverTimestamp(),
@@ -1416,141 +1421,141 @@ const handleManualUnlock = async (req, res) => {
 // Amplifier Global Control Endpoints (affecting all hub/doorbell devices)
 // ============================================================================
 const playAmplifierAll = async (req, res) => {
-      const { url } = req.query;
-      if (!url) {
-        return res.status(400).json({ status: 'error', message: 'url parameter is required' });
-      }
+  const { url } = req.query;
+  if (!url) {
+    return res.status(400).json({ status: 'error', message: 'url parameter is required' });
+  }
 
-      try {
-        const db = getFirestore();
-        const devicesSnapshot = await db.collection('devices').where('type', 'in', ['hb', 'db']).get();
+  try {
+    const db = getFirestore();
+    const devicesSnapshot = await db.collection('devices').where('type', 'in', ['hb', 'db']).get();
 
-        if (devicesSnapshot.empty) {
-          return res.status(404).json({ status: 'ok', message: 'No amplifier devices found.' });
-        }
+    if (devicesSnapshot.empty) {
+      return res.status(404).json({ status: 'ok', message: 'No amplifier devices found.' });
+    }
 
-        const promises = devicesSnapshot.docs.map(doc => queueCommand(doc.id, 'amp_play', { url }));
-        const results = await Promise.all(promises);
+    const promises = devicesSnapshot.docs.map(doc => queueCommand(doc.id, 'amp_play', { url }));
+    const results = await Promise.all(promises);
 
-        const successes = results.filter(r => r.success);
-        const failures = results.filter(r => !r.success);
+    const successes = results.filter(r => r.success);
+    const failures = results.filter(r => !r.success);
 
-        res.json({
-          status: 'ok',
-          message: `Attempted to play on ${results.length} device(s).`,
-          success_count: successes.length,
-          failure_count: failures.length,
-          successes,
-          failures
-        });
-      } catch (error) {
-        console.error('[playAmplifierAll] Error:', error);
-        res.status(500).json({ status: 'error', message: error.message });
-      }
-    };
+    res.json({
+      status: 'ok',
+      message: `Attempted to play on ${results.length} device(s).`,
+      success_count: successes.length,
+      failure_count: failures.length,
+      successes,
+      failures
+    });
+  } catch (error) {
+    console.error('[playAmplifierAll] Error:', error);
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+};
 
 const stopAmplifierAll = async (req, res) => {
-      try {
-        const db = getFirestore();
-        const devicesSnapshot = await db.collection('devices').where('type', 'in', ['hb', 'db']).get();
+  try {
+    const db = getFirestore();
+    const devicesSnapshot = await db.collection('devices').where('type', 'in', ['hb', 'db']).get();
 
-        if (devicesSnapshot.empty) {
-          return res.status(404).json({ status: 'ok', message: 'No amplifier devices found.' });
-        }
+    if (devicesSnapshot.empty) {
+      return res.status(404).json({ status: 'ok', message: 'No amplifier devices found.' });
+    }
 
-        const promises = devicesSnapshot.docs.map(doc => queueCommand(doc.id, 'amp_stop', {}));
-        const results = await Promise.all(promises);
+    const promises = devicesSnapshot.docs.map(doc => queueCommand(doc.id, 'amp_stop', {}));
+    const results = await Promise.all(promises);
 
-        const successes = results.filter(r => r.success);
-        const failures = results.filter(r => !r.success);
+    const successes = results.filter(r => r.success);
+    const failures = results.filter(r => !r.success);
 
-        res.json({
-          status: 'ok',
-          message: `Attempted to stop on ${results.length} device(s).`,
-          success_count: successes.length,
-          failure_count: failures.length,
-          successes,
-          failures
-        });
-      } catch (error) {
-        console.error('[stopAmplifierAll] Error:', error);
-        res.status(500).json({ status: 'error', message: error.message });
-      }
-    };
+    res.json({
+      status: 'ok',
+      message: `Attempted to stop on ${results.length} device(s).`,
+      success_count: successes.length,
+      failure_count: failures.length,
+      successes,
+      failures
+    });
+  } catch (error) {
+    console.error('[stopAmplifierAll] Error:', error);
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+};
 
 const setAmplifierVolumeAll = async (req, res) => {
-    const { level } = req.query;
+  const { level } = req.query;
 
-    if (level === undefined) {
-      return res.status(400).json({
-        status: 'error',
-        message: 'level parameter is required (0-21)'
-      });
+  if (level === undefined) {
+    return res.status(400).json({
+      status: 'error',
+      message: 'level parameter is required (0-21)'
+    });
+  }
+
+  const volumeLevel = parseInt(level);
+  if (isNaN(volumeLevel) || volumeLevel < 0 || volumeLevel > 21) {
+    return res.status(400).json({
+      status: 'error',
+      message: 'level must be a number between 0 and 21'
+    });
+  }
+  try {
+    const db = getFirestore();
+    const devicesSnapshot = await db.collection('devices').where('type', 'in', ['hb', 'db']).get();
+
+    if (devicesSnapshot.empty) {
+      return res.status(404).json({ status: 'ok', message: 'No amplifier devices found.' });
     }
 
-    const volumeLevel = parseInt(level);
-    if (isNaN(volumeLevel) || volumeLevel < 0 || volumeLevel > 21) {
-      return res.status(400).json({
-        status: 'error',
-        message: 'level must be a number between 0 and 21'
-      });
-    }
-      try {
-        const db = getFirestore();
-        const devicesSnapshot = await db.collection('devices').where('type', 'in', ['hb', 'db']).get();
+    const promises = devicesSnapshot.docs.map(doc => queueCommand(doc.id, 'amp_volume', { level: volumeLevel }));
+    const results = await Promise.all(promises);
 
-        if (devicesSnapshot.empty) {
-          return res.status(404).json({ status: 'ok', message: 'No amplifier devices found.' });
-        }
+    const successes = results.filter(r => r.success);
+    const failures = results.filter(r => !r.success);
 
-        const promises = devicesSnapshot.docs.map(doc => queueCommand(doc.id, 'amp_volume', { level: volumeLevel }));
-        const results = await Promise.all(promises);
-
-        const successes = results.filter(r => r.success);
-        const failures = results.filter(r => !r.success);
-
-        res.json({
-          status: 'ok',
-          message: `Attempted to set volume on ${results.length} device(s).`,
-          success_count: successes.length,
-          failure_count: failures.length,
-          successes,
-          failures
-        });
-      } catch (error) {
-        console.error('[setAmplifierVolumeAll] Error:', error);
-        res.status(500).json({ status: 'error', message: error.message });
-      }
-    };
+    res.json({
+      status: 'ok',
+      message: `Attempted to set volume on ${results.length} device(s).`,
+      success_count: successes.length,
+      failure_count: failures.length,
+      successes,
+      failures
+    });
+  } catch (error) {
+    console.error('[setAmplifierVolumeAll] Error:', error);
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+};
 
 const restartAmplifierAll = async (req, res) => {
-      try {
-        const db = getFirestore();
-        const devicesSnapshot = await db.collection('devices').where('type', 'in', ['hb', 'db']).get();
+  try {
+    const db = getFirestore();
+    const devicesSnapshot = await db.collection('devices').where('type', 'in', ['hb', 'db']).get();
 
-        if (devicesSnapshot.empty) {
-          return res.status(404).json({ status: 'ok', message: 'No amplifier devices found.' });
-        }
+    if (devicesSnapshot.empty) {
+      return res.status(404).json({ status: 'ok', message: 'No amplifier devices found.' });
+    }
 
-        const promises = devicesSnapshot.docs.map(doc => queueCommand(doc.id, 'amp_restart', {}));
-        const results = await Promise.all(promises);
+    const promises = devicesSnapshot.docs.map(doc => queueCommand(doc.id, 'amp_restart', {}));
+    const results = await Promise.all(promises);
 
-        const successes = results.filter(r => r.success);
-        const failures = results.filter(r => !r.success);
+    const successes = results.filter(r => r.success);
+    const failures = results.filter(r => !r.success);
 
-        res.json({
-          status: 'ok',
-          message: `Attempted to restart on ${results.length} device(s).`,
-          success_count: successes.length,
-          failure_count: failures.length,
-          successes,
-          failures
-        });
-      } catch (error) {
-        console.error('[restartAmplifierAll] Error:', error);
-        res.status(500).json({ status: 'error', message: error.message });
-      }
-    };
+    res.json({
+      status: 'ok',
+      message: `Attempted to restart on ${results.length} device(s).`,
+      success_count: successes.length,
+      failure_count: failures.length,
+      successes,
+      failures
+    });
+  } catch (error) {
+    console.error('[restartAmplifierAll] Error:', error);
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+};
 
 // ============================================================================
 // Face Management Endpoints
@@ -1883,7 +1888,7 @@ const getDeviceInfo = async (req, res) => {
       }
 
       const sensorData = sensorDoc.data();
-      
+
       let lastUpdated = 0;
       // Prefer server-side timestamp, fall back to device-side
       const timestampValue = sensorData.last_updated || sensorData.timestamp;
@@ -1892,7 +1897,7 @@ const getDeviceInfo = async (req, res) => {
         // Handle Firestore Timestamp object, which has a toMillis method
         if (typeof timestampValue.toMillis === 'function') {
           lastUpdated = timestampValue.toMillis();
-        } 
+        }
         // Handle ISO 8601 string date format
         else if (typeof timestampValue === 'string') {
           const parsedDate = new Date(timestampValue);
@@ -1902,10 +1907,10 @@ const getDeviceInfo = async (req, res) => {
         }
         // Handle JavaScript Date object
         else if (timestampValue instanceof Date) {
-            lastUpdated = timestampValue.getTime();
+          lastUpdated = timestampValue.getTime();
         }
       }
-      
+
       if (lastUpdated === 0) {
         return res.json({
           status: 'ok',
@@ -2108,7 +2113,7 @@ const getHubSensors = async (req, res) => {
       device_id
     };
 
-    console.log(`[HubSensors] ${device_id} - Retrieved sensor data from sensors/current:`, sensorData);
+    // console.log(`[HubSensors] ${device_id} - Retrieved sensor data from sensors/current:`, sensorData);
 
     res.json({
       status: 'ok',
@@ -2279,7 +2284,7 @@ const getSensorReadings = async (req, res) => {
       });
     }
 
-    console.log(`[SensorReadings] ${device_id} - Fetching last ${hoursInt} hours of data`);
+    // console.log(`[SensorReadings] ${device_id} - Fetching last ${hoursInt} hours of data`);
 
     const db = getFirestore();
     const deviceRef = db.collection('devices').doc(device_id);
@@ -2309,7 +2314,7 @@ const getSensorReadings = async (req, res) => {
       };
     });
 
-    console.log(`[SensorReadings] ${device_id} - Returning ${readings.length} history readings`);
+    // console.log(`[SensorReadings] ${device_id} - Returning ${readings.length} history readings`);
 
     res.json({
       status: 'ok',
@@ -2364,7 +2369,7 @@ const getLatestSensorData = async (req, res) => {
       formattedData.last_updated = rawData.last_updated.toDate().toISOString();
     }
 
-    console.log(`[LatestSensor] ${device_id} - Retrieved and formatted raw sensor data from sensors/current:`, formattedData);
+    // console.log(`[LatestSensor] ${device_id} - Retrieved and formatted raw sensor data from sensors/current:`, formattedData);
 
     res.json({
       status: 'ok',
@@ -2800,7 +2805,7 @@ const handleNfcScan = async (req, res) => {
         nfc_cards: updatedCards,
         is_adding_card: false
       });
-      
+
       console.log(`[NFC] Successfully assigned card ${card_id} to user ${user.name}.`);
 
       return res.json({

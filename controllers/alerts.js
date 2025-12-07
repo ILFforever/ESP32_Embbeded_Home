@@ -120,7 +120,8 @@ const getAlerts = async (req, res) => {
     // Parse read filter
     const readFilter = read !== undefined ? read === 'true' : null;
 
-    console.log(`[Alerts] Querying alerts - level: ${level || 'all'}, source: ${source || 'all'}, read: ${readFilter !== null ? readFilter : 'all'}, limit: ${limitNum}`);
+    // console.log(`[Alerts] Querying alerts - level: ${level || 'all'}, source: ${source || 'all'}, read: ${readFilter !== null ? readFilter : 'all'}, limit: ${limitNum}`);
+    console.log(`[Alerts] Querying alerts with parameters:`, { level, source, tags, limit, read });
 
     const db = getFirestore();
     const alerts = [];
@@ -154,6 +155,7 @@ const getAlerts = async (req, res) => {
     for (const device of devices) {
       const deviceId = device.id;
       const deviceType = device.data?.type || 'unknown';
+      console.log(`[Alerts] Processing device: ${deviceId} (Type: ${deviceType})`);
 
       // 1. Get device logs (errors and warnings only)
       const logsSnapshot = await db.collection('devices').doc(deviceId)
@@ -329,6 +331,7 @@ const getAlerts = async (req, res) => {
 
           // Check for threshold violations
           const violations = [];
+          console.log(`[Alerts] Checking sensor thresholds for device: ${deviceId}`);
 
           // Temperature checks
           if (sensorData.temperature != null) {
@@ -396,10 +399,13 @@ const getAlerts = async (req, res) => {
       }
     }
 
+    console.log(`[Alerts] Found ${alerts.length} total raw alerts before filtering.`);
+
     // Apply read filter if specified
     let filteredAlerts = alerts;
     if (readFilter !== null) {
       filteredAlerts = alerts.filter(alert => alert.read === readFilter);
+      console.log(`[Alerts] ${filteredAlerts.length} alerts after filtering by read status: ${readFilter}`);
     }
 
     // Calculate alert type distribution for diversity scoring
@@ -415,6 +421,9 @@ const getAlerts = async (req, res) => {
     filteredAlerts.sort((a, b) => {
       const scoreA = calculateAlertScore(a.level, a.timestamp, a.type || 'other', alertTypeCounts);
       const scoreB = calculateAlertScore(b.level, b.timestamp, b.type || 'other', alertTypeCounts);
+      if (filteredAlerts.indexOf(a) < 5) { // Log scores for the first 5 alerts
+        console.log(`[Alerts] Score for ${a.id}: ${scoreA.toFixed(2)}`);
+      }
       return scoreB - scoreA; // Higher score = more important
     });
 
