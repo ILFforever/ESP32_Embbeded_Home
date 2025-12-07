@@ -2630,6 +2630,142 @@ const getDoorLockStatus = async (req, res) => {
   }
 };
 
+const User = require('../models/User');
+
+// ============================================================================
+// @route   POST /api/v1/devices/nfc/scan
+// @desc    Receive NFC scan from a device and check for authorized user or add a new card
+// ============================================================================
+const handleNfcScan = async (req, res) => {
+  try {
+    const { device_id, card_id } = req.body;
+
+    // 1. Validation
+    if (!device_id || !card_id) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'device_id and card_id are required'
+      });
+    }
+
+    console.log(`[NFC] Scan received from ${device_id} with card ID: ${card_id}`);
+
+    const db = getFirestore();
+    const usersRef = db.collection('users');
+    const deviceRef = db.collection('devices').doc(device_id);
+    const timestamp = admin.firestore.FieldValue.serverTimestamp();
+
+    // 2. Check if any user is in "add card mode"
+    const addingUserSnapshot = await usersRef.where('is_adding_card', '==', true).limit(1).get();
+
+    if (!addingUserSnapshot.empty) {
+      const userDoc = addingUserSnapshot.docs[0];
+      const user = new User({ id: userDoc.id, ...userDoc.data() });
+
+      console.log(`[NFC] User ${user.name} is in 'add card mode'. Assigning card ${card_id}.`);
+
+      // Check if this card is already assigned to ANY user
+      const existingCardSnapshot = await usersRef.where('nfc_cards', 'array-contains', card_id).get();
+      if (!existingCardSnapshot.empty) {
+        // Card is already assigned, reset the user's state and return an error
+        await userDoc.ref.update({ is_adding_card: false });
+        console.error(`[NFC] Card ${card_id} is already assigned to another user.`);
+        return res.status(409).json({
+          status: 'error',
+          message: 'This NFC card is already registered to another user.'
+        });
+      }
+
+      // Add the new card and reset the flag
+      const updatedCards = [...user.nfc_cards, card_id];
+      await userDoc.ref.update({
+        nfc_cards: updatedCards,
+        is_adding_card: false
+      });
+      
+      console.log(`[NFC] Successfully assigned card ${card_id} to user ${user.name}.`);
+
+      return res.json({
+        status: 'ok',
+        message: `NFC card successfully added to ${user.name}'s account.`,
+        operation: 'add_card',
+        user: { id: user.id, name: user.name }
+      });
+    }
+
+    // 3. If not in "add card mode", proceed with normal access authorization
+    console.log('[NFC] No user in "add card mode". Checking for authorization...');
+    const userSnapshot = await usersRef.where('nfc_cards', 'array-contains', card_id).limit(1).get();
+
+    let authorized = false;
+    let userName = 'Unknown';
+    let userId = null;
+
+    if (!userSnapshot.empty) {
+      authorized = true;
+      const userDoc = userSnapshot.docs[0];
+      userName = userDoc.data().name;
+      userId = userDoc.id;
+      console.log(`[NFC] Card ID ${card_id} is authorized for user: ${userName} (ID: ${userId})`);
+    } else {
+      console.log(`[NFC] Card ID ${card_id} is not authorized.`);
+    }
+
+    // 4. Log the scan event
+    const logEntry = {
+      card_id,
+      authorized,
+      user_name: userName,
+      user_id: userId,
+      timestamp,
+      created_at: timestamp
+    };
+
+    const logRef = await deviceRef.collection('nfc_scans').add(logEntry);
+    console.log(`[NFC] Scan event logged with ID: ${logRef.id}`);
+
+    // 5. Trigger action if authorized
+    if (authorized) {
+      const targetDeviceId = 'dl_001'; // Example: unlock door 'dl_001'
+      const unlockResult = await queueCommand(targetDeviceId, 'unlock', {
+        trigger: 'nfc',
+        user_name: userName,
+        user_id: userId
+      });
+
+      if (unlockResult.success) {
+        console.log(`[NFC] Unlock command queued for ${targetDeviceId} for user ${userName}`);
+        return res.json({
+          status: 'ok',
+          message: 'NFC scan processed. Access granted.',
+          authorized: true,
+          user: { id: userId, name: userName },
+          action_result: unlockResult
+        });
+      } else {
+        console.error(`[NFC] Failed to queue unlock command for ${targetDeviceId}:`, unlockResult.error);
+        return res.status(500).json({
+          status: 'error',
+          message: 'NFC card authorized, but failed to trigger action.',
+          authorized: true,
+          user: { id: userId, name: userName },
+          action_result: unlockResult
+        });
+      }
+    } else {
+      return res.status(403).json({
+        status: 'error',
+        message: 'Access denied. NFC card not recognized.',
+        authorized: false
+      });
+    }
+
+  } catch (error) {
+    console.error('[NFC] Error handling NFC scan:', error);
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+};
+
 module.exports = {
   registerDevice,
   handleHeartbeat,
@@ -2647,6 +2783,7 @@ module.exports = {
   fetchPendingCommands,
   acknowledgeCommand,
   handleManualUnlock,
+  handleNfcScan,
   // Amplifier Global Control
   playAmplifierAll,
   stopAmplifierAll,
@@ -2663,17 +2800,18 @@ module.exports = {
   getDeviceInfo,
   // Visitors
   getLatestVisitors,
-  // Hub-specific endpoints
+  // Hub-specific
   getHubSensors,
   sendHubAlert,
   getHubAmpStreaming,
   // Sensor readings
   getSensorReadings,
-  // Latest sensor reading
   getLatestSensorData,
   // Door lock specific
   lockDoor,
   unlockDoor,
   getDoorLockStatus,
-  updateDoorLockState
+  updateDoorLockState,
+  // Helper function for queueing commands
+  queueCommandHelper: queueCommand
 };

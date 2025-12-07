@@ -13,6 +13,8 @@ class User {
         this.resetPasswordExpire = data.resetPasswordExpire || null;
         this.createdAt = data.createdAt || new Date();
         this.role = data.role || 'user';
+        this.nfc_cards = data.nfc_cards || [];
+        this.is_adding_card = data.is_adding_card || false;
     }
 
     // Validation
@@ -43,6 +45,10 @@ class User {
 
         if (!['user', 'admin'].includes(userData.role || 'user')) {
             errors.push('Invalid role');
+        }
+
+        if (userData.nfc_cards && !Array.isArray(userData.nfc_cards)) {
+            errors.push('nfc_cards must be an array');
         }
 
         return errors;
@@ -95,7 +101,9 @@ class User {
             role: userData.role || 'user',
             createdAt: new Date(),
             resetPasswordToken: null,
-            resetPasswordExpire: null
+            resetPasswordExpire: null,
+            nfc_cards: userData.nfc_cards || [],
+            is_adding_card: false
         };
 
         const docRef = await db.collection('users').add(newUser);

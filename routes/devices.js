@@ -18,6 +18,7 @@ const {
   fetchPendingCommands,
   acknowledgeCommand,
   handleManualUnlock,
+  handleNfcScan,
   // Amplifier Global Control
   playAmplifierAll,
   stopAmplifierAll,
@@ -182,6 +183,11 @@ router.post('/commands/ack', authenticateDevice, acknowledgeCommand);
 // @desc    Handle manual unlock notification from doorlock device
 // @access  Private (requires device token)
 router.post('/commands/manual-unlock', authenticateDevice, handleManualUnlock);
+
+// @route   POST /api/v1/devices/nfc/scan
+// @desc    Receive NFC scan from a device
+// @access  Private (requires device token)
+router.post('/nfc/scan', authenticateDevice, handleNfcScan);
 
 // ============================================================================
 // Face Management Routes
