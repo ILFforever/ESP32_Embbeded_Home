@@ -6,7 +6,8 @@ const {
   createAlert,
   markAlertAsRead,
   markMultipleAlertsAsRead,
-  deleteAlert
+  deleteAlert,
+  testEmailNotification
 } = require('../controllers/alerts');
 const { protect } = require('../middleware/auth');
 const { authenticateDevice } = require('../middleware/deviceAuth');
@@ -25,6 +26,11 @@ router.get('/device', authenticateDevice, getAlerts);
 // @desc    Get a single alert by ID
 // @access  Private (requires user token)
 router.get('/:alert_id', protect, getAlertById);
+
+// @route   POST /api/v1/alerts/test-email
+// @desc    Test email notification system
+// @access  Private (requires user token)
+router.post('/test-email', protect, testEmailNotification);
 
 // @route   POST /api/v1/alerts
 // @desc    Create a new alert manually

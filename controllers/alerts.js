@@ -810,6 +810,61 @@ const createDeviceAlert = async (alertData) => {
   }
 };
 
+// ============================================================================
+// @route   POST /api/v1/alerts/test-email
+// @desc    Test email notification system (sends test alert to all users)
+// @access  Protected (requires user token)
+// ============================================================================
+const testEmailNotification = async (req, res) => {
+  try {
+    console.log('[Alerts] Testing email notification system...');
+
+    // Create a test alert
+    const testAlert = {
+      id: 'test-' + Date.now(),
+      level: req.body.level || ALERT_LEVELS.INFO,
+      message: req.body.message || 'This is a test alert to verify email notifications are working correctly.',
+      source: req.body.source || 'test-system',
+      tags: req.body.tags || ['test', 'email-notification'],
+      metadata: {
+        test: true,
+        timestamp: new Date().toISOString()
+      },
+      timestamp: new Date(),
+      created_at: new Date()
+    };
+
+    // Send email notification
+    const result = await sendAlertNotification(testAlert);
+
+    if (result.success) {
+      res.json({
+        status: 'ok',
+        message: `Test email sent successfully to ${result.sent}/${result.total} recipients`,
+        details: {
+          sent: result.sent,
+          total: result.total,
+          recipients: result.recipients,
+          alert: testAlert
+        }
+      });
+    } else {
+      res.status(500).json({
+        status: 'error',
+        message: result.message || 'Failed to send test email',
+        error: result.error
+      });
+    }
+
+  } catch (error) {
+    console.error('[Alerts] Error testing email notifications:', error);
+    res.status(500).json({
+      status: 'error',
+      message: error.message
+    });
+  }
+};
+
 module.exports = {
   getAlerts,
   getAlertById,
@@ -817,5 +872,6 @@ module.exports = {
   markAlertAsRead,
   markMultipleAlertsAsRead,
   deleteAlert,
-  createDeviceAlert
+  createDeviceAlert,
+  testEmailNotification
 };
