@@ -9,6 +9,7 @@ import { TemperatureCard } from '@/components/dashboard/TemperatureCard';
 import { GasReadingsCard } from '@/components/dashboard/GasReadingsCard';
 import { DoorCard } from '@/components/dashboard/DoorCard';
 import { AdminManagementCard } from '@/components/dashboard/AdminManagementCard';
+import { NfcManagementCard } from '@/components/dashboard/NfcManagementCard';
 import { SystemStatusCard } from '@/components/dashboard/SystemStatusCard';
 import { MusicBroadcastCard } from '@/components/dashboard/MusicBroadcastCard';
 import {
@@ -232,6 +233,14 @@ export default function DashboardPage() {
           content = null;
         }
         break;
+      case 'nfc':
+        // Only admins can view NFC management
+        if (user?.role === 'admin') {
+          content = <NfcManagementCard isExpanded={true} />;
+        } else {
+          content = null;
+        }
+        break;
       case 'music':
         content = <MusicBroadcastCard isExpanded={true} />;
         break;
@@ -450,6 +459,22 @@ export default function DashboardPage() {
                   </svg>
                 </button>
                 <AdminManagementCard devices={devicesStatus?.devices || []} />
+              </div>
+            )}
+
+            {/* NFC Management - spans 1 row x 2 columns - Only visible to admins */}
+            {user?.role === 'admin' && (
+              <div
+                className="dashboard-card grid-nfc"
+                onClick={() => openExpandedCard('nfc')}
+              >
+                <button className="card-eye-icon" onClick={(e) => { e.stopPropagation(); openExpandedCard('nfc'); }}>
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                    <circle cx="12" cy="12" r="3"></circle>
+                  </svg>
+                </button>
+                <NfcManagementCard />
               </div>
             )}
 

@@ -251,7 +251,8 @@ h6 { font-size: var(--font-size-sm); }
     "system-status system-status alerts alerts"
     "system-status system-status alerts alerts"
     "temperature temperature gas gas"
-    "doors music admin admin";
+    "doors music admin admin"
+    "nfc nfc . .";
 }
 
 /* Grid area assignments */
@@ -277,6 +278,10 @@ h6 { font-size: var(--font-size-sm); }
 
 .grid-admin {
   grid-area: admin;
+}
+
+.grid-nfc {
+  grid-area: nfc;
 }
 
 .grid-music {
