@@ -896,13 +896,19 @@ const handleFaceDetection = async (req, res) => {
       console.log(`[FaceDetection] ${device_id} - Known face detected (${name}), unlocking door dl_001`);
 
       try {
-        // Send unlock command to door lock dl_001
-        const unlockResult = await queueCommand('dl_001', 'unlock', {});
+        // Send unlock command to door lock dl_001 with trigger metadata
+        const unlockResult = await queueCommand('dl_001', 'unlock', {
+          trigger: 'face_detect',
+          triggered_by_face: name || 'Unknown',
+          face_detection_event_id: eventRef.id,
+          doorbell_device_id: device_id
+        });
 
         if (unlockResult.success) {
           console.log(`[FaceDetection] ${device_id} - Door unlock command queued for dl_001 (Command ID: ${unlockResult.commandId})`);
 
-          // Update door lock state with trigger type 'face_detect'
+          // Immediately update door lock state with trigger type 'face_detect'
+          // This ensures the state is set even before ESP32 responds
           const doorLockRef = db.collection('devices').doc('dl_001');
           await doorLockRef
             .collection('live_status')
@@ -2384,6 +2390,25 @@ const updateDoorLockState = async (req, res) => {
       });
     }
 
+    // Check if there's an existing state with face_detect trigger
+    // If so, preserve it unless explicitly overriding
+    const existingStateDoc = await deviceRef
+      .collection('live_status')
+      .doc('device_state')
+      .get();
+
+    const existingState = existingStateDoc.exists ? existingStateDoc.data() : {};
+    const existingTrigger = existingState.trigger;
+
+    // Preserve face_detect trigger unless a new trigger is explicitly provided
+    // This prevents ESP32 from accidentally overwriting face_detect triggers
+    let finalTrigger = triggerValue;
+    if (!triggerValue && existingTrigger === 'face_detect') {
+      // If no trigger provided but existing is face_detect, keep it
+      finalTrigger = 'face_detect';
+      console.log(`[DoorLockState] ${device_id} - Preserving existing face_detect trigger`);
+    }
+
     // Update device state
     const stateData = {
       lock_state,
@@ -2392,8 +2417,23 @@ const updateDoorLockState = async (req, res) => {
       updated_at: admin.firestore.FieldValue.serverTimestamp()
     };
 
-    if (triggerValue) {
-      stateData.trigger = triggerValue;
+    if (finalTrigger) {
+      stateData.trigger = finalTrigger;
+    }
+
+    // Handle face detection metadata based on trigger
+    if (existingTrigger === 'face_detect' && !triggerValue) {
+      // Preserve face detection metadata if no new trigger provided
+      if (existingState.triggered_by_face) {
+        stateData.triggered_by_face = existingState.triggered_by_face;
+      }
+      if (existingState.face_detection_event_id) {
+        stateData.face_detection_event_id = existingState.face_detection_event_id;
+      }
+    } else if (triggerValue && triggerValue !== 'face_detect') {
+      // Clear face detection metadata if trigger changed to manual or frontend
+      stateData.triggered_by_face = admin.firestore.FieldValue.delete();
+      stateData.face_detection_event_id = admin.firestore.FieldValue.delete();
     }
 
     await deviceRef
@@ -2401,10 +2441,10 @@ const updateDoorLockState = async (req, res) => {
       .doc('device_state')
       .set(stateData, { merge: true });
 
-    console.log(`[DoorLockState] ${device_id} - State updated: ${lock_state} (trigger: ${triggerValue || 'none'})`);
+    console.log(`[DoorLockState] ${device_id} - State updated: ${lock_state} (trigger: ${finalTrigger || 'none'})`);
 
     // Log the trigger event
-    if (triggerValue) {
+    if (finalTrigger) {
       const logMessages = {
         manual: `Manual ${lock_state === 'locked' ? 'lock' : 'unlock'} button pressed`,
         frontend: `${lock_state === 'locked' ? 'Lock' : 'Unlock'} triggered from frontend`,
@@ -2413,17 +2453,17 @@ const updateDoorLockState = async (req, res) => {
 
       const logEntry = {
         level: 'info',
-        message: logMessages[triggerValue] || `${lock_state} triggered`,
+        message: logMessages[finalTrigger] || `${lock_state} triggered`,
         data: {
           lock_state,
           action: last_action || lock_state,
-          trigger: triggerValue
+          trigger: finalTrigger
         },
         created_at: admin.firestore.FieldValue.serverTimestamp()
       };
 
       await deviceRef.collection('device_logs').add(logEntry);
-      console.log(`[DoorLockState] ${device_id} - Trigger event logged: ${triggerValue}`);
+      console.log(`[DoorLockState] ${device_id} - Trigger event logged: ${finalTrigger}`);
     }
 
     res.json({
@@ -2431,7 +2471,7 @@ const updateDoorLockState = async (req, res) => {
       message: 'Lock state updated successfully',
       device_id,
       lock_state,
-      trigger: triggerValue
+      trigger: finalTrigger
     });
 
   } catch (error) {
@@ -2466,8 +2506,8 @@ const lockDoor = async (req, res) => {
       });
     }
 
-    // Queue lock command
-    const result = await queueCommand(device_id, 'lock', {});
+    // Queue lock command with frontend trigger
+    const result = await queueCommand(device_id, 'lock', { trigger: 'frontend' });
 
     if (!result.success) {
       return res.status(500).json({
@@ -2478,6 +2518,22 @@ const lockDoor = async (req, res) => {
     }
 
     console.log(`[DoorLock] ${device_id} - Lock command queued (ID: ${result.commandId})`);
+
+    // Update state immediately with frontend trigger
+    // Clear face detection metadata when locked from frontend
+    await db.collection('devices')
+      .doc(device_id)
+      .collection('live_status')
+      .doc('device_state')
+      .set({
+        lock_state: 'locked',
+        last_action: 'lock',
+        trigger: 'frontend',
+        triggered_by_face: admin.firestore.FieldValue.delete(),
+        face_detection_event_id: admin.firestore.FieldValue.delete(),
+        last_action_time: admin.firestore.FieldValue.serverTimestamp(),
+        updated_at: admin.firestore.FieldValue.serverTimestamp()
+      }, { merge: true });
 
     res.json({
       status: 'ok',
@@ -2520,8 +2576,8 @@ const unlockDoor = async (req, res) => {
       });
     }
 
-    // Queue unlock command with optional duration
-    const params = duration ? { duration: parseInt(duration) } : {};
+    // Queue unlock command with optional duration and frontend trigger
+    const params = duration ? { duration: parseInt(duration), trigger: 'frontend' } : { trigger: 'frontend' };
     const result = await queueCommand(device_id, 'unlock', params);
 
     if (!result.success) {
@@ -2533,6 +2589,22 @@ const unlockDoor = async (req, res) => {
     }
 
     console.log(`[DoorLock] ${device_id} - Unlock command queued (ID: ${result.commandId})${duration ? ` with duration: ${duration}s` : ''}`);
+
+    // Update state immediately with frontend trigger
+    // Clear face detection metadata when unlocked from frontend
+    await db.collection('devices')
+      .doc(device_id)
+      .collection('live_status')
+      .doc('device_state')
+      .set({
+        lock_state: 'unlocked',
+        last_action: 'unlock',
+        trigger: 'frontend',
+        triggered_by_face: admin.firestore.FieldValue.delete(),
+        face_detection_event_id: admin.firestore.FieldValue.delete(),
+        last_action_time: admin.firestore.FieldValue.serverTimestamp(),
+        updated_at: admin.firestore.FieldValue.serverTimestamp()
+      }, { merge: true });
 
     res.json({
       status: 'ok',
