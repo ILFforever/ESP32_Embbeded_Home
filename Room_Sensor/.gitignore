@@ -16,7 +16,6 @@
 # Dependencies
 .pioenvs
 .piolibdeps
-lib/
 
 # IDE
 .vscode/*
