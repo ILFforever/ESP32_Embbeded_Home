@@ -1,5 +1,7 @@
 const { getFirestore } = require('../config/firebase');
+const Alert = require('../models/Alert');
 const { ALERT_LEVELS } = require('../models/Alert');
+const { sendAlertNotification } = require('../utils/emailNotifications');
 
 // Helper: Map log level to alert level
 function mapLogLevelToAlertLevel(logLevel) {
@@ -623,6 +625,12 @@ const createAlert = async (req, res) => {
 
     console.log(`[Alerts] Created alert: ${alert.id}`);
 
+    // Send email notifications to all users and admins
+    sendAlertNotification(alert.toJSON()).catch(error => {
+      console.error('[Alerts] Failed to send email notifications:', error);
+      // Don't fail the request if email fails
+    });
+
     res.status(201).json({
       status: 'ok',
       message: 'Alert created successfully',
@@ -778,7 +786,15 @@ const deleteAlert = async (req, res) => {
 // ============================================================================
 const createDeviceAlert = async (alertData) => {
   try {
-    return await Alert.create(alertData);
+    const alert = await Alert.create(alertData);
+
+    // Send email notifications to all users and admins
+    sendAlertNotification(alert.toJSON()).catch(error => {
+      console.error('[Alerts] Failed to send email notifications:', error);
+      // Don't fail the request if email fails
+    });
+
+    return alert;
   } catch (error) {
     console.error('[Alerts] Error creating device alert:', error);
     throw error;
