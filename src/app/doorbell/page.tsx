@@ -21,8 +21,11 @@ import {
   getDeviceHistory,
   getLatestVisitors,
   sendCommand,
-  getFaceDatabaseInfo
-  , syncFaceDatabase
+  getFaceDatabaseInfo,
+  syncFaceDatabase,
+  renameFace,
+  setFaceName,
+  deleteLastFace
 } from "@/services/devices.service";
 import { getCookie } from "@/utils/cookies";
 import type { FaceDatabaseInfo, Visitor } from "@/services/devices.service";
@@ -81,6 +84,18 @@ export default function DoorbellControlPage() {
   // Add face modal
   const [showAddFaceModal, setShowAddFaceModal] = useState(false);
   const [newFaceName, setNewFaceName] = useState("");
+
+  // Recognize and name modal
+  const [showRecognizeAndNameModal, setShowRecognizeAndNameModal] = useState(false);
+  const [recognizeNameInput, setRecognizeNameInput] = useState("");
+
+  // Rename face modal
+  const [showRenameFaceModal, setShowRenameFaceModal] = useState(false);
+  const [renameFaceId, setRenameFaceId] = useState<number>(1);
+  const [renameNewName, setRenameNewName] = useState("");
+
+  // Delete last face confirmation
+  const [showDeleteLastConfirm, setShowDeleteLastConfirm] = useState(false);
 
   // Stream display states
   const [streamError, setStreamError] = useState<string | null>(null);
@@ -750,6 +765,82 @@ export default function DoorbellControlPage() {
     } catch (error) {
       console.error("Error adding face:", error);
       alert("Failed to start face enrollment. Please try again.");
+    } finally {
+      setCommandLoading(null);
+    }
+  };
+
+  // Rename face handler
+  const handleRenameFaceSubmit = async () => {
+    const deviceId = getEffectiveDeviceId();
+    if (!deviceId) return;
+
+    if (!renameNewName || !renameNewName.trim()) {
+      alert("Please enter a new name.");
+      return;
+    }
+
+    if (renameFaceId < 1) {
+      alert("Please enter a valid face ID (1 or greater).");
+      return;
+    }
+
+    setCommandLoading("rename_face");
+    try {
+      const response = await renameFace(deviceId, renameFaceId, renameNewName.trim());
+
+      if (response.status === "ok") {
+        console.log(`✓ Rename face command queued:`, response);
+        alert(
+          `Face ID ${renameFaceId} will be renamed to "${renameNewName.trim()}"\n\n${response.message || ""}`
+        );
+
+        // Reset form and close modal
+        setRenameNewName("");
+        setRenameFaceId(1);
+        setShowRenameFaceModal(false);
+
+        // Refresh face database info
+        const faceDbInfo = await getFaceDatabaseInfo(deviceId);
+        setFaceDatabaseInfo(faceDbInfo);
+      } else {
+        console.error("Failed to rename face:", response);
+        alert(`Failed: ${response.message || "Unknown error"}`);
+      }
+    } catch (error) {
+      console.error("Error renaming face:", error);
+      alert("Failed to rename face. Please try again.");
+    } finally {
+      setCommandLoading(null);
+    }
+  };
+
+  // Delete last face handler
+  const handleDeleteLastFace = async () => {
+    const deviceId = getEffectiveDeviceId();
+    if (!deviceId) return;
+
+    setCommandLoading("delete_last_face");
+    setShowDeleteLastConfirm(false);
+    try {
+      const response = await deleteLastFace(deviceId);
+
+      if (response.status === "ok") {
+        console.log(`✓ Delete last face command queued:`, response);
+        alert(
+          `Last enrolled face will be deleted.\n\n${response.message || ""}`
+        );
+
+        // Refresh face database info
+        const faceDbInfo = await getFaceDatabaseInfo(deviceId);
+        setFaceDatabaseInfo(faceDbInfo);
+      } else {
+        console.error("Failed to delete last face:", response);
+        alert(`Failed: ${response.message || "Unknown error"}`);
+      }
+    } catch (error) {
+      console.error("Error deleting last face:", error);
+      alert("Failed to delete face. Please try again.");
     } finally {
       setCommandLoading(null);
     }
@@ -1604,22 +1695,56 @@ export default function DoorbellControlPage() {
                         : "SYNC DATABASE"}
                     </button>
                     {user?.role === "admin" && (
-                      <button
-                        className="btn-control btn-start"
-                        onClick={handleAddFace}
-                        disabled={commandLoading === "add_face"}
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: "6px",
-                          flex: "1 1 auto",
-                        }}
-                      >
-                        <UserPlus size={16} />
-                        {commandLoading === "add_face"
-                          ? "ADDING..."
-                          : "ADD FACE"}
-                      </button>
+                      <>
+                        <button
+                          className="btn-control btn-start"
+                          onClick={handleAddFace}
+                          disabled={commandLoading === "add_face"}
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "6px",
+                            flex: "1 1 auto",
+                          }}
+                        >
+                          <UserPlus size={16} />
+                          {commandLoading === "add_face"
+                            ? "ADDING..."
+                            : "ADD FACE"}
+                        </button>
+                        <button
+                          className="btn-control btn-warning"
+                          onClick={() => setShowRenameFaceModal(true)}
+                          disabled={commandLoading === "rename_face"}
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "6px",
+                            flex: "1 1 auto",
+                          }}
+                        >
+                          <Settings size={16} />
+                          {commandLoading === "rename_face"
+                            ? "RENAMING..."
+                            : "RENAME FACE"}
+                        </button>
+                        <button
+                          className="btn-control btn-danger"
+                          onClick={() => setShowDeleteLastConfirm(true)}
+                          disabled={commandLoading === "delete_last_face"}
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "6px",
+                            flex: "1 1 auto",
+                          }}
+                        >
+                          <Power size={16} />
+                          {commandLoading === "delete_last_face"
+                            ? "DELETING..."
+                            : "DELETE LAST"}
+                        </button>
+                      </>
                     )}
                   </div>
 
@@ -2225,8 +2350,8 @@ export default function DoorbellControlPage() {
               >
                 <strong style={{ color: "#2196F3" }}>Instructions:</strong>
                 <br />
-                After clicking "Start Enrollment", position the person's face
-                in front of the doorbell camera. The device will capture and save the face data.
+                The system will start recognizing faces. When a face is detected,
+                it will automatically assign the provided name to that person.
               </div>
               <div
                 style={{
@@ -2290,6 +2415,255 @@ export default function DoorbellControlPage() {
                   CANCEL
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Rename Face Modal */}
+      {showRenameFaceModal && (
+        <div
+          onClick={() => {
+            if (commandLoading !== "rename_face") {
+              setShowRenameFaceModal(false);
+              setRenameNewName("");
+              setRenameFaceId(1);
+            }
+          }}
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: "rgba(0, 0, 0, 0.6)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 1000,
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              backgroundColor: "white",
+              borderRadius: "12px",
+              padding: "28px",
+              maxWidth: "450px",
+              width: "90%",
+              boxShadow: "0 8px 24px rgba(0, 0, 0, 0.15)",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "12px",
+                marginBottom: "20px",
+              }}
+            >
+              <Settings size={28} color="#FF9800" />
+              <h3 style={{ margin: 0, color: "#333", fontSize: "20px" }}>
+                Rename Face
+              </h3>
+            </div>
+            <div
+              style={{ display: "flex", flexDirection: "column", gap: "16px" }}
+            >
+              <div>
+                <label
+                  style={{
+                    display: "block",
+                    fontSize: "13px",
+                    fontWeight: "600",
+                    color: "#555",
+                    marginBottom: "6px",
+                  }}
+                >
+                  Face ID *
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  value={renameFaceId}
+                  onChange={(e) => setRenameFaceId(parseInt(e.target.value) || 1)}
+                  placeholder="Enter face ID (e.g., 1, 2, 3...)"
+                  className="control-input"
+                  disabled={commandLoading === "rename_face"}
+                  style={{
+                    width: "100%",
+                    padding: "12px",
+                    fontSize: "14px",
+                    borderRadius: "6px",
+                    border: "2px solid #e0e0e0",
+                    outline: "none",
+                    transition: "border-color 0.2s ease",
+                  }}
+                  onFocus={(e) => {
+                    e.target.style.borderColor = "#FF9800";
+                  }}
+                  onBlur={(e) => {
+                    e.target.style.borderColor = "#e0e0e0";
+                  }}
+                />
+              </div>
+              <div>
+                <label
+                  style={{
+                    display: "block",
+                    fontSize: "13px",
+                    fontWeight: "600",
+                    color: "#555",
+                    marginBottom: "6px",
+                  }}
+                >
+                  New Name *
+                </label>
+                <input
+                  type="text"
+                  value={renameNewName}
+                  onChange={(e) => setRenameNewName(e.target.value)}
+                  placeholder="Enter new name"
+                  className="control-input"
+                  disabled={commandLoading === "rename_face"}
+                  style={{
+                    width: "100%",
+                    padding: "12px",
+                    fontSize: "14px",
+                    borderRadius: "6px",
+                    border: "2px solid #e0e0e0",
+                    outline: "none",
+                    transition: "border-color 0.2s ease",
+                  }}
+                  onFocus={(e) => {
+                    e.target.style.borderColor = "#FF9800";
+                  }}
+                  onBlur={(e) => {
+                    e.target.style.borderColor = "#e0e0e0";
+                  }}
+                />
+              </div>
+              <div
+                style={{
+                  display: "flex",
+                  gap: "10px",
+                  marginTop: "8px",
+                }}
+              >
+                <button
+                  className="btn-control btn-warning"
+                  onClick={handleRenameFaceSubmit}
+                  disabled={commandLoading === "rename_face"}
+                  style={{
+                    flex: 1,
+                    fontSize: "14px",
+                    padding: "12px",
+                    fontWeight: "600",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: "8px",
+                  }}
+                >
+                  {commandLoading === "rename_face" ? "RENAMING..." : "RENAME"}
+                </button>
+                <button
+                  className="btn-control"
+                  onClick={() => {
+                    setShowRenameFaceModal(false);
+                    setRenameNewName("");
+                    setRenameFaceId(1);
+                  }}
+                  disabled={commandLoading === "rename_face"}
+                  style={{
+                    flex: 1,
+                    fontSize: "14px",
+                    padding: "12px",
+                    fontWeight: "600",
+                    backgroundColor: "#6c757d",
+                    borderColor: "#6c757d",
+                  }}
+                >
+                  CANCEL
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Last Face Confirmation Modal */}
+      {showDeleteLastConfirm && (
+        <div
+          onClick={() => setShowDeleteLastConfirm(false)}
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: "rgba(0, 0, 0, 0.6)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 1000,
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              backgroundColor: "white",
+              borderRadius: "12px",
+              padding: "28px",
+              maxWidth: "400px",
+              width: "90%",
+              boxShadow: "0 8px 24px rgba(0, 0, 0, 0.15)",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "12px",
+                marginBottom: "20px",
+              }}
+            >
+              <Power size={28} color="#F44336" />
+              <h3 style={{ margin: 0, color: "#333", fontSize: "20px" }}>
+                Delete Last Face
+              </h3>
+            </div>
+            <p style={{ fontSize: "14px", color: "#555", lineHeight: "1.5", marginBottom: "20px" }}>
+              Are you sure you want to delete the last enrolled face from the database?
+              This action cannot be undone.
+            </p>
+            <div style={{ display: "flex", gap: "10px" }}>
+              <button
+                className="btn-control btn-danger"
+                onClick={handleDeleteLastFace}
+                style={{
+                  flex: 1,
+                  fontSize: "14px",
+                  padding: "12px",
+                  fontWeight: "600",
+                }}
+              >
+                DELETE
+              </button>
+              <button
+                className="btn-control"
+                onClick={() => setShowDeleteLastConfirm(false)}
+                style={{
+                  flex: 1,
+                  fontSize: "14px",
+                  padding: "12px",
+                  fontWeight: "600",
+                  backgroundColor: "#6c757d",
+                  borderColor: "#6c757d",
+                }}
+              >
+                CANCEL
+              </button>
             </div>
           </div>
         </div>

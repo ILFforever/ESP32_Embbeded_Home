@@ -735,6 +735,111 @@ export async function syncFaceDatabase(deviceId: string) {
   }
 }
 
+/**
+ * Recognize a face and automatically apply the provided name
+ * @param deviceId The device ID
+ * @param name The name to assign to the recognized face
+ * @returns The response data from the backend
+ */
+export async function recognizeAndNameFace(deviceId: string, name: string) {
+  try {
+    const response = await axios.post(
+      `${API_URL}/api/v1/devices/${deviceId}/command`,
+      {
+        action: 'recognize_and_name',
+        params: { name }
+      },
+      {
+        timeout: 15000,
+        headers: getAuthHeaders()
+      }
+    );
+    return response.data;
+  } catch (error) {
+    console.error('Error recognizing and naming face:', error);
+    throw error;
+  }
+}
+
+/**
+ * Rename an existing face by ID
+ * @param deviceId The device ID
+ * @param faceId The face ID to rename
+ * @param newName The new name for the face
+ * @returns The response data from the backend
+ */
+export async function renameFace(deviceId: string, faceId: number, newName: string) {
+  try {
+    const response = await axios.post(
+      `${API_URL}/api/v1/devices/${deviceId}/command`,
+      {
+        action: 'rename_face',
+        params: { face_id: faceId, new_name: newName }
+      },
+      {
+        timeout: 15000,
+        headers: getAuthHeaders()
+      }
+    );
+    return response.data;
+  } catch (error) {
+    console.error('Error renaming face:', error);
+    throw error;
+  }
+}
+
+/**
+ * Set or update name for a face ID
+ * @param deviceId The device ID
+ * @param faceId The face ID
+ * @param name The name to set (or null to remove name)
+ * @returns The response data from the backend
+ */
+export async function setFaceName(deviceId: string, faceId: number, name: string | null) {
+  try {
+    const response = await axios.post(
+      `${API_URL}/api/v1/devices/${deviceId}/command`,
+      {
+        action: 'set_face_name',
+        params: { face_id: faceId, name }
+      },
+      {
+        timeout: 15000,
+        headers: getAuthHeaders()
+      }
+    );
+    return response.data;
+  } catch (error) {
+    console.error('Error setting face name:', error);
+    throw error;
+  }
+}
+
+/**
+ * Delete the last enrolled face
+ * @param deviceId The device ID
+ * @returns The response data from the backend
+ */
+export async function deleteLastFace(deviceId: string) {
+  try {
+    const response = await axios.post(
+      `${API_URL}/api/v1/devices/${deviceId}/command`,
+      {
+        action: 'delete_last_face',
+        params: {}
+      },
+      {
+        timeout: 15000,
+        headers: getAuthHeaders()
+      }
+    );
+    return response.data;
+  } catch (error) {
+    console.error('Error deleting last face:', error);
+    throw error;
+  }
+}
+
 
 // Get device sensor data
 export async function getDeviceSensorData(deviceId: string): Promise<SensorData | null> {
