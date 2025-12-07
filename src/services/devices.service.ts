@@ -701,6 +701,41 @@ export async function getDeviceHistory(deviceId: string, limit: number = 10): Pr
   }
 }
 
+export async function checkFaceDatabase(deviceId: string) {
+  try {
+    const response = await axios.post(
+      `${API_URL}/api/v1/devices/${deviceId}/face/check`,
+      {},
+      {
+        timeout: 15000,
+        headers: getAuthHeaders()
+      }
+    );
+    return response.data;
+  } catch (error) {
+    console.error('Error checking face database:', error);
+    throw error;
+  }
+}
+
+export async function syncFaceDatabase(deviceId: string) {
+  try {
+    const response = await axios.post(
+      `${API_URL}/api/v1/devices/${deviceId}/face/sync`,
+      {},
+      {
+        timeout: 15000,
+        headers: getAuthHeaders()
+      }
+    );
+    return response.data;
+  } catch (error) {
+    console.error('Error syncing face database:', error);
+    throw error;
+  }
+}
+
+
 // Get device sensor data
 export async function getDeviceSensorData(deviceId: string): Promise<SensorData | null> {
   try {

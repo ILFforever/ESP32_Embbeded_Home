@@ -21,7 +21,8 @@ import {
   getDeviceHistory,
   getLatestVisitors,
   sendCommand,
-  getFaceDatabaseInfo,
+  getFaceDatabaseInfo
+  , syncFaceDatabase
 } from "@/services/devices.service";
 import { getCookie } from "@/utils/cookies";
 import type { FaceDatabaseInfo, Visitor } from "@/services/devices.service";
@@ -682,10 +683,8 @@ export default function DoorbellControlPage() {
 
     setCommandLoading("sync_database");
     try {
-      // Using 'recognize_face' as per the user's list of valid actions.
-      // The original action was 'syncFaceDatabase' which seems more appropriate given the context.
-      // This may need to be adjusted if 'recognize_face' is not the correct action for syncing the database.
-      await sendCommand(deviceId, 'recognize_face');
+      // Call single sync endpoint - backend/ESP32 handles all three operations
+      await syncFaceDatabase(deviceId);
       console.log("✓ Face database sync command queued");
 
       alert(
