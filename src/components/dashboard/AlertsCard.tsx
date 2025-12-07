@@ -162,6 +162,9 @@ export function AlertsCard({ alerts, isExpanded = false, onRefresh }: AlertsCard
                       <div className="alert-body">
                         <h5>{getAlertTitle(alert)}</h5>
                         <p>{alert.message}</p>
+                        {alert.tags.includes('face-detection') && alert.metadata?.image_url && (
+                            <img src={alert.metadata.image_url} alt="Face detection" className="alert-image" />
+                        )}
                         {alert.metadata?.confidence !== undefined && alert.metadata.confidence > 0 && (
                           <p className="alert-confidence">
                             CFD: {(alert.metadata.confidence * 100).toFixed(1)}%
@@ -207,6 +210,9 @@ export function AlertsCard({ alerts, isExpanded = false, onRefresh }: AlertsCard
                       <div className="alert-body">
                         <h5>{getAlertTitle(alert)}</h5>
                         <p>{alert.message}</p>
+                        {alert.tags.includes('face-detection') && alert.metadata?.image_url && (
+                            <img src={alert.metadata.image_url} alt="Face detection" className="alert-image" />
+                        )}
                         {alert.metadata?.confidence !== undefined && alert.metadata.confidence > 0 && (
                           <p className="alert-confidence">
                             CFD: {(alert.metadata.confidence * 100).toFixed(1)}%

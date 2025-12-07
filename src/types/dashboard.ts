@@ -50,7 +50,10 @@ export interface Alert {
   message: string;
   source: string;
   tags: string[];
-  metadata?: any;
+  metadata?: {
+    image_url?: string;
+    confidence?: number;
+  };
   timestamp: string;
   read: boolean;
   created_at: string;

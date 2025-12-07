@@ -3230,3 +3230,9 @@ h6 { font-size: var(--font-size-sm); }
     right: var(--spacing-md);
   }
 }
+.alert-image {
+  max-width: 100%;
+  height: auto;
+  margin-top: 10px;
+  border-radius: 4px;
+}
