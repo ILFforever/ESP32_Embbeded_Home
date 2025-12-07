@@ -130,8 +130,6 @@ struct SensorData
 // ============================================================================
 RTC_DATA_ATTR uint32_t bootCount = 0;
 RTC_DATA_ATTR uint32_t wakesSinceTransmission = 0;
-RTC_DATA_ATTR bool micsCalibrated = false;
-RTC_DATA_ATTR int16_t mics_r0 = 2048;  // Baseline resistance (calibrated in clean air)
 
 // Circular buffer for sensor history
 RTC_DATA_ATTR struct
@@ -419,25 +417,6 @@ void setupSensors()
     Serial.println("[VEML7700] ✓ Initialized");
   }
 
-  // Check if MICS5524 has been calibrated
-  if (!micsCalibrated)
-  {
-    Serial.println("\n========================================");
-    Serial.println("[MICS5524] ✗ SENSOR NOT CALIBRATED!");
-    Serial.println("========================================");
-    Serial.println("Please run calibrate_mics.cpp first:");
-    Serial.println("1. Upload calibrate_mics.cpp");
-    Serial.println("2. Run in clean air for 20 minutes");
-    Serial.println("3. R0 will be stored in RTC memory");
-    Serial.println("4. Upload this code again");
-    Serial.println("========================================");
-    Serial.printf("[MICS5524] Using default R0: %d (INACCURATE!)\n", mics_r0);
-  }
-  else
-  {
-    Serial.printf("[MICS5524] ✓ Using calibrated R0: %d\n", mics_r0);
-  }
-
   Serial.println("[SETUP] ✓ Sensors ready");
 }
 
@@ -537,27 +516,8 @@ bool readMICS5524()
   currentData.gasLevel = sum / numReadings;
   stopGasHeating();
 
-  // Calculate CO PPM using DFRobot formula with calibrated R0
-  // Step 1: Invert ADC (library uses 1023-ADC for 10-bit, we use 4095-ADC for 12-bit)
-  int16_t invertedADC = 4095 - currentData.gasLevel;
-
-  // Step 2: Calculate RS/R0 ratio (normalized sensor resistance)
-  // Use calibrated R0 from RTC memory
-  float rs_r0 = (float)invertedADC / (float)mics_r0;
-
-  // Step 3: Apply DFRobot CO formula: PPM = (0.425 - RS_R0) / 0.000405
-  float co_ppm = 0.0;
-  if (rs_r0 > 0.425) {
-    co_ppm = 0.0;  // Below detection threshold
-  } else {
-    co_ppm = (0.425 - rs_r0) / 0.000405;
-    if (co_ppm > 1000.0) co_ppm = 1000.0;
-    if (co_ppm < 1.0) co_ppm = 0.0;
-  }
-
   currentData.gasValid = true;
-  Serial.printf("[MICS5524] ✓ ADC: %d (R0: %d), CO: %.1f PPM\n",
-                currentData.gasLevel, mics_r0, co_ppm);
+  Serial.printf("[MICS5524] ✓ Gas level: %d (ADC)\n", currentData.gasLevel);
 
   return true;
 }
