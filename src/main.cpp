@@ -1527,10 +1527,11 @@ void updateButtonState(ButtonState &btn, int pin, const char *buttonName)
             Serial.println("[BTN] Starting stream to backend");
 
             // Send stream control commands (action in params.name, id=0)
-            sendUARTCommand("stream_control", "mic_start", 0);
-            sendUARTCommand("mic_gain", "gain", 6);
+            //sendUARTCommand("stream_control", "mic_start", 0);
+            //sendUARTCommand("mic_gain", "gain", 6);
 
-            delay(100);
+            //
+            l=delay(100);
 
             sendUARTCommand("stream_control", "camera_start", 0);
             delay(100);
