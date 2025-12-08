@@ -9,6 +9,7 @@ extern const char* BACKEND_SERVER_URL;
 extern const char* DEVICE_ID;
 extern const char* DEVICE_TYPE;
 extern const char* DEVICE_API_TOKEN;
+extern String receivedSessionId;
 
 // Initialize heartbeat module
 void initHeartbeat(const char* serverUrl, const char* deviceId, const char* deviceType, const char* apiToken);

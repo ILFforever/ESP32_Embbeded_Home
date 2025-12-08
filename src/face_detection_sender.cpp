@@ -7,9 +7,9 @@
 #include "esp_task_wdt.h"
 
 // External backend configuration from heartbeat.h
-extern const char* BACKEND_SERVER_URL;
-extern const char* DEVICE_ID;
-extern const char* DEVICE_API_TOKEN;
+extern const char *BACKEND_SERVER_URL;
+extern const char *DEVICE_ID;
+extern const char *DEVICE_API_TOKEN;
 
 // Queue and task handles
 static QueueHandle_t faceDetectionQueue = NULL;
@@ -24,8 +24,10 @@ volatile bool faceDetectionUploadInProgress = false;
 // ============================================================================
 // Internal: Send face detection event as JSON (fallback, no image)
 // ============================================================================
-static void sendFaceDetectionJson(FaceDetectionEvent* event) {
-    if (WiFi.status() != WL_CONNECTED) {
+static void sendFaceDetectionJson(FaceDetectionEvent *event)
+{
+    if (WiFi.status() != WL_CONNECTED)
+    {
         Serial.println("[FaceDetectionSender] (JSON) WiFi not connected - skipping fallback");
         return;
     }
@@ -38,23 +40,29 @@ static void sendFaceDetectionJson(FaceDetectionEvent* event) {
     int colonIdx = serverUrl.indexOf(':');
     int slashIdx = serverUrl.indexOf('/');
 
-    String host = (colonIdx > 0) ? serverUrl.substring(0, colonIdx) :
-                  (slashIdx > 0) ? serverUrl.substring(0, slashIdx) : serverUrl;
+    String host = (colonIdx > 0) ? serverUrl.substring(0, colonIdx) : (slashIdx > 0) ? serverUrl.substring(0, slashIdx)
+                                                                                     : serverUrl;
     int port = (colonIdx > 0) ? serverUrl.substring(colonIdx + 1, (slashIdx > 0) ? slashIdx : serverUrl.length()).toInt() : 80;
     String path = (slashIdx > 0) ? serverUrl.substring(slashIdx) : "";
 
-    if (path.length() == 0 || path == "/") {
+    if (path.length() == 0 || path == "/")
+    {
         path = "/api/v1/devices/doorbell/face-detection";
-    } else if (path.endsWith("/")) {
+    }
+    else if (path.endsWith("/"))
+    {
         path += "api/v1/devices/doorbell/face-detection";
-    } else {
+    }
+    else
+    {
         path += "/api/v1/devices/doorbell/face-detection";
     }
 
     WiFiClient client;
     client.setTimeout(5000);
 
-    if (!client.connect(host.c_str(), port, 5000)) {
+    if (!client.connect(host.c_str(), port, 5000))
+    {
         Serial.println("[FaceDetectionSender] (JSON) ✗ Connection failed");
         return;
     }
@@ -78,7 +86,8 @@ static void sendFaceDetectionJson(FaceDetectionEvent* event) {
     client.print("Host: " + host + "\r\n");
     client.print("Content-Type: application/json\r\n");
     client.print("Content-Length: " + String(payload.length()) + "\r\n");
-    if (DEVICE_API_TOKEN && strlen(DEVICE_API_TOKEN) > 0) {
+    if (DEVICE_API_TOKEN && strlen(DEVICE_API_TOKEN) > 0)
+    {
         client.print("Authorization: Bearer " + String(DEVICE_API_TOKEN) + "\r\n");
     }
     client.print("Connection: close\r\n\r\n");
@@ -88,8 +97,10 @@ static void sendFaceDetectionJson(FaceDetectionEvent* event) {
     Serial.println("[FaceDetectionSender] (JSON) ✓ Fallback request sent. Waiting for response...");
 
     unsigned long responseTimeout = millis();
-    while (client.available() == 0) {
-        if (!client.connected() || millis() - responseTimeout > 5000) {
+    while (client.available() == 0)
+    {
+        if (!client.connected() || millis() - responseTimeout > 5000)
+        {
             Serial.println("[FaceDetectionSender] (JSON) ✗ No response or timeout.");
             client.stop();
             return;
@@ -99,10 +110,11 @@ static void sendFaceDetectionJson(FaceDetectionEvent* event) {
 
     // Read response to confirm
     int httpCode = 0;
-    if (client.find("HTTP/1.1 ")) {
+    if (client.find("HTTP/1.1 "))
+    {
         httpCode = client.parseInt();
     }
-    
+
     client.stop();
     Serial.printf("[FaceDetectionSender] (JSON) ✓ Fallback response code: %d\n", httpCode);
 }
@@ -110,13 +122,15 @@ static void sendFaceDetectionJson(FaceDetectionEvent* event) {
 // ============================================================================
 // Internal: Send face detection event (blocking, but runs in dedicated task)
 // ============================================================================
-static void sendFaceDetectionBlocking(FaceDetectionEvent* event) {
+static void sendFaceDetectionBlocking(FaceDetectionEvent *event)
+{
     // Set flag to pause other WiFi operations
     faceDetectionUploadInProgress = true;
 
     unsigned long startTime = millis();
 
-    if (WiFi.status() != WL_CONNECTED) {
+    if (WiFi.status() != WL_CONNECTED)
+    {
         Serial.println("[FaceDetectionSender] WiFi not connected - skipping");
         stats.totalFailed++;
         faceDetectionUploadInProgress = false;
@@ -134,26 +148,34 @@ static void sendFaceDetectionBlocking(FaceDetectionEvent* event) {
     int colonIdx = serverUrl.indexOf(':');
     int slashIdx = serverUrl.indexOf('/');
 
-    String host = (colonIdx > 0) ? serverUrl.substring(0, colonIdx) :
-                  (slashIdx > 0) ? serverUrl.substring(0, slashIdx) : serverUrl;
+    String host = (colonIdx > 0) ? serverUrl.substring(0, colonIdx) : (slashIdx > 0) ? serverUrl.substring(0, slashIdx)
+                                                                                     : serverUrl;
     int port = (colonIdx > 0) ? serverUrl.substring(colonIdx + 1, (slashIdx > 0) ? slashIdx : serverUrl.length()).toInt() : 80;
     String path = (slashIdx > 0) ? serverUrl.substring(slashIdx) : "";
 
-    if (path.length() == 0 || path == "/") {
+    if (path.length() == 0 || path == "/")
+    {
         path = "/api/v1/devices/doorbell/face-detection";
-    } else if (path.endsWith("/")) {
+    }
+    else if (path.endsWith("/"))
+    {
         path += "api/v1/devices/doorbell/face-detection";
-    } else {
+    }
+    else
+    {
         path += "/api/v1/devices/doorbell/face-detection";
     }
 
     Serial.printf("[FaceDetectionSender] Connecting to %s:%d%s\n", host.c_str(), port, path.c_str());
 
     WiFiClient client;
-    client.setTimeout(5000);  // 5 second timeout for reads/writes
+    client.setTimeout(6000); // 5 second timeout for reads/writes
 
-    if (!client.connect(host.c_str(), port, 5000)) {  // 5 second connection timeout
+    if (!client.connect(host.c_str(), port, 6000))
+    { // 5 second connection timeout
         Serial.println("[FaceDetectionSender] ✗ Connection failed");
+        Serial.println("[FaceDetectionSender] ☛ Timed out with image, attempting fallback without image...");
+        sendFaceDetectionJson(event);
         stats.totalFailed++;
         faceDetectionUploadInProgress = false;
         return;
@@ -190,7 +212,8 @@ static void sendFaceDetectionBlocking(FaceDetectionEvent* event) {
 
     // Image header
     String imageHeader = "";
-    if (event->imageData != nullptr && event->imageSize > 0) {
+    if (event->imageData != nullptr && event->imageSize > 0)
+    {
         imageHeader += "--" + boundary + "\r\n";
         imageHeader += "Content-Disposition: form-data; name=\"image\"; filename=\"face.jpg\"\r\n";
         imageHeader += "Content-Type: image/jpeg\r\n\r\n";
@@ -206,7 +229,8 @@ static void sendFaceDetectionBlocking(FaceDetectionEvent* event) {
     client.print("Host: " + host + "\r\n");
     client.print("Content-Type: multipart/form-data; boundary=" + boundary + "\r\n");
     client.print("Content-Length: " + String(contentLength) + "\r\n");
-    if (DEVICE_API_TOKEN && strlen(DEVICE_API_TOKEN) > 0) {
+    if (DEVICE_API_TOKEN && strlen(DEVICE_API_TOKEN) > 0)
+    {
         client.print("Authorization: Bearer " + String(DEVICE_API_TOKEN) + "\r\n");
     }
     client.print("Connection: close\r\n\r\n");
@@ -216,7 +240,8 @@ static void sendFaceDetectionBlocking(FaceDetectionEvent* event) {
     client.print(formData);
 
     // Send image in chunks
-    if (event->imageData != nullptr && event->imageSize > 0) {
+    if (event->imageData != nullptr && event->imageSize > 0)
+    {
         client.print(imageHeader);
 
         const size_t CHUNK_SIZE = 512;
@@ -225,16 +250,18 @@ static void sendFaceDetectionBlocking(FaceDetectionEvent* event) {
         Serial.printf("[FaceDetectionSender] Sending %u bytes\n", event->imageSize);
 
         int writeRetries = 0;
-        while (sent < event->imageSize) {
+        while (sent < event->imageSize)
+        {
             // Feed watchdog regularly during upload
             esp_task_wdt_reset();
 
-            if (!client.connected()) {
+            if (!client.connected())
+            {
                 Serial.printf("[FaceDetectionSender] ✗ Connection lost at %u/%u\n", sent, event->imageSize);
                 stats.totalFailed++;
                 client.flush();
                 client.stop();
-                delay(10);  // Give WiFi stack time to clean up
+                delay(10); // Give WiFi stack time to clean up
                 faceDetectionUploadInProgress = false;
                 return;
             }
@@ -242,10 +269,12 @@ static void sendFaceDetectionBlocking(FaceDetectionEvent* event) {
             size_t toSend = min(CHUNK_SIZE, event->imageSize - sent);
             size_t written = client.write(event->imageData + sent, toSend);
 
-            if (written == 0) {
+            if (written == 0)
+            {
                 // Socket buffer full (EAGAIN) - wait and retry
                 writeRetries++;
-                if (writeRetries > 10) {
+                if (writeRetries > 10)
+                {
                     Serial.printf("[FaceDetectionSender] ✗ Write timeout at %u/%u (buffer full)\n", sent, event->imageSize);
                     stats.totalFailed++;
                     client.flush();
@@ -255,14 +284,15 @@ static void sendFaceDetectionBlocking(FaceDetectionEvent* event) {
                     return;
                 }
                 Serial.println("[FaceDetectionSender] ⚠ Socket buffer full, retrying...");
-                esp_task_wdt_reset();  // Feed watchdog during retry
-                vTaskDelay(pdMS_TO_TICKS(100));  // Wait for buffer to drain
-                continue;  // Retry this chunk
+                esp_task_wdt_reset();           // Feed watchdog during retry
+                vTaskDelay(pdMS_TO_TICKS(100)); // Wait for buffer to drain
+                continue;                       // Retry this chunk
             }
 
-            if (written != toSend) {
+            if (written != toSend)
+            {
                 Serial.printf("[FaceDetectionSender] ✗ Partial write at %u/%u (wrote %u/%u)\n",
-                             sent, event->imageSize, written, toSend);
+                              sent, event->imageSize, written, toSend);
                 stats.totalFailed++;
                 client.flush();
                 client.stop();
@@ -272,14 +302,16 @@ static void sendFaceDetectionBlocking(FaceDetectionEvent* event) {
             }
 
             sent += written;
-            writeRetries = 0;  // Reset retry counter on success
+            writeRetries = 0; // Reset retry counter on success
 
             // Yield to other tasks while sending (removed flush - it blocks)
-            if (sent < event->imageSize) {
-                vTaskDelay(pdMS_TO_TICKS(10));  // Reduced delay for faster upload
+            if (sent < event->imageSize)
+            {
+                vTaskDelay(pdMS_TO_TICKS(10)); // Reduced delay for faster upload
             }
 
-            if (sent % 2048 == 0) {
+            if (sent % 2048 == 0)
+            {
                 Serial.printf("[FaceDetectionSender] Progress: %u/%u (%.1f%%)\n",
                               sent, event->imageSize, (sent * 100.0) / event->imageSize);
             }
@@ -297,8 +329,10 @@ static void sendFaceDetectionBlocking(FaceDetectionEvent* event) {
 
     // Wait for response
     unsigned long timeout = millis();
-    while (client.available() == 0) {
-        if (!client.connected()) {
+    while (client.available() == 0)
+    {
+        if (!client.connected())
+        {
             Serial.println("[FaceDetectionSender] ✗ Server closed connection before response");
             stats.totalFailed++;
             client.flush();
@@ -307,75 +341,85 @@ static void sendFaceDetectionBlocking(FaceDetectionEvent* event) {
             faceDetectionUploadInProgress = false;
             return;
         }
-        if (millis() - timeout > 10000) {  // 10 seconds timeout to prevent watchdog
+        if (millis() - timeout > 10000)
+        { // 10 seconds timeout to prevent watchdog
             Serial.println("[FaceDetectionSender] ✗ Timeout waiting for response (10s)");
             stats.totalFailed++;
             client.flush();
             client.stop();
             delay(10); // Give stack time to clean up
 
-            // If an image was part of the request, try sending metadata only
-            if (event->imageData != nullptr && event->imageSize > 0) {
-                Serial.println("[FaceDetectionSender] ☛ Timed out with image, attempting fallback without image...");
-                sendFaceDetectionJson(event);
-            }
+            Serial.println("[FaceDetectionSender] ☛ Timed out with image, attempting fallback without image...");
+            sendFaceDetectionJson(event);
 
             faceDetectionUploadInProgress = false;
             return;
         }
-        esp_task_wdt_reset();  // Feed watchdog while waiting
-        vTaskDelay(pdMS_TO_TICKS(100));  // Longer delay to reduce CPU usage
+        esp_task_wdt_reset();           // Feed watchdog while waiting
+        vTaskDelay(pdMS_TO_TICKS(100)); // Longer delay to reduce CPU usage
     }
 
     // Read response
     int httpCode = 0;
     bool headersEnd = false;
 
-    while (client.available() && !headersEnd) {
-        esp_task_wdt_reset();  // Feed watchdog while reading headers
+    while (client.available() && !headersEnd)
+    {
+        esp_task_wdt_reset(); // Feed watchdog while reading headers
         String line = client.readStringUntil('\n');
-        if (line.startsWith("HTTP/1.")) {
+        if (line.startsWith("HTTP/1."))
+        {
             int spaceIdx = line.indexOf(' ');
-            if (spaceIdx > 0) {
+            if (spaceIdx > 0)
+            {
                 httpCode = line.substring(spaceIdx + 1, spaceIdx + 4).toInt();
             }
         }
-        if (line == "\r" || line.length() == 0) {
+        if (line == "\r" || line.length() == 0)
+        {
             headersEnd = true;
         }
     }
 
     String responseBody = "";
-    while (client.available()) {
-        esp_task_wdt_reset();  // Feed watchdog while reading body
+    while (client.available())
+    {
+        esp_task_wdt_reset(); // Feed watchdog while reading body
         char c = client.read();
-        if (c != -1) {
+        if (c != -1)
+        {
             responseBody += (char)c;
         }
-        vTaskDelay(pdMS_TO_TICKS(1));  // Small yield to prevent CPU hogging
+        vTaskDelay(pdMS_TO_TICKS(1)); // Small yield to prevent CPU hogging
     }
 
     // Explicit cleanup to prevent socket leaks
     client.flush();
     client.stop();
-    delay(10);  // Give WiFi stack time to clean up socket
+    delay(10); // Give WiFi stack time to clean up socket
 
     unsigned long duration = millis() - startTime;
     stats.lastSendDurationMs = duration;
 
-    if (httpCode == 200) {
+    if (httpCode == 200)
+    {
         Serial.printf("[FaceDetectionSender] ✓ Sent successfully in %lums (code: %d)\n", duration, httpCode);
         stats.totalSent++;
 
         StaticJsonDocument<1024> responseDoc;
         DeserializationError error = deserializeJson(responseDoc, responseBody);
-        if (!error && responseDoc.containsKey("event_id")) {
-            const char* eventId = responseDoc["event_id"];
+        if (!error && responseDoc.containsKey("event_id"))
+        {
+            const char *eventId = responseDoc["event_id"];
             Serial.printf("[FaceDetectionSender] → Event ID: %s\n", eventId);
         }
-    } else {
+    }
+    else
+    {
         Serial.printf("[FaceDetectionSender] ✗ Failed (code: %d, duration: %lums)\n", httpCode, duration);
         Serial.printf("[FaceDetectionSender] Response: %s\n", responseBody.c_str());
+        Serial.println("[FaceDetectionSender] attempting fallback without image...");
+        sendFaceDetectionJson(event);
         stats.totalFailed++;
     }
 
@@ -386,14 +430,17 @@ static void sendFaceDetectionBlocking(FaceDetectionEvent* event) {
 // ============================================================================
 // FreeRTOS Task: Process queued face detection events
 // ============================================================================
-static void faceDetectionTask(void* parameter) {
+static void faceDetectionTask(void *parameter)
+{
     Serial.println("[FaceDetectionSender] Task started");
 
     FaceDetectionEvent event;
 
-    while (true) {
+    while (true)
+    {
         // Wait for events in queue (blocks task, not main loop)
-        if (xQueueReceive(faceDetectionQueue, &event, portMAX_DELAY) == pdTRUE) {
+        if (xQueueReceive(faceDetectionQueue, &event, portMAX_DELAY) == pdTRUE)
+        {
             Serial.printf("[FaceDetectionSender] Processing event (recognized: %s, name: %s)\n",
                           event.recognized ? "Yes" : "No", event.name);
 
@@ -401,7 +448,8 @@ static void faceDetectionTask(void* parameter) {
             sendFaceDetectionBlocking(&event);
 
             // Free the image buffer after sending
-            if (event.imageData != nullptr) {
+            if (event.imageData != nullptr)
+            {
                 free(event.imageData);
                 event.imageData = nullptr;
             }
@@ -416,31 +464,35 @@ static void faceDetectionTask(void* parameter) {
 // Public API Implementation
 // ============================================================================
 
-void initFaceDetectionSender(uint32_t stackSize, UBaseType_t priority, BaseType_t coreId) {
-    if (faceDetectionQueue != NULL) {
+void initFaceDetectionSender(uint32_t stackSize, UBaseType_t priority, BaseType_t coreId)
+{
+    if (faceDetectionQueue != NULL)
+    {
         Serial.println("[FaceDetectionSender] Already initialized");
         return;
     }
 
     // Create queue (reduced to 1 to prevent piling up when backend is slow)
     faceDetectionQueue = xQueueCreate(1, sizeof(FaceDetectionEvent));
-    if (faceDetectionQueue == NULL) {
+    if (faceDetectionQueue == NULL)
+    {
         Serial.println("[FaceDetectionSender] ✗ Failed to create queue");
         return;
     }
 
     // Create task
     BaseType_t result = xTaskCreatePinnedToCore(
-        faceDetectionTask,          // Task function
-        "FaceDetectionSender",      // Task name
-        stackSize,                  // Stack size
-        NULL,                       // Parameters
-        priority,                   // Priority
-        &faceDetectionTaskHandle,   // Task handle
-        coreId                      // Core ID
+        faceDetectionTask,        // Task function
+        "FaceDetectionSender",    // Task name
+        stackSize,                // Stack size
+        NULL,                     // Parameters
+        priority,                 // Priority
+        &faceDetectionTaskHandle, // Task handle
+        coreId                    // Core ID
     );
 
-    if (result != pdPASS) {
+    if (result != pdPASS)
+    {
         Serial.println("[FaceDetectionSender] ✗ Failed to create task");
         vQueueDelete(faceDetectionQueue);
         faceDetectionQueue = NULL;
@@ -451,14 +503,17 @@ void initFaceDetectionSender(uint32_t stackSize, UBaseType_t priority, BaseType_
                   coreId, stackSize, priority);
 }
 
-bool queueFaceDetection(bool recognized, const char* name, float confidence,
-                        const uint8_t* imageData, size_t imageSize) {
-    if (faceDetectionQueue == NULL) {
+bool queueFaceDetection(bool recognized, const char *name, float confidence,
+                        const uint8_t *imageData, size_t imageSize)
+{
+    if (faceDetectionQueue == NULL)
+    {
         Serial.println("[FaceDetectionSender] Not initialized!");
         return false;
     }
 
-    if (imageSize > MAX_FACE_IMAGE_SIZE) {
+    if (imageSize > MAX_FACE_IMAGE_SIZE)
+    {
         Serial.printf("[FaceDetectionSender] ✗ Image too large (%u bytes, max %u)\n",
                       imageSize, MAX_FACE_IMAGE_SIZE);
         return false;
@@ -472,39 +527,46 @@ bool queueFaceDetection(bool recognized, const char* name, float confidence,
     event.timestamp = millis();
 
     // Copy image data to heap (freed after sending)
-    if (imageData != nullptr && imageSize > 0) {
+    if (imageData != nullptr && imageSize > 0)
+    {
         // Memory pressure check: Skip if heap is low
         size_t freeHeap = ESP.getFreeHeap();
         size_t largestBlock = ESP.getMaxAllocHeap();
-        const size_t MIN_FREE_HEAP = 20000;  // Require 20KB free minimum
+        const size_t MIN_FREE_HEAP = 20000; // Require 20KB free minimum
 
-        if (freeHeap < MIN_FREE_HEAP || largestBlock < imageSize) {
+        if (freeHeap < MIN_FREE_HEAP || largestBlock < imageSize)
+        {
             Serial.printf("[FaceDetectionSender] ⚠ Skipping due to low memory (free: %u, largest: %u, need: %u)\n",
-                         freeHeap, largestBlock, imageSize);
+                          freeHeap, largestBlock, imageSize);
             stats.totalFailed++;
             return false;
         }
 
-        event.imageData = (uint8_t*)malloc(imageSize);
-        if (event.imageData == NULL) {
+        event.imageData = (uint8_t *)malloc(imageSize);
+        if (event.imageData == NULL)
+        {
             Serial.printf("[FaceDetectionSender] ✗ Failed to allocate %u bytes (free heap: %u, largest block: %u)\n",
-                         imageSize, freeHeap, largestBlock);
+                          imageSize, freeHeap, largestBlock);
             stats.totalFailed++;
             return false;
         }
         memcpy(event.imageData, imageData, imageSize);
         event.imageSize = imageSize;
         Serial.printf("[FaceDetectionSender] ✓ Allocated %u bytes (free: %u → %u)\n",
-                     imageSize, freeHeap, ESP.getFreeHeap());
-    } else {
+                      imageSize, freeHeap, ESP.getFreeHeap());
+    }
+    else
+    {
         event.imageData = nullptr;
         event.imageSize = 0;
     }
 
     // Try to queue (don't block if queue is full)
-    if (xQueueSend(faceDetectionQueue, &event, 0) != pdTRUE) {
+    if (xQueueSend(faceDetectionQueue, &event, 0) != pdTRUE)
+    {
         Serial.println("[FaceDetectionSender] ✗ Queue full, dropping event");
-        if (event.imageData != nullptr) {
+        if (event.imageData != nullptr)
+        {
             free(event.imageData);
         }
         stats.queueOverflows++;
@@ -516,13 +578,16 @@ bool queueFaceDetection(bool recognized, const char* name, float confidence,
     return true;
 }
 
-int getPendingFaceDetectionCount() {
-    if (faceDetectionQueue == NULL) {
+int getPendingFaceDetectionCount()
+{
+    if (faceDetectionQueue == NULL)
+    {
         return 0;
     }
     return uxQueueMessagesWaiting(faceDetectionQueue);
 }
 
-FaceDetectionStats getFaceDetectionStats() {
+FaceDetectionStats getFaceDetectionStats()
+{
     return stats;
 }

@@ -4,11 +4,13 @@
 #include <TFT_eSPI.h>
 #include <SPI.h>
 #include <WiFi.h>
+#include <HTTPClient.h>
 // #include "WiFiServer.h"
 #include <TaskScheduler.h>
 #include "uart_commands.h"
 #include "lcd_helper.h"
 #include "nfc_controller.h"
+#include "nfc_scan_state.h"
 // #include "http_control.h"  // DISABLED: HTTP server to save ~10-14KB RAM
 #include "SPIMaster.h"
 #include "slave_state_manager.h"
@@ -46,7 +48,7 @@ SemaphoreHandle_t tftMutex = NULL;
 String status_msg = "";
 bool status_msg_is_temporary = false; // Flag to indicate temporary status message
 int recognition_state = 0;            // 0=none, 1=success, 2=failure
-bool card_success = false;
+NFCCardScanStatus cardScanStatus = NFC_SCAN_IDLE;
 String status_msg_fallback = "";          // Message to display after temporary message is shown once
 unsigned long status_msg_last_update = 0; // Timestamp of last status message update
 
@@ -101,7 +103,7 @@ bool both_buttons_hold_handled = false;
 bool preview_mode_active = false;
 
 // NFC scan mode state (for backend-triggered scans)
-bool scanNFCandSend = false;
+NFCScanState nfcScanState;
 bool isNfcAddCardMode = false;
 
 // UI state
@@ -427,6 +429,8 @@ void setup()
   Ready_led_on_time = millis();
   delay(50);
   updateStatusMsg("Getting ready...", true, "Standing By");
+  sendUART2Command("play", "connect_success"); // Play error sound
+
   uiNeedsUpdate = true;
 }
 
@@ -936,14 +940,14 @@ void drawUIOverlay()
 
   // Draw borders for camera area
   static int recognition_state_timer = 0;
-  static int card_success_timer = 0;
+  static int card_scan_timer = 0; // Renamed from card_success_timer
 
-  // Handle recognition state (0=none, 1=success, 2=failure)
-  if (recognition_state == 1 && card_success)
+  // Handle recognition state (0=none, 1=success, 2=failure) and NFC scan status
+  if (recognition_state == 1 && cardScanStatus == NFC_SCAN_SUCCESS)
   {
     statusColor = TFT_GREEN; // Both success - show green
     recognition_state_timer++;
-    card_success_timer++;
+    card_scan_timer++;
   }
   else if (recognition_state == 1)
   {
@@ -955,10 +959,15 @@ void drawUIOverlay()
     statusColor = TFT_RED; // Recognition failure - show red
     recognition_state_timer++;
   }
-  else if (card_success)
+  else if (cardScanStatus == NFC_SCAN_SUCCESS)
   {
-    statusColor = TFT_GREEN; // Card success - show green
-    card_success_timer++;
+    statusColor = TFT_GREEN; // NFC scan success - show green
+    card_scan_timer++;
+  }
+  else if (cardScanStatus == NFC_SCAN_DENIED)
+  {
+    statusColor = TFT_BLUE; // NFC scan denied - show red
+    card_scan_timer++;
   }
   else
     statusColor = TFT_LIGHTGREY; // Default - grey border
@@ -972,10 +981,10 @@ void drawUIOverlay()
     preview_mode_active = false; // Exit preview mode after recognition completes
   }
 
-  if (card_success_timer > 100) // Show green border for card
+  if (card_scan_timer > 100) // Show border for NFC scan status for a duration
   {
-    card_success = false;
-    card_success_timer = 0;
+    cardScanStatus = NFC_SCAN_IDLE; // Reset to idle
+    card_scan_timer = 0;
   }
 
   topuiSprite.fillRect(0, topuiSprite.height() - 4, tft.width(), 4, statusColor);
@@ -1179,23 +1188,136 @@ void checkDisconnectWarning()
   }
 }
 
+String uidToString(const uint8_t *uid, uint8_t uidLength)
+{
+
+  String result = "";
+
+  for (byte i = 0; i < uidLength; i++)
+  {
+
+    if (uid[i] < 0x10)
+    {
+
+      result += "0";
+    }
+
+    result += String(uid[i], HEX);
+  }
+
+  result.toUpperCase();
+
+  return result;
+}
+
 void onCardDetected(NFCCardData card)
 {
-  Serial.print("Card ID: ");
-  Serial.println(card.cardId);
 
-  if (scanNFCandSend)
+  Serial.print("Card ID: ");
+
+  Serial.println(uidToString(card.uid, card.uidLength));
+
+  if (nfcScanState.active)
   {
     Serial.println("Scan and add to db");
-    scanNFCandSend = false;
+
+    if (WiFi.status() != WL_CONNECTED)
+    {
+      Serial.println("[NFC] WiFi not connected, cannot send scan.");
+      updateStatusMsg("WiFi disconnected", true, "Error");
+      nfcScanState.active = false;
+      nfcScanState.sessionId = "";
+      return;
+    }
+
+    HTTPClient http;
+    String backendUrl = String(BACKEND_SERVER_URL) + "/api/v1/devices/nfc/register/scan";
+    http.begin(backendUrl);
+    http.addHeader("Content-Type", "application/json");
+    http.addHeader("Authorization", "Bearer " + String(DEVICE_API_TOKEN));
+
+    String cardUidHex = uidToString(card.uid, card.uidLength);
+
+    String httpRequestData = "{\"card_id\": \"" + cardUidHex + "\", \"sessionId\": \"" + nfcScanState.sessionId + "\", \"device_id\": \"" + String(DEVICE_ID) + "\"}";
+
+    Serial.printf("[NFC] Sending card scan to backend: %s\n", httpRequestData.c_str());
+    updateStatusMsg("Sending card data...", true, "Sending");
+
+    int httpResponseCode = http.POST(httpRequestData);
+
+    if (httpResponseCode == 200)
+    {
+      Serial.println("[NFC] Card scan sent successfully.");
+      updateStatusMsg("Card sent!", true, "Ready");
+      cardScanStatus = NFC_SCAN_SUCCESS; // Registration success
+    }
+    else
+    {
+      Serial.printf("[NFC] Error sending card scan. HTTP code: %d\n", httpResponseCode);
+      String response = http.getString();
+      Serial.printf("[NFC] Backend response: %s\n", response.c_str());
+      updateStatusMsg("Send failed", true, "Error");
+      cardScanStatus = NFC_SCAN_DENIED; // Registration failed
+    }
+
+    http.end();
+
+    nfcScanState.active = false;
+    nfcScanState.sessionId = ""; // Clear session ID and state after use
     return;
   }
 
-  // Send to hub -> hub validate id -> hub send back -> open
-  // For now
-  card_success = true;
-  String msg = "Card " + String(card.cardId) + " Scanned";
-  updateStatusMsg(msg.c_str(), true, "Standing By");
+  // If not in registration mode, send a normal access scan
+  else
+  {
+    String cardUidHex = uidToString(card.uid, card.uidLength);
+    Serial.printf("[NFC] Sending access scan for card: %s\n", cardUidHex.c_str());
+
+    if (WiFi.status() != WL_CONNECTED)
+    {
+      Serial.println("[NFC] WiFi not connected, cannot send access scan.");
+      updateStatusMsg("WiFi disconnected", true, "Error");
+      return;
+    }
+
+    HTTPClient http;
+    String backendUrl = String(BACKEND_SERVER_URL) + "/api/v1/devices/nfc/scan/access";
+    http.begin(backendUrl);
+    http.addHeader("Content-Type", "application/json");
+    http.addHeader("Authorization", "Bearer " + String(DEVICE_API_TOKEN));
+
+    String httpRequestData = "{\"device_id\": \"" + String(DEVICE_ID) + "\", \"card_id\": \"" + cardUidHex + "\"}";
+
+    Serial.printf("[NFC] Sending access scan to backend: %s\n", httpRequestData.c_str());
+    updateStatusMsg("Checking access...", true, "Standing By");
+
+    int httpResponseCode = http.POST(httpRequestData);
+
+    if (httpResponseCode == 200)
+    {
+      Serial.println("[NFC] Access granted!");
+      sendUART2Command("play", "success"); // Play access granted sound
+      updateStatusMsg("Access Granted!", true, "Standing By");
+      cardScanStatus = NFC_SCAN_SUCCESS; // Access granted
+    }
+    else if (httpResponseCode == 403)
+    {
+      Serial.println("[NFC] Access denied (card not registered or unauthorized).");
+      sendUART2Command("play", "error"); // Play error sound
+      updateStatusMsg("Access Denied", true, "Standing By");
+      cardScanStatus = NFC_SCAN_DENIED; // Access denied
+    }
+    else
+    {
+      Serial.printf("[NFC] Error sending access scan. HTTP code: %d\n", httpResponseCode);
+      String response = http.getString();
+      Serial.printf("[NFC] Backend response: %s\n", response.c_str());
+      updateStatusMsg("Access Check Failed", true, "Standing By");
+      cardScanStatus = NFC_SCAN_DENIED; // Other error
+    }
+
+    http.end();
+  }
 }
 
 // Task: WiFi Watchdog - check connection health
@@ -1406,11 +1528,11 @@ void updateButtonState(ButtonState &btn, int pin, const char *buttonName)
 
             // Send stream control commands (action in params.name, id=0)
             sendUARTCommand("stream_control", "mic_start", 0);
-            sendUARTCommand("mic_gain", "gain", 6 );
+            sendUARTCommand("mic_gain", "gain", 6);
 
-             delay(100);
+            delay(100);
 
-             sendUARTCommand("stream_control", "camera_start", 0);
+            sendUARTCommand("stream_control", "camera_start", 0);
             delay(100);
 
             // Set desired camera state to running

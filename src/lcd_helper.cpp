@@ -97,8 +97,8 @@ void checkStatusMessageExpiration()
 {
   unsigned long now = millis();
 
-  // If message hasn't changed in 3 seconds, update from slave state
-  if (now - status_msg_last_update >= 3000)
+  // If message hasn't changed in 1 minute, update from slave state
+  if (now - status_msg_last_update >= 60000)
   {
     String stateMsg = getStatusMessageForSlaveState(slave_status);
 

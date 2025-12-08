@@ -1,6 +1,5 @@
-extern bool scanNFCandSend;
-
 #include "heartbeat.h"
+#include "nfc_scan_state.h"
 #include "face_detection_sender.h"
 #include "uart_commands.h"
 #include "logger.h"
@@ -10,8 +9,6 @@ extern bool scanNFCandSend;
 #include "slave_state_manager.h"
 #include "streaming_state.h"
 #include "lcd_helper.h"
-
-extern bool scanNFCandSend;
 
 // Configuration variables (set via initHeartbeat)
 const char *BACKEND_SERVER_URL = "";
@@ -1107,13 +1104,18 @@ bool executeCommand(String action, JsonObject params)
     sendUARTCommand("recognize_face");
     return true;
   }
-  else if (action == "nfc_scan_mode")
+  else if (action == "start_nfc_registration")
   {
-    // Enable NFC scan mode
-    Serial.println("[Commands] Enabling NFC scan mode adding next card to db");
-    updateStatusMsg("Tap card on scanner", true, "Scanning");
-    scanNFCandSend = true;
-    return true;
+    if (params.containsKey("sessionId")) {
+        nfcScanState.sessionId = params["sessionId"].as<String>();
+        nfcScanState.active = true;
+        Serial.printf("[Commands] Enabling NFC scan mode with session ID: %s\n", nfcScanState.sessionId.c_str());
+        updateStatusMsg("Tap card to register", true, "Scanning");
+        return true;
+    } else {
+        Serial.println("[Commands] nfc_scan_mode requires 'sessionId' parameter");
+        return false;
+    }
   }
 
   // Unknown command
