@@ -1445,51 +1445,58 @@ const acknowledgeCommand = async (req, res) => {
 
     // Send email notification for all commands (both success and failure)
     const commandData = commandDoc.data();
-    // Only send alerts for non-door lock actions
-    if (commandData.action !== 'lock' && commandData.action !== 'unlock') {
-      if (!success) {
-        // Failed command - error alert
-        console.log(`[AckCommand] ${device_id} - Command failed, sending email notification`);
-        sendAlertNotification({
-          id: `${device_id}_cmd_${command_id}`,
-          level: ALERT_LEVELS.ERROR,
-          message: `${device_id}: Command '${commandData.action}' failed`,
-          source: device_id,
-          tags: ['command', commandData.action, 'failed'],
-          metadata: {
-            action: commandData.action,
-            status: 'failed',
-            params: commandData.params,
-            error: error
-          },
-          timestamp: new Date(),
-          created_at: new Date()
-        }).catch(err => {
-          console.error('[AckCommand] Failed to send email notification:', err);
-          // Non-blocking
-        });
-      } else {
-        // Successful command - success alert
-        console.log(`[AckCommand] ${device_id} - Command succeeded, sending email notification`);
-        sendAlertNotification({
-          id: `${device_id}_cmd_${command_id}`,
-          level: ALERT_LEVELS.SUCCESS,
-          message: `${device_id}: Command '${commandData.action}' completed successfully`,
-          source: device_id,
-          tags: ['command', commandData.action, 'completed'],
-          metadata: {
-            action: commandData.action,
-            status: 'completed',
-            params: commandData.params,
-            result: result
-          },
-          timestamp: new Date(),
-          created_at: new Date()
-        }).catch(err => {
-          console.error('[AckCommand] Failed to send email notification:', err);
-          // Non-blocking
-        });
-      }
+    const isLockCommand = commandData.action === 'lock' || commandData.action === 'unlock';
+
+    if (!success) {
+      // Failed command - error alert
+      console.log(`[AckCommand] ${device_id} - Command failed, sending email notification`);
+      sendAlertNotification({
+        id: `${device_id}_cmd_${command_id}`,
+        level: ALERT_LEVELS.ERROR,
+        message: isLockCommand
+          ? `${device_id}: Door ${commandData.action} failed`
+          : `${device_id}: Command '${commandData.action}' failed`,
+        source: device_id,
+        tags: isLockCommand
+          ? ['command', commandData.action, 'failed', 'doorlock']
+          : ['command', commandData.action, 'failed'],
+        metadata: {
+          action: commandData.action,
+          status: 'failed',
+          params: commandData.params,
+          error: error
+        },
+        timestamp: new Date(),
+        created_at: new Date()
+      }).catch(err => {
+        console.error('[AckCommand] Failed to send email notification:', err);
+        // Non-blocking
+      });
+    } else {
+      // Successful command - success alert
+      console.log(`[AckCommand] ${device_id} - Command succeeded, sending email notification`);
+      sendAlertNotification({
+        id: `${device_id}_cmd_${command_id}`,
+        level: ALERT_LEVELS.SUCCESS,
+        message: isLockCommand
+          ? `${device_id}: Door ${commandData.action}ed successfully`
+          : `${device_id}: Command '${commandData.action}' completed successfully`,
+        source: device_id,
+        tags: isLockCommand
+          ? ['command', commandData.action, 'completed', 'doorlock']
+          : ['command', commandData.action, 'completed'],
+        metadata: {
+          action: commandData.action,
+          status: 'completed',
+          params: commandData.params,
+          result: result
+        },
+        timestamp: new Date(),
+        created_at: new Date()
+      }).catch(err => {
+        console.error('[AckCommand] Failed to send email notification:', err);
+        // Non-blocking
+      });
     }
 
     res.json({

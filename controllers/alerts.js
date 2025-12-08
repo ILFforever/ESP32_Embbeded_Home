@@ -267,22 +267,22 @@ const getAlerts = async (req, res) => {
         // Only include completed or failed commands (skip pending)
         if (cmdData.status === 'pending') return;
 
-        const isFailed = cmdData.status === 'failed';
+        // Skip lock and unlock commands entirely
         const isLockCommand = cmdData.action === 'lock' || cmdData.action === 'unlock';
+        if (isLockCommand) return;
+
+        const isFailed = cmdData.status === 'failed';
 
         // Determine alert level
         let alertLevel = ALERT_LEVELS.INFO;
         if (isFailed) {
           alertLevel = ALERT_LEVELS.ERROR; // Failed commands are errors
-        } else if (isLockCommand) {
-          alertLevel = ALERT_LEVELS.SUCCESS; // Successful lock/unlock commands
         }
 
         // Apply level filter
         if (level && alertLevel !== level) return;
 
         const tags = ['command', cmdData.action, cmdData.status];
-        if (isLockCommand) tags.push('doorlock');
 
         // Apply tags filter
         if (tagArray && !tags.some(tag => tagArray.includes(tag))) return;
@@ -290,13 +290,8 @@ const getAlerts = async (req, res) => {
         const alertId = `${deviceId}_cmd_${doc.id}`;
         const isRead = readStatusMap.has(alertId);
 
-        // Format message based on command type
-        let message = '';
-        if (isLockCommand) {
-          message = `${deviceId}: Door ${cmdData.action}ed ${isFailed ? '(failed)' : 'successfully'}`;
-        } else {
-          message = `${deviceId}: Command '${cmdData.action}' ${isFailed ? 'failed' : 'completed'}`;
-        }
+        // Format message
+        const message = `${deviceId}: Command '${cmdData.action}' ${isFailed ? 'failed' : 'completed'}`;
 
         alerts.push({
           id: alertId,
@@ -865,6 +860,290 @@ const testEmailNotification = async (req, res) => {
   }
 };
 
+// ============================================================================
+// @route   GET /api/v1/alerts/esp32
+// @desc    Get alerts for ESP32 devices (excludes door lock/unlock alerts)
+// @access  Private (requires device token)
+// ============================================================================
+const getAlertsForESP32 = async (req, res) => {
+  try {
+    const {
+      level,
+      source,
+      tags,
+      limit = 50,
+      read
+    } = req.query;
+
+    // Parse tags if provided
+    const tagArray = tags ? tags.split(',').map(t => t.trim()) : null;
+
+    // Parse limit (max 100)
+    const maxLimit = Math.min(parseInt(limit) || 50, 100);
+
+    const db = getFirestore();
+    const alerts = [];
+    const readStatusMap = new Map();
+
+    // Get read alerts from 'alerts' collection to track read status
+    const readAlertsSnapshot = await db.collection('alerts')
+      .where('read', '==', true)
+      .get();
+
+    readAlertsSnapshot.docs.forEach(doc => {
+      readStatusMap.set(doc.id, true);
+    });
+
+    // Parse source filter (can be comma-separated list or single device_id)
+    const sourceArray = source ? source.split(',').map(s => s.trim()) : null;
+
+    // Get all devices or specific device(s)
+    let devicesToQuery = [];
+    if (sourceArray) {
+      devicesToQuery = sourceArray;
+    } else {
+      const devicesSnapshot = await db.collection('devices').get();
+      devicesToQuery = devicesSnapshot.docs.map(doc => doc.id);
+    }
+
+    // Aggregate alerts from each device
+    for (const deviceId of devicesToQuery) {
+      const deviceDoc = await db.collection('devices').doc(deviceId).get();
+      if (!deviceDoc.exists) continue;
+
+      const deviceData = deviceDoc.data();
+      const deviceType = deviceData.type || '';
+
+      // 1. Get device error/warning logs
+      const logsSnapshot = await db.collection('devices').doc(deviceId)
+        .collection('device_logs')
+        .where('level', 'in', ['error', 'warning'])
+        .orderBy('timestamp', 'desc')
+        .limit(10)
+        .get();
+
+      logsSnapshot.docs.forEach(doc => {
+        const logData = doc.data();
+        const alertLevel = mapLogLevelToAlertLevel(logData.level);
+
+        if (level && alertLevel !== level) return;
+
+        const tags = ['device-log', logData.level];
+        if (tagArray && !tags.some(tag => tagArray.includes(tag))) return;
+
+        const alertId = `${deviceId}_log_${doc.id}`;
+        const isRead = readStatusMap.has(alertId);
+
+        if (read !== undefined && isRead !== (read === 'true')) return;
+
+        alerts.push({
+          id: alertId,
+          level: alertLevel,
+          message: `${deviceId}: ${logData.message}`,
+          source: deviceId,
+          tags,
+          type: 'log',
+          metadata: logData.data || {},
+          timestamp: logData.timestamp?.toDate?.() || logData.timestamp,
+          created_at: logData.timestamp?.toDate?.() || logData.timestamp,
+          read: isRead
+        });
+      });
+
+      // 2. Get face detection events
+      if (deviceType === 'doorbell' || deviceType === 'db') {
+        const faceSnapshot = await db.collection('devices').doc(deviceId)
+          .collection('face_detections')
+          .orderBy('detected_at', 'desc')
+          .limit(20)
+          .get();
+
+        faceSnapshot.docs.forEach(doc => {
+          const faceData = doc.data();
+          const isRecognized = faceData.recognized || false;
+          const name = faceData.name || 'Unknown';
+
+          const alertLevel = isRecognized ? ALERT_LEVELS.INFO : ALERT_LEVELS.WARN;
+          if (level && alertLevel !== level) return;
+
+          const tags = ['face-detection', isRecognized ? 'recognized' : 'unknown'];
+          if (tagArray && !tags.some(tag => tagArray.includes(tag))) return;
+
+          const alertId = `${deviceId}_face_${doc.id}`;
+          const isRead = readStatusMap.has(alertId);
+
+          if (read !== undefined && isRead !== (read === 'true')) return;
+
+          alerts.push({
+            id: alertId,
+            level: alertLevel,
+            message: isRecognized
+              ? `${name} detected at ${deviceId}`
+              : `Unknown person detected at ${deviceId}`,
+            source: deviceId,
+            tags,
+            type: 'face-detection',
+            metadata: {
+              recognized: isRecognized,
+              name: name,
+              confidence: faceData.confidence,
+              face_id: faceData.face_id
+            },
+            timestamp: faceData.detected_at?.toDate?.() || faceData.detected_at || faceData.timestamp?.toDate?.() || faceData.timestamp,
+            created_at: faceData.detected_at?.toDate?.() || faceData.detected_at,
+            read: isRead
+          });
+        });
+      }
+
+      // 3. Get recent commands (EXCLUDING lock and unlock)
+      const commandsSnapshot = await db.collection('devices').doc(deviceId)
+        .collection('commands')
+        .orderBy('created_at', 'desc')
+        .limit(20)
+        .get();
+
+      commandsSnapshot.docs.forEach(doc => {
+        const cmdData = doc.data();
+
+        if (cmdData.status === 'pending') return;
+
+        // EXCLUDE lock and unlock commands for ESP32
+        const isLockCommand = cmdData.action === 'lock' || cmdData.action === 'unlock';
+        if (isLockCommand) return;
+
+        const isFailed = cmdData.status === 'failed';
+
+        let alertLevel = ALERT_LEVELS.INFO;
+        if (isFailed) {
+          alertLevel = ALERT_LEVELS.ERROR;
+        }
+
+        if (level && alertLevel !== level) return;
+
+        const tags = ['command', cmdData.action, cmdData.status];
+
+        if (tagArray && !tags.some(tag => tagArray.includes(tag))) return;
+
+        const alertId = `${deviceId}_cmd_${doc.id}`;
+        const isRead = readStatusMap.has(alertId);
+
+        if (read !== undefined && isRead !== (read === 'true')) return;
+
+        const message = `${deviceId}: Command '${cmdData.action}' ${isFailed ? 'failed' : 'completed'}`;
+
+        alerts.push({
+          id: alertId,
+          level: alertLevel,
+          message,
+          source: deviceId,
+          tags,
+          type: 'command',
+          metadata: {
+            action: cmdData.action,
+            status: cmdData.status,
+            params: cmdData.params,
+            result: cmdData.result,
+            error: cmdData.error
+          },
+          timestamp: cmdData.executed_at?.toDate?.() || cmdData.created_at?.toDate?.() || cmdData.created_at,
+          created_at: cmdData.created_at?.toDate?.() || cmdData.created_at,
+          read: isRead
+        });
+      });
+
+      // 4. Sensor threshold violations (same as regular alerts)
+      if (deviceType.includes('sensor') || deviceType === 'hb') {
+        const sensorDoc = await db.collection('devices').doc(deviceId)
+          .collection('sensors')
+          .doc('current')
+          .get();
+
+        if (sensorDoc.exists) {
+          const sensorData = sensorDoc.data();
+          const sensorTimestamp = sensorData.last_updated?.toDate?.() || sensorData.timestamp?.toDate?.() || new Date();
+
+          const violations = [];
+
+          if (sensorData.temperature != null) {
+            if (sensorData.temperature > 35) {
+              violations.push({ type: 'temperature', level: ALERT_LEVELS.WARN, message: `High temperature: ${sensorData.temperature}°C` });
+            } else if (sensorData.temperature < 10) {
+              violations.push({ type: 'temperature', level: ALERT_LEVELS.WARN, message: `Low temperature: ${sensorData.temperature}°C` });
+            }
+          }
+
+          if (sensorData.humidity != null) {
+            if (sensorData.humidity > 80) {
+              violations.push({ type: 'humidity', level: ALERT_LEVELS.WARN, message: `High humidity: ${sensorData.humidity}%` });
+            } else if (sensorData.humidity < 20) {
+              violations.push({ type: 'humidity', level: ALERT_LEVELS.WARN, message: `Low humidity: ${sensorData.humidity}%` });
+            }
+          }
+
+          violations.forEach(violation => {
+            if (level && violation.level !== level) return;
+
+            const tags = ['sensor', 'threshold', violation.type];
+            if (tagArray && !tags.some(tag => tagArray.includes(tag))) return;
+
+            const alertId = `${deviceId}_sensor_${violation.type}`;
+            const isRead = readStatusMap.has(alertId);
+
+            if (read !== undefined && isRead !== (read === 'true')) return;
+
+            alerts.push({
+              id: alertId,
+              level: violation.level,
+              message: `${deviceId}: ${violation.message}`,
+              source: deviceId,
+              tags,
+              type: 'sensor',
+              metadata: {
+                sensor_type: violation.type,
+                value: sensorData[violation.type],
+                threshold: violation.type === 'temperature' ? (sensorData.temperature > 35 ? 35 : 10) : (sensorData.humidity > 80 ? 80 : 20)
+              },
+              timestamp: sensorTimestamp,
+              created_at: sensorTimestamp,
+              read: isRead
+            });
+          });
+        }
+      }
+    }
+
+    // Calculate scores and sort
+    const alertTypeCounts = {};
+    alerts.forEach(alert => {
+      const type = alert.type || 'other';
+      alertTypeCounts[type] = (alertTypeCounts[type] || 0) + 1;
+    });
+
+    alerts.forEach(alert => {
+      alert.score = calculateAlertScore(alert.level, alert.timestamp, alert.type, alertTypeCounts);
+    });
+
+    alerts.sort((a, b) => b.score - a.score);
+
+    const limitedAlerts = alerts.slice(0, maxLimit);
+
+    res.json({
+      status: 'ok',
+      count: limitedAlerts.length,
+      total: alerts.length,
+      alerts: limitedAlerts
+    });
+
+  } catch (error) {
+    console.error('[Alerts ESP32] Error fetching alerts:', error);
+    res.status(500).json({
+      status: 'error',
+      message: error.message
+    });
+  }
+};
+
 module.exports = {
   getAlerts,
   getAlertById,
@@ -873,5 +1152,6 @@ module.exports = {
   markMultipleAlertsAsRead,
   deleteAlert,
   createDeviceAlert,
-  testEmailNotification
+  testEmailNotification,
+  getAlertsForESP32
 };

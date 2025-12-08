@@ -7,7 +7,8 @@ const {
   markAlertAsRead,
   markMultipleAlertsAsRead,
   deleteAlert,
-  testEmailNotification
+  testEmailNotification,
+  getAlertsForESP32
 } = require('../controllers/alerts');
 const { protect } = require('../middleware/auth');
 const { authenticateDevice } = require('../middleware/deviceAuth');
@@ -16,6 +17,11 @@ const { authenticateDevice } = require('../middleware/deviceAuth');
 // @desc    Get alerts with filtering and sorting (for frontend with user auth)
 // @access  Private (requires user token)
 router.get('/', protect, getAlerts);
+
+// @route   GET /api/v1/alerts/esp32
+// @desc    Get alerts for ESP32 devices (excludes door lock/unlock alerts)
+// @access  Private (requires device token)
+router.get('/esp32', authenticateDevice, getAlertsForESP32);
 
 // @route   GET /api/v1/alerts/device
 // @desc    Get alerts with filtering and sorting (for ESP32 with device auth)
