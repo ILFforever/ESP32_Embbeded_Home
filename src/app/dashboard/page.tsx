@@ -234,12 +234,7 @@ export default function DashboardPage() {
         }
         break;
       case 'nfc':
-        // Only admins can view NFC management
-        if (user?.role === 'admin') {
-          content = <NfcManagementCard isExpanded={true} />;
-        } else {
-          content = null;
-        }
+        content = <NfcManagementCard isExpanded={true} />;
         break;
       case 'music':
         content = <MusicBroadcastCard isExpanded={true} />;
@@ -461,10 +456,9 @@ export default function DashboardPage() {
                 <AdminManagementCard devices={devicesStatus?.devices || []} />
               </div>
             )}
-
-            {/* NFC Management - spans 1 row x 2 columns - Only visible to admins */}
-            {user?.role === 'admin' && (
-              <div
+            
+            {/* NFC Management - spans 1 row x 2 columns */}
+            <div
                 className="dashboard-card grid-nfc"
                 onClick={() => openExpandedCard('nfc')}
               >
@@ -476,7 +470,6 @@ export default function DashboardPage() {
                 </button>
                 <NfcManagementCard />
               </div>
-            )}
 
             {/* Music Broadcast - spans 1 row x 2 columns */}
             <div

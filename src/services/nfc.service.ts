@@ -59,51 +59,80 @@ export interface ApiResponse {
 // ============================================================================
 
 /**
- * Enable "add card mode" for a user
- * The next NFC scan will be assigned to this user
- * Sends MQTT command to doorbell to enable NFC scanning
+ * [ADMIN] Initiate NFC card registration for a specific user.
+ * Sends command to backend to put device in listening mode.
  */
-export const enableAddCardMode = async (userId: string, nfcDeviceId?: string): Promise<ApiResponse> => {
+export const enableAddCardMode = async (userId: string, deviceId: string): Promise<ApiResponse> => {
   try {
     const response = await axios.post(
-      apiPath(`/auth/users/${userId}/nfc/enable-add-mode`),
-      { nfc_device_id: nfcDeviceId || 'db_001' }, // Default to doorbell
+      apiPath(`/devices/nfc/register/initiate/admin/${userId}`),
+      { deviceId: deviceId },
       { headers: getAuthHeader() }
     );
     return response.data;
   } catch (error: any) {
-    console.error('Enable add card mode error:', error);
-    // Return success even if there's an error - command is queued
-    return { success: true, message: 'Add card mode enabled' };
+    throw new Error(error.response?.data?.message || 'Failed to initiate admin add card mode');
   }
 };
 
 /**
- * Disable "add card mode" for a user
- * Sends MQTT command to doorbell to disable NFC scanning
+ * [ADMIN] Cancel NFC card registration initiation for a specific user.
+ * Sends command to backend to take device out of listening mode.
  */
-export const disableAddCardMode = async (userId: string, nfcDeviceId?: string): Promise<ApiResponse> => {
+export const disableAddCardMode = async (userId: string, deviceId: string): Promise<ApiResponse> => {
   try {
     const response = await axios.post(
-      apiPath(`/auth/users/${userId}/nfc/disable-add-mode`),
-      { nfc_device_id: nfcDeviceId || 'db_001' }, // Default to doorbell
+      apiPath(`/devices/nfc/register/cancel`),
+      { deviceId: deviceId },
       { headers: getAuthHeader() }
     );
     return response.data;
   } catch (error: any) {
-    console.error('Disable add card mode error:', error);
-    // Return success even if there's an error
-    return { success: true, message: 'Add card mode disabled' };
+    throw new Error(error.response?.data?.message || 'Failed to cancel admin add card mode');
+  }
+};
+
+
+/**
+ * Initiate NFC card registration for the current logged-in user.
+ * The backend will then listen for the next unassigned card scan and associate it.
+ */
+export const initiateUserNfcRegistration = async (deviceId: string): Promise<ApiResponse> => {
+  try {
+    const response = await axios.post(
+      apiPath('/devices/nfc/register/initiate'),
+      { deviceId: deviceId },
+      { headers: getAuthHeader() }
+    );
+    return response.data;
+  } catch (error: any) {
+    throw new Error(error.response?.data?.message || 'Failed to initiate NFC registration');
   }
 };
 
 /**
- * Remove an NFC card from a user
+ * Cancel NFC card registration initiation for the current logged-in user.
  */
-export const removeNfcCard = async (userId: string, cardId: string): Promise<ApiResponse> => {
+export const cancelUserNfcRegistration = async (deviceId: string): Promise<ApiResponse> => {
+  try {
+    const response = await axios.post(
+      apiPath('/devices/nfc/register/cancel'),
+      { deviceId: deviceId }, 
+      { headers: getAuthHeader() }
+    );
+    return response.data;
+  } catch (error: any) {
+    throw new Error(error.response?.data?.message || 'Failed to cancel NFC registration');
+  }
+};
+
+/**
+ * User removes their own NFC card.
+ */
+export const removeOwnNfcCard = async (cardId: string): Promise<ApiResponse> => {
   try {
     const response = await axios.delete(
-      apiPath(`/auth/users/${userId}/nfc/cards/${cardId}`),
+      apiPath(`/devices/nfc/cards/${cardId}`),
       { headers: getAuthHeader() }
     );
     return response.data;
@@ -113,11 +142,25 @@ export const removeNfcCard = async (userId: string, cardId: string): Promise<Api
 };
 
 /**
+ * Admin removes an NFC card from a specific user.
+ */
+export const removeUserNfcCardAdmin = async (cardId: string, userId: string): Promise<ApiResponse> => {
+  try {
+    const response = await axios.delete(
+      apiPath(`/devices/nfc/cards/${cardId}/user/${userId}`),
+      { headers: getAuthHeader() }
+    );
+    return response.data;
+  } catch (error: any) {
+    throw new Error(error.response?.data?.message || 'Failed to remove NFC card for user');
+  }
+};
+
+/**
  * Get all users with their NFC cards
  */
 export const getUsersWithNfc = async (): Promise<UserWithNfc[]> => {
   try {
-    // Fetch both users and admins
     const [usersResponse, adminsResponse] = await Promise.all([
       axios.get(apiPath('/auth/users'), { headers: getAuthHeader() }),
       axios.get(apiPath('/auth/admins'), { headers: getAuthHeader() })
@@ -126,7 +169,6 @@ export const getUsersWithNfc = async (): Promise<UserWithNfc[]> => {
     const users = usersResponse.data.data || [];
     const admins = adminsResponse.data.data || [];
 
-    // Combine and return all users (both regular users and admins)
     return [...users, ...admins];
   } catch (error: any) {
     throw new Error(error.response?.data?.message || 'Failed to fetch users');
@@ -201,7 +243,6 @@ export const getLatestNfcScans = async (limit: number = 20): Promise<NfcScanEven
 export const formatCardId = (cardId: string): string => {
   if (!cardId) return 'Unknown';
 
-  // If it's a hex string without colons, add them every 2 characters
   if (/^[0-9A-Fa-f]+$/.test(cardId) && cardId.length % 2 === 0) {
     return cardId.match(/.{1,2}/g)?.join(':').toUpperCase() || cardId;
   }

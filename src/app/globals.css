@@ -56,6 +56,9 @@
   --warning: #feca57;
   --danger: #ee5a6f;
   --info: #48dbfb;
+  --success-rgb: 0, 212, 170;
+  --warning-rgb: 254, 202, 87;
+  --danger-rgb: 238, 90, 111;
 
   /* Backgrounds */
   --bg-primary: #0f0f23;
@@ -76,6 +79,9 @@
   --warning: #f59e0b;
   --danger: #ef4444;
   --info: #06b6d4;
+  --success-rgb: 16, 185, 129;
+  --warning-rgb: 245, 158, 11;
+  --danger-rgb: 239, 68, 68;
 
   /* Backgrounds - Grey tones */
   --bg-primary: #1f2937;
