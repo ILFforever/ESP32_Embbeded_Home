@@ -99,7 +99,7 @@ class Alert {
       source = null,
       tags = null,
       read = null,
-      limit = 50,
+      limit = 500,
       sortBy = 'priority', // 'priority', 'timestamp', 'created_at'
       sortOrder = 'desc' // 'asc' or 'desc'
     } = options;

@@ -99,7 +99,7 @@ const getAlerts = async (req, res) => {
       level,
       source,
       tags,
-      limit = 50,
+      limit = 500,
       read
     } = req.query;
 
