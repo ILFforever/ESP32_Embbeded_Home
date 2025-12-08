@@ -1445,48 +1445,51 @@ const acknowledgeCommand = async (req, res) => {
 
     // Send email notification for all commands (both success and failure)
     const commandData = commandDoc.data();
-    if (!success) {
-      // Failed command - error alert
-      console.log(`[AckCommand] ${device_id} - Command failed, sending email notification`);
-      sendAlertNotification({
-        id: `${device_id}_cmd_${command_id}`,
-        level: ALERT_LEVELS.ERROR,
-        message: `${device_id}: Command '${commandData.action}' failed`,
-        source: device_id,
-        tags: ['command', commandData.action, 'failed'],
-        metadata: {
-          action: commandData.action,
-          status: 'failed',
-          params: commandData.params,
-          error: error
-        },
-        timestamp: new Date(),
-        created_at: new Date()
-      }).catch(err => {
-        console.error('[AckCommand] Failed to send email notification:', err);
-        // Non-blocking
-      });
-    } else {
-      // Successful command - success alert
-      console.log(`[AckCommand] ${device_id} - Command succeeded, sending email notification`);
-      sendAlertNotification({
-        id: `${device_id}_cmd_${command_id}`,
-        level: ALERT_LEVELS.SUCCESS,
-        message: `${device_id}: Command '${commandData.action}' completed successfully`,
-        source: device_id,
-        tags: ['command', commandData.action, 'completed'],
-        metadata: {
-          action: commandData.action,
-          status: 'completed',
-          params: commandData.params,
-          result: result
-        },
-        timestamp: new Date(),
-        created_at: new Date()
-      }).catch(err => {
-        console.error('[AckCommand] Failed to send email notification:', err);
-        // Non-blocking
-      });
+    // Only send alerts for non-door lock actions
+    if (commandData.action !== 'lock' && commandData.action !== 'unlock') {
+      if (!success) {
+        // Failed command - error alert
+        console.log(`[AckCommand] ${device_id} - Command failed, sending email notification`);
+        sendAlertNotification({
+          id: `${device_id}_cmd_${command_id}`,
+          level: ALERT_LEVELS.ERROR,
+          message: `${device_id}: Command '${commandData.action}' failed`,
+          source: device_id,
+          tags: ['command', commandData.action, 'failed'],
+          metadata: {
+            action: commandData.action,
+            status: 'failed',
+            params: commandData.params,
+            error: error
+          },
+          timestamp: new Date(),
+          created_at: new Date()
+        }).catch(err => {
+          console.error('[AckCommand] Failed to send email notification:', err);
+          // Non-blocking
+        });
+      } else {
+        // Successful command - success alert
+        console.log(`[AckCommand] ${device_id} - Command succeeded, sending email notification`);
+        sendAlertNotification({
+          id: `${device_id}_cmd_${command_id}`,
+          level: ALERT_LEVELS.SUCCESS,
+          message: `${device_id}: Command '${commandData.action}' completed successfully`,
+          source: device_id,
+          tags: ['command', commandData.action, 'completed'],
+          metadata: {
+            action: commandData.action,
+            status: 'completed',
+            params: commandData.params,
+            result: result
+          },
+          timestamp: new Date(),
+          created_at: new Date()
+        }).catch(err => {
+          console.error('[AckCommand] Failed to send email notification:', err);
+          // Non-blocking
+        });
+      }
     }
 
     res.json({
@@ -2814,6 +2817,145 @@ const unlockDoor = async (req, res) => {
   }
 };
 
+const lockDoorByDevice = async (req, res) => {
+  try {
+    const { device_id } = req.params;
+
+    // Ensure the authenticated device is the one trying to send the command
+    if (req.device.id !== device_id) {
+      return res.status(403).json({ success: false, message: 'Forbidden: Device ID mismatch.' });
+    }
+
+    const db = getFirestore();
+    const deviceRef = db.collection('devices').doc(device_id);
+
+    // Verify device exists and is a door lock
+    const deviceDoc = await deviceRef.get();
+    if (!deviceDoc.exists) {
+      return res.status(404).json({
+        status: 'error',
+        message: 'Device not found'
+      });
+    }
+
+    const deviceData = deviceDoc.data();
+    if (deviceData.type !== 'actuator') { // Assuming door locks are 'actuator' type
+      return res.status(400).json({
+        status: 'error',
+        message: 'Device is not a door lock'
+      });
+    }
+
+    // Queue lock command with 'device' trigger
+    const result = await queueCommand(device_id, 'lock', { trigger: 'device' });
+
+    if (!result.success) {
+      return res.status(500).json({
+        status: 'error',
+        message: 'Failed to queue lock command',
+        error: result.error
+      });
+    }
+
+    console.log(`[DoorLockByDevice] ${device_id} - Lock command queued (ID: ${result.commandId})`);
+
+    // Update state immediately with 'device' trigger
+    await deviceRef
+      .collection('live_status')
+      .doc('device_state')
+      .set({
+        lock_state: 'locked',
+        last_action: 'lock',
+        trigger: 'device',
+        last_action_time: admin.firestore.FieldValue.serverTimestamp(),
+        updated_at: admin.firestore.FieldValue.serverTimestamp()
+      }, { merge: true });
+
+    res.json({
+      status: 'ok',
+      message: 'Lock command sent successfully by device',
+      device_id,
+      command_id: result.commandId,
+      action: 'lock'
+    });
+
+  } catch (error) {
+    console.error('[lockDoorByDevice] Error:', error);
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+};
+
+const unlockDoorByDevice = async (req, res) => {
+  try {
+    const { device_id } = req.params;
+    const { duration } = req.body; // Optional: auto-lock after duration (seconds)
+
+    // Ensure the authenticated device is the one trying to send the command
+    if (req.device.id !== device_id) {
+      return res.status(403).json({ success: false, message: 'Forbidden: Device ID mismatch.' });
+    }
+
+    const db = getFirestore();
+    const deviceRef = db.collection('devices').doc(device_id);
+
+    // Verify device exists and is a door lock
+    const deviceDoc = await deviceRef.get();
+    if (!deviceDoc.exists) {
+      return res.status(404).json({
+        status: 'error',
+        message: 'Device not found'
+      });
+    }
+
+    const deviceData = deviceDoc.data();
+    if (deviceData.type !== 'actuator') { // Assuming door locks are 'actuator' type
+      return res.status(400).json({
+        status: 'error',
+        message: 'Device is not a door lock'
+      });
+    }
+
+    // Queue unlock command with optional duration and 'device' trigger
+    const params = duration ? { duration: parseInt(duration), trigger: 'device' } : { trigger: 'device' };
+    const result = await queueCommand(device_id, 'unlock', params);
+
+    if (!result.success) {
+      return res.status(500).json({
+        status: 'error',
+        message: 'Failed to queue unlock command',
+        error: result.error
+      });
+    }
+
+    console.log(`[DoorUnlockByDevice] ${device_id} - Unlock command queued (ID: ${result.commandId})${duration ? ` with duration: ${duration}s` : ''}`);
+
+    // Update state immediately with 'device' trigger
+    await deviceRef
+      .collection('live_status')
+      .doc('device_state')
+      .set({
+        lock_state: 'unlocked',
+        last_action: 'unlock',
+        trigger: 'device',
+        last_action_time: admin.firestore.FieldValue.serverTimestamp(),
+        updated_at: admin.firestore.FieldValue.serverTimestamp()
+      }, { merge: true });
+
+    res.json({
+      status: 'ok',
+      message: 'Unlock command sent successfully by device',
+      device_id,
+      command_id: result.commandId,
+      action: 'unlock',
+      ...(duration && { duration: parseInt(duration) })
+    });
+
+  } catch (error) {
+    console.error('[unlockDoorByDevice] Error:', error);
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+};
+
 // @desc    Get door lock status
 // @route   GET /api/v1/devices/:device_id/lock/status
 // @access  Private (requires user token)
@@ -3409,6 +3551,8 @@ module.exports = {
   unlockDoor,
   getDoorLockStatus,
   updateDoorLockState,
+  lockDoorByDevice,
+  unlockDoorByDevice,
   // Helper function for queueing commands
   queueCommandHelper: queueCommand
 };

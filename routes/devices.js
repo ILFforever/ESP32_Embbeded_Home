@@ -54,7 +54,9 @@ const {
   lockDoor,
   unlockDoor,
   getDoorLockStatus,
-  updateDoorLockState
+  updateDoorLockState,
+  lockDoorByDevice,
+  unlockDoorByDevice
 } = require('../controllers/devices');
 const { authenticateDevice } = require('../middleware/deviceAuth');
 const { protect, authorize } = require('../middleware/auth');
@@ -143,6 +145,16 @@ router.get('/:device_id/lock/status', protect, getDoorLockStatus);
 // @desc    Update door lock state (called by ESP32 after executing command)
 // @access  Private (requires device token)
 router.post('/:device_id/lock/state', authenticateDevice, updateDoorLockState);
+
+// @route   POST /api/v1/devices/:device_id/lock/device-trigger
+// @desc    Device initiates lock command
+// @access  Private (requires device token)
+router.post('/:device_id/lock/device-trigger', authenticateDevice, lockDoorByDevice);
+
+// @route   POST /api/v1/devices/:device_id/unlock/device-trigger
+// @desc    Device initiates unlock command
+// @access  Private (requires device token)
+router.post('/:device_id/unlock/device-trigger', authenticateDevice, unlockDoorByDevice);
 
 // ============================================================================
 // Generic Device Status Routes
