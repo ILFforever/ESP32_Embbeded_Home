@@ -112,7 +112,7 @@ const getAlerts = async (req, res) => {
     }
 
     // Parse and validate limit
-    const limitNum = Math.min(parseInt(limit) || 50, 100);
+    const limitNum = Math.min(parseInt(limit) || 500, 1000);
 
     // Parse tags filter
     const tagArray = tags ? tags.split(',').map(t => t.trim()) : null;
