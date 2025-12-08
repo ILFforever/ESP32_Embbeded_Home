@@ -12,6 +12,7 @@ struct CapSensorState
     uint16_t lastTouched;
     bool padsChanged;
     uint32_t timestamp;
+    uint32_t padTouchStartTime[12];  // Track when each pad was first touched
 };
 
 // Global capacitive sensor state

@@ -3,16 +3,34 @@
 #include "touch_button.h"
 #include "GUI/screen_manager.h"
 #include <Arduino.h>
+#include <WiFi.h>
+#include "hub_network.h"
 
-// Example touch buttons for screen 1
-TouchButton exampleButton1;
-TouchButton exampleButton2;
-TouchButton exampleButton3;
+// File-scope static variable to track alert loading state
+static bool alertsLoaded = false;
+static int hoveredAlertIndex = -1; // Keep static as it's internal to this file
+static bool showWifiInfoPopup = false; // Track WiFi info popup state
+
+// Function to reset the alert loading flag
+void resetAlertsLoadedFlag() {
+  alertsLoaded = false;
+}
+
+// External declarations (defined here)
+TouchButton alertButtons[5];
+Alert alerts[5];
+int selectedAlertIndex = -1;
 
 TouchButton QuickButton1;
 TouchButton QuickButton2;
 TouchButton QuickButton3;
 TouchButton moreEnvironment;
+TouchButton backButton;
+TouchButton wifiInfoButton; // Button for WiFi icon in top-right
+TouchButton exampleButton1;
+TouchButton exampleButton2;
+TouchButton exampleButton3;
+
 
 // screen 4
 TouchButton PIN_1;
@@ -36,8 +54,8 @@ TouchButton CALL_cmic;
 // Touch handling for all screens
 void handleTouchInput()
 {
-  // Fill with transparent color (palette index 0)
-  touchArea.fillSprite(0);
+  // Fill with transparent color (green)
+  touchArea.fillSprite(TFT_GREEN);
   touchAreaNeedsUpdate = true; // update touch objects every frame (100ms)
   
   if (cur_Screen == SCREEN_HOME)
@@ -46,6 +64,11 @@ void handleTouchInput()
     {
       // Initialize buttons on first entry
       static bool buttonsInitialized = false;
+
+      if (!alertsLoaded) {
+        alertsLoaded = fetchHomeAlerts(alerts, 5);
+      }
+
       if (!buttonsInitialized)
       {
         QuickButton1.x = 530;
@@ -69,8 +92,122 @@ void handleTouchInput()
         moreEnvironment.width = 60;
         moreEnvironment.height = 30;
 
+        for (int i = 0; i < 5; i++) {
+          alertButtons[i].x = 20;
+          alertButtons[i].y = 60 + i * 70;
+          alertButtons[i].width = 480;
+          alertButtons[i].height = 60;
+        }
+
+        // WiFi info button (top-right area, WiFi icon region)
+        wifiInfoButton.x = 720;
+        wifiInfoButton.y = 0;
+        wifiInfoButton.width = 80;
+        wifiInfoButton.height = 40;
 
         buttonsInitialized = true;
+      }
+
+      // Detect hover
+      hoveredAlertIndex = -1;
+      if (!currentTouch.isPressed) { // Only check hover if not actively pressing
+        for (int i = 0; i < 5; i++) {
+          if (alerts[i].valid && isTouchInBounds(currentTouch.x, currentTouch.y - 40, alertButtons[i].x, alertButtons[i].y, alertButtons[i].width, alertButtons[i].height)) {
+            hoveredAlertIndex = i;
+            break;
+          }
+        }
+      }
+
+      if (alertsLoaded)
+      {
+        // Draw each alert with layered frame styling
+        int yPos = 60 + 40; // Shift down by 40 for top bar
+        for (int i = 0; i < 5; i++)
+        {
+          if (alerts[i].valid)
+          {
+            // Color based on alert level (case-insensitive check)
+            uint16_t levelColor = TFT_LIGHTGRAY;
+            if (strcasecmp(alerts[i].level, "error") == 0 || strcasecmp(alerts[i].level, "ERROR") == 0)
+            {
+              levelColor = TFT_RED;
+            }
+            else if (strcasecmp(alerts[i].level, "warning") == 0 || strcasecmp(alerts[i].level, "WARN") == 0)
+            {
+              levelColor = TFT_ORANGE;
+            }
+            else if (strcasecmp(alerts[i].level, "info") == 0 || strcasecmp(alerts[i].level, "INFO") == 0)
+            {
+              levelColor = TFT_GREEN;
+            }
+
+            // Apply hover effect or pressed effect
+            bool isPressed = alertButtons[i].isPressed && !alertButtons[i].isDragging;
+            if (isPressed) {
+              levelColor = lightenColor(levelColor, 80); // Brighten more when pressed
+            } else if (i == hoveredAlertIndex) {
+              levelColor = lightenColor(levelColor, 40); // Lighten color on hover
+            }
+
+            // Layered frame effect
+            touchArea.fillSmoothRoundRect(20, yPos, 480, 60, 10, TFT_BLACK);     // outer frame
+            touchArea.fillSmoothRoundRect(25, yPos + 5, 470, 50, 8, levelColor); // color layer
+            touchArea.fillSmoothRoundRect(35, yPos + 5, 460, 50, 8, TFT_BLACK);  // inner frame
+            touchArea.fillSmoothRoundRect(40, yPos + 5, 455, 50, 8, TFT_WHITE);  // content area
+
+            // Draw alert text
+            touchArea.setFont(&fonts::DejaVu12);
+            touchArea.setTextColor(TFT_BLACK);
+            touchArea.setTextSize(1);
+            touchArea.drawString(alerts[i].message, 50, yPos + 12);
+
+            // Draw timestamp (smaller, right-aligned)
+            touchArea.setTextColor(TFT_DARKGREY);
+            touchArea.drawRightString(alerts[i].timestamp, 480, yPos + 35);
+          }
+          else
+          {
+            // Empty slot - gray placeholder
+            touchArea.fillSmoothRoundRect(20, yPos, 480, 60, 10, TFT_BLACK);
+            touchArea.fillSmoothRoundRect(25, yPos + 5, 470, 50, 8, TFT_LIGHTGRAY);
+            touchArea.fillSmoothRoundRect(35, yPos + 5, 460, 50, 8, TFT_BLACK);
+            touchArea.fillSmoothRoundRect(40, yPos + 5, 455, 50, 8, TFT_DARKGREY);
+          }
+          yPos += 70;
+        }
+      }
+      else
+      {
+        // Failed to load alerts - show placeholder slots
+        int yPos = 60 + 40; // Shift down by 40 for top bar
+        for (int i = 0; i < 5; i++)
+        {
+          touchArea.fillSmoothRoundRect(20, yPos, 480, 60, 10, TFT_BLACK);
+          touchArea.fillSmoothRoundRect(25, yPos + 5, 470, 50, 8, TFT_LIGHTGRAY);
+          touchArea.fillSmoothRoundRect(35, yPos + 5, 460, 50, 8, TFT_BLACK);
+          touchArea.fillSmoothRoundRect(40, yPos + 5, 455, 50, 8, TFT_DARKGREY);
+          yPos += 70;
+        }
+
+        // Show error message on first slot
+        touchArea.setFont(&fonts::DejaVu12);
+        touchArea.setTextColor(TFT_WHITE);
+        touchArea.setTextSize(1);
+        touchArea.drawString("Failed to load alerts", 50, 75);
+      }
+
+      // Handle alert clicks
+      for (int i = 0; i < 5; i++) {
+        if (alerts[i].valid) {
+          bool alertClicked = updateTouchButton(&alertButtons[i], currentTouch.x, currentTouch.y - 40, currentTouch.isPressed);
+          if (alertClicked) {
+            Serial.printf("Alert clicked: %s\n", alerts[i].message);
+            selectedAlertIndex = i;
+            cur_Screen = SCREEN_ALERT_DETAIL;
+            break; // Only one alert can be clicked at a time
+          }
+        }
       }
 
       // Update button states (no offset needed since touchArea is positioned at Y=40)
@@ -82,11 +219,10 @@ void handleTouchInput()
 
       bool qt1Clicked = updateTouchButton(&QuickButton1, currentTouch.x, currentTouch.y, currentTouch.isPressed);
       bool qt2Clicked = updateTouchButton(&QuickButton2, currentTouch.x, currentTouch.y, currentTouch.isPressed);
-      bool qt3Clicked = updateTouchButton(&QuickButton3, currentTouch.x, currentTouch.y, currentTouch.isPressed);
+      bool snapshotsClicked = updateTouchButton(&QuickButton3, currentTouch.x, currentTouch.y, currentTouch.isPressed);
 
       bool MoreEnvironmentClicked = updateTouchButton(&moreEnvironment, currentTouch.x, currentTouch.y, currentTouch.isPressed);
       
-
       // Draw Quick Button 1
       uint16_t qt1Color = TFT_DARKGREY;
       if (QuickButton1.isPressed && !QuickButton1.isDragging)
@@ -96,7 +232,8 @@ void handleTouchInput()
       touchArea.fillSmoothRoundRect(QuickButton1.x, QuickButton1.y, QuickButton1.width, QuickButton1.height, 10, qt1Color);
       touchArea.setTextColor(TFT_WHITE);
       touchArea.setTextSize(1);
-      touchArea.drawCenterString("QB1", QuickButton1.x + QuickButton1.width / 2, QuickButton1.y + QuickButton1.height / 2 - 8);
+      touchArea.setFont(&fonts::DejaVu9);
+      touchArea.drawCenterString("Lock", QuickButton1.x + QuickButton1.width / 2, QuickButton1.y + QuickButton1.height / 2 - 5);
 
       uint16_t qt2Color = TFT_DARKGREY;
       if (QuickButton2.isPressed && !QuickButton2.isDragging)
@@ -106,7 +243,8 @@ void handleTouchInput()
       touchArea.fillSmoothRoundRect(QuickButton2.x, QuickButton2.y, QuickButton2.width, QuickButton2.height, 10, qt2Color);
       touchArea.setTextColor(TFT_WHITE);
       touchArea.setTextSize(1);
-      touchArea.drawCenterString("QB2", QuickButton2.x + QuickButton2.width / 2, QuickButton2.y + QuickButton2.height / 2 - 8);
+      touchArea.setFont(&fonts::DejaVu9);
+      touchArea.drawCenterString("Unlock", QuickButton2.x + QuickButton2.width / 2, QuickButton2.y + QuickButton2.height / 2 - 5);
 
       uint16_t qt3Color = TFT_DARKGREY;
       if (QuickButton3.isPressed && !QuickButton3.isDragging)
@@ -116,7 +254,7 @@ void handleTouchInput()
       touchArea.fillSmoothRoundRect(QuickButton3.x, QuickButton3.y, QuickButton3.width, QuickButton3.height, 10, qt3Color);
       touchArea.setTextColor(TFT_WHITE);
       touchArea.setTextSize(1);
-      touchArea.drawCenterString("QB3", QuickButton3.x + QuickButton3.width / 2, QuickButton3.y + QuickButton3.height / 2 - 8);
+      touchArea.drawCenterString("Snaps", QuickButton3.x + QuickButton3.width / 2, QuickButton3.y + QuickButton3.height / 2 - 8);
 
       uint16_t MAColor = TFT_GREEN;
       if (moreEnvironment.isPressed && !moreEnvironment.isDragging)
@@ -136,23 +274,27 @@ void handleTouchInput()
 
       if (qt1Clicked)
       {
-        touchArea.setTextColor(TFT_GREEN);
-        touchArea.drawString("Quick Button 1 Clicked!", 50, feedbackY);
-        Serial.println("Quick Button 1 clicked!");
+        // Lock the door
+        Serial.println("[QuickAction] Lock button clicked!");
+        bool success = sendLockCommand("dl_001"); // Replace with your actual door lock device ID
+
+        touchArea.setTextColor(success ? TFT_GREEN : TFT_RED);
+        touchArea.drawString(success ? "Door Locked!" : "Lock Failed!", 50, feedbackY);
       }
 
       if (qt2Clicked)
       {
-        touchArea.setTextColor(TFT_GREEN);
-        touchArea.drawString("Quick Button 2 Clicked!", 50, feedbackY+40);
-        Serial.println("Quick Button 2 clicked!");
+        // Unlock the door (with 30 second auto-lock)
+        Serial.println("[QuickAction] Unlock button clicked!");
+        bool success = sendUnlockCommand("dl_001", 30); // Replace with your actual door lock device ID, 30s duration
+
+        touchArea.setTextColor(success ? TFT_GREEN : TFT_RED);
+        touchArea.drawString(success ? "Door Unlocked!" : "Unlock Failed!", 50, feedbackY+40);
       }
 
-      if (qt3Clicked)
+      if (snapshotsClicked)
       {
-        touchArea.setTextColor(TFT_GREEN);
-        touchArea.drawString("Quick Button 3 Clicked!", 50, feedbackY+80);
-        Serial.println("Quick Button 3 clicked!");
+        cur_Screen = SCREEN_DOORBELL_SNAPSHOTS;
       }
       if (MoreEnvironmentClicked)
       {
@@ -160,9 +302,185 @@ void handleTouchInput()
         touchArea.drawString("more Alter", 50, feedbackY-40);
         Serial.println("more Alter clicked!");
       }
+
+      // Handle WiFi info button (top-right)
+      bool wifiInfoClicked = updateTouchButton(&wifiInfoButton, currentTouch.x, currentTouch.y, currentTouch.isPressed);
+      if (wifiInfoClicked)
+      {
+        showWifiInfoPopup = !showWifiInfoPopup; // Toggle popup
+        Serial.println(showWifiInfoPopup ? "WiFi Info Popup opened" : "WiFi Info Popup closed");
+      }
+
+      // Draw WiFi Info Popup if active
+      if (showWifiInfoPopup)
+      {
+        // Stylish popup with gradient-like layered design
+        int popupX = 520;
+        int popupY = 50;
+        int popupW = 270;
+        int popupH = 320;
+
+        // Outer shadow/border
+        touchArea.fillSmoothRoundRect(popupX - 3, popupY - 3, popupW + 6, popupH + 6, 15, TFT_DARKGREY);
+
+        // Main background with accent border
+        touchArea.fillSmoothRoundRect(popupX, popupY, popupW, popupH, 12, 0x2965); // Dark blue border
+        touchArea.fillSmoothRoundRect(popupX + 3, popupY + 3, popupW - 6, popupH - 6, 10, TFT_WHITE);
+
+        // Header bar with gradient effect
+        touchArea.fillSmoothRoundRect(popupX + 3, popupY + 3, popupW - 6, 40, 10, 0x4A69); // Medium blue
+        touchArea.fillSmoothRoundRect(popupX + 3, popupY + 20, popupW - 6, 23, 0, 0x3186); // Lighter blue gradient
+
+        // Header text
+        touchArea.setFont(&fonts::DejaVu12);
+        touchArea.setTextColor(TFT_WHITE);
+        touchArea.setTextSize(1);
+        touchArea.drawCenterString("System Information", popupX + popupW / 2, popupY + 15);
+
+        // Content area
+        int contentY = popupY + 55;
+        touchArea.setFont(&fonts::DejaVu9);
+        touchArea.setTextColor(TFT_BLACK);
+
+        // WiFi Information Section
+        touchArea.setTextColor(0x4A69); // Section header in blue
+        touchArea.drawString("WiFi Connection", popupX + 15, contentY);
+        contentY += 20;
+
+        touchArea.setTextColor(TFT_DARKGREY);
+        if (WiFi.status() == WL_CONNECTED)
+        {
+          char wifiInfo[50];
+
+          // SSID
+          touchArea.drawString("SSID:", popupX + 20, contentY);
+          touchArea.setTextColor(TFT_BLACK);
+          touchArea.drawString(WiFi.SSID().c_str(), popupX + 70, contentY);
+          contentY += 18;
+
+          // IP Address
+          touchArea.setTextColor(TFT_DARKGREY);
+          touchArea.drawString("IP:", popupX + 20, contentY);
+          touchArea.setTextColor(TFT_BLACK);
+          snprintf(wifiInfo, sizeof(wifiInfo), "%s", WiFi.localIP().toString().c_str());
+          touchArea.drawString(wifiInfo, popupX + 70, contentY);
+          contentY += 18;
+
+          // Signal Strength
+          touchArea.setTextColor(TFT_DARKGREY);
+          touchArea.drawString("Signal:", popupX + 20, contentY);
+          touchArea.setTextColor(TFT_BLACK);
+          int32_t rssi = WiFi.RSSI();
+          snprintf(wifiInfo, sizeof(wifiInfo), "%d dBm", rssi);
+          touchArea.drawString(wifiInfo, popupX + 70, contentY);
+
+          // Signal quality indicator
+          uint16_t signalColor = TFT_RED;
+          if (rssi >= -50) signalColor = TFT_GREEN;
+          else if (rssi >= -60) signalColor = 0x7E0; // Light green
+          else if (rssi >= -70) signalColor = TFT_ORANGE;
+          touchArea.fillSmoothCircle(popupX + popupW - 25, contentY + 5, 6, signalColor);
+          contentY += 22;
+
+          // MAC Address
+          touchArea.setTextColor(TFT_DARKGREY);
+          touchArea.drawString("MAC:", popupX + 20, contentY);
+          touchArea.setTextColor(TFT_BLACK);
+          touchArea.setFont(&fonts::DejaVu12);
+          touchArea.drawString(WiFi.macAddress().c_str(), popupX + 70, contentY + 2);
+          touchArea.setFont(&fonts::DejaVu9);
+          contentY += 25;
+        }
+        else
+        {
+          touchArea.setTextColor(TFT_RED);
+          touchArea.drawString("Not Connected", popupX + 20, contentY);
+          contentY += 25;
+        }
+
+        // Separator line
+        touchArea.drawFastHLine(popupX + 15, contentY, popupW - 30, 0xCE79); // Light gray line
+        contentY += 15;
+
+        // Doorbell Information Section
+        touchArea.setTextColor(0x4A69); // Section header in blue
+        touchArea.drawString("Doorbell Status", popupX + 15, contentY);
+        contentY += 20;
+
+        touchArea.setTextColor(TFT_DARKGREY);
+        if (doorbellOnline && doorbellStatus.data_valid)
+        {
+          touchArea.drawString("Status:", popupX + 20, contentY);
+          touchArea.setTextColor(TFT_GREEN);
+          touchArea.drawString("Online", popupX + 80, contentY);
+          touchArea.fillSmoothCircle(popupX + popupW - 25, contentY + 5, 6, TFT_GREEN);
+          contentY += 18;
+
+          touchArea.setTextColor(TFT_DARKGREY);
+          touchArea.drawString("Last Seen:", popupX + 20, contentY);
+          touchArea.setTextColor(TFT_BLACK);
+          touchArea.setFont(&fonts::DejaVu12);
+          touchArea.drawString(doorbellStatus.last_seen.c_str(), popupX + 20, contentY + 12);
+          touchArea.setFont(&fonts::DejaVu9);
+          contentY += 28;
+
+          touchArea.setTextColor(TFT_DARKGREY);
+          touchArea.drawString("WiFi RSSI:", popupX + 20, contentY);
+          touchArea.setTextColor(TFT_BLACK);
+          char rssiStr[20];
+          snprintf(rssiStr, sizeof(rssiStr), "%d dBm", doorbellStatus.wifi_rssi);
+          touchArea.drawString(rssiStr, popupX + 95, contentY);
+
+          // Signal indicator
+          uint16_t rssiColor = TFT_RED;
+          if (doorbellStatus.wifi_rssi >= -50) rssiColor = TFT_GREEN;
+          else if (doorbellStatus.wifi_rssi >= -60) rssiColor = 0x7E0;
+          else if (doorbellStatus.wifi_rssi >= -70) rssiColor = TFT_ORANGE;
+          touchArea.fillSmoothCircle(popupX + popupW - 25, contentY + 5, 6, rssiColor);
+          contentY += 18;
+
+          touchArea.setTextColor(TFT_DARKGREY);
+          touchArea.drawString("Free Heap:", popupX + 20, contentY);
+          touchArea.setTextColor(TFT_BLACK);
+          char heapStr[20];
+          snprintf(heapStr, sizeof(heapStr), "%d KB", doorbellStatus.free_heap / 1024);
+          touchArea.drawString(heapStr, popupX + 95, contentY);
+          contentY += 22;
+        }
+        else
+        {
+          touchArea.drawString("Status:", popupX + 20, contentY);
+          touchArea.setTextColor(TFT_RED);
+          touchArea.drawString("Offline", popupX + 80, contentY);
+          touchArea.fillSmoothCircle(popupX + popupW - 25, contentY + 5, 6, TFT_RED);
+          contentY += 25;
+        }
+
+        // Close instruction at bottom
+        touchArea.setFont(&fonts::DejaVu12);
+        touchArea.setTextColor(TFT_DARKGREY);
+        touchArea.drawCenterString("Tap icon again to close", popupX + popupW / 2, popupY + popupH - 18);
+      }
+    }
+  }
+  else if (cur_Screen == SCREEN_DOORBELL_SNAPSHOTS || cur_Screen == SCREEN_ALERT_DETAIL)
+  {
+    static bool buttonInitialized = false;
+    if(!buttonInitialized)
+    {
+      backButton.x = 20;
+      backButton.y = 420; // Adjusted for new layout
+      backButton.width = 100;
+      backButton.height = 40;
+      buttonInitialized = true;
     }
 
+    bool backClicked = updateTouchButton(&backButton, currentTouch.x, currentTouch.y, currentTouch.isPressed);
 
+    if(backClicked)
+    {
+      cur_Screen = SCREEN_HOME;
+    }
   }
   else if (cur_Screen == SCREEN_BUTTON_EXAMPLE)
   {

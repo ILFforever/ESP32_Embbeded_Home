@@ -6,6 +6,7 @@
 #include "DisplayConfig.h"
 #include "hub_network.h"
 #include "Touch/touch_button.h"
+#include "Touch/touch_handler.h"
 // External references to sprites and LCD (defined in main.cpp)
 extern LGFX_Sprite topBar;
 extern LGFX_Sprite contentArea;
@@ -30,8 +31,8 @@ extern TouchPosition currentTouch;
 extern volatile bool touchDataReady;
 extern bool skipPageTransition;
 
-
-
+extern Alert alerts[5]; // From touch_handler.cpp
+extern int selectedAlertIndex; // From touch_handler.cpp
 
 
 // Function declarations
@@ -46,4 +47,5 @@ uint16_t getProgressColor(int progress);
 void drawTransparentText(LGFX_Sprite* sprite, const char* text, int x, int y, uint16_t textColor);
 void playPageTransition(const char* pageName);
 void switchDeviceContext();
+uint16_t lightenColor(uint16_t color, int amount);
 #endif // SCREEN_MANAGER_H

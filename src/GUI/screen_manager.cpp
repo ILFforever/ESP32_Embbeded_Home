@@ -151,6 +151,10 @@ void updateContent()
 {
   if ((Last_Screen != cur_Screen) || contentNeedsUpdate || forcePageUpdate)
   {
+    if (Last_Screen != cur_Screen)
+    {
+      resetAlertsLoadedFlag();
+    }
     updateBotBar();
 
     // Play page transition animation on screen change (not on content updates)
@@ -176,81 +180,6 @@ void updateContent()
       contentArea.setTextSize(1);
       contentArea.setTextColor(TFT_BLACK);
       contentArea.drawString("Recent Alerts", 30, 25);
-
-      // Fetch alerts from backend API (limit to 5 to avoid heap issues)
-      Alert alerts[5];
-      bool alertsLoaded = fetchHomeAlerts(alerts, 5);
-
-      if (alertsLoaded)
-      {
-        // Draw each alert with layered frame styling
-        int yPos = 60;
-        for (int i = 0; i < 5; i++)
-        {
-          if (alerts[i].valid)
-          {
-            // Color based on alert level (case-insensitive check)
-            uint16_t levelColor = TFT_LIGHTGRAY;
-            if (strcasecmp(alerts[i].level, "error") == 0 || strcasecmp(alerts[i].level, "ERROR") == 0)
-            {
-              levelColor = TFT_RED;
-            }
-            else if (strcasecmp(alerts[i].level, "warning") == 0 || strcasecmp(alerts[i].level, "WARN") == 0)
-            {
-              levelColor = TFT_ORANGE;
-            }
-            else if (strcasecmp(alerts[i].level, "info") == 0 || strcasecmp(alerts[i].level, "INFO") == 0)
-            {
-              levelColor = TFT_GREEN;
-            }
-
-            // Layered frame effect
-            contentArea.fillSmoothRoundRect(20, yPos, 480, 60, 10, TFT_BLACK);     // outer frame
-            contentArea.fillSmoothRoundRect(25, yPos + 5, 470, 50, 8, levelColor); // color layer
-            contentArea.fillSmoothRoundRect(35, yPos + 5, 460, 50, 8, TFT_BLACK);  // inner frame
-            contentArea.fillSmoothRoundRect(40, yPos + 5, 455, 50, 8, TFT_WHITE);  // content area
-
-            // Draw alert text
-            contentArea.setFont(&fonts::DejaVu12);
-            contentArea.setTextColor(TFT_BLACK);
-            contentArea.setTextSize(1);
-            contentArea.drawString(alerts[i].message, 50, yPos + 12);
-
-            // Draw timestamp (smaller, right-aligned)
-            contentArea.setTextColor(TFT_DARKGREY);
-            contentArea.drawRightString(alerts[i].timestamp, 480, yPos + 35);
-          }
-          else
-          {
-            // Empty slot - gray placeholder
-            contentArea.fillSmoothRoundRect(20, yPos, 480, 60, 10, TFT_BLACK);
-            contentArea.fillSmoothRoundRect(25, yPos + 5, 470, 50, 8, TFT_LIGHTGRAY);
-            contentArea.fillSmoothRoundRect(35, yPos + 5, 460, 50, 8, TFT_BLACK);
-            contentArea.fillSmoothRoundRect(40, yPos + 5, 455, 50, 8, TFT_DARKGREY);
-          }
-          yPos += 70;
-        }
-      }
-      else
-      {
-        // Failed to load alerts - show placeholder slots
-        int yPos = 60;
-        for (int i = 0; i < 5; i++)
-        {
-          contentArea.fillSmoothRoundRect(20, yPos, 480, 60, 10, TFT_BLACK);
-          contentArea.fillSmoothRoundRect(25, yPos + 5, 470, 50, 8, TFT_LIGHTGRAY);
-          contentArea.fillSmoothRoundRect(35, yPos + 5, 460, 50, 8, TFT_BLACK);
-          contentArea.fillSmoothRoundRect(40, yPos + 5, 455, 50, 8, TFT_DARKGREY);
-          yPos += 70;
-        }
-
-        // Show error message on first slot
-        contentArea.setFont(&fonts::DejaVu12);
-        contentArea.setTextColor(TFT_WHITE);
-        contentArea.setTextSize(1);
-        contentArea.drawString("Failed to load alerts", 50, 75);
-      }
-
       contentArea.fillSmoothRoundRect(520, 10, 270, 250, 10, TFT_WHITE);
       contentArea.fillSmoothRoundRect(520, 270, 270, 140, 10, TFT_WHITE);
 
@@ -441,6 +370,7 @@ void updateContent()
       // Reset to default
       contentArea.setFont(&fonts::Font0);
     }
+
     else if (cur_Screen == SCREEN_DEVICE_LIST) // SCREEN_DEVICE_LIST (room list)
     {
       contentArea.fillScreen(TFT_BLACK);
@@ -920,6 +850,79 @@ void updateContent()
       contentArea.drawString("CALLING", 10, 10);
       contentArea.fillSmoothRoundRect(10, 100, 590, 300, 10, TFT_WHITE);
     }
+    else if (cur_Screen == SCREEN_DOORBELL_SNAPSHOTS)
+    {
+      contentArea.fillScreen(TFT_BLACK);
+      contentArea.setTextColor(TFT_WHITE);
+      contentArea.setFont(&fonts::Orbitron_Light_24);
+      contentArea.setTextSize(1);
+      contentArea.drawString("Doorbell Snapshots", 20, 20);
+
+      uint8_t *imageData = (uint8_t *)malloc(300 * 1024); // 300 KB buffer
+      size_t actualSize = 0;
+
+      if (fetchCameraSnapshot("db_001", imageData, 300 * 1024, &actualSize))
+      {
+        contentArea.drawJpg(imageData, actualSize, 100, 80);
+      }
+      else
+      {
+        contentArea.drawString("Failed to load snapshot", 100, 200);
+      }
+
+      free(imageData);
+
+      // Back button
+      touchArea.fillSmoothRoundRect(20, 380, 100, 40, 10, TFT_DARKGREY);
+      touchArea.setTextColor(TFT_WHITE);
+      touchArea.setTextSize(1);
+      touchArea.drawCenterString("Back", 70, 395);
+    }
+    else if (cur_Screen == SCREEN_ALERT_DETAIL)
+    {
+      contentArea.fillScreen(TFT_BLACK);
+      contentArea.setTextColor(TFT_WHITE);
+      contentArea.setFont(&fonts::Orbitron_Light_24);
+      contentArea.setTextSize(1);
+      contentArea.drawString("Alert Details", 20, 20);
+
+      // Main content box for alert details
+      contentArea.fillSmoothRoundRect(10, 60, 780, 350, 10, TFT_DARKGREY);
+
+      if (selectedAlertIndex != -1 && alerts[selectedAlertIndex].valid)
+      {
+        Alert selectedAlert = alerts[selectedAlertIndex];
+
+        // Labels
+        contentArea.setFont(&fonts::DejaVu18);
+        contentArea.setTextColor(TFT_LIGHTGREY);
+        contentArea.setTextSize(1);
+        contentArea.drawString("Message:", 40, 90);
+        contentArea.drawString("Level:", 40, 150);
+        contentArea.drawString("Timestamp:", 40, 210);
+
+        // Values
+        contentArea.setTextColor(TFT_WHITE);
+        contentArea.setFont(&fonts::DejaVu24); // Larger font for message
+        contentArea.drawString(selectedAlert.message, 200, 90);
+
+        contentArea.setFont(&fonts::DejaVu18);
+        contentArea.drawString(selectedAlert.level, 200, 150);
+        contentArea.drawString(selectedAlert.timestamp, 200, 210);
+      }
+      else
+      {
+        contentArea.setFont(&fonts::DejaVu18);
+        contentArea.setTextColor(TFT_RED);
+        contentArea.drawString("No alert selected or invalid alert data.", 40, 90);
+      }
+
+      // Back button (position adjusted for new layout)
+      touchArea.fillSmoothRoundRect(20, 420, 100, 40, 10, TFT_DARKGREY);
+      touchArea.setTextColor(TFT_WHITE);
+      touchArea.setTextSize(1);
+      touchArea.drawCenterString("Back", 70, 435);
+    }
     else if (cur_Screen == SCREEN_MASTER_MENU) // MASTER MENU PAGE
     {
       contentArea.fillScreen(TFT_BLACK);
@@ -1049,7 +1052,7 @@ void updateContent()
   }
   if (touchAreaNeedsUpdate)
   {
-    touchArea.pushSprite(0, 0, 0); // x, y, transparentColor (palette index 0)
+    touchArea.pushSprite(0, 0, TFT_GREEN); // x, y, transparentColor (green)
     touchAreaNeedsUpdate = false;
   }
 }
@@ -1083,6 +1086,28 @@ void updateBotBar()
       botBar.drawCenterString("^", 310, 5);
     botBar.drawCenterString("Refresh", 500, 5);
     botBar.drawCenterString("Menu", 690, 5);
+  }
+  else if (cur_Screen == SCREEN_DOORBELL_SNAPSHOTS)
+  {
+    botBar.setTextColor(TFT_WHITE);
+    botBar.setTextSize(2);
+
+    // Draw menu options
+    botBar.drawCenterString("Back", 120, 5);
+    botBar.drawCenterString("-", 310, 5);
+    botBar.drawCenterString("-", 500, 5);
+    botBar.drawCenterString("-", 690, 5);
+  }
+  else if (cur_Screen == SCREEN_ALERT_DETAIL)
+  {
+    botBar.setTextColor(TFT_WHITE);
+    botBar.setTextSize(2);
+
+    // Draw menu options
+    botBar.drawCenterString("Back", 120, 5);
+    botBar.drawCenterString("-", 310, 5);
+    botBar.drawCenterString("-", 500, 5);
+    botBar.drawCenterString("-", 690, 5);
   }
 
   botBarNeedsUpdate = true;
@@ -1373,4 +1398,21 @@ void switchDeviceContext()
     Device_list_screen_num = 2;
   else
     Device_list_screen_num = 1;
+}
+
+// Function to lighten a 16-bit color (RGB565)
+uint16_t lightenColor(uint16_t color, int amount)
+{
+  // Extract RGB components (5-bit Red, 6-bit Green, 5-bit Blue)
+  int r = (color >> 11) & 0x1F; // 5 bits
+  int g = (color >> 5) & 0x3F;  // 6 bits
+  int b = color & 0x1F;         // 5 bits
+
+  // Lighten each component, clamping at max value
+  r = min(0x1F, r + amount);
+  g = min(0x3F, g + amount);
+  b = min(0x1F, b + amount);
+
+  // Recombine into uint16_t
+  return (r << 11) | (g << 5) | b;
 }

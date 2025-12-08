@@ -49,7 +49,8 @@ bool updateTouchButton(TouchButton* btn, int touchX, int touchY, bool isTouching
     if (btn->isPressed)
     {
       // Button was pressed and now released
-      if (!btn->isDragging && isTouchInBounds(btn->initialTouchX, btn->initialTouchY, btn->x, btn->y, btn->width, btn->height))
+      if (!btn->isDragging &&
+          isTouchInBounds(btn->initialTouchX, btn->initialTouchY, btn->x, btn->y, btn->width, btn->height))
       {
         // Valid click - started and ended inside bounds without dragging
         wasReleased = true;

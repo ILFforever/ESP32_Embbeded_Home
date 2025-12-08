@@ -111,4 +111,17 @@ bool sendCameraCommand(const char* deviceId, const char* action);
 // actualSize: actual size of received JPEG data
 bool fetchCameraSnapshot(const char* deviceId, uint8_t* imageData, size_t maxSize, size_t* actualSize);
 
+// ============================================================================
+// Door Lock Control Functions
+// ============================================================================
+
+// Send lock command to door lock device
+// Returns: true if successful, false otherwise
+bool sendLockCommand(const char* deviceId);
+
+// Send unlock command to door lock device
+// duration: optional auto-lock duration in seconds (0 = no auto-lock)
+// Returns: true if successful, false otherwise
+bool sendUnlockCommand(const char* deviceId, int duration = 0);
+
 #endif

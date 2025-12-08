@@ -47,6 +47,20 @@ void updateCapSensor()
       cur_Screen = SCREEN_FONT;
     }
   }
+  else if (cur_Screen == SCREEN_DOORBELL_SNAPSHOTS)
+  {
+    if (isPadPressed(3))
+    {
+      cur_Screen = SCREEN_HOME;
+    }
+  }
+  else if (cur_Screen == SCREEN_ALERT_DETAIL)
+  {
+    if (isPadPressed(3))
+    {
+      cur_Screen = SCREEN_HOME;
+    }
+  }
   else if (isPadPressed(0))
   {
     sendAmpCommand("play", "click");

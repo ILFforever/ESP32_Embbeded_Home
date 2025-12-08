@@ -66,12 +66,13 @@ void capSensorUpdate()
     {
         capState.timestamp = millis();
 
-        // Print touched/released events
+        // Print touched/released events and track touch start times
         for (uint8_t i = 0; i < 12; i++)
         {
             // Pad was just touched
             if ((capState.currentTouched & _BV(i)) && !(capState.lastTouched & _BV(i)))
             {
+                capState.padTouchStartTime[i] = millis();  // Record touch start time
                 Serial.print("Pad ");
                 Serial.print(i);
                 Serial.println(" touched");
@@ -96,7 +97,39 @@ bool isPadTouched(uint8_t pad)
 bool isPadPressed(uint8_t pad)
 {
     if (pad >= 12) return false;
-    return (capState.currentTouched & _BV(pad)) && !(capState.lastTouched & _BV(pad));
+
+    // Minimum touch duration: 500ms (0.5 seconds) to prevent ghosting
+    const uint32_t MIN_TOUCH_DURATION = 200;
+
+    // Check if pad was just released (not currently touched, but was touched before)
+    bool wasJustReleased = !(capState.currentTouched & _BV(pad)) && (capState.lastTouched & _BV(pad));
+
+    if (wasJustReleased)
+    {
+        // Calculate how long the pad was held
+        uint32_t touchDuration = millis() - capState.padTouchStartTime[pad];
+
+        // Only register as pressed if held for minimum duration
+        if (touchDuration >= MIN_TOUCH_DURATION)
+        {
+            Serial.print("Pad ");
+            Serial.print(pad);
+            Serial.print(" held for ");
+            Serial.print(touchDuration);
+            Serial.println("ms - VALID PRESS");
+            return true;
+        }
+        else
+        {
+            Serial.print("Pad ");
+            Serial.print(pad);
+            Serial.print(" held for only ");
+            Serial.print(touchDuration);
+            Serial.println("ms - TOO SHORT (ignored)");
+        }
+    }
+
+    return false;
 }
 
 bool isPadReleased(uint8_t pad)

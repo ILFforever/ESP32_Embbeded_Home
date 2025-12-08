@@ -157,12 +157,11 @@ void setup(void)
   contentArea.setPsram(true);
   bool contentCreated = contentArea.createSprite(800, 440);
 
-  // Touch area sprite (800x480) with transparency
-  touchArea.setColorDepth(8);
+  // Touch area sprite (800x480) with transparency - using 16-bit color for proper color support
+  touchArea.setColorDepth(16);
   touchArea.setPsram(true);
   bool touchCreated = touchArea.createSprite(800, 480);
-  touchArea.setPaletteColor(0, TFT_BLACK); // Index 0 = transparent color
-  touchArea.fillSprite(0); // Fill with transparent
+  touchArea.fillSprite(TFT_GREEN); // Fill with transparent color (green)
 
   if (topBarCreated && contentCreated && botBarCreated && touchCreated)
   {

@@ -1163,3 +1163,111 @@ bool fetchCameraSnapshot(const char* deviceId, uint8_t* imageData, size_t maxSiz
   http.end();
   return false;
 }
+
+// ============================================================================
+// Door Lock Control Functions
+// ============================================================================
+
+bool sendLockCommand(const char* deviceId) {
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("[Lock] ✗ WiFi not connected");
+    return false;
+  }
+
+  if (!HUB_API_TOKEN || strlen(HUB_API_TOKEN) == 0) {
+    Serial.println("[Lock] ✗ No API token set");
+    return false;
+  }
+
+  HTTPClient http;
+  String url = String(BACKEND_SERVER_URL) + "/api/v1/devices/" + String(deviceId) + "/lock/device-trigger";
+
+  Serial.printf("[Lock] Sending lock command to: %s\n", url.c_str());
+
+  http.begin(url);
+  http.addHeader("Content-Type", "application/json");
+
+  // Add Authorization header
+  String authHeader = String("Bearer ") + HUB_API_TOKEN;
+  http.addHeader("Authorization", authHeader.c_str());
+
+  http.setTimeout(5000);
+
+  // Create JSON body with device_id
+  JsonDocument doc;
+  doc["device_id"] = deviceId;
+  String jsonBody;
+  serializeJson(doc, jsonBody);
+
+  Serial.printf("[Lock] Request body: %s\n", jsonBody.c_str());
+
+  int httpResponseCode = http.POST(jsonBody);
+
+  Serial.printf("[Lock] Response code: %d\n", httpResponseCode);
+
+  if (httpResponseCode == 200) {
+    String response = http.getString();
+    Serial.printf("[Lock] ✓ Success: %s\n", response.c_str());
+    http.end();
+    return true;
+  } else {
+    String response = http.getString();
+    Serial.printf("[Lock] ✗ Failed: %s\n", response.c_str());
+    http.end();
+    return false;
+  }
+}
+
+bool sendUnlockCommand(const char* deviceId, int duration) {
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("[Unlock] ✗ WiFi not connected");
+    return false;
+  }
+
+  if (!HUB_API_TOKEN || strlen(HUB_API_TOKEN) == 0) {
+    Serial.println("[Unlock] ✗ No API token set");
+    return false;
+  }
+
+  HTTPClient http;
+  String url = String(BACKEND_SERVER_URL) + "/api/v1/devices/" + String(deviceId) + "/unlock/device-trigger";
+
+  Serial.printf("[Unlock] Sending unlock command to: %s\n", url.c_str());
+
+  http.begin(url);
+  http.addHeader("Content-Type", "application/json");
+
+  // Add Authorization header
+  String authHeader = String("Bearer ") + HUB_API_TOKEN;
+  http.addHeader("Authorization", authHeader.c_str());
+
+  http.setTimeout(5000);
+
+  // Create JSON body with device_id, hub_device_id, and optional duration
+  JsonDocument doc;
+  doc["device_id"] = deviceId;
+  doc["hub_device_id"] = "hb_001"; // Add hub device ID for authentication
+  if (duration > 0) {
+    doc["duration"] = duration;
+  }
+  String jsonBody;
+  serializeJson(doc, jsonBody);
+
+  Serial.printf("[Unlock] Request body: %s\n", jsonBody.c_str());
+
+  int httpResponseCode = http.POST(jsonBody);
+
+  Serial.printf("[Unlock] Response code: %d\n", httpResponseCode);
+
+  if (httpResponseCode == 200) {
+    String response = http.getString();
+    Serial.printf("[Unlock] ✓ Success: %s\n", response.c_str());
+    http.end();
+    return true;
+  } else {
+    String response = http.getString();
+    Serial.printf("[Unlock] ✗ Failed: %s\n", response.c_str());
+    http.end();
+    return false;
+  }
+}
