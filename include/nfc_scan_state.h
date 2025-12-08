@@ -6,6 +6,7 @@
 struct NFCScanState {
   bool active = false;
   String sessionId = "";
+  unsigned long activatedTime = 0;
 };
 
 extern NFCScanState nfcScanState;
