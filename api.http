@@ -1,0 +1,102 @@
+### API Testing File for VS Code REST Client Extension
+### Install "REST Client" extension by Huachao Mao to use this file
+
+@baseUrl = http://localhost:5000/api/v1/auth
+@token =
+
+### 1. Register a regular user
+POST {{baseUrl}}/register
+Content-Type: application/json
+
+{
+  "name": "John Doe",
+  "telephone_number": "123-4567890",
+  "email": "john@example.com",
+  "password": "password123",
+  "role": "user"
+}
+
+### 2. Register an admin user
+POST {{baseUrl}}/register
+Content-Type: application/json
+
+{
+  "name": "Admin User",
+  "telephone_number": "999-8887777",
+  "email": "admin@example.com",
+  "password": "admin123",
+  "role": "admin"
+}
+
+### 3. Login as admin (copy the token from response)
+POST {{baseUrl}}/login
+Content-Type: application/json
+
+{
+  "email": "admin@example.com",
+  "password": "admin123"
+}
+
+### 4. Login as regular user
+POST {{baseUrl}}/login
+Content-Type: application/json
+
+{
+  "email": "john@example.com",
+  "password": "password123"
+}
+
+###############################################################################
+### Device Endpoints
+###############################################################################
+
+@deviceBaseUrl = http://localhost:5000/api/v1/devices
+@deviceToken = YOUR_DEVICE_TOKEN_HERE
+
+### Register a new device (get API token)
+POST {{deviceBaseUrl}}/register
+Content-Type: application/json
+
+{
+  "device_id": "db_001",
+  "device_type": "doorbell",
+  "name": "Front Door Doorbell"
+}
+
+
+###############################################################################
+### NFC Card Registration (Async Flow)
+###############################################################################
+
+@nfcCardIdToRegister = 0xAA0xBB0xCC0xDD
+@nfcScannerDeviceId = db_001
+@userIdToRegisterFor = REPLACE_WITH_A_REAL_USER_ID
+
+### ADMIN initiates NFC registration for a user
+# @name nfc-init
+POST {{deviceBaseUrl}}/nfc/register/initiate/admin/{{userIdToRegisterFor}}
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "deviceId": "{{nfcScannerDeviceId}}"
+}
+
+### DEVICE sends the scanned card to complete the registration
+# This would be called by the ESP32.
+# Manually copy the sessionId from the response of the nfc-init request above.
+@sessionId = REPLACE_WITH_SESSION_ID_FROM_ABOVE
+
+POST {{deviceBaseUrl}}/nfc/register/scan
+Content-Type: application/json
+Authorization: Bearer {{deviceToken}}
+
+{
+  "card_id": "{{nfcCardIdToRegister}}",
+  "sessionId": "{{sessionId}}"
+}
+
+### ADMIN cancels pending NFC registrations for a device
+POST {{deviceBaseUrl}}/nfc/register/cancel/{{nfcScannerDeviceId}}
+Content-Type: application/json
+Authorization: Bearer {{token}}

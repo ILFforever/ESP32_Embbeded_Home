@@ -18,7 +18,14 @@ const {
   fetchPendingCommands,
   acknowledgeCommand,
   handleManualUnlock,
-  handleNfcScan,
+  handleNfcAccessScan,
+  handleNfcRegisterScan,
+  initiateNfcRegistration,
+  handleDeviceNfcScan,
+  cancelOwnNfcRegistration,
+  cancelAdminNfcRegistration,
+  removeNfcCard,
+  removeNfcCardAdmin,
   // Amplifier Global Control
   playAmplifierAll,
   stopAmplifierAll,
@@ -47,10 +54,12 @@ const {
   lockDoor,
   unlockDoor,
   getDoorLockStatus,
-  updateDoorLockState
+  updateDoorLockState,
+  lockDoorByDevice,
+  unlockDoorByDevice
 } = require('../controllers/devices');
 const { authenticateDevice } = require('../middleware/deviceAuth');
-const { protect } = require('../middleware/auth');
+const { protect, authorize } = require('../middleware/auth');
 
 // Configure multer for in-memory file storage (for face detection images)
 // Increased limits for ESP32 reliability
@@ -137,6 +146,16 @@ router.get('/:device_id/lock/status', protect, getDoorLockStatus);
 // @access  Private (requires device token)
 router.post('/:device_id/lock/state', authenticateDevice, updateDoorLockState);
 
+// @route   POST /api/v1/devices/:device_id/lock/device-trigger
+// @desc    Device initiates lock command
+// @access  Private (requires device token)
+router.post('/:device_id/lock/device-trigger', authenticateDevice, lockDoorByDevice);
+
+// @route   POST /api/v1/devices/:device_id/unlock/device-trigger
+// @desc    Device initiates unlock command
+// @access  Private (requires device token)
+router.post('/:device_id/unlock/device-trigger', authenticateDevice, unlockDoorByDevice);
+
 // ============================================================================
 // Generic Device Status Routes
 // ============================================================================
@@ -185,10 +204,45 @@ router.post('/commands/ack', authenticateDevice, acknowledgeCommand);
 // @access  Private (requires device token)
 router.post('/commands/manual-unlock', authenticateDevice, handleManualUnlock);
 
-// @route   POST /api/v1/devices/nfc/scan
-// @desc    Receive NFC scan from a device
+// @route   POST /api/v1/devices/nfc/scan/access
+// @desc    Receive NFC scan for access control
 // @access  Private (requires device token)
-router.post('/nfc/scan', authenticateDevice, handleNfcScan);
+router.post('/nfc/scan/access', authenticateDevice, handleNfcAccessScan);
+
+// @route   POST /api/v1/devices/nfc/register/initiate
+// @desc    Initiate NFC card registration for the logged-in user
+// @access  Private (requires user token)
+router.post('/nfc/register/initiate', protect, initiateNfcRegistration);
+
+// @route   POST /api/v1/devices/nfc/register/initiate/admin/:userId
+// @desc    Admin initiates NFC card registration for a specific user
+// @access  Private (Admin only)
+router.post('/nfc/register/initiate/admin/:userId', protect, authorize('admin'), initiateNfcRegistration);
+
+// @route   POST /api/v1/devices/nfc/register/scan
+// @desc    Device sends scanned NFC card details to complete registration
+// @access  Private (requires device token)
+router.post('/nfc/register/scan', authenticateDevice, handleDeviceNfcScan);
+
+// @route   POST /api/v1/devices/nfc/register/cancel
+// @desc    User cancels their own pending NFC registrations (optional: for a specific device)
+// @access  Private (requires user token)
+router.post('/nfc/register/cancel', protect, cancelOwnNfcRegistration);
+
+// @route   POST /api/v1/devices/nfc/register/cancel/:deviceId
+// @desc    Admin cancels all pending NFC registrations for a device
+// @access  Private (Admin only)
+router.post('/nfc/register/cancel/:deviceId', protect, authorize('admin'), cancelAdminNfcRegistration);
+
+// @route   DELETE /api/v1/devices/nfc/cards/:card_id
+// @desc    User removes their own NFC card
+// @access  Private (requires user token)
+router.delete('/nfc/cards/:card_id', protect, removeNfcCard);
+
+// @route   DELETE /api/v1/devices/nfc/cards/:card_id/user/:userId
+// @desc    Admin removes an NFC card from a specific user
+// @access  Private (Admin only)
+router.delete('/nfc/cards/:card_id/user/:userId', protect, authorize('admin'), removeNfcCardAdmin);
 
 // ============================================================================
 // Face Management Routes

@@ -1445,48 +1445,51 @@ const acknowledgeCommand = async (req, res) => {
 
     // Send email notification for all commands (both success and failure)
     const commandData = commandDoc.data();
-    if (!success) {
-      // Failed command - error alert
-      console.log(`[AckCommand] ${device_id} - Command failed, sending email notification`);
-      sendAlertNotification({
-        id: `${device_id}_cmd_${command_id}`,
-        level: ALERT_LEVELS.ERROR,
-        message: `${device_id}: Command '${commandData.action}' failed`,
-        source: device_id,
-        tags: ['command', commandData.action, 'failed'],
-        metadata: {
-          action: commandData.action,
-          status: 'failed',
-          params: commandData.params,
-          error: error
-        },
-        timestamp: new Date(),
-        created_at: new Date()
-      }).catch(err => {
-        console.error('[AckCommand] Failed to send email notification:', err);
-        // Non-blocking
-      });
-    } else {
-      // Successful command - success alert
-      console.log(`[AckCommand] ${device_id} - Command succeeded, sending email notification`);
-      sendAlertNotification({
-        id: `${device_id}_cmd_${command_id}`,
-        level: ALERT_LEVELS.SUCCESS,
-        message: `${device_id}: Command '${commandData.action}' completed successfully`,
-        source: device_id,
-        tags: ['command', commandData.action, 'completed'],
-        metadata: {
-          action: commandData.action,
-          status: 'completed',
-          params: commandData.params,
-          result: result
-        },
-        timestamp: new Date(),
-        created_at: new Date()
-      }).catch(err => {
-        console.error('[AckCommand] Failed to send email notification:', err);
-        // Non-blocking
-      });
+    // Only send alerts for non-door lock actions
+    if (commandData.action !== 'lock' && commandData.action !== 'unlock') {
+      if (!success) {
+        // Failed command - error alert
+        console.log(`[AckCommand] ${device_id} - Command failed, sending email notification`);
+        sendAlertNotification({
+          id: `${device_id}_cmd_${command_id}`,
+          level: ALERT_LEVELS.ERROR,
+          message: `${device_id}: Command '${commandData.action}' failed`,
+          source: device_id,
+          tags: ['command', commandData.action, 'failed'],
+          metadata: {
+            action: commandData.action,
+            status: 'failed',
+            params: commandData.params,
+            error: error
+          },
+          timestamp: new Date(),
+          created_at: new Date()
+        }).catch(err => {
+          console.error('[AckCommand] Failed to send email notification:', err);
+          // Non-blocking
+        });
+      } else {
+        // Successful command - success alert
+        console.log(`[AckCommand] ${device_id} - Command succeeded, sending email notification`);
+        sendAlertNotification({
+          id: `${device_id}_cmd_${command_id}`,
+          level: ALERT_LEVELS.SUCCESS,
+          message: `${device_id}: Command '${commandData.action}' completed successfully`,
+          source: device_id,
+          tags: ['command', commandData.action, 'completed'],
+          metadata: {
+            action: commandData.action,
+            status: 'completed',
+            params: commandData.params,
+            result: result
+          },
+          timestamp: new Date(),
+          created_at: new Date()
+        }).catch(err => {
+          console.error('[AckCommand] Failed to send email notification:', err);
+          // Non-blocking
+        });
+      }
     }
 
     res.json({
@@ -2814,6 +2817,145 @@ const unlockDoor = async (req, res) => {
   }
 };
 
+const lockDoorByDevice = async (req, res) => {
+  try {
+    const { device_id } = req.params;
+
+    // Ensure the authenticated device is the one trying to send the command
+    if (req.device.id !== device_id) {
+      return res.status(403).json({ success: false, message: 'Forbidden: Device ID mismatch.' });
+    }
+
+    const db = getFirestore();
+    const deviceRef = db.collection('devices').doc(device_id);
+
+    // Verify device exists and is a door lock
+    const deviceDoc = await deviceRef.get();
+    if (!deviceDoc.exists) {
+      return res.status(404).json({
+        status: 'error',
+        message: 'Device not found'
+      });
+    }
+
+    const deviceData = deviceDoc.data();
+    if (deviceData.type !== 'actuator') { // Assuming door locks are 'actuator' type
+      return res.status(400).json({
+        status: 'error',
+        message: 'Device is not a door lock'
+      });
+    }
+
+    // Queue lock command with 'device' trigger
+    const result = await queueCommand(device_id, 'lock', { trigger: 'device' });
+
+    if (!result.success) {
+      return res.status(500).json({
+        status: 'error',
+        message: 'Failed to queue lock command',
+        error: result.error
+      });
+    }
+
+    console.log(`[DoorLockByDevice] ${device_id} - Lock command queued (ID: ${result.commandId})`);
+
+    // Update state immediately with 'device' trigger
+    await deviceRef
+      .collection('live_status')
+      .doc('device_state')
+      .set({
+        lock_state: 'locked',
+        last_action: 'lock',
+        trigger: 'device',
+        last_action_time: admin.firestore.FieldValue.serverTimestamp(),
+        updated_at: admin.firestore.FieldValue.serverTimestamp()
+      }, { merge: true });
+
+    res.json({
+      status: 'ok',
+      message: 'Lock command sent successfully by device',
+      device_id,
+      command_id: result.commandId,
+      action: 'lock'
+    });
+
+  } catch (error) {
+    console.error('[lockDoorByDevice] Error:', error);
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+};
+
+const unlockDoorByDevice = async (req, res) => {
+  try {
+    const { device_id } = req.params;
+    const { duration } = req.body; // Optional: auto-lock after duration (seconds)
+
+    // Ensure the authenticated device is the one trying to send the command
+    if (req.device.id !== device_id) {
+      return res.status(403).json({ success: false, message: 'Forbidden: Device ID mismatch.' });
+    }
+
+    const db = getFirestore();
+    const deviceRef = db.collection('devices').doc(device_id);
+
+    // Verify device exists and is a door lock
+    const deviceDoc = await deviceRef.get();
+    if (!deviceDoc.exists) {
+      return res.status(404).json({
+        status: 'error',
+        message: 'Device not found'
+      });
+    }
+
+    const deviceData = deviceDoc.data();
+    if (deviceData.type !== 'actuator') { // Assuming door locks are 'actuator' type
+      return res.status(400).json({
+        status: 'error',
+        message: 'Device is not a door lock'
+      });
+    }
+
+    // Queue unlock command with optional duration and 'device' trigger
+    const params = duration ? { duration: parseInt(duration), trigger: 'device' } : { trigger: 'device' };
+    const result = await queueCommand(device_id, 'unlock', params);
+
+    if (!result.success) {
+      return res.status(500).json({
+        status: 'error',
+        message: 'Failed to queue unlock command',
+        error: result.error
+      });
+    }
+
+    console.log(`[DoorUnlockByDevice] ${device_id} - Unlock command queued (ID: ${result.commandId})${duration ? ` with duration: ${duration}s` : ''}`);
+
+    // Update state immediately with 'device' trigger
+    await deviceRef
+      .collection('live_status')
+      .doc('device_state')
+      .set({
+        lock_state: 'unlocked',
+        last_action: 'unlock',
+        trigger: 'device',
+        last_action_time: admin.firestore.FieldValue.serverTimestamp(),
+        updated_at: admin.firestore.FieldValue.serverTimestamp()
+      }, { merge: true });
+
+    res.json({
+      status: 'ok',
+      message: 'Unlock command sent successfully by device',
+      device_id,
+      command_id: result.commandId,
+      action: 'unlock',
+      ...(duration && { duration: parseInt(duration) })
+    });
+
+  } catch (error) {
+    console.error('[unlockDoorByDevice] Error:', error);
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+};
+
 // @desc    Get door lock status
 // @route   GET /api/v1/devices/:device_id/lock/status
 // @access  Private (requires user token)
@@ -2898,10 +3040,10 @@ const getDoorLockStatus = async (req, res) => {
 const User = require('../models/User');
 
 // ============================================================================
-// @route   POST /api/v1/devices/nfc/scan
-// @desc    Receive NFC scan from a device and check for authorized user or add a new card
+// @route   POST /api/v1/devices/nfc/scan/access
+// @desc    Receive NFC scan and check for authorized user for access
 // ============================================================================
-const handleNfcScan = async (req, res) => {
+const handleNfcAccessScan = async (req, res) => {
   try {
     const { device_id, card_id } = req.body;
 
@@ -2913,53 +3055,14 @@ const handleNfcScan = async (req, res) => {
       });
     }
 
-    console.log(`[NFC] Scan received from ${device_id} with card ID: ${card_id}`);
+    console.log(`[NFC Access] Scan received from ${device_id} with card ID: ${card_id}`);
 
     const db = getFirestore();
     const usersRef = db.collection('users');
     const deviceRef = db.collection('devices').doc(device_id);
     const timestamp = admin.firestore.FieldValue.serverTimestamp();
 
-    // 2. Check if any user is in "add card mode"
-    const addingUserSnapshot = await usersRef.where('is_adding_card', '==', true).limit(1).get();
-
-    if (!addingUserSnapshot.empty) {
-      const userDoc = addingUserSnapshot.docs[0];
-      const user = new User({ id: userDoc.id, ...userDoc.data() });
-
-      console.log(`[NFC] User ${user.name} is in 'add card mode'. Assigning card ${card_id}.`);
-
-      // Check if this card is already assigned to ANY user
-      const existingCardSnapshot = await usersRef.where('nfc_cards', 'array-contains', card_id).get();
-      if (!existingCardSnapshot.empty) {
-        // Card is already assigned, reset the user's state and return an error
-        await userDoc.ref.update({ is_adding_card: false });
-        console.error(`[NFC] Card ${card_id} is already assigned to another user.`);
-        return res.status(409).json({
-          status: 'error',
-          message: 'This NFC card is already registered to another user.'
-        });
-      }
-
-      // Add the new card and reset the flag
-      const updatedCards = [...user.nfc_cards, card_id];
-      await userDoc.ref.update({
-        nfc_cards: updatedCards,
-        is_adding_card: false
-      });
-
-      console.log(`[NFC] Successfully assigned card ${card_id} to user ${user.name}.`);
-
-      return res.json({
-        status: 'ok',
-        message: `NFC card successfully added to ${user.name}'s account.`,
-        operation: 'add_card',
-        user: { id: user.id, name: user.name }
-      });
-    }
-
-    // 3. If not in "add card mode", proceed with normal access authorization
-    console.log('[NFC] No user in "add card mode". Checking for authorization...');
+    // 2. Find user by NFC card ID
     const userSnapshot = await usersRef.where('nfc_cards', 'array-contains', card_id).limit(1).get();
 
     let authorized = false;
@@ -2971,53 +3074,65 @@ const handleNfcScan = async (req, res) => {
       const userDoc = userSnapshot.docs[0];
       userName = userDoc.data().name;
       userId = userDoc.id;
-      console.log(`[NFC] Card ID ${card_id} is authorized for user: ${userName} (ID: ${userId})`);
+      console.log(`[NFC Access] Card ID ${card_id} is authorized for user: ${userName} (ID: ${userId})`);
     } else {
-      console.log(`[NFC] Card ID ${card_id} is not authorized.`);
+      console.log(`[NFC Access] Card ID ${card_id} is not authorized.`);
     }
 
-    // 4. Log the scan event
+    // 3. Log the scan event
     const logEntry = {
       card_id,
       authorized,
       user_name: userName,
       user_id: userId,
       timestamp,
-      created_at: timestamp
+      created_at: timestamp,
+      type: 'access'
     };
 
     const logRef = await deviceRef.collection('nfc_scans').add(logEntry);
-    console.log(`[NFC] Scan event logged with ID: ${logRef.id}`);
+    console.log(`[NFC Access] Scan event logged with ID: ${logRef.id}`);
 
-    // 5. Trigger action if authorized
+    // 4. If authorized, trigger an action (e.g., toggle the door 'dl_001')
     if (authorized) {
-      const targetDeviceId = 'dl_001'; // Example: unlock door 'dl_001'
-      const unlockResult = await queueCommand(targetDeviceId, 'unlock', {
+      const targetDeviceId = 'dl_001'; // Or this could come from device config
+      const doorLockStateRef = db.collection('devices').doc(targetDeviceId).collection('live_status').doc('device_state');
+      const doorLockStateDoc = await doorLockStateRef.get();
+
+      let action = 'unlock'; // Default action is to unlock
+      if (doorLockStateDoc.exists && doorLockStateDoc.data().lock_state === 'unlocked') {
+        action = 'lock';
+      }
+
+      console.log(`[NFC Access] Current door state is '${(doorLockStateDoc.exists && doorLockStateDoc.data().lock_state) || 'unknown'}'. Queuing '${action}' command.`);
+
+      const toggleResult = await queueCommand(targetDeviceId, action, {
         trigger: 'nfc',
         user_name: userName,
         user_id: userId
       });
 
-      if (unlockResult.success) {
-        console.log(`[NFC] Unlock command queued for ${targetDeviceId} for user ${userName}`);
+      if (toggleResult.success) {
+        console.log(`[NFC Access] ${action} command queued for ${targetDeviceId} for user ${userName}`);
         return res.json({
           status: 'ok',
-          message: 'NFC scan processed. Access granted.',
+          message: `NFC scan processed. Access granted. Door command: ${action}`,
           authorized: true,
           user: { id: userId, name: userName },
-          action_result: unlockResult
+          action_result: toggleResult
         });
       } else {
-        console.error(`[NFC] Failed to queue unlock command for ${targetDeviceId}:`, unlockResult.error);
+        console.error(`[NFC Access] Failed to queue ${action} command for ${targetDeviceId}:`, toggleResult.error);
         return res.status(500).json({
           status: 'error',
-          message: 'NFC card authorized, but failed to trigger action.',
+          message: `NFC card authorized, but failed to trigger ${action} action.`,
           authorized: true,
           user: { id: userId, name: userName },
-          action_result: unlockResult
+          action_result: toggleResult
         });
       }
     } else {
+      // 5. Respond for unauthorized scan
       return res.status(403).json({
         status: 'error',
         message: 'Access denied. NFC card not recognized.',
@@ -3026,7 +3141,358 @@ const handleNfcScan = async (req, res) => {
     }
 
   } catch (error) {
-    console.error('[NFC] Error handling NFC scan:', error);
+    console.error('[NFC Access] Error handling NFC scan:', error);
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+};
+// ============================================================================
+// @route   POST /api/v1/devices/nfc/scan/register
+// @desc    Register a new NFC card for the logged-in user
+// ============================================================================
+const handleNfcRegisterScan = async (req, res) => {
+    try {
+        const { card_id } = req.body;
+        const userId = req.user.id; // from 'protect' middleware
+
+        if (!card_id) {
+            return res.status(400).json({
+                success: false,
+                message: 'Please provide a card_id'
+            });
+        }
+
+        const db = getFirestore();
+        const usersRef = db.collection('users');
+
+        // Check if the card is already assigned to another user
+        const existingCardSnapshot = await usersRef.where('nfc_cards', 'array-contains', card_id).get();
+        if (!existingCardSnapshot.empty) {
+            const existingUserDoc = existingCardSnapshot.docs[0];
+            if (existingUserDoc.id !== userId) {
+                return res.status(409).json({
+                    success: false,
+                    message: `Card is already registered to another user.`
+                });
+            }
+        }
+
+        const userRef = usersRef.doc(userId);
+        const userDoc = await userRef.get();
+
+        if (!userDoc.exists) {
+            return res.status(404).json({
+                success: false,
+                message: 'User not found'
+            });
+        }
+
+        const user = new User({ id: userDoc.id, ...userDoc.data() });
+
+        if (user.nfc_cards.includes(card_id)) {
+            return res.status(400).json({
+                success: false,
+                message: 'Card is already registered to this user.'
+            });
+        }
+
+        const updatedCards = [...user.nfc_cards, card_id];
+        await userRef.update({
+            nfc_cards: updatedCards
+        });
+
+        console.log(`[NFC Register] Successfully assigned card ${card_id} to user ${user.name}.`);
+
+        res.json({
+            success: true,
+            message: `NFC card successfully added to your account.`,
+            user: { id: user.id, name: user.name }
+        });
+
+    } catch (error) {
+        console.error('[NFC Register] Error registering NFC card:', error);
+        res.status(500).json({ status: 'error', message: error.message });
+    }
+};
+
+const initiateNfcRegistration = async (req, res) => {
+  try {
+    const { deviceId } = req.body;
+    let userId;
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                
+    // Admin route will have userId in params, user route will use req.user.id
+    if (req.params.userId) {
+      userId = req.params.userId;
+    } else {
+      userId = req.user.id;
+    }
+
+    if (!deviceId) {
+      return res.status(400).json({ success: false, message: 'Please provide a deviceId' });
+    }
+
+    const db = getFirestore();
+
+    // Create a registration session
+    const sessionRef = await db.collection('nfcRegistrationSessions').add({
+      userId,
+      deviceId,
+      status: 'pending',
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      expiresAt: new Date(Date.now() + 5 * 60 * 1000) // Expires in 5 minutes
+    });
+
+    // Queue command for the device
+    await queueCommand(deviceId, 'start_nfc_registration', { sessionId: sessionRef.id });
+
+    res.json({
+      success: true,
+      message: 'NFC registration initiated. Please scan the card on the device.',
+      sessionId: sessionRef.id
+    });
+  } catch (error) {
+    console.error('[NFC Initiate] Error initiating NFC registration:', error);
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+};
+
+const handleDeviceNfcScan = async (req, res) => {
+  try {
+    const { card_id, sessionId } = req.body;
+
+    if (!card_id || !sessionId) {
+      return res.status(400).json({ success: false, message: 'Please provide card_id and sessionId' });
+    }
+
+    const db = getFirestore();
+    const sessionRef = db.collection('nfcRegistrationSessions').doc(sessionId);
+    const sessionDoc = await sessionRef.get();
+
+    if (!sessionDoc.exists) {
+      return res.status(404).json({ success: false, message: 'Registration session not found' });
+    }
+
+    const session = sessionDoc.data();
+
+    if (session.status !== 'pending') {
+      return res.status(400).json({ success: false, message: `Session already ${session.status}` });
+    }
+
+    if (session.expiresAt.toDate() < new Date()) {
+      await sessionRef.update({ status: 'expired' });
+      return res.status(400).json({ success: false, message: 'Registration session expired' });
+    }
+
+    const { userId, deviceId } = session;
+    const usersRef = db.collection('users');
+
+    // Check if the card is already assigned to another user
+    const existingCardSnapshot = await usersRef.where('nfc_cards', 'array-contains', card_id).get();
+    if (!existingCardSnapshot.empty) {
+      const existingUserDoc = existingCardSnapshot.docs[0];
+      if (existingUserDoc.id !== userId) {
+        await queueCommand(deviceId, 'nfc_registration_fail');
+        return res.status(409).json({
+          success: false,
+          message: `Card is already registered to another user.`
+        });
+      }
+    }
+
+    const userRef = usersRef.doc(userId);
+    const userDoc = await userRef.get();
+
+    if (!userDoc.exists) {
+      await queueCommand(deviceId, 'nfc_registration_fail');
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    const user = new User({ id: userDoc.id, ...userDoc.data() });
+
+    if (user.nfc_cards.includes(card_id)) {
+      await queueCommand(deviceId, 'nfc_registration_fail');
+      return res.status(400).json({
+        success: false,
+        message: 'Card is already registered to this user.'
+      });
+    }
+
+    const updatedCards = [...user.nfc_cards, card_id];
+    await userRef.update({ nfc_cards: updatedCards });
+
+    await sessionRef.update({ status: 'completed', cardId: card_id });
+    
+    await queueCommand(deviceId, 'nfc_registration_success');
+
+    console.log(`[NFC Device Scan] Successfully assigned card ${card_id} to user ${user.name}.`);
+
+    res.json({
+      success: true,
+      message: 'NFC card successfully registered.'
+    });
+
+  } catch (error) {
+    console.error('[NFC Device Scan] Error handling device NFC scan:', error);
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+};
+
+const cancelOwnNfcRegistration = async (req, res) => {
+  try {
+    const userId = req.user.id; // User ID from protect middleware
+    const { deviceId } = req.body; // Optional deviceId from body
+
+    if (!userId) {
+      return res.status(401).json({ success: false, message: 'Unauthorized: User ID not found.' });
+    }
+
+    const db = getFirestore();
+    const sessionsRef = db.collection('nfcRegistrationSessions');
+    let query = sessionsRef.where('userId', '==', userId).where('status', '==', 'pending');
+
+    if (deviceId) {
+      query = query.where('deviceId', '==', deviceId);
+    }
+
+    const snapshot = await query.get();
+
+    if (snapshot.empty) {
+      return res.status(404).json({ success: false, message: 'No pending NFC registration sessions found for this user.' + (deviceId ? ` on device ${deviceId}.` : '.') });
+    }
+
+    const batch = db.batch();
+    const affectedDeviceIds = new Set();
+    snapshot.docs.forEach(doc => {
+      batch.update(doc.ref, { status: 'cancelled' });
+      affectedDeviceIds.add(doc.data().deviceId);
+    });
+    await batch.commit();
+
+    // Send cancel command to affected device(s)
+    for (const id of affectedDeviceIds) {
+      await queueCommand(id, 'cancel_nfc_registration');
+    }
+
+    res.json({
+      success: true,
+      message: `Cancelled ${snapshot.size} pending NFC registration session(s) for user ${userId}` + (deviceId ? ` on device ${deviceId}.` : '.'),
+      cancelledSessionsCount: snapshot.size
+    });
+
+  } catch (error) {
+    console.error('[NFC Own Cancel] Error cancelling NFC registration:', error);
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+};
+
+const cancelAdminNfcRegistration = async (req, res) => {
+  try {
+    const { deviceId } = req.params;
+
+    if (!deviceId) {
+      return res.status(400).json({ success: false, message: 'Please provide a deviceId' });
+    }
+
+    const db = getFirestore();
+    const sessionsRef = db.collection('nfcRegistrationSessions');
+    const snapshot = await sessionsRef.where('deviceId', '==', deviceId).where('status', '==', 'pending').get();
+
+    if (snapshot.empty) {
+      return res.status(404).json({ success: false, message: 'No pending NFC registration sessions found for this device.' });
+    }
+
+    const batch = db.batch();
+    snapshot.docs.forEach(doc => {
+      batch.update(doc.ref, { status: 'cancelled' });
+    });
+    await batch.commit();
+
+    await queueCommand(deviceId, 'cancel_nfc_registration');
+
+    res.json({
+      success: true,
+      message: `Cancelled ${snapshot.size} pending NFC registration session(s) for device ${deviceId}.`
+    });
+
+  } catch (error) {
+    console.error('[NFC Cancel] Error cancelling NFC registration:', error);
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+};
+
+
+const removeNfcCard = async (req, res) => {
+  try {
+    const { card_id } = req.params;
+    const userId = req.user.id;
+
+    if (!card_id) {
+      return res.status(400).json({ success: false, message: 'Please provide a card_id' });
+    }
+
+    const db = getFirestore();
+    const userRef = db.collection('users').doc(userId);
+    const userDoc = await userRef.get();
+
+    if (!userDoc.exists) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    const user = new User({ id: userDoc.id, ...userDoc.data() });
+
+    if (!user.nfc_cards.includes(card_id)) {
+      return res.status(404).json({ success: false, message: 'Card not found for this user.' });
+    }
+
+    const updatedCards = user.nfc_cards.filter(id => id !== card_id);
+    await userRef.update({ nfc_cards: updatedCards });
+
+    console.log(`[NFC Remove] Successfully removed card ${card_id} from user ${user.name}.`);
+
+    res.json({
+      success: true,
+      message: `NFC card successfully removed from your account.`
+    });
+
+  } catch (error) {
+    console.error('[NFC Remove] Error removing NFC card:', error);
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+};
+
+const removeNfcCardAdmin = async (req, res) => {
+  try {
+    const { card_id, userId } = req.params;
+
+    if (!card_id || !userId) {
+      return res.status(400).json({ success: false, message: 'Please provide a card_id and userId' });
+    }
+
+    const db = getFirestore();
+    const userRef = db.collection('users').doc(userId);
+    const userDoc = await userRef.get();
+
+    if (!userDoc.exists) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    const user = new User({ id: userDoc.id, ...userDoc.data() });
+
+    if (!user.nfc_cards.includes(card_id)) {
+      return res.status(404).json({ success: false, message: 'Card not found for this user.' });
+    }
+
+    const updatedCards = user.nfc_cards.filter(id => id !== card_id);
+    await userRef.update({ nfc_cards: updatedCards });
+
+    console.log(`[NFC Admin Remove] Successfully removed card ${card_id} from user ${user.name}.`);
+
+    res.json({
+      success: true,
+      message: `NFC card successfully removed from user ${user.name}.`
+    });
+
+  } catch (error) {
+    console.error('[NFC Admin Remove] Error removing NFC card:', error);
     res.status(500).json({ status: 'error', message: error.message });
   }
 };
@@ -3048,7 +3514,14 @@ module.exports = {
   fetchPendingCommands,
   acknowledgeCommand,
   handleManualUnlock,
-  handleNfcScan,
+  handleNfcAccessScan,
+  handleNfcRegisterScan,
+  handleDeviceNfcScan,
+  initiateNfcRegistration,
+  cancelOwnNfcRegistration, // New function for user to cancel their own sessions
+  cancelAdminNfcRegistration, // Renamed for admin functionality
+  removeNfcCard,
+  removeNfcCardAdmin,
   // Amplifier Global Control
   playAmplifierAll,
   stopAmplifierAll,
@@ -3078,6 +3551,8 @@ module.exports = {
   unlockDoor,
   getDoorLockStatus,
   updateDoorLockState,
+  lockDoorByDevice,
+  unlockDoorByDevice,
   // Helper function for queueing commands
   queueCommandHelper: queueCommand
 };
