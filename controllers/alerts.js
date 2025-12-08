@@ -268,8 +268,8 @@ const getAlerts = async (req, res) => {
         if (cmdData.status === 'pending') return;
 
         // Skip lock and unlock commands entirely
-        const isLockCommand = cmdData.action === 'lock' || cmdData.action === 'unlock';
-        if (isLockCommand) return;
+        //const isLockCommand = cmdData.action === 'lock' || cmdData.action === 'unlock';
+        //if (isLockCommand) return;
 
         const isFailed = cmdData.status === 'failed';
 
