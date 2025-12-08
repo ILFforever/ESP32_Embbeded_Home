@@ -3739,3 +3739,207 @@ h6 { font-size: var(--font-size-sm); }
   min-height: 120px;
   padding: var(--spacing-xl);
 }
+
+/* NFC Waiting Banner Styles */
+.nfc-waiting-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: rgba(254, 202, 87, 0.2);
+  border: 2px solid #feca57;
+  border-radius: 8px;
+  padding: 16px 20px;
+  margin-bottom: 24px;
+  animation: nfc-pulse 2s ease-in-out infinite;
+}
+
+.nfc-spinner {
+  flex-shrink: 0;
+  color: #feca57;
+  animation: nfc-spin 2s linear infinite;
+}
+
+.nfc-waiting-text {
+  flex: 1;
+  color: #feca57;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.nfc-cancel-btn {
+  flex-shrink: 0;
+  background: rgba(255, 255, 255, 0.15);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  color: #feca57;
+  cursor: pointer;
+  padding: 6px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+}
+
+.nfc-cancel-btn:hover {
+  background: rgba(255, 255, 255, 0.25);
+  transform: scale(1.1);
+}
+
+@keyframes nfc-spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+@keyframes nfc-pulse {
+  0%, 100% {
+    border-color: #feca57;
+    box-shadow: 0 0 15px rgba(254, 202, 87, 0.4);
+  }
+  50% {
+    border-color: #FFD700;
+    box-shadow: 0 0 25px rgba(255, 215, 0, 0.6);
+  }
+}
+
+/* NFC Alert Banners */
+.nfc-alert-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-md);
+  border-radius: var(--radius-sm);
+  padding: var(--spacing-md) var(--spacing-lg);
+  margin-bottom: var(--spacing-lg);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  border: 2px solid;
+  position: relative;
+}
+
+.nfc-alert-banner span {
+  flex: 1;
+}
+
+.nfc-alert-banner.error {
+  background: rgba(var(--danger-rgb), 0.15);
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.nfc-alert-banner.success {
+  background: rgba(var(--success-rgb), 0.15);
+  border-color: var(--success);
+  color: var(--success);
+}
+
+.alert-banner-content {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex: 1;
+}
+
+.btn-close-banner {
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: currentColor;
+  cursor: pointer;
+  padding: 4px;
+  line-height: 1;
+  transition: all var(--transition-fast);
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.btn-close-banner:hover {
+  background: rgba(255, 255, 255, 0.2);
+  border-color: currentColor;
+  transform: scale(1.1);
+}
+
+/* NFC Cards Container */
+.nfc-cards-container {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  margin: var(--spacing-md) 0;
+  padding: var(--spacing-md);
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.nfc-card-row {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-sm) var(--spacing-md);
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: var(--radius-sm);
+  transition: all var(--transition-fast);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.nfc-card-row:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: var(--primary);
+}
+
+.nfc-card-row svg {
+  color: var(--primary);
+  flex-shrink: 0;
+}
+
+.card-id-text {
+  flex: 1;
+  font-family: 'Courier New', monospace;
+  font-size: var(--font-size-sm);
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.btn-remove-small {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(238, 90, 111, 0.3);
+  color: #ff6b7f;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.btn-remove-small:hover:not(:disabled) {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: white;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(238, 90, 111, 0.3);
+}
+
+.btn-remove-small:active:not(:disabled) {
+  transform: translateY(0);
+  box-shadow: 0 2px 4px rgba(238, 90, 111, 0.2);
+}
+
+.btn-remove-small:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+  background: rgba(255, 255, 255, 0.02);
+  border-color: rgba(255, 255, 255, 0.1);
+  color: var(--text-muted);
+}
+
+/* NFC Action Buttons */
+.btn-add-own-card {
+  width: 100%;
+  margin-bottom: var(--spacing-lg);
+}
