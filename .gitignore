@@ -9,7 +9,7 @@ sdkconfig.old
 # Dependencies
 dependencies.lock
 managed_components/
-components/
+# Note: components/ is now tracked in git (Arduino and ArduinoWebsockets)
 
 # Python
 __pycache__/
