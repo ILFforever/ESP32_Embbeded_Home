@@ -47,36 +47,8 @@ git clone <YOUR_REPO_URL>
 cd Doorbell_Camera
 ```
 
-### 4. Install Arduino Components
-**CRITICAL**: This project requires Arduino-ESP32 and ArduinoWebsockets libraries in the `components/` directory.
-
-**IMPORTANT**: These components are in `.gitignore` and NOT tracked in the repository. You MUST install them manually after cloning.
-
-```bash
-# Navigate to the components directory
-cd components
-
-# Install Arduino-ESP32 (version 3.3.4)
-# Use --depth 1 to avoid downloading 2GB+ of history
-git clone --depth 1 --branch 3.3.4 https://github.com/espressif/arduino-esp32.git arduino
-
-# Install ArduinoWebsockets
-# Option 1: Clone from ESP32_Embbeded_Home and extract
-git clone --depth 1 https://github.com/ILFforever/ESP32_Embbeded_Home.git temp
-cp -r temp/ArduinoWebsockets ./
-rm -rf temp
-
-# Option 2: If standalone repo exists, clone directly
-# git clone --depth 1 <ARDUINO_WEBSOCKETS_STANDALONE_REPO> ArduinoWebsockets
-
-cd ..
-```
-
-**Notes**:
-- The ArduinoWebsockets component is required for camera streaming via WebSocket
-- Using `--depth 1` (shallow clone) reduces Arduino download from **2GB+ to ~200MB**
-- See `components/README.md` for detailed installation instructions
-- Verify both `components/arduino/` and `components/ArduinoWebsockets/` exist before building
+### 4. Arduino Components (Now Included!)
+Arduino-ESP32 and ArduinoWebsockets are now **tracked in the repository** and will be cloned automatically!
 
 ### 5. Set Target and Build
 Open ESP-IDF PowerShell/CMD environment:
@@ -103,7 +75,7 @@ Every time you work on this project:
 After setup, verify:
 - [ ] ESP-IDF version: `idf.py --version` shows v5.5.1
 - [ ] Modified ESP-WHO present: Check `esp-idf/components/esp-who/who_recognition.hpp` contains `shutdown()` and `restart()` methods
-- [ ] Arduino components present: Check `components/arduino/` and `components/ArduinoWebsockets/` exist
+- [ ] Arduino components present: Check `components/arduino/` and `components/ArduinoWebsockets/` exist (should be automatic from clone)
 - [ ] Build succeeds: `idf.py build` completes without errors
 - [ ] Camera initializes: Monitor output shows "Camera initialized successfully"
 - [ ] Standby works: `enter_standby` command reduces power consumption
@@ -121,15 +93,6 @@ After setup, verify:
 ### Build fails with component errors
 - Dependencies may need updating: `idf.py reconfigure`
 - Try clean build: `idf.py fullclean && idf.py build`
-
-### "arduino component not found"
-- Ensure `components/arduino/` exists and contains arduino-esp32 repository
-- Check Arduino version: `cd components/arduino && git describe --tags`
-- Should show `3.3.4` or similar
-
-### "ArduinoWebsockets not found"
-- Ensure `components/ArduinoWebsockets/` exists with CMakeLists.txt
-- This component is needed for camera streaming via WebSocket
 
 ## Network Configuration (Optional)
 
