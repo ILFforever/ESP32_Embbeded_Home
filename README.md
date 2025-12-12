@@ -47,49 +47,52 @@ The ESP32 Embedded Smart Home System is a production-grade IoT solution that dem
 │  ┌────────▼───────┐  │      │  ┌────────▼───────┐  │
 │  │ Doorbell LCD   │  │      │  │   Main LCD     │  │
 │  │ - Display      │  │      │  │   - Gateway    │  │
-│  │ - Audio Amp    │  │      │  │   - Display    │  │
-│  └────────────────┘  │      │  └────────┬───────┘  │
-└──────────────────────┘      └───────────┼──────────┘
-                                          │
-        ┌─────────────────────────────────┘
-        │ WiFi/MQTT
-        ▼
-┌──────────────────────┐      ┌──────────────────────┐
-│   Cloud Backend      │      │    Mesh Network      │
-│                      │      │                      │
-│  ┌────────────────┐  │      │  ┌────────────────┐  │
-│  │  Firebase      │  │      │  │  Room Sensors  │  │
-│  │  Firestore DB  │◄─┼──────┼──┤  - Temperature │  │
-│  └────────┬───────┘  │      │  │  - Humidity    │  │
-│           │          │      │  │  - Gas/CO      │  │
-│  ┌────────▼───────┐  │      │  └────────────────┘  │
-│  │  Express.js    │  │      │                      │
-│  │  REST API      │  │      │  ┌────────────────┐  │
-│  └────────┬───────┘  │      │  │  Door Sensors  │  │
-│           │          │      │  │  - NFC Lock    │  │
-└───────────┼──────────┘      │  │  - Status LED  │  │
-            │                 │  └────────────────┘  │
-            │ HTTPS           └──────────────────────┘
-            ▼                          │
-┌──────────────────────┐               │ Painless Mesh
-│   Web Dashboard      │               │ ESP-NOW Protocol
-│                      │               │
-│  ┌────────────────┐  │               └───────────────┐
-│  │  Next.js       │  │                               │
-│  │  - Real-time   │  │                               │
-│  │  - Responsive  │  │         ┌─────────────────────▼──┐
-│  │  - Admin Panel │  │         │  Main Mesh Hub         │
-│  └────────────────┘  │         │  (Aggregates all data) │
-└──────────────────────┘         └────────────────────────┘
+│  │ - NFC Scanner  │  │      │  │   - Display    │  │
+│  │ - Audio Amp    │  │      │  │   - Amplifier  │  │
+│  └────────┬───────┘  │      │  └────────┬───────┘  │
+│           │ WiFi     │      │           │          │
+│           └──────────┼──────┼───────────┘          │
+└──────────────────────┘      └──────────────────────┘
+                              │
+        ┌─────────────────────┴──────────┐
+        │ WiFi/MQTT                      │
+        ▼                                │
+┌──────────────────────┐      ┌──────────▼───────────┐      ┌──────────────────────┐
+│   Cloud Backend      │      │    Mesh Network      │      │   Door Lock          │
+│                      │      │                      │      │   (WiFi Direct)      │
+│  ┌────────────────┐  │      │  ┌────────────────┐  │      │  ┌────────────────┐  │
+│  │  Firebase      │  │      │  │  Room Sensors  │  │      │  │  ESP32 Lock    │  │
+│  │  Firestore DB  │◄─┼──────┼──┤  - Temperature │  │      │  │  - Servo       │  │
+│  └────────┬───────┘  │      │  │  - Humidity    │  │      │  │  - Status LED  │  │
+│           │          │      │  │  - Gas/CO      │  │      │  └────────────────┘  │
+│  ┌────────▼───────┐  │      │  └────────────────┘  │      │           │          │
+│  │  Express.js    │  │      │                      │      │           │ WiFi     │
+│  │  REST API      │◄─┼──────┼──────────────────────┼──────┼───────────┘          │
+│  └────────┬───────┘  │      │  Painless Mesh       │      └──────────────────────┘
+└───────────┼──────────┘      │  ESP-NOW Protocol    │
+            │                 │                      │
+            │ HTTPS           │           │          │
+            ▼                 └───────────┼──────────┘
+┌──────────────────────┐                  │
+│   Web Dashboard      │                  └───────────────┐
+│                      │                                  │
+│  ┌────────────────┐  │                                  ▼
+│  │  Next.js       │  │                  ┌─────────────────────────┐
+│  │  - Real-time   │  │                  │  Main Mesh Hub          │
+│  │  - Responsive  │  │                  │  (Aggregates all data)  │
+│  │  - Admin Panel │  │                  └─────────────────────────┘
+│  └────────────────┘  │
+└──────────────────────┘
 ```
 
 ## ✨ Key Features
 
 ### 🔐 Security & Access Control
 - **AI-Powered Facial Recognition**: ESP-WHO framework running on ESP32-S3 for real-time face detection
-- **NFC Door Lock**: Secure access control with NFC authentication
+- **NFC Authentication**: NFC scanner on doorbell for secure access control
+- **WiFi-Connected Door Lock**: Servo-controlled lock with direct cloud communication
 - **Face Enrollment System**: Web API for managing authorized users
-- **Multi-Factor Authentication**: Combined face + NFC verification
+- **Multi-Factor Authentication**: Combined face + NFC verification at doorbell
 
 ### 🌡️ Environmental Monitoring
 - **Air Quality Sensing**: PMS5003 particulate matter sensor (PM1.0, PM2.5, PM10)
@@ -205,9 +208,9 @@ The ESP32 Embedded Smart Home System is a production-grade IoT solution that dem
 | **Main_lcd** | Main display and WiFi gateway | PlatformIO | 🔧 Working-State |
 | **Main_amp** | Audio amplifier for main hub | PlatformIO | ✅ Complete |
 | **Doorbell_Camera** | AI facial recognition camera | ESP-IDF | ✅ Complete |
-| **Doorbell_lcd** | Doorbell display interface | PlatformIO | ✅ Complete |
+| **Doorbell_lcd** | Doorbell display interface with NFC scanner | PlatformIO | ✅ Complete |
 | **Doorbell_Amp** | Doorbell audio system | PlatformIO | ✅ Complete |
-| **Door_lock** | NFC-based access control | PlatformIO | ✅ Complete |
+| **Door_lock** | WiFi-connected servo door lock | PlatformIO | ✅ Complete |
 | **Room_Sensors** | Distributed environmental sensors | PlatformIO | ✅ Complete |
 
 ## 📚 Documentation
