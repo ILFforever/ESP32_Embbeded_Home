@@ -9,14 +9,14 @@ A comprehensive IoT smart home ecosystem built with ESP32 microcontrollers, feat
 
 ## 📋 Table of Contents
 
-- [Overview](#overview)
-- [Test Credentials](#test-credentials)
-- [System Architecture](#system-architecture)
-- [Key Features](#key-features)
-- [Hardware Components](#hardware-components)
-- [Software Stack](#software-stack)
-- [Branch Structure](#branch-structure)
-- [Contributing](#contributing)
+- [Overview](#-overview)
+- [Test Credentials](#-test-credentials)
+- [System Architecture](#-system-architecture)
+- [Key Features](#-key-features)
+- [Hardware Components](#-hardware-components)
+- [Software Stack](#-software-stack)
+- [Branch Structure](#-branch-structure)
+- [Contributing](#-contributing)
 
 ## 🏠 Overview
 
@@ -32,8 +32,11 @@ The ESP32 Embedded Smart Home System is a production-grade IoT solution that dem
 ## 🔑 Test Credentials
 
 You can access the system using the test credentials:
-- **Username**: Admin
-- **Password**: 12345678
+
+| Email | Password | Role |
+|-------|----------|------|
+| admin@gmail.com | 12345678 | Admin |
+| user@gmail.com | 12345678 | User |
 ## 🏗️ System Architecture
 
 ```
