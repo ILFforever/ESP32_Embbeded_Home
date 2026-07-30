@@ -1,0 +1,667 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Devices &amp; Admin — Arduino888</title>
+<link rel="stylesheet" href="glass.css">
+<script>
+  /* Applied before first paint, so a stored preference never flashes
+     the wrong theme. No attribute at all means "follow the OS".
+     ?theme=dark / ?theme=light pins a page without touching the stored
+     preference. */
+  try {
+    var q = new URLSearchParams(location.search).get('theme');
+    var t = (q === 'dark' || q === 'light') ? q : localStorage.getItem('arduino888-theme');
+    if (t) document.documentElement.setAttribute('data-theme', t);
+  } catch (e) {}
+</script>
+<style>
+  .admin-summary { align-items: stretch; }
+  .admin-summary .g-tile { min-height: 100%; }
+  .admin-device-name { display: flex; align-items: center; gap: var(--s-3); min-width: 180px; }
+  .admin-device-name b { display: block; font-weight: 600; }
+  .admin-device-name span { display: block; }
+  .admin-type { text-transform: capitalize; }
+  .admin-actions { display: flex; gap: var(--s-2); justify-content: flex-end; flex-wrap: wrap; }
+  .admin-actions .g-btn { padding: 7px 12px; }
+  .admin-pairing { display: grid; grid-template-columns: 1fr 1.2fr; gap: var(--s-4); align-items: start; }
+  .admin-pairing-code { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--s-2); }
+  .admin-pairing-code span {
+    display: grid; place-items: center; min-height: 50px;
+    border: 1px solid var(--outline); border-radius: var(--r-field);
+    background: var(--field-bg);
+  }
+  .admin-modal-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: var(--s-4); }
+  @media (max-width: 780px) {
+    .admin-pairing, .admin-modal-grid { grid-template-columns: 1fr; }
+    .admin-actions { justify-content: flex-start; }
+  }
+</style>
+</head>
+<body>
+<div class="g-bg" aria-hidden="true"></div>
+
+<div class="g-page">
+  <div class="g-pane g-bar">
+    <span class="g-bar__brand">Arduino888</span>
+    <nav class="g-seg" data-choice aria-label="Sections">
+      <a href="dashboard.html">Home</a>
+      <a href="plan.html">Plan</a>
+      <a href="access.html">Access</a>
+      <a href="admin.html" aria-current="page">Admin</a>
+    </nav>
+    <button class="g-theme" aria-label="Switch between light and dark" title="Switch theme">
+      <svg class="g-theme__moon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+      <svg class="g-theme__sun" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M19.1 4.9l-1.4 1.4M6.3 17.7l-1.4 1.4"/></svg>
+    </button>
+    <span class="g-pill is-warn"><i></i> 1 offline</span>
+  </div>
+
+  <div class="g-title">
+    <h1>Devices &amp; admin</h1>
+    <p>Pair boards, rename installed hardware, and remove devices that should no longer report to the home.</p>
+  </div>
+
+  <div class="g-grid g-grid--4 admin-summary">
+    <section class="g-pane g-card">
+      <p class="g-label">Devices online</p>
+      <div class="g-metric-sm g-num" style="margin-top:8px">6<small>of 7</small></div>
+    </section>
+    <section class="g-pane g-card">
+      <p class="g-label">Sensors reporting</p>
+      <div class="g-metric-sm g-num" style="margin-top:8px">4<small>of 4</small></div>
+    </section>
+    <section class="g-pane g-card is-warn">
+      <p class="g-label">Low battery</p>
+      <div class="g-metric-sm g-num" style="margin-top:8px">1<small>device</small></div>
+    </section>
+    <section class="g-pane g-card">
+      <p class="g-label">Last sync</p>
+      <div class="g-metric-sm g-num" style="margin-top:8px">09:46</div>
+    </section>
+  </div>
+
+  <section class="g-pane g-card">
+    <header>
+      <div>
+        <h2>Registered devices</h2>
+        <p class="g-sub">Hardware tokens are shown once during pairing. Use remove only when the board is being retired.</p>
+      </div>
+      <button class="g-btn g-btn--primary" data-open="m-add-device">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+        Add device
+      </button>
+    </header>
+
+    <div class="g-scroll">
+      <table class="g-table" aria-label="Registered devices">
+        <thead>
+          <tr>
+            <th>Device</th>
+            <th>ID</th>
+            <th>Type</th>
+            <th>Status</th>
+            <th>Battery</th>
+            <th>Last seen</th>
+            <th class="g-num-cell">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>
+              <div class="admin-device-name">
+                <i class="g-dot g-dot--ok"></i>
+                <div><b>Doorbell</b><span class="g-dim">Front porch</span></div>
+              </div>
+            </td>
+            <td class="g-mono">db_001</td>
+            <td class="admin-type">doorbell</td>
+            <td><span class="g-chip g-chip--ok">Online</span></td>
+            <td>
+              <div class="g-row">
+                <svg class="g-ring" viewBox="0 0 24 24" aria-label="Doorbell battery 84 percent"><circle class="g-ring__track" cx="12" cy="12" r="9"/><circle class="g-ring__fill" cx="12" cy="12" r="9" stroke-dasharray="47.5 56.5" transform="rotate(-90 12 12)"/></svg>
+                <span class="g-num">84%</span>
+              </div>
+            </td>
+            <td>Just now</td>
+            <td class="g-num-cell">
+              <div class="admin-actions">
+                <button class="g-btn g-btn--ghost" data-open="m-detail-doorbell">Details</button>
+                <button class="g-btn g-btn--ghost" data-open="m-rename-doorbell">Rename</button>
+                <button class="g-btn g-btn--ghost" data-open="m-remove-doorbell">Remove</button>
+              </div>
+            </td>
+          </tr>
+          <tr>
+            <td>
+              <div class="admin-device-name">
+                <i class="g-dot g-dot--ok"></i>
+                <div><b>Hub display</b><span class="g-dim">Kitchen wall</span></div>
+              </div>
+            </td>
+            <td class="g-mono">hb_001</td>
+            <td class="admin-type">hub</td>
+            <td><span class="g-chip g-chip--ok">Online</span></td>
+            <td>
+              <div class="g-row">
+                <svg class="g-ring" viewBox="0 0 24 24" aria-label="Hub display uses mains power"><circle class="g-ring__track" cx="12" cy="12" r="9"/><circle class="g-ring__fill" cx="12" cy="12" r="9" stroke-dasharray="56.5 56.5" transform="rotate(-90 12 12)"/></svg>
+                <span>Mains</span>
+              </div>
+            </td>
+            <td>1 min ago</td>
+            <td class="g-num-cell">
+              <div class="admin-actions">
+                <button class="g-btn g-btn--ghost" data-open="m-detail-hub">Details</button>
+                <button class="g-btn g-btn--ghost" data-open="m-rename-hub">Rename</button>
+                <button class="g-btn g-btn--ghost" data-open="m-remove-hub">Remove</button>
+              </div>
+            </td>
+          </tr>
+          <tr>
+            <td>
+              <div class="admin-device-name">
+                <i class="g-dot g-dot--ok"></i>
+                <div><b>Front lock</b><span class="g-dim">Main entry</span></div>
+              </div>
+            </td>
+            <td class="g-mono">dl_front</td>
+            <td class="admin-type">door lock</td>
+            <td><span class="g-chip g-chip--ok">Online</span></td>
+            <td>
+              <div class="g-row">
+                <svg class="g-ring" viewBox="0 0 24 24" aria-label="Front lock battery 71 percent"><circle class="g-ring__track" cx="12" cy="12" r="9"/><circle class="g-ring__fill" cx="12" cy="12" r="9" stroke-dasharray="40.2 56.5" transform="rotate(-90 12 12)"/></svg>
+                <span class="g-num">71%</span>
+              </div>
+            </td>
+            <td>4 min ago</td>
+            <td class="g-num-cell">
+              <div class="admin-actions">
+                <button class="g-btn g-btn--ghost" data-open="m-detail-lock">Details</button>
+                <button class="g-btn g-btn--ghost" data-open="m-rename-lock">Rename</button>
+                <button class="g-btn g-btn--ghost" data-open="m-remove-lock">Remove</button>
+              </div>
+            </td>
+          </tr>
+          <tr>
+            <td>
+              <div class="admin-device-name">
+                <i class="g-dot g-dot--warn"></i>
+                <div><b>Utility gas</b><span class="g-dim">Laundry shelf</span></div>
+              </div>
+            </td>
+            <td class="g-mono">ss_utility</td>
+            <td class="admin-type">gas sensor</td>
+            <td><span class="g-chip g-chip--warn">Low battery</span></td>
+            <td>
+              <div class="g-row">
+                <svg class="g-ring" viewBox="0 0 24 24" aria-label="Utility gas sensor battery 18 percent"><circle class="g-ring__track" cx="12" cy="12" r="9"/><circle class="g-ring__fill is-warn" cx="12" cy="12" r="9" stroke-dasharray="10.2 56.5" transform="rotate(-90 12 12)"/></svg>
+                <span class="g-num">18%</span>
+              </div>
+            </td>
+            <td>7 min ago</td>
+            <td class="g-num-cell">
+              <div class="admin-actions">
+                <button class="g-btn g-btn--ghost" data-open="m-detail-utility">Details</button>
+                <button class="g-btn g-btn--ghost" data-open="m-rename-utility">Rename</button>
+                <button class="g-btn g-btn--ghost" data-open="m-remove-utility">Remove</button>
+              </div>
+            </td>
+          </tr>
+          <tr>
+            <td>
+              <div class="admin-device-name">
+                <i class="g-dot g-dot--off"></i>
+                <div><b>Garden repeater</b><span class="g-dim">Side gate</span></div>
+              </div>
+            </td>
+            <td class="g-mono">mesh_garden</td>
+            <td class="admin-type">main mesh</td>
+            <td><span class="g-chip">Offline</span></td>
+            <td>
+              <div class="g-row">
+                <svg class="g-ring" viewBox="0 0 24 24" aria-label="Garden repeater battery unknown"><circle class="g-ring__track" cx="12" cy="12" r="9"/><circle class="g-ring__fill is-idle" cx="12" cy="12" r="9" stroke-dasharray="0 56.5" transform="rotate(-90 12 12)"/></svg>
+                <span class="g-dim">Unknown</span>
+              </div>
+            </td>
+            <td>27 min ago</td>
+            <td class="g-num-cell">
+              <div class="admin-actions">
+                <button class="g-btn g-btn--ghost" data-open="m-detail-repeater">Details</button>
+                <button class="g-btn g-btn--ghost" data-open="m-rename-repeater">Rename</button>
+                <button class="g-btn g-btn--ghost" data-open="m-remove-repeater">Remove</button>
+              </div>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="g-empty" hidden>
+      <strong>No devices enrolled yet</strong>
+      <p>Put a board in pairing mode, then add it here with the device ID printed on the board.</p>
+    </div>
+  </section>
+
+  <section class="g-pane g-card" id="people">
+    <header>
+      <h2>People</h2>
+      <button class="g-btn g-btn--primary" style="padding:7px 16px" data-open="m-invite">Invite someone</button>
+    </header>
+    <p class="g-sub" style="margin:0 0 var(--s-4)">Admins can pair and remove devices. Everyone else can see the home and unlock the doors they hold a card for.</p>
+    <div class="g-scroll">
+      <table class="g-table">
+        <thead>
+          <tr><th>Name</th><th>Email</th><th>Phone</th><th>Role</th><th>Last active</th><th class="g-num-cell">Actions</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Nat S.</td>
+            <td class="g-mono" style="font-size:12.5px">nat@example.com</td>
+            <td class="g-mono" style="font-size:12.5px">081-2345678</td>
+            <td><span class="g-chip g-chip--ok">Admin</span></td>
+            <td class="g-dim">Just now</td>
+            <td class="g-num-cell"><button class="g-btn g-btn--ghost" style="padding:6px 13px;font-size:12.5px" data-open="m-remove-nats">Remove</button></td>
+          </tr>
+          <tr>
+            <td>Paeki T.</td>
+            <td class="g-mono" style="font-size:12.5px">paeki@example.com</td>
+            <td class="g-mono" style="font-size:12.5px">081-8765432</td>
+            <td><span class="g-chip g-chip--ok">Admin</span></td>
+            <td class="g-dim">2 hours ago</td>
+            <td class="g-num-cell"><button class="g-btn g-btn--ghost" style="padding:6px 13px;font-size:12.5px" data-open="m-remove-paekit">Remove</button></td>
+          </tr>
+          <tr>
+            <td>Mum</td>
+            <td class="g-mono" style="font-size:12.5px">mum@example.com</td>
+            <td class="g-mono" style="font-size:12.5px">089-1112222</td>
+            <td><span class="g-chip">User</span></td>
+            <td class="g-dim">Yesterday</td>
+            <td class="g-num-cell"><button class="g-btn g-btn--ghost" style="padding:6px 13px;font-size:12.5px" data-open="m-remove-mum">Remove</button></td>
+          </tr>
+          <tr>
+            <td>Dad</td>
+            <td class="g-mono" style="font-size:12.5px">dad@example.com</td>
+            <td class="g-mono" style="font-size:12.5px">089-3334444</td>
+            <td><span class="g-chip">User</span></td>
+            <td class="g-dim">3 days ago</td>
+            <td class="g-num-cell"><button class="g-btn g-btn--ghost" style="padding:6px 13px;font-size:12.5px" data-open="m-remove-dad">Remove</button></td>
+          </tr>
+          <tr>
+            <td>Guest</td>
+            <td class="g-mono" style="font-size:12.5px">guest@example.com</td>
+            <td class="g-mono" style="font-size:12.5px">—</td>
+            <td><span class="g-chip">User</span></td>
+            <td class="g-dim">Never</td>
+            <td class="g-num-cell"><button class="g-btn g-btn--ghost" style="padding:6px 13px;font-size:12.5px" data-open="m-remove-guest">Remove</button></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="g-pane g-card">
+    <header><h2>Recent changes</h2><span class="g-label">last 7 days</span></header>
+    <div class="g-list">
+      <div class="g-list__row"><i class="g-dot g-dot--ok"></i><p>Nat added Kitchen gas<span>9:32 AM · ss_kitchen</span></p></div>
+      <div class="g-list__row"><i class="g-dot g-dot--off"></i><p>Paeki renamed Hub display<span>Yesterday · hb_001</span></p></div>
+      <div class="g-list__row"><i class="g-dot g-dot--off"></i><p>Nat invited Guest<span>3 days ago · user</span></p></div>
+      <div class="g-list__row"><i class="g-dot g-dot--warn"></i><p>Paeki removed Garage camera<span>5 days ago · cam_garage</span></p></div>
+    </div>
+  </section>
+</div>
+
+<div class="g-modal" id="m-add-device" role="dialog" aria-modal="true" aria-labelledby="m-add-device-h" hidden>
+  <div class="g-pane g-modal__card g-modal__card--wide">
+    <div class="g-modal__head">
+      <div><h2 id="m-add-device-h">Add a device</h2><p>Put the board in pairing mode. When it appears, name it before saving the token.</p></div>
+      <button class="g-icon-btn" data-close aria-label="Close">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <div class="admin-pairing">
+      <form class="g-stack" action="#">
+        <div class="admin-modal-grid">
+          <div class="g-field">
+            <label for="device-type">Device type</label>
+            <select id="device-type">
+              <option>Sensor</option>
+              <option>Doorbell</option>
+              <option>Hub</option>
+              <option>Main LCD</option>
+              <option>Main Mesh</option>
+            </select>
+          </div>
+          <div class="g-field">
+            <label for="device-id">Device ID</label>
+            <input id="device-id" type="text" value="ss_garage" class="g-mono">
+            <span class="g-field__hint">Only letters, numbers, and underscores.</span>
+          </div>
+        </div>
+        <div class="g-field">
+          <label for="device-name">Device name</label>
+          <input id="device-name" type="text" value="Garage gas sensor">
+        </div>
+      </form>
+      <div class="g-tile">
+        <p class="g-label">Pairing mode</p>
+        <p class="g-sub">The board is waiting for a token. Keep this window open until the device checks in.</p>
+        <div class="admin-pairing-code g-mono" style="margin:var(--s-4) 0">
+          <span>8</span><span>4</span><span>2</span>
+        </div>
+        <div class="g-log">09:46:13 listening for ss_garage<br>09:46:18 challenge sent<br>09:46:20 token ready</div>
+      </div>
+    </div>
+    <div class="g-modal__foot">
+      <button class="g-btn g-btn--ghost" data-close>Cancel</button>
+      <button class="g-btn g-btn--primary" data-close>Save device</button>
+    </div>
+  </div>
+</div>
+
+<div class="g-modal" id="m-detail-doorbell" role="dialog" aria-modal="true" aria-labelledby="m-detail-doorbell-h" hidden>
+  <div class="g-pane g-modal__card">
+    <div class="g-modal__head">
+      <div><h2 id="m-detail-doorbell-h">Doorbell details</h2><p>Front porch · online just now.</p></div>
+      <button class="g-icon-btn" data-close aria-label="Close"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+    </div>
+    <dl class="g-info">
+      <div><dt>IP address</dt><dd>192.168.1.42</dd></div>
+      <div><dt>RSSI</dt><dd>-54 dBm</dd></div>
+      <div><dt>Uptime</dt><dd>14d 06h 12m</dd></div>
+      <div><dt>Free heap</dt><dd>188.4 KB</dd></div>
+      <div><dt>Firmware</dt><dd>doorbell-1.4.2</dd></div>
+    </dl>
+    <div class="g-modal__foot"><button class="g-btn g-btn--primary" data-close>Done</button></div>
+  </div>
+</div>
+
+<div class="g-modal" id="m-detail-hub" role="dialog" aria-modal="true" aria-labelledby="m-detail-hub-h" hidden>
+  <div class="g-pane g-modal__card">
+    <div class="g-modal__head">
+      <div><h2 id="m-detail-hub-h">Hub display details</h2><p>Kitchen wall · online 1 minute ago.</p></div>
+      <button class="g-icon-btn" data-close aria-label="Close"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+    </div>
+    <dl class="g-info">
+      <div><dt>IP address</dt><dd>192.168.1.20</dd></div>
+      <div><dt>RSSI</dt><dd>-48 dBm</dd></div>
+      <div><dt>Uptime</dt><dd>14d 05h 51m</dd></div>
+      <div><dt>Free heap</dt><dd>214.8 KB</dd></div>
+      <div><dt>Firmware</dt><dd>hub-1.4.2</dd></div>
+    </dl>
+    <div class="g-modal__foot"><button class="g-btn g-btn--primary" data-close>Done</button></div>
+  </div>
+</div>
+
+<div class="g-modal" id="m-detail-lock" role="dialog" aria-modal="true" aria-labelledby="m-detail-lock-h" hidden>
+  <div class="g-pane g-modal__card">
+    <div class="g-modal__head">
+      <div><h2 id="m-detail-lock-h">Front lock details</h2><p>Main entry · online 4 minutes ago.</p></div>
+      <button class="g-icon-btn" data-close aria-label="Close"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+    </div>
+    <dl class="g-info">
+      <div><dt>IP address</dt><dd>192.168.1.74</dd></div>
+      <div><dt>RSSI</dt><dd>-62 dBm</dd></div>
+      <div><dt>Uptime</dt><dd>8d 17h 03m</dd></div>
+      <div><dt>Free heap</dt><dd>96.2 KB</dd></div>
+      <div><dt>Firmware</dt><dd>lock-0.9.8</dd></div>
+    </dl>
+    <div class="g-modal__foot"><button class="g-btn g-btn--primary" data-close>Done</button></div>
+  </div>
+</div>
+
+<div class="g-modal" id="m-detail-utility" role="dialog" aria-modal="true" aria-labelledby="m-detail-utility-h" hidden>
+  <div class="g-pane g-modal__card">
+    <div class="g-modal__head">
+      <div><h2 id="m-detail-utility-h">Utility gas details</h2><p>Laundry shelf · low battery.</p></div>
+      <button class="g-icon-btn" data-close aria-label="Close"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+    </div>
+    <dl class="g-info">
+      <div><dt>IP address</dt><dd>192.168.1.88</dd></div>
+      <div><dt>RSSI</dt><dd>-67 dBm</dd></div>
+      <div><dt>Uptime</dt><dd>3d 04h 18m</dd></div>
+      <div><dt>Free heap</dt><dd>72.9 KB</dd></div>
+      <div><dt>Firmware</dt><dd>sensor-1.1.0</dd></div>
+    </dl>
+    <div class="g-modal__foot"><button class="g-btn g-btn--primary" data-close>Done</button></div>
+  </div>
+</div>
+
+<div class="g-modal" id="m-detail-repeater" role="dialog" aria-modal="true" aria-labelledby="m-detail-repeater-h" hidden>
+  <div class="g-pane g-modal__card">
+    <div class="g-modal__head">
+      <div><h2 id="m-detail-repeater-h">Garden repeater details</h2><p>Side gate · offline for 27 minutes.</p></div>
+      <button class="g-icon-btn" data-close aria-label="Close"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+    </div>
+    <dl class="g-info">
+      <div><dt>IP address</dt><dd>-</dd></div>
+      <div><dt>RSSI</dt><dd>-</dd></div>
+      <div><dt>Uptime</dt><dd>-</dd></div>
+      <div><dt>Free heap</dt><dd>-</dd></div>
+      <div><dt>Firmware</dt><dd>mesh-0.8.7</dd></div>
+    </dl>
+    <div class="g-modal__foot"><button class="g-btn g-btn--primary" data-close>Done</button></div>
+  </div>
+</div>
+
+<div class="g-modal" id="m-rename-doorbell" role="dialog" aria-modal="true" aria-labelledby="m-rename-doorbell-h" hidden>
+  <div class="g-pane g-modal__card" style="width:min(100%,460px)">
+    <div class="g-modal__head">
+      <div><h2 id="m-rename-doorbell-h">Rename Doorbell</h2><p>People will see this name in alerts and device lists.</p></div>
+      <button class="g-icon-btn" data-close aria-label="Close"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+    </div>
+    <div class="g-field"><label for="rename-doorbell">Device name</label><input id="rename-doorbell" type="text" value="Doorbell"></div>
+    <div class="g-modal__foot"><button class="g-btn g-btn--ghost" data-close>Cancel</button><button class="g-btn g-btn--primary" data-close>Save name</button></div>
+  </div>
+</div>
+
+<div class="g-modal" id="m-rename-hub" role="dialog" aria-modal="true" aria-labelledby="m-rename-hub-h" hidden>
+  <div class="g-pane g-modal__card" style="width:min(100%,460px)">
+    <div class="g-modal__head">
+      <div><h2 id="m-rename-hub-h">Rename Hub display</h2><p>People will see this name in alerts and device lists.</p></div>
+      <button class="g-icon-btn" data-close aria-label="Close"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+    </div>
+    <div class="g-field"><label for="rename-hub">Device name</label><input id="rename-hub" type="text" value="Hub display"></div>
+    <div class="g-modal__foot"><button class="g-btn g-btn--ghost" data-close>Cancel</button><button class="g-btn g-btn--primary" data-close>Save name</button></div>
+  </div>
+</div>
+
+<div class="g-modal" id="m-rename-lock" role="dialog" aria-modal="true" aria-labelledby="m-rename-lock-h" hidden>
+  <div class="g-pane g-modal__card" style="width:min(100%,460px)">
+    <div class="g-modal__head">
+      <div><h2 id="m-rename-lock-h">Rename Front lock</h2><p>People will see this name in alerts and device lists.</p></div>
+      <button class="g-icon-btn" data-close aria-label="Close"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+    </div>
+    <div class="g-field"><label for="rename-lock">Device name</label><input id="rename-lock" type="text" value="Front lock"></div>
+    <div class="g-modal__foot"><button class="g-btn g-btn--ghost" data-close>Cancel</button><button class="g-btn g-btn--primary" data-close>Save name</button></div>
+  </div>
+</div>
+
+<div class="g-modal" id="m-rename-utility" role="dialog" aria-modal="true" aria-labelledby="m-rename-utility-h" hidden>
+  <div class="g-pane g-modal__card" style="width:min(100%,460px)">
+    <div class="g-modal__head">
+      <div><h2 id="m-rename-utility-h">Rename Utility gas</h2><p>People will see this name in alerts and device lists.</p></div>
+      <button class="g-icon-btn" data-close aria-label="Close"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+    </div>
+    <div class="g-field"><label for="rename-utility">Device name</label><input id="rename-utility" type="text" value="Utility gas"></div>
+    <div class="g-modal__foot"><button class="g-btn g-btn--ghost" data-close>Cancel</button><button class="g-btn g-btn--primary" data-close>Save name</button></div>
+  </div>
+</div>
+
+<div class="g-modal" id="m-rename-repeater" role="dialog" aria-modal="true" aria-labelledby="m-rename-repeater-h" hidden>
+  <div class="g-pane g-modal__card" style="width:min(100%,460px)">
+    <div class="g-modal__head">
+      <div><h2 id="m-rename-repeater-h">Rename Garden repeater</h2><p>People will see this name in alerts and device lists.</p></div>
+      <button class="g-icon-btn" data-close aria-label="Close"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+    </div>
+    <div class="g-field"><label for="rename-repeater">Device name</label><input id="rename-repeater" type="text" value="Garden repeater"></div>
+    <div class="g-modal__foot"><button class="g-btn g-btn--ghost" data-close>Cancel</button><button class="g-btn g-btn--primary" data-close>Save name</button></div>
+  </div>
+</div>
+
+<div class="g-modal" id="m-remove-doorbell" role="dialog" aria-modal="true" aria-labelledby="m-remove-doorbell-h" hidden>
+  <div class="g-pane g-modal__card" style="width:min(100%,440px)">
+    <div class="g-modal__head">
+      <div><h2 id="m-remove-doorbell-h">Remove Doorbell?</h2><p>This removes Doorbell and its token. The board will stop sending porch events until it is paired again.</p></div>
+      <button class="g-icon-btn" data-close aria-label="Close"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+    </div>
+    <div class="g-modal__foot"><button class="g-btn g-btn--ghost" data-close>Keep device</button><button class="g-btn g-btn--danger" data-close>Remove Doorbell</button></div>
+  </div>
+</div>
+
+<div class="g-modal" id="m-remove-hub" role="dialog" aria-modal="true" aria-labelledby="m-remove-hub-h" hidden>
+  <div class="g-pane g-modal__card" style="width:min(100%,440px)">
+    <div class="g-modal__head">
+      <div><h2 id="m-remove-hub-h">Remove Hub display?</h2><p>This removes Hub display and its token. The wall display will stop receiving announcements until it is paired again.</p></div>
+      <button class="g-icon-btn" data-close aria-label="Close"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+    </div>
+    <div class="g-modal__foot"><button class="g-btn g-btn--ghost" data-close>Keep device</button><button class="g-btn g-btn--danger" data-close>Remove Hub display</button></div>
+  </div>
+</div>
+
+<div class="g-modal" id="m-remove-lock" role="dialog" aria-modal="true" aria-labelledby="m-remove-lock-h" hidden>
+  <div class="g-pane g-modal__card" style="width:min(100%,440px)">
+    <div class="g-modal__head">
+      <div><h2 id="m-remove-lock-h">Remove Front lock?</h2><p>This removes Front lock and its token. The lock will no longer accept remote commands from this home.</p></div>
+      <button class="g-icon-btn" data-close aria-label="Close"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+    </div>
+    <div class="g-modal__foot"><button class="g-btn g-btn--ghost" data-close>Keep device</button><button class="g-btn g-btn--danger" data-close>Remove Front lock</button></div>
+  </div>
+</div>
+
+<div class="g-modal" id="m-remove-utility" role="dialog" aria-modal="true" aria-labelledby="m-remove-utility-h" hidden>
+  <div class="g-pane g-modal__card" style="width:min(100%,440px)">
+    <div class="g-modal__head">
+      <div><h2 id="m-remove-utility-h">Remove Utility gas?</h2><p>This removes Utility gas and all future readings from that sensor until it is paired again.</p></div>
+      <button class="g-icon-btn" data-close aria-label="Close"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+    </div>
+    <div class="g-modal__foot"><button class="g-btn g-btn--ghost" data-close>Keep device</button><button class="g-btn g-btn--danger" data-close>Remove Utility gas</button></div>
+  </div>
+</div>
+
+<div class="g-modal" id="m-remove-repeater" role="dialog" aria-modal="true" aria-labelledby="m-remove-repeater-h" hidden>
+  <div class="g-pane g-modal__card" style="width:min(100%,440px)">
+    <div class="g-modal__head">
+      <div><h2 id="m-remove-repeater-h">Remove Garden repeater?</h2><p>This removes Garden repeater and its token. Devices behind the side gate may need a closer mesh route.</p></div>
+      <button class="g-icon-btn" data-close aria-label="Close"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+    </div>
+    <div class="g-modal__foot"><button class="g-btn g-btn--ghost" data-close>Keep device</button><button class="g-btn g-btn--danger" data-close>Remove Garden repeater</button></div>
+  </div>
+</div>
+
+
+<div class="g-modal" id="m-invite" role="dialog" aria-modal="true" aria-labelledby="m-invite-h" hidden>
+  <div class="g-pane g-modal__card" style="width:min(100%,520px)">
+    <div class="g-modal__head">
+      <div><h2 id="m-invite-h">Invite someone</h2><p>They will be able to sign in straight away with the password you set.</p></div>
+      <button class="g-icon-btn" data-close aria-label="Close">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <div class="g-stack">
+      <div class="g-grid g-grid--2">
+        <div class="g-field">
+          <label for="inv-name">Name</label>
+          <input id="inv-name" type="text" placeholder="Mum">
+        </div>
+        <div class="g-field">
+          <label for="inv-role">Role</label>
+          <select id="inv-role"><option selected>User</option><option>Admin</option></select>
+        </div>
+      </div>
+      <div class="g-field">
+        <label for="inv-email">Email</label>
+        <input id="inv-email" type="email" placeholder="them@example.com">
+      </div>
+      <div class="g-grid g-grid--2">
+        <div class="g-field g-field--mono">
+          <label for="inv-phone">Phone</label>
+          <input id="inv-phone" type="text" placeholder="081-2345678">
+        </div>
+        <div class="g-field">
+          <label for="inv-pass">Password</label>
+          <input id="inv-pass" type="password" placeholder="At least 6 characters">
+        </div>
+      </div>
+      <p class="g-field__hint">Admins can pair and remove devices. Choose User unless they need that.</p>
+    </div>
+    <div class="g-modal__foot">
+      <button class="g-btn g-btn--ghost" data-close>Cancel</button>
+      <button class="g-btn g-btn--primary" data-close>Send invite</button>
+    </div>
+  </div>
+</div>
+<div class="g-modal" id="m-remove-nats" role="dialog" aria-modal="true" aria-labelledby="m-remove-nats-h" hidden>
+  <div class="g-pane g-modal__card" style="width:min(100%,460px)">
+    <div class="g-modal__head">
+      <div>
+        <h2 id="m-remove-nats-h">Remove Nat S.?</h2>
+        <p>They will not be able to sign in or unlock anything. Any NFC cards in their name stay registered until you revoke them separately.</p>
+      </div>
+    </div>
+    <div class="g-modal__foot">
+      <button class="g-btn g-btn--ghost" data-close>Cancel</button>
+      <button class="g-btn g-btn--danger" data-close>Remove Nat S.</button>
+    </div>
+  </div>
+</div>
+<div class="g-modal" id="m-remove-paekit" role="dialog" aria-modal="true" aria-labelledby="m-remove-paekit-h" hidden>
+  <div class="g-pane g-modal__card" style="width:min(100%,460px)">
+    <div class="g-modal__head">
+      <div>
+        <h2 id="m-remove-paekit-h">Remove Paeki T.?</h2>
+        <p>They will not be able to sign in or unlock anything. Any NFC cards in their name stay registered until you revoke them separately.</p>
+      </div>
+    </div>
+    <div class="g-modal__foot">
+      <button class="g-btn g-btn--ghost" data-close>Cancel</button>
+      <button class="g-btn g-btn--danger" data-close>Remove Paeki T.</button>
+    </div>
+  </div>
+</div>
+<div class="g-modal" id="m-remove-mum" role="dialog" aria-modal="true" aria-labelledby="m-remove-mum-h" hidden>
+  <div class="g-pane g-modal__card" style="width:min(100%,460px)">
+    <div class="g-modal__head">
+      <div>
+        <h2 id="m-remove-mum-h">Remove Mum?</h2>
+        <p>They will not be able to sign in or unlock anything. Any NFC cards in their name stay registered until you revoke them separately.</p>
+      </div>
+    </div>
+    <div class="g-modal__foot">
+      <button class="g-btn g-btn--ghost" data-close>Cancel</button>
+      <button class="g-btn g-btn--danger" data-close>Remove Mum</button>
+    </div>
+  </div>
+</div>
+<div class="g-modal" id="m-remove-dad" role="dialog" aria-modal="true" aria-labelledby="m-remove-dad-h" hidden>
+  <div class="g-pane g-modal__card" style="width:min(100%,460px)">
+    <div class="g-modal__head">
+      <div>
+        <h2 id="m-remove-dad-h">Remove Dad?</h2>
+        <p>They will not be able to sign in or unlock anything. Any NFC cards in their name stay registered until you revoke them separately.</p>
+      </div>
+    </div>
+    <div class="g-modal__foot">
+      <button class="g-btn g-btn--ghost" data-close>Cancel</button>
+      <button class="g-btn g-btn--danger" data-close>Remove Dad</button>
+    </div>
+  </div>
+</div>
+<div class="g-modal" id="m-remove-guest" role="dialog" aria-modal="true" aria-labelledby="m-remove-guest-h" hidden>
+  <div class="g-pane g-modal__card" style="width:min(100%,460px)">
+    <div class="g-modal__head">
+      <div>
+        <h2 id="m-remove-guest-h">Remove Guest?</h2>
+        <p>They will not be able to sign in or unlock anything. Any NFC cards in their name stay registered until you revoke them separately.</p>
+      </div>
+    </div>
+    <div class="g-modal__foot">
+      <button class="g-btn g-btn--ghost" data-close>Cancel</button>
+      <button class="g-btn g-btn--danger" data-close>Remove Guest</button>
+    </div>
+  </div>
+</div>
+
+<script src="glass.js" defer></script>
+</body>
+</html>

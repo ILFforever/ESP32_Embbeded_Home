@@ -179,7 +179,7 @@ export function MusicBroadcastCard({ isExpanded = false }: MusicBroadcastCardPro
                 marginBottom: '12px',
                 fontSize: '13px',
                 fontWeight: '700',
-                color: 'var(--text-primary)',
+                color: 'var(--ink)',
                 textTransform: 'uppercase',
                 letterSpacing: '1px'
               }}>
@@ -202,12 +202,12 @@ export function MusicBroadcastCard({ isExpanded = false }: MusicBroadcastCardPro
                     border: target === 'doorbell' ? '2px solid rgb(59, 130, 246)' : '2px solid var(--border-color)',
                     borderRadius: '8px',
                     transition: 'all 0.2s ease',
-                    color: 'var(--text-primary)'
+                    color: 'var(--ink)'
                   }}
                 >
                   <span style={{ fontSize: '16px' }}>🔔</span>
                   <span>Doorbell</span>
-                  <span style={{ fontSize: '11px', color: doorbellDevice?.online ? 'var(--success)' : 'var(--primary)' }}>
+                  <span style={{ fontSize: '11px', color: doorbellDevice?.online ? 'var(--ok)' : 'var(--accent)' }}>
                     {doorbellDevice?.online ? 'ONLINE' : 'OFFLINE'}
                   </span>
                 </button>
@@ -227,12 +227,12 @@ export function MusicBroadcastCard({ isExpanded = false }: MusicBroadcastCardPro
                     border: target === 'hub' ? '2px solid rgb(59, 130, 246)' : '2px solid var(--border-color)',
                     borderRadius: '8px',
                     transition: 'all 0.2s ease',
-                    color: 'var(--text-primary)'
+                    color: 'var(--ink)'
                   }}
                 >
                   <span style={{ fontSize: '16px' }}>🏠</span>
                   <span>Hub</span>
-                  <span style={{ fontSize: '11px', color: hubDevice?.online ? 'var(--success)' : 'var(--primary)' }}>
+                  <span style={{ fontSize: '11px', color: hubDevice?.online ? 'var(--ok)' : 'var(--accent)' }}>
                     {hubDevice?.online ? 'ONLINE' : 'OFFLINE'}
                   </span>
                 </button>
@@ -252,14 +252,14 @@ export function MusicBroadcastCard({ isExpanded = false }: MusicBroadcastCardPro
                     border: target === 'both' ? '2px solid rgb(59, 130, 246)' : '2px solid var(--border-color)',
                     borderRadius: '8px',
                     transition: 'all 0.2s ease',
-                    color: 'var(--text-primary)',
+                    color: 'var(--ink)',
                     opacity: (!doorbellDevice?.online || !hubDevice?.online) ? 0.5 : 1,
                     cursor: (!doorbellDevice?.online || !hubDevice?.online) ? 'not-allowed' : 'pointer'
                   }}
                 >
                   <span style={{ fontSize: '16px' }}>🎵</span>
                   <span>Both</span>
-                  <span style={{ fontSize: '11px', color: (doorbellDevice?.online && hubDevice?.online) ? 'var(--success)' : 'var(--primary)' }}>
+                  <span style={{ fontSize: '11px', color: (doorbellDevice?.online && hubDevice?.online) ? 'var(--ok)' : 'var(--accent)' }}>
                     {(doorbellDevice?.online && hubDevice?.online) ? 'READY' : 'OFFLINE'}
                   </span>
                 </button>
@@ -273,7 +273,7 @@ export function MusicBroadcastCard({ isExpanded = false }: MusicBroadcastCardPro
                 marginBottom: '12px',
                 fontSize: '13px',
                 fontWeight: '700',
-                color: 'var(--text-primary)',
+                color: 'var(--ink)',
                 textTransform: 'uppercase',
                 letterSpacing: '1px'
               }}>
@@ -296,7 +296,7 @@ export function MusicBroadcastCard({ isExpanded = false }: MusicBroadcastCardPro
                     transition: 'all 0.2s ease',
                     outline: 'none',
                     background: 'var(--bg-secondary)',
-                    color: 'var(--text-primary)'
+                    color: 'var(--ink)'
                   }}
                 />
                 <select
@@ -309,30 +309,30 @@ export function MusicBroadcastCard({ isExpanded = false }: MusicBroadcastCardPro
                     border: '2px solid var(--border-color)',
                     fontSize: '14px',
                     background: 'var(--bg-secondary)',
-                    color: 'var(--text-primary)',
+                    color: 'var(--ink)',
                     cursor: 'pointer',
                     outline: 'none',
                     minWidth: '180px'
                   }}
                 >
-                  <option value="" style={{ background: 'var(--bg-card)', color: 'var(--text-primary)' }}>
+                  <option value="" style={{ background: 'var(--modal-bg)', color: 'var(--ink)' }}>
                     Select Preset
                   </option>
                   <option
                     value="https://stream.live.vc.bbcmedia.co.uk/bbc_world_service_east_asia"
-                    style={{ background: 'var(--bg-card)', color: 'var(--text-primary)' }}
+                    style={{ background: 'var(--modal-bg)', color: 'var(--ink)' }}
                   >
                     BBC World Service
                   </option>
                   <option
                     value="https://play.streamafrica.net/japancitypop"
-                    style={{ background: 'var(--bg-card)', color: 'var(--text-primary)' }}
+                    style={{ background: 'var(--modal-bg)', color: 'var(--ink)' }}
                   >
                     Japan City Pop
                   </option>
                   <option
                     value="http://stream.radioparadise.com/aac-128"
-                    style={{ background: 'var(--bg-card)', color: 'var(--text-primary)' }}
+                    style={{ background: 'var(--modal-bg)', color: 'var(--ink)' }}
                   >
                     Radio Paradise
                   </option>
@@ -347,7 +347,7 @@ export function MusicBroadcastCard({ isExpanded = false }: MusicBroadcastCardPro
                 marginBottom: '12px',
                 fontSize: '13px',
                 fontWeight: '700',
-                color: 'var(--text-primary)',
+                color: 'var(--ink)',
                 textTransform: 'uppercase',
                 letterSpacing: '1px'
               }}>
@@ -372,7 +372,7 @@ export function MusicBroadcastCard({ isExpanded = false }: MusicBroadcastCardPro
                     width: '100%',
                     height: '8px',
                     borderRadius: '4px',
-                    background: `linear-gradient(to right, var(--success) 0%, var(--success) ${(volume / 21) * 100}%, var(--border-color) ${(volume / 21) * 100}%, var(--border-color) 100%)`,
+                    background: `linear-gradient(to right, var(--ok) 0%, var(--ok) ${(volume / 21) * 100}%, var(--border-color) ${(volume / 21) * 100}%, var(--border-color) 100%)`,
                     outline: 'none',
                     cursor: 'pointer',
                     transition: 'background 0.15s ease',
@@ -409,7 +409,7 @@ export function MusicBroadcastCard({ isExpanded = false }: MusicBroadcastCardPro
                   borderRadius: '8px',
                   transition: 'all 0.2s ease',
                   boxShadow: 'var(--shadow-md)',
-                  color: 'var(--text-primary)',
+                  color: 'var(--ink)',
                   cursor: loading || !isDeviceAvailable(target) || !streamUrl.trim() ? 'not-allowed' : 'pointer',
                   opacity: loading || !isDeviceAvailable(target) || !streamUrl.trim() ? 0.5 : 1
                 }}
@@ -434,7 +434,7 @@ export function MusicBroadcastCard({ isExpanded = false }: MusicBroadcastCardPro
                   borderRadius: '8px',
                   transition: 'all 0.2s ease',
                   boxShadow: 'var(--shadow-md)',
-                  color: 'var(--text-primary)',
+                  color: 'var(--ink)',
                   cursor: loading || !isDeviceAvailable(target) ? 'not-allowed' : 'pointer',
                   opacity: loading || !isDeviceAvailable(target) ? 0.5 : 1
                 }}

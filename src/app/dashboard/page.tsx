@@ -20,6 +20,16 @@ import {
 } from '@/services/devices.service';
 import type { DevicesStatus, GasReading, Alert, DoorWindow } from '@/types/dashboard';
 
+type GlassTheme = 'light' | 'dark';
+const THEME_STORE_KEY = 'arduino888-theme';
+
+function getCurrentTheme(): GlassTheme {
+  if (typeof window === 'undefined') return 'light';
+  const explicit = document.documentElement.getAttribute('data-theme');
+  if (explicit === 'dark' || explicit === 'light') return explicit;
+  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+}
+
 export default function DashboardPage() {
   const router = useRouter();
   const { logout, user } = useAuth();
@@ -27,7 +37,7 @@ export default function DashboardPage() {
   const [gasReadings, setGasReadings] = useState<GasReading[]>([]);
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [loading, setLoading] = useState(true);
-  const [theme, setTheme] = useState<'purple' | 'green'>('purple');
+  const [theme, setTheme] = useState<GlassTheme>('light');
   const [expandedCard, setExpandedCard] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [activeView, setActiveView] = useState<string>('dashboard');
@@ -120,13 +130,19 @@ export default function DashboardPage() {
     return () => clearInterval(interval);
   }, []);
 
-  // Apply theme to document root
   useEffect(() => {
-    document.documentElement.setAttribute('data-theme', theme);
-  }, [theme]);
+    setTheme(getCurrentTheme());
+  }, []);
 
   const toggleTheme = () => {
-    setTheme(prev => prev === 'purple' ? 'green' : 'purple');
+    const next = getCurrentTheme() === 'dark' ? 'light' : 'dark';
+    setTheme(next);
+    if (window.Glass) {
+      window.Glass.setTheme(next);
+      return;
+    }
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem(THEME_STORE_KEY, next);
   };
 
   const toggleSidebar = () => {

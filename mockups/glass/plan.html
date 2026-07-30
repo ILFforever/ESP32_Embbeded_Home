@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Plan — Arduino888</title>
+<link rel="stylesheet" href="glass.css">
+<script>
+  /* Applied before first paint, so a stored preference never flashes
+     the wrong theme. No attribute at all means "follow the OS".
+     ?theme=dark / ?theme=light pins a page without touching the stored
+     preference — used by dark.html to frame both themes at once. */
+  try {
+    var q = new URLSearchParams(location.search).get('theme');
+    var t = (q === 'dark' || q === 'light') ? q : localStorage.getItem('arduino888-theme');
+    if (t) document.documentElement.setAttribute('data-theme', t);
+  } catch (e) {}
+</script>
+<style>
+  .pl-wrap { display: grid; grid-template-columns: 1.55fr 1fr; gap: var(--s-4); align-items: start; }
+  .pl-stage { padding: 16px 18px 14px; }
+  .pl-stage > header { display: flex; align-items: center; justify-content: space-between; gap: var(--s-3); margin-bottom: var(--s-3); }
+  .pl-svg { width: 100%; height: auto; display: block; }
+  .pl-legend {
+    display: flex; gap: var(--s-5); flex-wrap: wrap;
+    border-top: 1px solid var(--hairline); margin-top: var(--s-3); padding-top: 11px;
+  }
+  .pl-legend span { display: flex; align-items: center; gap: 7px; font-size: 11.5px; color: var(--ink-2); }
+
+  /* ---- the drawing ----------------------------------------------
+     Everything is a class so it follows the theme. A hardcoded hex or
+     a var() inside an SVG presentation attribute would break in one
+     theme or the other. */
+  .pl-room {
+    fill: color-mix(in srgb, var(--ink) 6%, transparent);
+    transition: fill .18s var(--ease);
+  }
+  .pl-hit { cursor: pointer; }
+  .pl-hit:hover .pl-room { fill: color-mix(in srgb, var(--ink) 11%, transparent); }
+  .pl-hit[aria-current="true"] .pl-room { fill: color-mix(in srgb, var(--accent) 27%, transparent); }
+  .pl-hit:focus { outline: none; }
+  .pl-hit:focus-visible .pl-room { fill: color-mix(in srgb, var(--accent) 27%, transparent); }
+  .pl-hit:focus-visible .pl-focus { stroke: var(--accent); stroke-width: 2.5; }
+  .pl-focus { fill: none; stroke: none; }
+
+  /* Everything painted over the rooms is decoration. Without this the
+     walls, tags and pins sit on top of the room rects and swallow the
+     click — and they are siblings, so it never bubbles to the room. */
+  .pl-wall, .pl-wall-i, .pl-door, .pl-name,
+  .pl-leader, .pl-tag, .pl-val, .pl-pin, .pl-halo { pointer-events: none; }
+
+  .pl-wall   { fill: none; stroke: var(--ink); stroke-width: 4.5; stroke-linecap: square; }
+  .pl-wall-i { fill: none; stroke: color-mix(in srgb, var(--ink) 62%, transparent); stroke-width: 2.5; }
+  .pl-door   { fill: none; stroke: var(--ink-3); stroke-width: 1.5; }
+
+  .pl-name {
+    fill: var(--ink-3); font-family: var(--mono); font-size: 10px;
+    letter-spacing: .16em; text-transform: uppercase;
+  }
+  .pl-leader { stroke: var(--outline); stroke-width: 1; }
+  .pl-tag {
+    fill: color-mix(in srgb, var(--ground) 86%, transparent);
+    stroke: var(--outline); stroke-width: 1;
+  }
+  .pl-tag.is-warn { stroke: var(--warn); }
+  .pl-val { fill: var(--ink); font-family: var(--mono); font-size: 11px; }
+  .pl-val.is-warn { fill: var(--warn); }
+  .pl-pin { stroke: var(--ground); stroke-width: 2; }
+  .pl-pin.is-ok   { fill: var(--ok); }
+  .pl-pin.is-warn { fill: var(--warn); }
+  .pl-pin.is-off  { fill: var(--ink-3); }
+  .pl-halo { fill: var(--warn); opacity: .18; }
+
+  .pl-metrics { display: grid; grid-template-columns: repeat(2, 1fr); gap: var(--s-4) var(--s-5); }
+  .pl-acts { display: grid; grid-template-columns: repeat(2, 1fr); gap: var(--s-2); }
+  .pl-devs { display: grid; grid-template-columns: repeat(7, 1fr); gap: var(--s-3); }
+  .pl-dev { display: flex; align-items: center; gap: 9px; min-width: 0; font-size: 12.5px; }
+  .pl-dev b { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; }
+  .pl-dev span { font-size: 11px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+
+  @media (max-width: 1000px) {
+    .pl-wrap { grid-template-columns: 1fr; }
+    .pl-devs { grid-template-columns: repeat(3, 1fr); }
+  }
+  @media (max-width: 620px) { .pl-devs { grid-template-columns: repeat(2, 1fr); } }
+</style>
+</head>
+<body>
+<div class="g-bg" aria-hidden="true"></div>
+
+<div class="g-page">
+
+  <div class="g-pane g-bar">
+    <span class="g-bar__brand">Arduino888</span>
+    <nav class="g-seg" data-choice aria-label="Sections">
+      <a href="dashboard.html">Home</a>
+      <a href="plan.html" aria-current="page">Plan</a>
+      <a href="access.html">Access</a>
+      <a href="admin.html">Admin</a>
+    </nav>
+    <button class="g-theme" aria-label="Switch between light and dark" title="Switch theme">
+      <svg class="g-theme__moon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+      <svg class="g-theme__sun" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M19.1 4.9l-1.4 1.4M6.3 17.7l-1.4 1.4"/></svg>
+    </button>
+    <span class="g-pill is-warn"><i></i> 1 needs attention</span>
+  </div>
+
+  <div class="g-title">
+    <h1>Ground floor</h1>
+    <p>Seven devices, placed where they actually are. Tap a room for detail.</p>
+  </div>
+
+  <div class="pl-wrap">
+    <!-- ---------------- the plan ---------------- -->
+    <section class="g-pane pl-stage">
+      <header>
+        <span class="g-label">Ground floor · 7 devices</span>
+        <span class="g-label">Updated 9:47:12</span>
+      </header>
+
+      <svg class="pl-svg" viewBox="0 0 660 440" role="img"
+           aria-label="Floor plan. Living room 22.4 degrees. Kitchen 118 ppm. Garage 412 ppm, elevated. Front door locked, back door unlocked.">
+
+        <!-- rooms, each a hit target -->
+        <g class="pl-hit" role="button" tabindex="0" data-room="living" aria-current="true" aria-label="Living room">
+          <rect class="pl-room" x="22" y="22" width="336" height="238"/>
+          <rect class="pl-focus" x="26" y="26" width="328" height="230"/>
+        </g>
+        <g class="pl-hit" role="button" tabindex="0" data-room="kitchen" aria-label="Kitchen">
+          <rect class="pl-room" x="358" y="22" width="280" height="178"/>
+          <rect class="pl-focus" x="362" y="26" width="272" height="170"/>
+        </g>
+        <g class="pl-hit" role="button" tabindex="0" data-room="garage" aria-label="Garage">
+          <rect class="pl-room" x="358" y="200" width="280" height="218"/>
+          <rect class="pl-focus" x="362" y="204" width="272" height="210"/>
+        </g>
+        <g class="pl-hit" role="button" tabindex="0" data-room="bedroom" aria-label="Bedroom">
+          <rect class="pl-room" x="22" y="260" width="178" height="158"/>
+          <rect class="pl-focus" x="26" y="264" width="170" height="150"/>
+        </g>
+        <g class="pl-hit" role="button" tabindex="0" data-room="hall" aria-label="Hall">
+          <rect class="pl-room" x="200" y="260" width="158" height="158"/>
+          <rect class="pl-focus" x="204" y="264" width="150" height="150"/>
+        </g>
+
+        <!-- interior walls -->
+        <path class="pl-wall-i" d="M358 22 V418 M22 260 H358 M200 260 V418 M358 200 H638"/>
+
+        <!-- Outer wall drawn with the two doorways left as real gaps.
+             Painting over a full rect to fake an opening leaves a
+             visible patch wherever the cover colour misses. -->
+        <path class="pl-wall" d="M22 22 H638 V418 H312 M252 418 H22 V366 M22 316 V22"/>
+
+        <!-- door swings, both opening inward -->
+        <path class="pl-door" d="M252 418 A34 34 0 0 1 312 418"/>
+        <path class="pl-door" d="M22 316 A30 30 0 0 1 22 366"/>
+
+        <!-- room names -->
+        <text class="pl-name" x="42"  y="48">Living</text>
+        <text class="pl-name" x="378" y="48">Kitchen</text>
+        <text class="pl-name" x="378" y="226">Garage</text>
+        <text class="pl-name" x="42"  y="286">Bedroom</text>
+        <text class="pl-name" x="220" y="286">Hall</text>
+
+        <!-- LIVING: temperature -->
+        <line class="pl-leader" x1="150" y1="150" x2="150" y2="120"/>
+        <rect class="pl-tag" x="100" y="94" width="100" height="26" rx="6"/>
+        <text class="pl-val" x="110" y="112">22.4 °C · 48%</text>
+        <circle class="pl-pin is-ok" cx="150" cy="150" r="6"/>
+
+        <!-- KITCHEN: gas -->
+        <line class="pl-leader" x1="498" y1="128" x2="498" y2="100"/>
+        <rect class="pl-tag" x="452" y="74" width="92" height="26" rx="6"/>
+        <text class="pl-val" x="462" y="92">118 ppm</text>
+        <circle class="pl-pin is-ok" cx="498" cy="128" r="6"/>
+
+        <!-- GARAGE: gas elevated -->
+        <line class="pl-leader" x1="498" y1="320" x2="498" y2="292"/>
+        <rect class="pl-tag is-warn" x="438" y="266" width="120" height="26" rx="6"/>
+        <text class="pl-val is-warn" x="448" y="284">412 ppm · high</text>
+        <circle class="pl-halo" cx="498" cy="320" r="13"/>
+        <circle class="pl-pin is-warn" cx="498" cy="320" r="6"/>
+
+        <!-- HALL: front door + hub -->
+        <line class="pl-leader" x1="282" y1="404" x2="282" y2="376"/>
+        <rect class="pl-tag" x="232" y="350" width="100" height="26" rx="6"/>
+        <text class="pl-val" x="242" y="368">Front · locked</text>
+        <circle class="pl-pin is-ok" cx="282" cy="404" r="6"/>
+        <rect class="pl-tag" x="214" y="298" width="92" height="24" rx="6"/>
+        <text class="pl-val" x="224" y="315">Hub · online</text>
+
+        <!-- BEDROOM: back door unlocked -->
+        <line class="pl-leader" x1="36" y1="341" x2="76" y2="341"/>
+        <rect class="pl-tag is-warn" x="76" y="328" width="118" height="26" rx="6"/>
+        <text class="pl-val is-warn" x="86" y="346">Back · unlocked</text>
+        <circle class="pl-pin is-warn" cx="36" cy="341" r="6"/>
+      </svg>
+
+      <div class="pl-legend">
+        <span><i class="g-dot g-dot--ok"></i> Normal</span>
+        <span><i class="g-dot g-dot--warn"></i> Needs attention</span>
+        <span><i class="g-dot g-dot--crit"></i> Critical</span>
+        <span><i class="g-dot g-dot--off"></i> Offline</span>
+      </div>
+    </section>
+
+    <!-- ---------------- context ---------------- -->
+    <div class="g-stack">
+      <section class="g-pane g-card" id="pl-detail">
+        <header>
+          <h2 id="pl-room-name">Living room</h2>
+          <span class="g-label" id="pl-room-count">1 device</span>
+        </header>
+        <div class="pl-metrics" id="pl-room-metrics"></div>
+        <div class="pl-acts" id="pl-room-acts" style="margin-top:var(--s-5)"></div>
+      </section>
+
+      <section class="g-pane g-card">
+        <header><h2>Today</h2><span class="g-label">5 events</span></header>
+        <div class="g-list">
+          <div class="g-list__row"><i class="g-dot g-dot--crit"></i><p>Gas above threshold in the garage<span>9:42 AM · 412 ppm, limit 350</span></p></div>
+          <div class="g-list__row"><i class="g-dot g-dot--warn"></i><p>Back door left unlocked<span>9:15 AM · 12 minutes and counting</span></p></div>
+          <div class="g-list__row"><i class="g-dot g-dot--off"></i><p>Nat came in the front door<span>8:50 AM · card ADMIN-01</span></p></div>
+          <div class="g-list__row"><i class="g-dot g-dot--warn"></i><p>Utility sensor battery low<span>7:58 AM · 18% remaining</span></p></div>
+          <div class="g-list__row"><i class="g-dot g-dot--off"></i><p>Hub updated to 1.4.2<span>7:12 AM</span></p></div>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <section class="g-pane g-card">
+    <header><h2>Devices</h2><span class="g-label">6 of 7 online</span></header>
+    <div class="pl-devs">
+      <div class="pl-dev">
+        <svg class="g-ring" viewBox="0 0 24 24"><circle class="g-ring__track" cx="12" cy="12" r="9"/><circle class="g-ring__fill" cx="12" cy="12" r="9" stroke-dasharray="47.5 56.5" transform="rotate(-90 12 12)"/></svg>
+        <div><b>Doorbell</b><span>Hall · 84%</span></div>
+      </div>
+      <div class="pl-dev">
+        <svg class="g-ring" viewBox="0 0 24 24"><circle class="g-ring__track" cx="12" cy="12" r="9"/><circle class="g-ring__fill" cx="12" cy="12" r="9" stroke-dasharray="56.5 56.5" transform="rotate(-90 12 12)"/></svg>
+        <div><b>Hub display</b><span>Hall · mains</span></div>
+      </div>
+      <div class="pl-dev">
+        <svg class="g-ring" viewBox="0 0 24 24"><circle class="g-ring__track" cx="12" cy="12" r="9"/><circle class="g-ring__fill" cx="12" cy="12" r="9" stroke-dasharray="40.2 56.5" transform="rotate(-90 12 12)"/></svg>
+        <div><b>Front lock</b><span>Hall · 71%</span></div>
+      </div>
+      <div class="pl-dev">
+        <svg class="g-ring" viewBox="0 0 24 24"><circle class="g-ring__track" cx="12" cy="12" r="9"/><circle class="g-ring__fill" cx="12" cy="12" r="9" stroke-dasharray="35.6 56.5" transform="rotate(-90 12 12)"/></svg>
+        <div><b>Back lock</b><span>Bedroom · 63%</span></div>
+      </div>
+      <div class="pl-dev">
+        <svg class="g-ring" viewBox="0 0 24 24"><circle class="g-ring__track" cx="12" cy="12" r="9"/><circle class="g-ring__fill" cx="12" cy="12" r="9" stroke-dasharray="43.5 56.5" transform="rotate(-90 12 12)"/></svg>
+        <div><b>Kitchen gas</b><span>Kitchen · 77%</span></div>
+      </div>
+      <div class="pl-dev">
+        <svg class="g-ring" viewBox="0 0 24 24"><circle class="g-ring__track" cx="12" cy="12" r="9"/><circle class="g-ring__fill is-warn" cx="12" cy="12" r="9" stroke-dasharray="10.2 56.5" transform="rotate(-90 12 12)"/></svg>
+        <div><b>Utility gas</b><span>Garage · 18%</span></div>
+      </div>
+      <div class="pl-dev">
+        <svg class="g-ring" viewBox="0 0 24 24"><circle class="g-ring__track" cx="12" cy="12" r="9"/></svg>
+        <div><b>Garden repeater</b><span>Offline 27m</span></div>
+      </div>
+    </div>
+  </section>
+</div>
+
+<script src="glass.js" defer></script>
+<script>
+(function () {
+  var ROOMS = {
+    living: {
+      name: 'Living room', count: '1 device',
+      metrics: [
+        { label: 'Temperature', value: '22.4', unit: '°C', note: 'Steady for the last hour' },
+        { label: 'Humidity', value: '48', unit: '%', note: 'Comfortable' }
+      ],
+      acts: [['Set a target', 'Thermostat schedule'], ['See 24h history', 'ts_living']]
+    },
+    kitchen: {
+      name: 'Kitchen', count: '1 device',
+      metrics: [
+        { label: 'Gas', value: '118', unit: 'ppm', note: 'Well under the 350 limit' },
+        { label: 'Temperature', value: '23.1', unit: '°C', note: '+0.4 since 9:00' }
+      ],
+      acts: [['See 24h history', 'gs_kitchen'], ['Test the alarm', 'Sounds for 3 seconds']]
+    },
+    garage: {
+      name: 'Garage', count: '2 devices', state: 'warn',
+      metrics: [
+        { label: 'Gas', value: '412', unit: 'ppm', note: 'Limit 350 · rising since 9:31', warn: true },
+        { label: 'Temperature', value: '26.9', unit: '°C', note: '+1.4 in the last hour' }
+      ],
+      acts: [['Open the vent', 'Relay rp_garden'], ['Silence for 30 min', 'Stays in the log']]
+    },
+    bedroom: {
+      name: 'Bedroom', count: '1 device', state: 'warn',
+      metrics: [
+        { label: 'Back door', value: 'Unlocked', note: '12 minutes and counting', warn: true },
+        { label: 'Temperature', value: '21.8', unit: '°C', note: 'Coolest room' }
+      ],
+      acts: [['Lock the back door', 'dl_back'], ['See who opened it', 'Access log']]
+    },
+    hall: {
+      name: 'Hall', count: '3 devices',
+      metrics: [
+        { label: 'Front door', value: 'Locked', note: 'Since 8:50 AM' },
+        { label: 'Hub', value: 'Online', note: 'Playing Westminster chime' }
+      ],
+      acts: [['Unlock the front door', 'dl_front'], ['Play a chime', 'Hub speaker']]
+    }
+  };
+
+  var nameEl = document.getElementById('pl-room-name');
+  var countEl = document.getElementById('pl-room-count');
+  var metricsEl = document.getElementById('pl-room-metrics');
+  var actsEl = document.getElementById('pl-room-acts');
+  var hits = [].slice.call(document.querySelectorAll('.pl-hit'));
+
+  function render(key) {
+    var r = ROOMS[key];
+    if (!r) return;
+    nameEl.textContent = r.name;
+    countEl.textContent = r.count;
+
+    metricsEl.innerHTML = r.metrics.map(function (m) {
+      return '<div class="' + (m.warn ? 'is-warn' : '') + '">' +
+        '<p class="g-label">' + m.label + '</p>' +
+        '<div class="g-metric-sm g-num" style="margin-top:6px">' + m.value +
+        (m.unit ? '<sup>' + m.unit + '</sup>' : '') + '</div>' +
+        '<p class="g-sub" style="font-size:11.5px">' + m.note + '</p></div>';
+    }).join('');
+
+    actsEl.innerHTML = r.acts.map(function (a) {
+      return '<button class="g-action">' + a[0] + '<small>' + a[1] + '</small></button>';
+    }).join('');
+
+    hits.forEach(function (h) {
+      if (h.dataset.room === key) h.setAttribute('aria-current', 'true');
+      else h.removeAttribute('aria-current');
+    });
+  }
+
+  hits.forEach(function (h) {
+    h.addEventListener('click', function () { render(h.dataset.room); });
+    h.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); render(h.dataset.room); }
+    });
+  });
+
+  render('living');
+})();
+</script>
+</body>
+</html>
