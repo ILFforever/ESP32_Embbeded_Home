@@ -2,40 +2,30 @@
 import { useState, FormEvent, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
-
-type GlassTheme = 'light' | 'dark';
-const THEME_STORE_KEY = 'arduino888-theme';
-
-function getCurrentTheme(): GlassTheme {
-  if (typeof window === 'undefined') return 'light';
-  const explicit = document.documentElement.getAttribute('data-theme');
-  if (explicit === 'dark' || explicit === 'light') return explicit;
-  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-}
+import { getCurrentTheme, setTheme as applyGlassTheme, type GlassTheme } from '@/components/glass/theme';
 
 export default function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [theme, setTheme] = useState<GlassTheme>('light');
+  const [theme, setThemeState] = useState<GlassTheme>('light');
 
   const router = useRouter();
   const { login } = useAuth();
 
   useEffect(() => {
-    setTheme(getCurrentTheme());
+    setThemeState(getCurrentTheme());
   }, []);
 
   const toggleTheme = () => {
     const next = getCurrentTheme() === 'dark' ? 'light' : 'dark';
-    setTheme(next);
+    setThemeState(next);
     if (window.Glass) {
-      window.Glass.setTheme(next);
+      applyGlassTheme(next);
       return;
     }
     document.documentElement.setAttribute('data-theme', next);
-    localStorage.setItem(THEME_STORE_KEY, next);
   };
 
   const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {

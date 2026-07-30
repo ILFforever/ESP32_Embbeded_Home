@@ -206,7 +206,7 @@ from the `#m-temp` chart, plotting humidity (%) and PM2.5 (µg/m³).
 **Phase A is complete and reviewed.** B1 is unblocked and can start now.
 
 ### B1 · Land the design system
-**Status:** ☐ todo · **Size:** M · **Owner:** _unassigned_ · **Blocks: everything else in B**
+**Status:** ☑ done and reviewed · **Size:** M · **Owner:** _unassigned_ · **Blocks: everything else in B**
 
 - Replace `src/app/globals.css` (3,945 lines) with a port of `glass.css`.
 - Delete the `data-theme="purple"` / `data-theme="green"` token blocks, the
@@ -270,6 +270,27 @@ controls, hub info grid, activity list.
 ---
 
 ## Phase C — Cleanup
+
+### C0 · Repoint the 12 orphaned tokens
+**Status:** ☐ todo · **Size:** S
+
+B1 replaced the token set, so these are still referenced in TSX inline styles
+but no longer defined. They resolve to nothing and silently render wrong:
+
+`--success` (4 files) · `--text-secondary` (3) · `--warning` (3) ·
+`--bg-secondary` (2) · `--primary-color` (2) · `--primary-color-rgb` (2) ·
+`--border-color` · `--secondary-color` · `--shadow-md` · `--spacing-md` ·
+`--spacing-sm` · `--text-muted`
+
+Map: `--success`→`--ok`, `--warning`→`--warn`, `--danger`→`--crit`,
+`--text-secondary`→`--ink-2`, `--text-muted`→`--ink-3`, `--primary-color`→
+`--accent`, spacing→`--s-*`, `--shadow-md`→`--lift-sm`. Most get deleted
+outright as their component is converted in B4; this task sweeps whatever is
+left afterwards.
+
+Find them with:
+`grep -rhoE 'var\(--[a-z0-9-]+\)' src/ | sort -u` then check each against
+`src/app/globals.css`.
 
 ### C1 · Delete dead CSS
 **Status:** ☐ todo · **Size:** S
@@ -350,5 +371,5 @@ passes against nothing.
 |---|---|---|
 | Foundation | glass.css (light + dark), glass.js, index.html | 3 / 3 ✅ |
 | A — Mockups | login, dashboard, plan, doorbell, hub, dark, admin, access, A3, A4 | 10 / 10 ✅ |
-| B — React | B1–B6 (B4 is 8 sub-tasks) | 0 / 13 |
-| C — Cleanup | C1–C3 | 0 / 3 |
+| B — React | B1–B6 (B4 is 8 sub-tasks) | 1 / 13 |
+| C — Cleanup | C0–C3 | 0 / 4 |
