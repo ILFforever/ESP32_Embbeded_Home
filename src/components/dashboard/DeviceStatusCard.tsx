@@ -420,7 +420,7 @@ export function DeviceStatusCard({ devices = [], sensors = [], isExpanded = fals
         }
 
         .toggle-btn.active {
-          background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
+          background: linear-gradient(135deg, var(--accent) 0%, var(--accent-h) 100%);
           color: #fff;
           box-shadow: 0 2px 8px rgba(var(--primary-color-rgb), 0.3);
         }
@@ -554,7 +554,7 @@ export function DeviceStatusCard({ devices = [], sensors = [], isExpanded = fals
           font-size: 2.5rem;
           font-weight: 800;
           margin: 0;
-          background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
+          background: linear-gradient(135deg, var(--accent) 0%, var(--accent-h) 100%);
           -webkit-background-clip: text;
           -webkit-text-fill-color: transparent;
           background-clip: text;

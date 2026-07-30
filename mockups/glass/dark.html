@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dark — Arduino888 Glass</title>
+<link rel="stylesheet" href="glass.css">
+<style>
+  /* This page is pinned dark: the chrome is the thing being shown.
+     The frames below load the real pages with ?theme= so nothing is
+     duplicated — there is still exactly one copy of every page. */
+  .dk-frames { display: grid; gap: var(--s-4); }
+  .dk-frames[data-view="split"] { grid-template-columns: 1fr 1fr; }
+  .dk-frames[data-view="dark"] .dk-frame--light,
+  .dk-frames[data-view="light"] .dk-frame--dark { display: none; }
+  .dk-frames[data-view="dark"], .dk-frames[data-view="light"] { grid-template-columns: 1fr; }
+
+  .dk-frame { display: flex; flex-direction: column; min-width: 0; padding: 14px 14px 16px; }
+  .dk-frame > header { display: flex; align-items: center; justify-content: space-between; gap: var(--s-3); margin-bottom: 12px; }
+  .dk-frame h2 { margin: 0; font-size: 13px; font-weight: 600; letter-spacing: -.01em; }
+  .dk-frame iframe {
+    width: 100%; height: 620px; border: 0; display: block;
+    border-radius: var(--r-tile);
+    background: var(--ground);
+    box-shadow: inset 0 0 0 1px var(--hairline);
+  }
+  .dk-swatch { display: inline-flex; gap: 3px; }
+  .dk-swatch i { width: 13px; height: 13px; border-radius: 3px; border: 1px solid rgba(128,128,128,.28); }
+
+  .dk-note { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: var(--s-4); }
+  .dk-note h3 { margin: 0 0 5px; font-size: 13.5px; font-weight: 600; }
+  .dk-note p { margin: 0; font-size: 12.5px; color: var(--ink-2); line-height: 1.5; }
+
+  .dk-pairs { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: var(--s-3); }
+  .dk-pair { display: flex; align-items: center; gap: 10px; font-size: 12px; }
+  .dk-pair .dk-chip { width: 40px; height: 30px; border-radius: 7px; flex: none; border: 1px solid rgba(128,128,128,.25); }
+  .dk-pair code { font-family: var(--mono); font-size: 11px; color: var(--ink-3); display: block; }
+  .dk-pair b { font-weight: 500; }
+
+  @media (max-width: 1000px) {
+    .dk-frames[data-view="split"] { grid-template-columns: 1fr; }
+    .dk-frame iframe { height: 480px; }
+  }
+</style>
+</head>
+<body>
+<div class="g-bg" aria-hidden="true"></div>
+
+<div class="g-page">
+
+  <div class="g-pane g-bar">
+    <a class="g-back" href="index.html">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+      Index
+    </a>
+    <span class="g-bar__brand">Dark</span>
+    <nav class="g-seg" data-choice id="dk-pages" aria-label="Page">
+      <button data-page="dashboard.html" aria-current="true">Home</button>
+      <button data-page="plan.html">Plan</button>
+      <button data-page="doorbell.html">Doorbell</button>
+      <button data-page="hub.html">Hub</button>
+      <button data-page="admin.html">Admin</button>
+      <button data-page="access.html">Access</button>
+      <button data-page="login.html">Sign in</button>
+      <button data-page="index.html">Components</button>
+    </nav>
+    <span class="g-pill"><i></i> Pinned dark</span>
+  </div>
+
+  <div class="g-title">
+    <h1>Dark</h1>
+    <p>The same pages, pinned with <code>?theme=dark</code>. Nothing is duplicated — these frames load the real files.</p>
+  </div>
+
+  <div class="g-pane g-card">
+    <header>
+      <h2>View</h2>
+      <div class="g-seg" data-choice id="dk-view">
+        <button data-view="split" aria-current="true">Side by side</button>
+        <button data-view="dark">Dark only</button>
+        <button data-view="light">Light only</button>
+      </div>
+    </header>
+
+    <div class="dk-frames" data-view="split" id="dk-frames">
+      <div class="g-pane dk-frame dk-frame--light">
+        <header>
+          <h2>Light</h2>
+          <span class="dk-swatch" aria-hidden="true">
+            <i style="background:#E4E8EC"></i><i style="background:#58718F"></i>
+            <i style="background:#4E8A6B"></i><i style="background:#B8873C"></i><i style="background:#B5544C"></i>
+          </span>
+        </header>
+        <iframe title="Light theme preview" data-frame="light" src="dashboard.html?theme=light" loading="lazy"></iframe>
+      </div>
+
+      <div class="g-pane dk-frame dk-frame--dark">
+        <header>
+          <h2>Dark</h2>
+          <span class="dk-swatch" aria-hidden="true">
+            <i style="background:#171B21"></i><i style="background:#8CA8C6"></i>
+            <i style="background:#74B492"></i><i style="background:#DBAC5E"></i><i style="background:#DD877E"></i>
+          </span>
+        </header>
+        <iframe title="Dark theme preview" data-frame="dark" src="dashboard.html?theme=dark" loading="lazy"></iframe>
+      </div>
+    </div>
+  </div>
+
+  <!-- What actually changes, and why. This is the part worth reading
+       before building a new page in dark. -->
+  <section class="g-pane g-card">
+    <header><h2>Dark is not an inversion</h2><span class="g-label">three real differences</span></header>
+    <div class="dk-note">
+      <div>
+        <h3>Depth moves to the edge</h3>
+        <p>On a dark ground the shadow stack barely reads. The bevel highlight goes up in relative weight and the fills come down, so the rim does the work the cast shadow does in light.</p>
+      </div>
+      <div>
+        <h3>The veil is tinted, not white</h3>
+        <p>White at low alpha over dark grey goes milky and hides the wallpaper it exists to reveal. Dark glass is <code>rgba(56,64,76,.5)</code> — a tinted dark veil.</p>
+      </div>
+      <div>
+        <h3>The wallpaper needs pigment</h3>
+        <p>Pale washes vanish on dark, so the six colour fields become jewel tones at lower opacity. Without them the panes have nothing behind them and read as flat boxes.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="g-pane g-card">
+    <header><h2>Relit tokens</h2><span class="g-label">light → dark</span></header>
+    <div class="dk-pairs">
+      <div class="dk-pair">
+        <span class="dk-chip" style="background:linear-gradient(135deg,#E4E8EC 50%,#171B21 50%)"></span>
+        <span><b>Ground</b><code>#E4E8EC → #171B21</code></span>
+      </div>
+      <div class="dk-pair">
+        <span class="dk-chip" style="background:linear-gradient(135deg,#58718F 50%,#8CA8C6 50%)"></span>
+        <span><b>Accent</b><code>#58718F → #8CA8C6</code></span>
+      </div>
+      <div class="dk-pair">
+        <span class="dk-chip" style="background:linear-gradient(135deg,#4E8A6B 50%,#74B492 50%)"></span>
+        <span><b>OK</b><code>#4E8A6B → #74B492</code></span>
+      </div>
+      <div class="dk-pair">
+        <span class="dk-chip" style="background:linear-gradient(135deg,#B8873C 50%,#DBAC5E 50%)"></span>
+        <span><b>Warning</b><code>#B8873C → #DBAC5E</code></span>
+      </div>
+      <div class="dk-pair">
+        <span class="dk-chip" style="background:linear-gradient(135deg,#B5544C 50%,#DD877E 50%)"></span>
+        <span><b>Critical</b><code>#B5544C → #DD877E</code></span>
+      </div>
+      <div class="dk-pair">
+        <span class="dk-chip" style="background:linear-gradient(135deg,#979DA5 50%,#99A1AB 50%)"></span>
+        <span><b>Muted text</b><code>3.30:1 → 5.27:1</code></span>
+      </div>
+    </div>
+    <p class="g-sub">Muted text was measured, not guessed — <code>--ink-3</code> failed AA on the dark pane at its first value. Composite the translucent pane over the ground before computing any ratio, or the number means nothing.</p>
+  </section>
+</div>
+
+<script src="glass.js" defer></script>
+<script>
+(function () {
+  var frames = document.getElementById('dk-frames');
+  var page = 'dashboard.html';
+
+  function load() {
+    frames.querySelectorAll('iframe').forEach(function (f) {
+      var want = page + '?theme=' + f.dataset.frame;
+      // Only reassign when it actually changed — otherwise switching the
+      // view mode would reload both frames and lose their scroll position.
+      if (!f.src.endsWith(want)) f.src = want;
+    });
+  }
+
+  document.getElementById('dk-pages').addEventListener('click', function (e) {
+    var b = e.target.closest('button');
+    if (!b) return;
+    page = b.dataset.page;
+    load();
+  });
+
+  document.getElementById('dk-view').addEventListener('click', function (e) {
+    var b = e.target.closest('button');
+    if (!b) return;
+    frames.dataset.view = b.dataset.view;
+  });
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,1675 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arduino888 — Redesign Directions</title>
+<style>
+/* ============================================================
+   CHROME — the presentation shell. Deliberately neutral so it
+   never competes with the three directions it is framing.
+   All mockup styles are scoped under .m-bureau / .m-panel /
+   .m-plan and use per-mockup class prefixes (bu- / pa- / pl-)
+   so nothing cascades between them.
+   ============================================================ */
+*, *::before, *::after { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: #101113;
+  color: #C9CCD1;
+  font-family: "Segoe UI", system-ui, sans-serif;
+  line-height: 1.5;
+}
+.shell { max-width: 1400px; margin: 0 auto; padding: 40px 24px 96px; }
+
+.shell-head { border-bottom: 1px solid #26292E; padding-bottom: 24px; margin-bottom: 28px; }
+.shell-head h1 {
+  font-family: Bahnschrift, "Segoe UI Semibold", sans-serif;
+  font-size: 28px; font-weight: 600; letter-spacing: .01em;
+  color: #F2F3F5; margin: 0 0 6px;
+}
+.shell-head p { margin: 0; max-width: 62ch; color: #8A9099; font-size: 14px; }
+
+.switcher { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 36px; }
+.switcher button {
+  font: inherit; font-size: 13px; letter-spacing: .04em; text-transform: uppercase;
+  background: #1A1C1F; color: #9AA0A8;
+  border: 1px solid #2C3036; border-radius: 2px;
+  padding: 9px 16px; cursor: pointer;
+  transition: background .12s, color .12s, border-color .12s;
+}
+.switcher button:hover { color: #E4E6E9; border-color: #454B53; }
+.switcher button:focus-visible { outline: 2px solid #6E8CFF; outline-offset: 2px; }
+.switcher button[aria-selected="true"] { background: #E9EBEE; color: #101113; border-color: #E9EBEE; }
+
+/* Spec strip above each direction */
+.spec { display: grid; grid-template-columns: 1.6fr 1fr 1fr; gap: 32px; padding: 20px 0 22px; border-top: 1px solid #26292E; }
+.spec-kicker { font-size: 11px; letter-spacing: .16em; text-transform: uppercase; color: #6B7179; margin: 0 0 8px; }
+.spec h2 { font-family: Bahnschrift, "Segoe UI Semibold", sans-serif; font-size: 22px; font-weight: 600; color: #F2F3F5; margin: 0 0 8px; letter-spacing: .01em; }
+.spec p { margin: 0; font-size: 13.5px; color: #8A9099; max-width: 52ch; }
+.spec dl { margin: 0; font-size: 12.5px; }
+.spec dt { color: #6B7179; font-size: 11px; letter-spacing: .12em; text-transform: uppercase; margin-bottom: 4px; }
+.spec dd { margin: 0 0 12px; color: #B4B9C0; }
+.sw { display: flex; gap: 6px; margin-top: 2px; }
+.sw span { width: 26px; height: 26px; border-radius: 2px; border: 1px solid rgba(255,255,255,.14); }
+
+.frame { border: 1px solid #2C3036; border-radius: 3px; overflow: hidden; margin-bottom: 56px; }
+.mock { display: none; }
+.mock.is-on { display: block; }
+
+@media (max-width: 900px) { .spec { grid-template-columns: 1fr; gap: 20px; } }
+
+/* ============================================================
+   DIRECTION A — "BUREAU"
+   Swiss technical-document instrument panel. Hairline rules do
+   all the containment work: no boxes, no shadows, no radius.
+   Ground is a pale cool grey-green; one ultramarine accent;
+   semantic colour appears only as 3px severity stripes + chips.
+   ============================================================ */
+.m-bureau {
+  --paper:  #E9EBE7;
+  --ink:    #14171A;
+  --ink-2:  #5C6360;
+  --ink-3:  #8E948F;
+  --rule:   #C6C9C2;
+  --rule-2: #D9DBD5;
+  --accent: #1B2FD8;
+  --ok:     #2E7D5B;
+  --warn:   #A8760F;
+  --crit:   #B3352B;
+
+  background: var(--paper);
+  color: var(--ink);
+  font-family: "Segoe UI", system-ui, sans-serif;
+  padding: 34px 40px 48px;
+  font-size: 14px;
+}
+.m-bureau .bu-num { font-family: Bahnschrift, "Segoe UI", sans-serif; font-variant-numeric: tabular-nums; font-weight: 600; letter-spacing: .005em; }
+.m-bureau .bu-mono { font-family: Consolas, "Cascadia Mono", ui-monospace, monospace; font-variant-numeric: tabular-nums; }
+.m-bureau .bu-label { font-size: 10px; letter-spacing: .17em; text-transform: uppercase; color: var(--ink-2); }
+
+/* masthead */
+.m-bureau .bu-mast { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; flex-wrap: wrap; padding-bottom: 12px; }
+.m-bureau .bu-mast h1 {
+  font-family: Bahnschrift, sans-serif; font-weight: 600;
+  font-size: 30px; line-height: 1; margin: 4px 0 0; letter-spacing: .005em;
+}
+.m-bureau .bu-mast .bu-sub { color: var(--ink-2); font-size: 12.5px; margin-top: 5px; }
+.m-bureau .bu-mastright { display: flex; align-items: center; gap: 14px; }
+.m-bureau .bu-sys { display: flex; align-items: center; gap: 8px; font-size: 11px; letter-spacing: .13em; text-transform: uppercase; }
+.m-bureau .bu-sys i { width: 9px; height: 9px; background: var(--ok); display: block; }
+.m-bureau .bu-rule-heavy { height: 2px; background: var(--ink); margin-bottom: 0; }
+
+/* summary band */
+.m-bureau .bu-band { display: grid; grid-template-columns: repeat(4, 1fr); border-bottom: 1px solid var(--rule); }
+.m-bureau .bu-stat { padding: 18px 22px 20px; border-right: 1px solid var(--rule-2); }
+.m-bureau .bu-stat:first-child { padding-left: 0; }
+.m-bureau .bu-stat:last-child { border-right: 0; }
+.m-bureau .bu-stat .bu-v { font-size: 42px; line-height: 1; margin-top: 10px; display: flex; align-items: baseline; gap: 6px; }
+.m-bureau .bu-stat .bu-v small { font-size: 15px; font-weight: 400; color: var(--ink-3); }
+.m-bureau .bu-stat.is-warn .bu-v { color: var(--warn); }
+
+/* body grid */
+.m-bureau .bu-body { display: grid; grid-template-columns: 1.55fr 1fr; gap: 0 40px; }
+.m-bureau .bu-col { display: flex; flex-direction: column; }
+.m-bureau .bu-col + .bu-col { border-left: 1px solid var(--rule-2); padding-left: 40px; margin-left: -1px; }
+
+.m-bureau .bu-sec { padding: 24px 0 6px; }
+.m-bureau .bu-sechead { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
+.m-bureau .bu-sechead h2 { font-size: 11px; letter-spacing: .17em; text-transform: uppercase; font-weight: 600; margin: 0; white-space: nowrap; }
+.m-bureau .bu-sechead::after { content: ""; flex: 1; height: 1px; background: var(--rule); }
+.m-bureau .bu-sechead .bu-n { font-size: 11px; color: var(--ink-3); font-family: Consolas, monospace; }
+
+/* readout: temperature */
+.m-bureau .bu-readout { display: grid; grid-template-columns: auto 1fr; align-items: end; gap: 28px; }
+.m-bureau .bu-readout .bu-big { font-size: 68px; line-height: .88; }
+.m-bureau .bu-readout .bu-big sup { font-size: 22px; vertical-align: top; color: var(--ink-2); margin-left: 2px; }
+.m-bureau .bu-meta { display: flex; gap: 26px; margin-top: 10px; }
+.m-bureau .bu-meta div { font-size: 12px; color: var(--ink-2); }
+.m-bureau .bu-meta b { display: block; color: var(--ink); font-size: 15px; font-weight: 600; margin-top: 2px; font-family: Consolas, monospace; }
+.m-bureau .bu-spark { width: 100%; height: auto; display: block; }
+
+/* tables */
+.m-bureau table { width: 100%; border-collapse: collapse; }
+.m-bureau th {
+  text-align: left; font-size: 10px; letter-spacing: .14em; text-transform: uppercase;
+  color: var(--ink-2); font-weight: 600; padding: 0 10px 7px 0; border-bottom: 1px solid var(--rule);
+}
+.m-bureau th.bu-r, .m-bureau td.bu-r { text-align: right; padding-right: 0; }
+.m-bureau td { padding: 9px 10px 9px 0; border-bottom: 1px solid var(--rule-2); font-size: 13.5px; }
+.m-bureau tr:last-child td { border-bottom: 0; }
+.m-bureau td.bu-id { font-family: Consolas, monospace; font-size: 12.5px; color: var(--ink-2); }
+.m-bureau .bu-stripe { width: 3px; padding: 0 13px 0 0; }
+.m-bureau .bu-stripe span { display: block; width: 3px; height: 22px; }
+.m-bureau .s-ok    { background: var(--ok); }
+.m-bureau .s-warn  { background: var(--warn); }
+.m-bureau .s-crit  { background: var(--crit); }
+.m-bureau .s-idle  { background: var(--rule); }
+
+.m-bureau .bu-chip {
+  display: inline-block; font-size: 10px; letter-spacing: .1em; text-transform: uppercase;
+  padding: 2px 7px; border: 1px solid currentColor; line-height: 1.5;
+}
+.m-bureau .c-ok { color: var(--ok); }
+.m-bureau .c-warn { color: var(--warn); }
+.m-bureau .c-crit { color: var(--crit); }
+.m-bureau .c-off { color: var(--ink-3); }
+
+/* alert list */
+.m-bureau .bu-alert { display: grid; grid-template-columns: 3px 54px 1fr; gap: 0 14px; padding: 11px 0; border-bottom: 1px solid var(--rule-2); align-items: start; }
+.m-bureau .bu-alert:last-of-type { border-bottom: 0; }
+.m-bureau .bu-alert time { font-family: Consolas, monospace; font-size: 12px; color: var(--ink-2); padding-top: 1px; }
+.m-bureau .bu-alert p { margin: 0; font-size: 13.5px; }
+.m-bureau .bu-alert span.bu-src { display: block; font-size: 11.5px; color: var(--ink-3); margin-top: 2px; font-family: Consolas, monospace; }
+.m-bureau .bu-alert i { display: block; width: 3px; align-self: stretch; min-height: 28px; }
+
+/* access rows */
+.m-bureau .bu-lock { display: flex; align-items: center; justify-content: space-between; padding: 11px 0; border-bottom: 1px solid var(--rule-2); }
+.m-bureau .bu-lock:last-child { border-bottom: 0; }
+.m-bureau .bu-lock .bu-ln { font-size: 13.5px; }
+.m-bureau .bu-lock .bu-ls { font-size: 11.5px; color: var(--ink-3); font-family: Consolas, monospace; }
+.m-bureau .bu-act {
+  font: inherit; font-size: 11px; letter-spacing: .1em; text-transform: uppercase;
+  background: transparent; color: var(--accent); border: 1px solid var(--accent);
+  padding: 5px 12px; cursor: pointer;
+}
+.m-bureau .bu-act:hover { background: var(--accent); color: var(--paper); }
+.m-bureau .bu-act:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* broadcast */
+.m-bureau .bu-cast { display: flex; align-items: center; gap: 14px; padding-top: 4px; }
+.m-bureau .bu-cast .bu-tk { flex: 1; }
+.m-bureau .bu-cast .bu-tk b { display: block; font-size: 14px; }
+.m-bureau .bu-bar { height: 3px; background: var(--rule); margin-top: 8px; position: relative; }
+.m-bureau .bu-bar::after { content: ""; position: absolute; inset: 0 62% 0 0; background: var(--accent); }
+
+@media (max-width: 1000px) {
+  .m-bureau { padding: 24px 20px 36px; }
+  .m-bureau .bu-body { grid-template-columns: 1fr; }
+  .m-bureau .bu-col + .bu-col { border-left: 0; padding-left: 0; margin-left: 0; border-top: 1px solid var(--rule); }
+  .m-bureau .bu-band { grid-template-columns: repeat(2, 1fr); }
+  .m-bureau .bu-stat { border-bottom: 1px solid var(--rule-2); }
+}
+
+/* ============================================================
+   DIRECTION B — "PANEL"
+   Industrial HMI. Dark, but matte graphite rather than navy —
+   flat fills, 1px seams, zero blur/glow/gradient. Monospace
+   throughout, everything tabular. Signal colour is rationed:
+   teal is the interface, green/amber/red mean only one thing.
+   ============================================================ */
+.m-panel {
+  --bg:     #16181A;
+  --panel:  #1E2124;
+  --panel-2:#24282B;
+  --seam:   #2E3338;
+  --fg:     #D8D5CC;
+  --fg-dim: #7C8288;
+  --teal:   #4E8C8A;
+  --ok:     #7FA86B;
+  --warn:   #D69A2F;
+  --crit:   #CC4436;
+
+  background: var(--bg);
+  color: var(--fg);
+  font-family: Consolas, "Cascadia Mono", ui-monospace, monospace;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  display: grid;
+  grid-template-columns: 54px 1fr;
+}
+.m-panel .pa-lab { font-size: 10px; letter-spacing: .16em; text-transform: uppercase; color: var(--fg-dim); }
+
+/* icon rail */
+.m-panel .pa-rail { background: var(--panel); border-right: 1px solid var(--seam); display: flex; flex-direction: column; align-items: center; padding: 12px 0; gap: 4px; }
+.m-panel .pa-rail button {
+  width: 38px; height: 38px; display: grid; place-items: center;
+  background: transparent; border: 1px solid transparent; color: var(--fg-dim); cursor: pointer;
+}
+.m-panel .pa-rail button:hover { color: var(--fg); background: var(--panel-2); }
+.m-panel .pa-rail button:focus-visible { outline: 2px solid var(--teal); outline-offset: -2px; }
+.m-panel .pa-rail button[aria-current="true"] { color: var(--teal); border-color: var(--seam); background: var(--bg); }
+.m-panel .pa-rail hr { width: 22px; border: 0; border-top: 1px solid var(--seam); margin: 8px 0; }
+
+.m-panel .pa-main { display: flex; flex-direction: column; min-width: 0; }
+
+/* system strip */
+.m-panel .pa-strip { display: flex; align-items: stretch; background: var(--panel); border-bottom: 1px solid var(--seam); }
+.m-panel .pa-strip .pa-cell { padding: 9px 16px; border-right: 1px solid var(--seam); display: flex; align-items: center; gap: 9px; white-space: nowrap; }
+.m-panel .pa-strip .pa-cell:last-child { border-right: 0; margin-left: auto; }
+.m-panel .pa-strip .pa-k { color: var(--fg-dim); font-size: 10px; letter-spacing: .14em; text-transform: uppercase; }
+.m-panel .pa-strip .pa-v { color: var(--fg); }
+.m-panel .pa-led { width: 8px; height: 8px; display: block; background: var(--ok); }
+.m-panel .pa-led.w { background: var(--warn); }
+.m-panel .pa-led.c { background: var(--crit); }
+.m-panel .pa-led.o { background: #454B4F; }
+
+/* grid of panels */
+.m-panel .pa-grid { display: grid; grid-template-columns: 1.35fr 1fr; gap: 1px; background: var(--seam); }
+.m-panel .pa-p { background: var(--bg); display: flex; flex-direction: column; min-width: 0; }
+.m-panel .pa-phead { display: flex; align-items: center; justify-content: space-between; gap: 12px; background: var(--panel); border-bottom: 1px solid var(--seam); padding: 7px 14px; }
+.m-panel .pa-phead h2 { margin: 0; font-size: 10px; font-weight: 700; letter-spacing: .18em; text-transform: uppercase; color: var(--fg); }
+.m-panel .pa-pbody { padding: 12px 14px 14px; }
+
+/* device matrix */
+.m-panel table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.m-panel th { text-align: left; font-size: 10px; letter-spacing: .14em; text-transform: uppercase; color: var(--fg-dim); font-weight: 400; padding: 0 12px 6px 0; border-bottom: 1px solid var(--seam); }
+.m-panel td { padding: 7px 12px 7px 0; border-bottom: 1px solid #202427; }
+.m-panel tr:last-child td { border-bottom: 0; }
+.m-panel td.pa-nm { color: var(--fg); }
+.m-panel td.pa-dim { color: var(--fg-dim); }
+.m-panel th.pa-r, .m-panel td.pa-r { text-align: right; padding-right: 0; }
+.m-panel tbody tr:hover td { background: var(--panel-2); }
+
+/* battery bar */
+.m-panel .pa-batt { display: inline-flex; align-items: center; gap: 7px; }
+.m-panel .pa-batt .pa-track { width: 42px; height: 7px; background: #2A2E31; display: block; }
+.m-panel .pa-batt .pa-fill { height: 7px; background: var(--ok); display: block; }
+.m-panel .pa-batt .pa-fill.w { background: var(--warn); }
+.m-panel .pa-batt .pa-fill.c { background: var(--crit); }
+
+/* alarm stack */
+.m-panel .pa-log { display: flex; flex-direction: column; }
+.m-panel .pa-line { display: grid; grid-template-columns: 20px 62px 1fr; gap: 10px; padding: 8px 0; border-bottom: 1px solid #202427; align-items: baseline; }
+.m-panel .pa-line:last-child { border-bottom: 0; }
+.m-panel .pa-sev { width: 18px; height: 18px; display: grid; place-items: center; font-size: 10px; font-weight: 700; color: var(--bg); }
+.m-panel .pa-sev.c { background: var(--crit); }
+.m-panel .pa-sev.w { background: var(--warn); }
+.m-panel .pa-sev.i { background: #4A5157; color: var(--fg); }
+.m-panel .pa-line time { color: var(--fg-dim); font-size: 12px; }
+.m-panel .pa-line p { margin: 0; font-size: 12.5px; }
+.m-panel .pa-line p span { color: var(--fg-dim); }
+
+/* gauges */
+.m-panel .pa-gauges { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; background: var(--seam); }
+.m-panel .pa-g { background: var(--bg); padding: 13px 14px 15px; }
+.m-panel .pa-g .pa-gv { font-size: 32px; line-height: 1; margin: 9px 0 3px; letter-spacing: -.01em; }
+.m-panel .pa-g .pa-gv small { font-size: 12px; color: var(--fg-dim); margin-left: 4px; letter-spacing: .04em; }
+.m-panel .pa-g.is-warn .pa-gv { color: var(--warn); }
+.m-panel .pa-ticks { display: flex; gap: 2px; margin-top: 10px; }
+.m-panel .pa-ticks i { flex: 1; height: 11px; background: #2A2E31; display: block; }
+.m-panel .pa-ticks i.on { background: var(--teal); }
+.m-panel .pa-ticks i.on.w { background: var(--warn); }
+.m-panel .pa-ticks i.lim { background: #3D4245; }
+.m-panel .pa-grange { display: flex; justify-content: space-between; margin-top: 6px; font-size: 10px; color: var(--fg-dim); }
+
+/* access toggles */
+.m-panel .pa-lock { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 9px 0; border-bottom: 1px solid #202427; }
+.m-panel .pa-lock:last-child { border-bottom: 0; }
+.m-panel .pa-lock .pa-ln { font-size: 12.5px; }
+.m-panel .pa-lock .pa-ls { font-size: 11px; color: var(--fg-dim); }
+.m-panel .pa-sw { width: 46px; height: 22px; background: #2A2E31; border: 1px solid var(--seam); position: relative; cursor: pointer; padding: 0; }
+.m-panel .pa-sw::after { content: ""; position: absolute; top: 2px; left: 2px; width: 18px; height: 16px; background: var(--fg-dim); transition: transform .14s, background .14s; }
+.m-panel .pa-sw[aria-pressed="true"] { background: #2D3A34; }
+.m-panel .pa-sw[aria-pressed="true"]::after { transform: translateX(22px); background: var(--ok); }
+.m-panel .pa-sw:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
+
+.m-panel .pa-bottom { display: grid; grid-template-columns: 1.35fr 1fr; gap: 1px; background: var(--seam); border-top: 1px solid var(--seam); }
+
+@media (max-width: 1000px) {
+  .m-panel { grid-template-columns: 46px 1fr; }
+  .m-panel .pa-grid, .m-panel .pa-bottom { grid-template-columns: 1fr; }
+  .m-panel .pa-gauges { grid-template-columns: 1fr; }
+}
+
+/* ============================================================
+   DIRECTION C — "PLAN"
+   Spatial IA: the house is the navigation. Sensors are pinned
+   where they physically are, so "412 PPM in the garage" is a
+   place before it is a number. Quiet blue-grey drafting palette,
+   light-weight numerals, mono only for annotation.
+   ============================================================ */
+.m-plan {
+  --bg:     #E6E9EA;
+  --card:   #F3F5F5;
+  --ink:    #1F2933;
+  --ink-2:  #5A6672;
+  --ink-3:  #8D98A2;
+  --line:   #B6C0C6;
+  --line-2: #D3DADD;
+  --accent: #33406E;
+  --ok:     #2F7A57;
+  --warn:   #B27714;
+  --crit:   #AE3B2E;
+
+  background: var(--bg);
+  color: var(--ink);
+  font-family: "Segoe UI", system-ui, sans-serif;
+  padding: 28px 32px 34px;
+  font-size: 14px;
+}
+.m-plan .pl-mono { font-family: Consolas, "Cascadia Mono", monospace; font-variant-numeric: tabular-nums; }
+.m-plan .pl-lab { font-size: 10px; letter-spacing: .17em; text-transform: uppercase; color: var(--ink-3); font-family: Consolas, monospace; }
+
+.m-plan .pl-top { display: flex; align-items: baseline; justify-content: space-between; gap: 20px; flex-wrap: wrap; margin-bottom: 22px; }
+.m-plan .pl-top h1 { margin: 0; font-size: 24px; font-weight: 400; letter-spacing: .01em; }
+.m-plan .pl-top h1 b { font-weight: 600; }
+.m-plan .pl-crumbs { display: flex; gap: 8px; align-items: center; }
+.m-plan .pl-crumbs button {
+  font: inherit; font-size: 12px; background: transparent; color: var(--ink-2);
+  border: 1px solid transparent; border-radius: 999px; padding: 5px 13px; cursor: pointer;
+}
+.m-plan .pl-crumbs button:hover { border-color: var(--line); }
+.m-plan .pl-crumbs button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.m-plan .pl-crumbs button[aria-current="true"] { background: var(--accent); color: #F3F5F5; border-color: var(--accent); }
+
+.m-plan .pl-wrap { display: grid; grid-template-columns: 1.5fr 1fr; gap: 22px; align-items: start; }
+.m-plan .pl-left { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+
+/* plan surface */
+.m-plan .pl-stage { background: var(--card); border: 1px solid var(--line-2); border-radius: 4px; padding: 14px 16px 10px; }
+.m-plan .pl-stagehead { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+.m-plan .pl-svg { width: 100%; height: auto; display: block; }
+.m-plan .pl-legend { display: flex; gap: 18px; flex-wrap: wrap; border-top: 1px solid var(--line-2); margin-top: 8px; padding-top: 10px; }
+.m-plan .pl-legend span { display: flex; align-items: center; gap: 7px; font-size: 11.5px; color: var(--ink-2); }
+.m-plan .pl-legend i { width: 9px; height: 9px; border-radius: 50%; display: block; }
+
+/* right stack */
+.m-plan .pl-stack { display: flex; flex-direction: column; gap: 14px; }
+.m-plan .pl-card { background: var(--card); border: 1px solid var(--line-2); border-radius: 4px; padding: 15px 17px 17px; }
+.m-plan .pl-card > header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.m-plan .pl-card h2 { margin: 0; font-size: 13px; font-weight: 600; letter-spacing: .02em; }
+
+/* room detail */
+.m-plan .pl-room { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px 18px; }
+.m-plan .pl-metric .pl-mv { font-size: 34px; font-weight: 300; line-height: 1; margin-top: 6px; letter-spacing: -.01em; }
+.m-plan .pl-metric .pl-mv sup { font-size: 14px; font-weight: 400; vertical-align: top; color: var(--ink-3); margin-left: 2px; }
+.m-plan .pl-metric.is-warn .pl-mv { color: var(--warn); }
+.m-plan .pl-metric .pl-delta { font-size: 11.5px; color: var(--ink-3); margin-top: 4px; }
+
+/* events timeline */
+.m-plan .pl-ev { display: grid; grid-template-columns: 9px 46px 1fr; gap: 11px; align-items: start; padding: 9px 0; border-bottom: 1px solid var(--line-2); }
+.m-plan .pl-ev:last-child { border-bottom: 0; padding-bottom: 0; }
+.m-plan .pl-ev i { width: 9px; height: 9px; border-radius: 50%; margin-top: 5px; }
+.m-plan .pl-ev time { font-size: 11.5px; color: var(--ink-3); font-family: Consolas, monospace; padding-top: 2px; }
+.m-plan .pl-ev p { margin: 0; font-size: 13px; }
+.m-plan .pl-ev p em { font-style: normal; color: var(--ink-2); }
+
+.m-plan .d-ok { background: var(--ok); }
+.m-plan .d-warn { background: var(--warn); }
+.m-plan .d-crit { background: var(--crit); }
+.m-plan .d-info { background: var(--ink-3); }
+
+/* quick actions */
+.m-plan .pl-acts { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+.m-plan .pl-acts button {
+  font: inherit; font-size: 12.5px; text-align: left;
+  background: transparent; border: 1px solid var(--line); border-radius: 3px;
+  padding: 10px 12px; color: var(--ink); cursor: pointer; line-height: 1.3;
+}
+.m-plan .pl-acts button:hover { border-color: var(--accent); color: var(--accent); }
+.m-plan .pl-acts button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.m-plan .pl-acts button small { display: block; color: var(--ink-3); font-size: 11px; margin-top: 2px; }
+
+/* strip along the bottom */
+.m-plan .pl-strip { background: var(--card); border: 1px solid var(--line-2); border-radius: 4px; padding: 14px 17px 16px; }
+.m-plan .pl-devrow { display: flex; gap: 0; flex-wrap: wrap; margin-top: 10px; }
+.m-plan .pl-dev { display: flex; align-items: center; gap: 9px; padding: 6px 20px 6px 0; margin-right: 20px; border-right: 1px solid var(--line-2); }
+.m-plan .pl-dev:last-child { border-right: 0; }
+.m-plan .pl-dev i { width: 8px; height: 8px; border-radius: 50%; }
+.m-plan .pl-dev b { font-weight: 500; font-size: 12.5px; }
+.m-plan .pl-dev span { font-size: 11.5px; color: var(--ink-3); font-family: Consolas, monospace; }
+
+/* plan svg internals */
+.m-plan .wall { stroke: var(--ink); stroke-width: 4; fill: none; stroke-linecap: square; }
+.m-plan .wall-i { stroke: var(--ink); stroke-width: 2.5; fill: none; }
+.m-plan .fillroom { fill: #E9EDEE; }
+.m-plan .fillroom.sel { fill: #DDE3EC; }
+.m-plan .door { stroke: var(--line); stroke-width: 2; fill: none; }
+.m-plan .rlabel { font-family: Consolas, monospace; font-size: 10px; letter-spacing: .16em; fill: var(--ink-3); text-transform: uppercase; }
+.m-plan .leader { stroke: var(--line); stroke-width: 1; }
+.m-plan .tag { fill: var(--card); stroke: var(--line); stroke-width: 1; }
+.m-plan .tag.warn { stroke: var(--warn); }
+.m-plan .tagv { font-family: Consolas, monospace; font-size: 11px; fill: var(--ink); }
+.m-plan .tagv.warn { fill: var(--warn); }
+.m-plan .pin { stroke: var(--card); stroke-width: 2; }
+
+@media (max-width: 1000px) {
+  .m-plan { padding: 20px 18px 26px; }
+  .m-plan .pl-wrap { grid-template-columns: 1fr; }
+  .m-plan .pl-room { grid-template-columns: repeat(2, 1fr); }
+}
+
+/* ============================================================
+   DIRECTION D — "GLASS"
+   Apple Liquid Glass, read as a material rather than an effect.
+   The depth comes from four things done properly:
+     1. something worth refracting behind the panels (soft, very
+        low-saturation colour fields — never neon)
+     2. backdrop blur PLUS saturation lift, so glass enriches
+        colour behind it instead of just fogging it
+     3. a specular edge — bright inset highlight along the top,
+        faint dark inset along the bottom
+     4. a three-stop shadow stack: contact, ambient, cast
+   Concentric radii throughout: inner radius = outer − padding,
+   so nested corners stay parallel the way hardware does.
+   ============================================================ */
+.m-glass {
+  --ink:     #23272B;
+  --ink-2:   #6B727A;
+  --ink-3:   #979DA5;
+  --accent:  #58718F;   /* dusty blue, desaturated on purpose */
+  --ok:      #4E8A6B;
+  --warn:    #B8873C;
+  --crit:    #B5544C;
+
+  --glass:      rgba(255,255,255,.53);
+  --glass-2:    rgba(255,255,255,.62);
+  --glass-edge: rgba(255,255,255,.72);
+  --hairline:   rgba(35,39,43,.07);
+
+  --lift: 0 1px 2px rgba(24,29,38,.05),
+          0 8px 20px rgba(24,29,38,.06),
+          0 24px 56px rgba(24,29,38,.05);
+  /* light catches the top-left bevel, shade collects bottom-right */
+  --spec: inset 1px 1px 0 rgba(255,255,255,.95),
+          inset -1px -1px 0 rgba(24,29,38,.055);
+
+  position: relative;
+  isolation: isolate;
+  /* A real scroll container, so the toolbar has content to float over.
+     Glass only reads as glass when something moves behind it. */
+  height: 800px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  background: #E4E8EC;
+  color: var(--ink);
+  font-family: "SF Pro Display", -apple-system, BlinkMacSystemFont,
+               "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif;
+  font-size: 14px;
+  padding: 22px 30px 34px;
+  min-height: 760px;
+}
+
+/* --- the wallpaper the glass refracts ------------------------
+   Six fields spread down the whole page, not just the corners —
+   a pane with nothing behind it cannot look like glass, it just
+   looks like a white box. Muted, but present enough to read. */
+/* Static, and painted as one flat layer. Six animated children under a
+   container-level blur(64px) meant Chrome re-blurred the entire backdrop
+   every frame — and since every pane's backdrop-filter samples that
+   backdrop, the cost was paid over and over. The drift was never doing
+   enough to justify any of it. */
+.m-glass .gl-bg {
+  position: absolute; inset: 0; z-index: 0; pointer-events: none;
+  opacity: .62;
+  background:
+    radial-gradient(46% 30% at  8%  2%, #A6B7C8 0%, rgba(166,183,200,0) 72%),
+    radial-gradient(42% 26% at 96%  6%, #D6CCBD 0%, rgba(214,204,189,0) 72%),
+    radial-gradient(48% 28% at 40% 38%, #B3C2B7 0%, rgba(179,194,183,0) 72%),
+    radial-gradient(38% 26% at 88% 52%, #BDB6C2 0%, rgba(189,182,194,0) 72%),
+    radial-gradient(44% 28% at  6% 88%, #CCBEB9 0%, rgba(204,190,185,0) 72%),
+    radial-gradient(46% 28% at 78% 98%, #A5B5C0 0%, rgba(165,181,192,0) 72%);
+}
+
+.m-glass .gl-defs { position: absolute; width: 0; height: 0; overflow: hidden; }
+.m-glass .gl-page { position: relative; z-index: 1; display: flex; flex-direction: column; gap: 18px; }
+
+/* --- the material ------------------------------------------- */
+.m-glass .gl-pane {
+  background: var(--glass);
+  -webkit-backdrop-filter: blur(16px) saturate(150%);
+  backdrop-filter: blur(16px) saturate(150%);
+  border: 1px solid var(--glass-edge);
+  border-radius: 26px;
+  box-shadow: var(--lift), var(--spec);
+  position: relative;
+  overflow: hidden;
+  transition: background .45s cubic-bezier(.2,.7,.2,1), border-color .45s cubic-bezier(.2,.7,.2,1);
+}
+/* Sheen from a FIXED light source, up and to the left — the same one for
+   every pane on the page, because that is how a lit room works. It does
+   not follow the pointer. */
+.m-glass .gl-pane::before {
+  content: "";
+  position: absolute; inset: 0;
+  background: linear-gradient(158deg,
+              rgba(255,255,255,.58) 0%,
+              rgba(255,255,255,.14) 30%,
+              rgba(255,255,255,0)   58%);
+  pointer-events: none;
+}
+/* Edge refraction. The real tell of glass is that the rim bends the
+   backdrop differently from the middle — a lens is thickest at its
+   edge. This is a ring-shaped band with its own, stronger filter,
+   masked to the perimeter. Static: it is a property of the material,
+   not a response to input. */
+.m-glass .gl-pane::after {
+  content: "";
+  position: absolute; inset: 0;
+  border-radius: inherit;
+  /* Plain paint, not a second backdrop-filter. A filtered rim on every
+     pane doubled the compositing cost for an effect this approximates
+     at a fraction of the price. Corners read thickest because the two
+     ramps overlap there. */
+  background:
+    linear-gradient(to right,  rgba(255,255,255,.5) 0, rgba(255,255,255,0) 22px,
+                    rgba(255,255,255,0) calc(100% - 22px), rgba(255,255,255,.5) 100%),
+    linear-gradient(to bottom, rgba(255,255,255,.42) 0, rgba(255,255,255,0) 22px,
+                    rgba(255,255,255,0) calc(100% - 22px), rgba(255,255,255,.28) 100%);
+  pointer-events: none;
+}
+.m-glass .gl-pane > * { position: relative; }
+
+.m-glass .gl-lab {
+  font-size: 11px; font-weight: 600; letter-spacing: .075em;
+  text-transform: uppercase; color: var(--ink-3);
+}
+.m-glass .gl-num { font-variant-numeric: tabular-nums; font-weight: 300; letter-spacing: -.03em; }
+
+/* --- floating toolbar --------------------------------------- */
+.m-glass .gl-bar {
+  display: flex; align-items: center; gap: 16px;
+  padding: 9px 10px 9px 20px;
+  border-radius: 999px;
+  position: sticky;
+  top: 0;
+  z-index: 5;
+}
+.m-glass .gl-bar .gl-home { font-size: 15px; font-weight: 600; letter-spacing: -.01em; }
+.m-glass .gl-seg {
+  display: flex; gap: 2px; margin: 0 auto;
+  background: rgba(96,106,120,.11);
+  border-radius: 999px; padding: 2px;
+}
+.m-glass .gl-seg button {
+  font: inherit; font-size: 13px; font-weight: 500; color: var(--ink-2);
+  background: transparent; border: 0; border-radius: 999px;
+  padding: 6px 16px; cursor: pointer;
+  transition: color .18s, background .18s, box-shadow .18s;
+}
+.m-glass .gl-seg button:hover { color: var(--ink); }
+.m-glass .gl-seg button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.m-glass .gl-seg button[aria-current="true"] {
+  background: #fff; color: var(--ink);
+  box-shadow: 0 1px 2px rgba(24,29,38,.10), 0 3px 8px rgba(24,29,38,.06);
+}
+.m-glass .gl-pill {
+  display: inline-flex; align-items: center; gap: 7px;
+  font-size: 12.5px; font-weight: 500; color: var(--ink-2);
+  background: rgba(255,255,255,.6); border: 1px solid rgba(255,255,255,.8);
+  border-radius: 999px; padding: 6px 14px;
+  box-shadow: 0 1px 2px rgba(24,29,38,.05);
+}
+.m-glass .gl-pill i { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); }
+.m-glass .gl-pill.is-warn i { background: var(--warn); }
+
+/* --- large title -------------------------------------------- */
+.m-glass .gl-title { padding: 12px 6px 2px; }
+.m-glass .gl-title h1 { margin: 0; font-size: 34px; font-weight: 600; letter-spacing: -.024em; line-height: 1.1; }
+.m-glass .gl-title p { margin: 5px 0 0; color: var(--ink-2); font-size: 14.5px; }
+
+/* --- attention card ----------------------------------------- */
+.m-glass .gl-hero { display: grid; grid-template-columns: 1fr auto; gap: 26px; align-items: center; padding: 22px; }
+.m-glass .gl-hero h2 { margin: 0 0 6px; font-size: 21px; font-weight: 600; letter-spacing: -.018em; }
+.m-glass .gl-hero p { margin: 0 0 16px; color: var(--ink-2); font-size: 14px; max-width: 52ch; }
+.m-glass .gl-hero .gl-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--warn); display: inline-block; margin-right: 9px; vertical-align: middle; }
+.m-glass .gl-btns { display: flex; gap: 9px; flex-wrap: wrap; }
+.m-glass .gl-btn {
+  font: inherit; font-size: 13.5px; font-weight: 500;
+  border-radius: 999px; padding: 9px 18px; cursor: pointer;
+  border: 1px solid transparent; transition: transform .16s, box-shadow .16s, background .16s;
+}
+.m-glass .gl-btn:active { transform: scale(.975); }
+.m-glass .gl-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.m-glass .gl-btn.is-primary { background: var(--accent); color: #fff; box-shadow: 0 1px 2px rgba(24,29,38,.12), 0 6px 16px rgba(88,113,143,.28); }
+.m-glass .gl-btn.is-primary:hover { background: #4C6480; }
+.m-glass .gl-btn.is-ghost { background: rgba(255,255,255,.62); border-color: rgba(255,255,255,.85); color: var(--ink); box-shadow: 0 1px 2px rgba(24,29,38,.05); }
+.m-glass .gl-btn.is-ghost:hover { background: rgba(255,255,255,.85); }
+
+/* inner tile — nested glass, concentric radius (26 − 12 = 14) */
+.m-glass .gl-inner {
+  background: var(--glass-2);
+  border: 1px solid rgba(255,255,255,.85);
+  border-radius: 14px;
+  padding: 16px 20px 12px;
+  box-shadow: 0 1px 2px rgba(24,29,38,.05), inset 0 1px 0 rgba(255,255,255,.9);
+  min-width: 226px;
+}
+.m-glass .gl-inner .gl-v { font-size: 44px; line-height: 1; margin: 8px 0 2px; }
+.m-glass .gl-inner .gl-v small { font-size: 15px; font-weight: 400; color: var(--ink-3); margin-left: 5px; letter-spacing: 0; }
+.m-glass .gl-inner.is-warn .gl-v { color: var(--warn); }
+
+/* --- stat strip --------------------------------------------- */
+.m-glass .gl-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+.m-glass .gl-stat { padding: 16px 18px 17px; }
+.m-glass .gl-stat .gl-v { font-size: 32px; line-height: 1; margin-top: 8px; }
+.m-glass .gl-stat .gl-v small { font-size: 13px; font-weight: 400; color: var(--ink-3); margin-left: 4px; letter-spacing: 0; }
+.m-glass .gl-stat.is-warn .gl-v { color: var(--warn); }
+
+/* --- bento -------------------------------------------------- */
+.m-glass .gl-bento {
+  display: grid; gap: 14px;
+  grid-template-columns: repeat(3, 1fr);
+  grid-template-areas:
+    "climate air    alerts"
+    "doors   cast   alerts"
+    "devices devices devices";
+}
+.m-glass .gl-a-climate { grid-area: climate; }
+.m-glass .gl-a-air     { grid-area: air; }
+.m-glass .gl-a-alerts  { grid-area: alerts; }
+.m-glass .gl-a-doors   { grid-area: doors; }
+.m-glass .gl-a-cast    { grid-area: cast; }
+.m-glass .gl-a-devices { grid-area: devices; }
+
+.m-glass .gl-card { padding: 18px 20px 20px; display: flex; flex-direction: column; }
+.m-glass .gl-card > header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+.m-glass .gl-card h3 { margin: 0; font-size: 15px; font-weight: 600; letter-spacing: -.012em; }
+
+.m-glass .gl-big { font-size: 52px; line-height: 1; }
+.m-glass .gl-big sup { font-size: 19px; font-weight: 400; vertical-align: top; color: var(--ink-3); margin-left: 3px; letter-spacing: 0; }
+.m-glass .gl-sub { color: var(--ink-2); font-size: 13px; margin: 8px 0 0; }
+/* height:auto + uniform scaling — stretching the viewBox turns the
+   endpoint dot into an ellipse and leaves the area fill short. */
+.m-glass .gl-spark { width: 100%; height: auto; display: block; margin-top: auto; padding-top: 12px; }
+
+/* gas meters */
+.m-glass .gl-gas { display: flex; flex-direction: column; gap: 15px; }
+.m-glass .gl-gas .gl-row { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 7px; }
+.m-glass .gl-gas .gl-nm { font-size: 13.5px; }
+.m-glass .gl-gas .gl-pv { font-size: 15px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.m-glass .gl-gas .gl-pv.is-warn { color: var(--warn); }
+.m-glass .gl-track { height: 8px; border-radius: 999px; background: rgba(96,106,120,.14); position: relative; }
+.m-glass .gl-track i { position: absolute; inset: 0 auto 0 0; border-radius: 999px; background: var(--ok); box-shadow: inset 0 1px 0 rgba(255,255,255,.4); }
+.m-glass .gl-track i.w { background: var(--warn); }
+.m-glass .gl-track .gl-lim { position: absolute; top: -3px; bottom: -3px; width: 2px; border-radius: 2px; background: rgba(35,39,43,.28); }
+
+/* alerts */
+.m-glass .gl-alerts { display: flex; flex-direction: column; }
+.m-glass .gl-al { display: grid; grid-template-columns: 9px 1fr; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--hairline); align-items: start; }
+.m-glass .gl-al:last-child { border-bottom: 0; padding-bottom: 0; }
+.m-glass .gl-al i { width: 9px; height: 9px; border-radius: 50%; margin-top: 6px; }
+.m-glass .gl-al p { margin: 0; font-size: 13.5px; line-height: 1.4; }
+.m-glass .gl-al span { display: block; color: var(--ink-3); font-size: 12px; margin-top: 3px; }
+.m-glass .a-ok { background: var(--ok); }
+.m-glass .a-warn { background: var(--warn); }
+.m-glass .a-crit { background: var(--crit); }
+.m-glass .a-info { background: rgba(96,106,120,.35); }
+
+/* doors */
+.m-glass .gl-door { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 11px 0; border-bottom: 1px solid var(--hairline); }
+.m-glass .gl-door:last-child { border-bottom: 0; padding-bottom: 0; }
+.m-glass .gl-door .gl-dn { font-size: 14px; }
+.m-glass .gl-door .gl-ds { font-size: 12px; color: var(--ink-3); margin-top: 2px; }
+.m-glass .gl-door .gl-ds.is-warn { color: var(--warn); }
+.m-glass .gl-sw {
+  width: 51px; height: 31px; flex: none; border-radius: 999px; border: 0; padding: 0; cursor: pointer;
+  background: rgba(96,106,120,.2); position: relative;
+  transition: background .22s cubic-bezier(.2,.7,.2,1);
+  box-shadow: inset 0 1px 2px rgba(24,29,38,.08);
+}
+.m-glass .gl-sw::after {
+  content: ""; position: absolute; top: 2px; left: 2px; width: 27px; height: 27px;
+  border-radius: 50%; background: #fff;
+  box-shadow: 0 1px 2px rgba(24,29,38,.16), 0 3px 8px rgba(24,29,38,.12);
+  transition: transform .22s cubic-bezier(.2,.7,.2,1);
+}
+.m-glass .gl-sw[aria-pressed="true"] { background: var(--ok); }
+.m-glass .gl-sw[aria-pressed="true"]::after { transform: translateX(20px); }
+.m-glass .gl-sw:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+
+/* broadcast */
+.m-glass .gl-cast { display: flex; align-items: center; gap: 14px; }
+.m-glass .gl-art {
+  width: 54px; height: 54px; flex: none; border-radius: 13px;
+  background: linear-gradient(150deg, #A9B9CB 0%, #8FA2B8 100%);
+  display: grid; place-items: center; color: #fff;
+  box-shadow: 0 2px 6px rgba(24,29,38,.14), inset 0 1px 0 rgba(255,255,255,.4);
+}
+.m-glass .gl-cast .gl-tk b { display: block; font-size: 14px; font-weight: 600; letter-spacing: -.01em; }
+.m-glass .gl-cast .gl-tk span { font-size: 12.5px; color: var(--ink-3); }
+.m-glass .gl-scrub { height: 5px; border-radius: 999px; background: rgba(96,106,120,.16); margin-top: 14px; position: relative; }
+.m-glass .gl-scrub i { position: absolute; inset: 0 auto 0 0; width: 38%; border-radius: 999px; background: var(--accent); }
+.m-glass .gl-scrub b { position: absolute; top: -4px; left: 38%; width: 13px; height: 13px; margin-left: -6px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(24,29,38,.24); }
+.m-glass .gl-times { display: flex; justify-content: space-between; margin-top: 7px; font-size: 11.5px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+
+/* device roll-call with battery rings */
+.m-glass .gl-devs { display: grid; grid-template-columns: repeat(7, 1fr); gap: 12px; }
+.m-glass .gl-dev { display: flex; align-items: center; gap: 11px; min-width: 0; }
+.m-glass .gl-ring { width: 34px; height: 34px; flex: none; }
+.m-glass .gl-ring circle { fill: none; stroke-width: 3.5; stroke-linecap: round; }
+.m-glass .gl-ring .gl-tr { stroke: rgba(96,106,120,.16); }
+.m-glass .gl-dev .gl-dt { min-width: 0; }
+.m-glass .gl-dev b { display: block; font-size: 12.5px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.m-glass .gl-dev span { font-size: 11.5px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+
+@media (max-width: 1100px) {
+  .m-glass .gl-devs { grid-template-columns: repeat(4, 1fr); }
+}
+@media (max-width: 900px) {
+  .m-glass { padding: 16px 16px 26px; }
+  .m-glass .gl-stats { grid-template-columns: repeat(2, 1fr); }
+  .m-glass .gl-bento { grid-template-columns: 1fr; grid-template-areas: "climate" "air" "alerts" "doors" "cast" "devices"; }
+  .m-glass .gl-hero { grid-template-columns: 1fr; }
+  .m-glass .gl-devs { grid-template-columns: repeat(2, 1fr); }
+  .m-glass .gl-seg { margin: 0; }
+}
+
+/* Graceful fallback where backdrop-filter is unavailable */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .m-glass .gl-pane { background: rgba(255,255,255,.86); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; }
+}
+</style>
+</head>
+<body>
+<div class="shell">
+
+  <header class="shell-head">
+    <h1>Arduino888 Smart Home — three redesign directions</h1>
+    <p>Static mockups only. Nothing here is wired to the app or the API; the numbers are representative sample readings. Pick a direction (or parts of several) and it gets built into the real dashboard afterwards.</p>
+  </header>
+
+  <div class="switcher" role="tablist" aria-label="Design directions">
+    <button role="tab" aria-selected="true"  aria-controls="m1" id="t1">A — Bureau</button>
+    <button role="tab" aria-selected="false" aria-controls="m2" id="t2">B — Panel</button>
+    <button role="tab" aria-selected="false" aria-controls="m3" id="t3">C — Plan</button>
+    <button role="tab" aria-selected="false" aria-controls="m4" id="t4">D — Glass</button>
+    <button role="tab" aria-selected="false" aria-controls="all" id="tall">Compare all</button>
+  </div>
+
+  <!-- ========================= A — BUREAU ========================= -->
+  <section class="mock is-on" id="m1" role="tabpanel" aria-labelledby="t1">
+    <div class="spec">
+      <div>
+        <p class="spec-kicker">Direction A</p>
+        <h2>Bureau</h2>
+        <p>Treats the dashboard as a printed instrument sheet. Hairline rules do all the containment, so there are no cards, shadows or rounded corners to date the design. Readings are the largest thing on the page; chrome is nearly invisible.</p>
+      </div>
+      <dl>
+        <dt>Palette</dt>
+        <dd>
+          <div class="sw"><span style="background:#E9EBE7"></span><span style="background:#14171A"></span><span style="background:#1B2FD8"></span><span style="background:#2E7D5B"></span><span style="background:#A8760F"></span><span style="background:#B3352B"></span></div>
+        </dd>
+        <dt>Type</dt>
+        <dd>Bahnschrift (condensed) for figures · Segoe UI body · Consolas for IDs and timestamps</dd>
+      </dl>
+      <dl>
+        <dt>Structure</dt>
+        <dd>Summary band across the top, then a wide telemetry column beside a narrow events column.</dd>
+        <dt>Best if</dt>
+        <dd>You want it to read as serious lab equipment and photograph well in a report or poster.</dd>
+      </dl>
+    </div>
+
+    <div class="frame">
+      <div class="m-bureau">
+        <div class="bu-mast">
+          <div>
+            <p class="bu-label">Arduino 888 · Embedded Systems</p>
+            <h1>Smart Home Control</h1>
+            <p class="bu-sub">Residence node A · 7 devices enrolled · polling every 5 s</p>
+          </div>
+          <div class="bu-mastright">
+            <div class="bu-sys"><i></i> All systems operational</div>
+            <div class="bu-mono" style="font-size:12px;color:var(--ink-2)">2026-07-30 09:47:12</div>
+          </div>
+        </div>
+        <div class="bu-rule-heavy"></div>
+
+        <div class="bu-band">
+          <div class="bu-stat">
+            <p class="bu-label">Devices online</p>
+            <div class="bu-v bu-num">6<small>/ 7</small></div>
+          </div>
+          <div class="bu-stat">
+            <p class="bu-label">Sensors reporting</p>
+            <div class="bu-v bu-num">4<small>/ 4</small></div>
+          </div>
+          <div class="bu-stat is-warn">
+            <p class="bu-label">Open alerts</p>
+            <div class="bu-v bu-num">2<small>1 critical</small></div>
+          </div>
+          <div class="bu-stat">
+            <p class="bu-label">Uptime</p>
+            <div class="bu-v bu-num">14<small>d 06 h</small></div>
+          </div>
+        </div>
+
+        <div class="bu-body">
+          <!-- LEFT COLUMN -->
+          <div class="bu-col">
+            <section class="bu-sec">
+              <div class="bu-sechead"><h2>Temperature</h2><span class="bu-n">ts_living · living room</span></div>
+              <div class="bu-readout">
+                <div>
+                  <div class="bu-big bu-num">22.4<sup>°C</sup></div>
+                  <div class="bu-meta">
+                    <div>Humidity <b>48 %</b></div>
+                    <div>24 h low <b>19.8</b></div>
+                    <div>24 h high <b>25.1</b></div>
+                  </div>
+                </div>
+                <svg class="bu-spark" viewBox="0 0 320 74" role="img" aria-label="Temperature over the last 24 hours, ranging 19.8 to 25.1 degrees">
+                  <line x1="0" y1="16" x2="320" y2="16" stroke="#D9DBD5" stroke-width="1"/>
+                  <line x1="0" y1="66" x2="320" y2="66" stroke="#D9DBD5" stroke-width="1"/>
+                  <polyline fill="none" stroke="#1B2FD8" stroke-width="1.5"
+                    points="0,64 22,59 44,68 66,54 88,44 110,39 132,29 154,34 176,24 198,20 220,27 242,17 264,22 286,14 308,20 316,17"/>
+                  <circle cx="316" cy="17" r="3" fill="#1B2FD8"/>
+                </svg>
+              </div>
+            </section>
+
+            <section class="bu-sec">
+              <div class="bu-sechead"><h2>Gas sensors</h2><span class="bu-n">threshold 350 ppm</span></div>
+              <table>
+                <thead>
+                  <tr><th class="bu-stripe"></th><th>Location</th><th>Sensor</th><th class="bu-r">Reading</th><th class="bu-r">Status</th></tr>
+                </thead>
+                <tbody>
+                  <tr><td class="bu-stripe"><span class="s-ok"></span></td><td>Kitchen</td><td class="bu-id">gs_kitchen</td><td class="bu-r bu-mono">118 ppm</td><td class="bu-r"><span class="bu-chip c-ok">Safe</span></td></tr>
+                  <tr><td class="bu-stripe"><span class="s-warn"></span></td><td>Garage</td><td class="bu-id">gs_garage</td><td class="bu-r bu-mono">412 ppm</td><td class="bu-r"><span class="bu-chip c-warn">Elevated</span></td></tr>
+                  <tr><td class="bu-stripe"><span class="s-ok"></span></td><td>Utility room</td><td class="bu-id">gs_utility</td><td class="bu-r bu-mono">96 ppm</td><td class="bu-r"><span class="bu-chip c-ok">Safe</span></td></tr>
+                </tbody>
+              </table>
+            </section>
+
+            <section class="bu-sec">
+              <div class="bu-sechead"><h2>Devices</h2><span class="bu-n">7 enrolled</span></div>
+              <table>
+                <thead>
+                  <tr><th class="bu-stripe"></th><th>Device</th><th>ID</th><th class="bu-r">Battery</th><th class="bu-r">Last seen</th></tr>
+                </thead>
+                <tbody>
+                  <tr><td class="bu-stripe"><span class="s-ok"></span></td><td>Doorbell</td><td class="bu-id">db_01</td><td class="bu-r bu-mono">84 %</td><td class="bu-r bu-mono">2 s ago</td></tr>
+                  <tr><td class="bu-stripe"><span class="s-ok"></span></td><td>Hub display</td><td class="bu-id">hub_01</td><td class="bu-r bu-mono">mains</td><td class="bu-r bu-mono">1 s ago</td></tr>
+                  <tr><td class="bu-stripe"><span class="s-ok"></span></td><td>Front door lock</td><td class="bu-id">dl_front</td><td class="bu-r bu-mono">71 %</td><td class="bu-r bu-mono">4 s ago</td></tr>
+                  <tr><td class="bu-stripe"><span class="s-ok"></span></td><td>Back door lock</td><td class="bu-id">dl_back</td><td class="bu-r bu-mono">63 %</td><td class="bu-r bu-mono">6 s ago</td></tr>
+                  <tr><td class="bu-stripe"><span class="s-warn"></span></td><td>Utility gas sensor</td><td class="bu-id">gs_utility</td><td class="bu-r bu-mono">18 %</td><td class="bu-r bu-mono">11 s ago</td></tr>
+                  <tr><td class="bu-stripe"><span class="s-idle"></span></td><td>Garden repeater</td><td class="bu-id">rp_garden</td><td class="bu-r bu-mono">—</td><td class="bu-r bu-mono">27 min ago</td></tr>
+                </tbody>
+              </table>
+            </section>
+          </div>
+
+          <!-- RIGHT COLUMN -->
+          <div class="bu-col">
+            <section class="bu-sec">
+              <div class="bu-sechead"><h2>Alerts</h2><span class="bu-n">last 24 h</span></div>
+              <div class="bu-alert"><i class="s-crit"></i><time>09:42</time><p>Gas above threshold<span class="bu-src">gs_garage · 412 ppm · limit 350</span></p></div>
+              <div class="bu-alert"><i class="s-warn"></i><time>09:15</time><p>Back door left unlocked 12 min<span class="bu-src">dl_back</span></p></div>
+              <div class="bu-alert"><i class="s-idle"></i><time>08:50</time><p>Entry granted to Nat<span class="bu-src">dl_front · card ADMIN-01</span></p></div>
+              <div class="bu-alert"><i class="s-warn"></i><time>07:58</time><p>Sensor battery low<span class="bu-src">gs_utility · 18 %</span></p></div>
+              <div class="bu-alert"><i class="s-idle"></i><time>07:12</time><p>Hub firmware updated to 1.4.2<span class="bu-src">hub_01</span></p></div>
+            </section>
+
+            <section class="bu-sec">
+              <div class="bu-sechead"><h2>Access</h2></div>
+              <div class="bu-lock">
+                <div><div class="bu-ln">Front door</div><div class="bu-ls">Locked · 08:50</div></div>
+                <button class="bu-act">Unlock</button>
+              </div>
+              <div class="bu-lock">
+                <div><div class="bu-ln">Back door</div><div class="bu-ls" style="color:var(--warn)">Unlocked · 12 min</div></div>
+                <button class="bu-act">Lock</button>
+              </div>
+            </section>
+
+            <section class="bu-sec">
+              <div class="bu-sechead"><h2>NFC cards</h2><span class="bu-n">4 active</span></div>
+              <table>
+                <tbody>
+                  <tr><td>Nat</td><td class="bu-id">ADMIN-01</td><td class="bu-r"><span class="bu-chip c-ok">Active</span></td></tr>
+                  <tr><td>Pae</td><td class="bu-id">ADMIN-02</td><td class="bu-r"><span class="bu-chip c-ok">Active</span></td></tr>
+                  <tr><td>Guest</td><td class="bu-id">USER-04</td><td class="bu-r"><span class="bu-chip c-off">Expired</span></td></tr>
+                </tbody>
+              </table>
+            </section>
+
+            <section class="bu-sec">
+              <div class="bu-sechead"><h2>Broadcast</h2><span class="bu-n">hub_01</span></div>
+              <div class="bu-cast">
+                <div class="bu-tk">
+                  <b>Doorbell chime · Westminster</b>
+                  <div class="bu-ls bu-mono" style="font-size:11.5px;color:var(--ink-3)">0:12 / 0:32 · volume 60 %</div>
+                  <div class="bu-bar"></div>
+                </div>
+                <button class="bu-act">Stop</button>
+              </div>
+            </section>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========================= B — PANEL ========================= -->
+  <section class="mock" id="m2" role="tabpanel" aria-labelledby="t2">
+    <div class="spec">
+      <div>
+        <p class="spec-kicker">Direction B</p>
+        <h2>Panel</h2>
+        <p>Keeps a dark interface but strips every effect that dates the current one — no blur, no glow, no gradient, no navy. Flat graphite panels divided by 1px seams, monospace throughout, everything aligned to a column. Reads as lab hardware rather than a web app.</p>
+      </div>
+      <dl>
+        <dt>Palette</dt>
+        <dd>
+          <div class="sw"><span style="background:#16181A"></span><span style="background:#1E2124"></span><span style="background:#D8D5CC"></span><span style="background:#4E8C8A"></span><span style="background:#D69A2F"></span><span style="background:#CC4436"></span></div>
+        </dd>
+        <dt>Type</dt>
+        <dd>Consolas throughout, tabular figures, uppercase tracked labels</dd>
+      </dl>
+      <dl>
+        <dt>Structure</dt>
+        <dd>Icon rail, status strip, then a seamed panel grid — device matrix, alarm log, gauges, access.</dd>
+        <dt>Best if</dt>
+        <dd>You want maximum data density and a look that matches the embedded hardware itself.</dd>
+      </dl>
+    </div>
+
+    <div class="frame">
+      <div class="m-panel">
+        <!-- icon rail -->
+        <nav class="pa-rail" aria-label="Sections">
+          <button aria-current="true" title="Overview" aria-label="Overview">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+          </button>
+          <button title="Alarms" aria-label="Alarms">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 3a6 6 0 0 0-6 6c0 5-2 6-2 6h16s-2-1-2-6a6 6 0 0 0-6-6z"/><path d="M10 20a2 2 0 0 0 4 0"/></svg>
+          </button>
+          <button title="Sensors" aria-label="Sensors">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 13h4l3 7 4-16 3 9h4"/></svg>
+          </button>
+          <button title="Access" aria-label="Access">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="4" y="10" width="16" height="11"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
+          </button>
+          <hr>
+          <button title="Devices" aria-label="Devices">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="7" y="7" width="10" height="10"/><path d="M10 3v4M14 3v4M10 17v4M14 17v4M3 10h4M3 14h4M17 10h4M17 14h4"/></svg>
+          </button>
+          <button title="Settings" aria-label="Settings">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.2 2.2M16.9 16.9l2.2 2.2M19.1 4.9l-2.2 2.2M7.1 16.9l-2.2 2.2"/></svg>
+          </button>
+        </nav>
+
+        <div class="pa-main">
+          <!-- status strip -->
+          <div class="pa-strip">
+            <div class="pa-cell"><span class="pa-led"></span><span class="pa-k">Sys</span><span class="pa-v">RUN</span></div>
+            <div class="pa-cell"><span class="pa-k">Uplink</span><span class="pa-v">OK · 42 ms</span></div>
+            <div class="pa-cell"><span class="pa-k">Nodes</span><span class="pa-v">6 / 7</span></div>
+            <div class="pa-cell"><span class="pa-led w"></span><span class="pa-k">Alarms</span><span class="pa-v">2</span></div>
+            <div class="pa-cell"><span class="pa-k">Poll</span><span class="pa-v">5 s</span></div>
+            <div class="pa-cell"><span class="pa-v">2026-07-30 09:47:12</span></div>
+          </div>
+
+          <!-- upper grid -->
+          <div class="pa-grid">
+            <section class="pa-p">
+              <div class="pa-phead">
+                <h2>Device matrix</h2>
+                <span class="pa-lab">7 enrolled · 1 offline</span>
+              </div>
+              <div class="pa-pbody">
+                <table>
+                  <thead>
+                    <tr><th style="width:16px"></th><th>ID</th><th>Node</th><th>Type</th><th>Batt</th><th class="pa-r">Last</th></tr>
+                  </thead>
+                  <tbody>
+                    <tr><td><span class="pa-led"></span></td><td class="pa-nm">db_01</td><td>Doorbell</td><td class="pa-dim">cam/btn</td><td><span class="pa-batt"><span class="pa-track"><span class="pa-fill" style="width:84%"></span></span>84</span></td><td class="pa-r pa-dim">2 s</td></tr>
+                    <tr><td><span class="pa-led"></span></td><td class="pa-nm">hub_01</td><td>Hub display</td><td class="pa-dim">lcd</td><td class="pa-dim">mains</td><td class="pa-r pa-dim">1 s</td></tr>
+                    <tr><td><span class="pa-led"></span></td><td class="pa-nm">dl_front</td><td>Front lock</td><td class="pa-dim">servo</td><td><span class="pa-batt"><span class="pa-track"><span class="pa-fill" style="width:71%"></span></span>71</span></td><td class="pa-r pa-dim">4 s</td></tr>
+                    <tr><td><span class="pa-led"></span></td><td class="pa-nm">dl_back</td><td>Back lock</td><td class="pa-dim">servo</td><td><span class="pa-batt"><span class="pa-track"><span class="pa-fill" style="width:63%"></span></span>63</span></td><td class="pa-r pa-dim">6 s</td></tr>
+                    <tr><td><span class="pa-led"></span></td><td class="pa-nm">gs_kitchen</td><td>Kitchen gas</td><td class="pa-dim">mq-2</td><td><span class="pa-batt"><span class="pa-track"><span class="pa-fill" style="width:77%"></span></span>77</span></td><td class="pa-r pa-dim">3 s</td></tr>
+                    <tr><td><span class="pa-led w"></span></td><td class="pa-nm">gs_utility</td><td>Utility gas</td><td class="pa-dim">mq-2</td><td><span class="pa-batt"><span class="pa-track"><span class="pa-fill c" style="width:18%"></span></span>18</span></td><td class="pa-r pa-dim">11 s</td></tr>
+                    <tr><td><span class="pa-led o"></span></td><td class="pa-nm">rp_garden</td><td>Garden repeater</td><td class="pa-dim">relay</td><td class="pa-dim">—</td><td class="pa-r pa-dim">27 m</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </section>
+
+            <section class="pa-p">
+              <div class="pa-phead">
+                <h2>Alarm stack</h2>
+                <span class="pa-lab">2 unacknowledged</span>
+              </div>
+              <div class="pa-pbody">
+                <div class="pa-log">
+                  <div class="pa-line"><span class="pa-sev c">C</span><time>09:42:07</time><p>Gas above threshold <span>gs_garage 412 ppm / limit 350</span></p></div>
+                  <div class="pa-line"><span class="pa-sev w">W</span><time>09:15:41</time><p>Back door unlocked 12 min <span>dl_back</span></p></div>
+                  <div class="pa-line"><span class="pa-sev i">I</span><time>08:50:19</time><p>Entry granted — Nat <span>dl_front / ADMIN-01</span></p></div>
+                  <div class="pa-line"><span class="pa-sev w">W</span><time>07:58:02</time><p>Battery low 18 % <span>gs_utility</span></p></div>
+                  <div class="pa-line"><span class="pa-sev i">I</span><time>07:12:55</time><p>Firmware 1.4.2 applied <span>hub_01</span></p></div>
+                  <div class="pa-line"><span class="pa-sev i">I</span><time>06:40:11</time><p>Node rejoined mesh <span>gs_kitchen</span></p></div>
+                  <div class="pa-line"><span class="pa-sev w">W</span><time>05:22:36</time><p>Link retry x3 <span>rp_garden</span></p></div>
+                </div>
+              </div>
+            </section>
+          </div>
+
+          <!-- lower grid -->
+          <div class="pa-bottom">
+            <section class="pa-p">
+              <div class="pa-phead"><h2>Environment</h2><span class="pa-lab">live</span></div>
+              <div class="pa-gauges">
+                <div class="pa-g">
+                  <p class="pa-lab">Temp · living</p>
+                  <div class="pa-gv">22.4<small>°C</small></div>
+                  <div class="pa-ticks"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i></i><i></i><i></i><i></i></div>
+                  <div class="pa-grange"><span>15</span><span>30</span></div>
+                </div>
+                <div class="pa-g">
+                  <p class="pa-lab">Gas · kitchen</p>
+                  <div class="pa-gv">118<small>ppm</small></div>
+                  <div class="pa-ticks"><i class="on"></i><i class="on"></i><i class="on"></i><i></i><i></i><i></i><i></i><i class="lim"></i><i></i><i></i></div>
+                  <div class="pa-grange"><span>0</span><span>350 lim</span></div>
+                </div>
+                <div class="pa-g is-warn">
+                  <p class="pa-lab">Gas · garage</p>
+                  <div class="pa-gv">412<small>ppm</small></div>
+                  <div class="pa-ticks"><i class="on w"></i><i class="on w"></i><i class="on w"></i><i class="on w"></i><i class="on w"></i><i class="on w"></i><i class="on w"></i><i class="on w"></i><i class="on w"></i><i></i></div>
+                  <div class="pa-grange"><span>0</span><span>350 lim</span></div>
+                </div>
+              </div>
+            </section>
+
+            <section class="pa-p">
+              <div class="pa-phead"><h2>Access control</h2><span class="pa-lab">2 locks · 4 cards</span></div>
+              <div class="pa-pbody">
+                <div class="pa-lock">
+                  <div><div class="pa-ln">dl_front — Front door</div><div class="pa-ls">Locked · last opened 08:50 by ADMIN-01</div></div>
+                  <button class="pa-sw" aria-pressed="true" aria-label="Front door lock"></button>
+                </div>
+                <div class="pa-lock">
+                  <div><div class="pa-ln">dl_back — Back door</div><div class="pa-ls" style="color:var(--warn)">Unlocked 12 min</div></div>
+                  <button class="pa-sw" aria-pressed="false" aria-label="Back door lock"></button>
+                </div>
+                <div class="pa-lock">
+                  <div><div class="pa-ln">hub_01 — Broadcast</div><div class="pa-ls">Chime · Westminster · vol 60 %</div></div>
+                  <button class="pa-sw" aria-pressed="true" aria-label="Broadcast"></button>
+                </div>
+              </div>
+            </section>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========================= C — PLAN ========================= -->
+  <section class="mock" id="m3" role="tabpanel" aria-labelledby="t3">
+    <div class="spec">
+      <div>
+        <p class="spec-kicker">Direction C</p>
+        <h2>Plan</h2>
+        <p>Changes the information architecture, not just the skin: the house itself is the navigation. Readings sit where the hardware physically is, so "412 ppm in the garage" is a place before it is a row in a table. Quiet drafting palette, light numerals, mono reserved for annotation.</p>
+      </div>
+      <dl>
+        <dt>Palette</dt>
+        <dd>
+          <div class="sw"><span style="background:#E6E9EA"></span><span style="background:#1F2933"></span><span style="background:#33406E"></span><span style="background:#2F7A57"></span><span style="background:#B27714"></span><span style="background:#AE3B2E"></span></div>
+        </dd>
+        <dt>Type</dt>
+        <dd>Segoe UI Light for figures · Segoe UI body · Consolas for pins and labels</dd>
+      </dl>
+      <dl>
+        <dt>Structure</dt>
+        <dd>Floor plan with live pins, a context stack beside it, device roll-call underneath.</dd>
+        <dt>Best if</dt>
+        <dd>You want the demo to land instantly with an audience who has never seen the system.</dd>
+      </dl>
+    </div>
+
+    <div class="frame">
+      <div class="m-plan">
+        <div class="pl-top">
+          <h1>Arduino888 <b>Smart Home</b></h1>
+          <div class="pl-crumbs">
+            <button aria-current="true">Whole house</button>
+            <button>Living</button>
+            <button>Kitchen</button>
+            <button>Garage</button>
+            <button>Bedroom</button>
+          </div>
+        </div>
+
+        <div class="pl-wrap">
+         <div class="pl-left">
+          <!-- floor plan -->
+          <div class="pl-stage">
+            <div class="pl-stagehead">
+              <span class="pl-lab">Ground floor · 7 devices</span>
+              <span class="pl-lab">Updated 09:47:12</span>
+            </div>
+            <svg class="pl-svg" viewBox="0 0 660 440" role="img" aria-label="Floor plan showing sensor readings: living room 22.4 degrees, kitchen 118 ppm, garage 412 ppm elevated, front and back door locks">
+              <!-- room fills -->
+              <rect class="fillroom" x="22" y="22" width="336" height="238"/>
+              <rect class="fillroom" x="358" y="22" width="280" height="178"/>
+              <rect class="fillroom sel" x="358" y="200" width="280" height="218"/>
+              <rect class="fillroom" x="22" y="260" width="178" height="158"/>
+              <rect class="fillroom" x="200" y="260" width="158" height="158"/>
+
+              <!-- interior walls -->
+              <path class="wall-i" d="M358 22 V418 M22 260 H358 M200 260 V418 M358 200 H638"/>
+              <!-- Outer wall drawn with the two doorways left as real gaps.
+                   Painting over a full rect to fake an opening leaves a
+                   visible patch wherever the cover colour misses. -->
+              <path class="wall" d="M22 22 H638 V418 H312 M252 418 H22 V366 M22 316 V22"/>
+
+              <!-- door swings, both opening inward -->
+              <path class="door" d="M252 418 A34 34 0 0 1 312 418"/>
+              <path class="door" d="M22 316 A30 30 0 0 1 22 366"/>
+
+              <!-- room labels -->
+              <text class="rlabel" x="42" y="48">Living</text>
+              <text class="rlabel" x="378" y="48">Kitchen</text>
+              <text class="rlabel" x="378" y="226">Garage</text>
+              <text class="rlabel" x="42" y="286">Bedroom</text>
+              <text class="rlabel" x="220" y="286">Hall</text>
+
+              <!-- LIVING: temperature -->
+              <line class="leader" x1="150" y1="150" x2="150" y2="120"/>
+              <rect class="tag" x="104" y="94" width="92" height="26" rx="2"/>
+              <text class="tagv" x="114" y="112">22.4 °C · 48%</text>
+              <circle class="pin" cx="150" cy="150" r="6" fill="#2F7A57"/>
+
+              <!-- KITCHEN: gas -->
+              <line class="leader" x1="498" y1="128" x2="498" y2="100"/>
+              <rect class="tag" x="452" y="74" width="92" height="26" rx="2"/>
+              <text class="tagv" x="462" y="92">118 ppm</text>
+              <circle class="pin" cx="498" cy="128" r="6" fill="#2F7A57"/>
+
+              <!-- GARAGE: gas elevated -->
+              <line class="leader" x1="498" y1="320" x2="498" y2="292"/>
+              <rect class="tag warn" x="440" y="266" width="116" height="26" rx="2"/>
+              <text class="tagv warn" x="450" y="284">412 ppm · high</text>
+              <circle cx="498" cy="320" r="13" fill="#B27714" opacity=".16"/>
+              <circle class="pin" cx="498" cy="320" r="6" fill="#B27714"/>
+
+              <!-- FRONT DOOR lock -->
+              <line class="leader" x1="282" y1="404" x2="282" y2="376"/>
+              <rect class="tag" x="234" y="350" width="96" height="26" rx="2"/>
+              <text class="tagv" x="244" y="368">Front · locked</text>
+              <circle class="pin" cx="282" cy="404" r="6" fill="#2F7A57"/>
+
+              <!-- BACK DOOR lock unlocked -->
+              <line class="leader" x1="36" y1="341" x2="76" y2="341"/>
+              <rect class="tag warn" x="76" y="328" width="118" height="26" rx="2"/>
+              <text class="tagv warn" x="86" y="346">Back · unlocked</text>
+              <circle class="pin" cx="36" cy="341" r="6" fill="#B27714"/>
+
+              <!-- HUB in hall -->
+              <rect class="tag" x="214" y="298" width="90" height="24" rx="2"/>
+              <text class="tagv" x="224" y="315">Hub · online</text>
+            </svg>
+            <div class="pl-legend">
+              <span><i class="d-ok"></i> Normal</span>
+              <span><i class="d-warn"></i> Needs attention</span>
+              <span><i class="d-crit"></i> Critical</span>
+              <span><i class="d-info"></i> Offline</span>
+            </div>
+          </div>
+
+          <!-- device roll-call, tucked under the plan so the columns balance -->
+          <div class="pl-strip">
+            <span class="pl-lab">Devices · 6 of 7 online</span>
+            <div class="pl-devrow">
+              <div class="pl-dev"><i class="d-ok"></i><b>Doorbell</b><span>84%</span></div>
+              <div class="pl-dev"><i class="d-ok"></i><b>Hub display</b><span>mains</span></div>
+              <div class="pl-dev"><i class="d-ok"></i><b>Front lock</b><span>71%</span></div>
+              <div class="pl-dev"><i class="d-ok"></i><b>Back lock</b><span>63%</span></div>
+              <div class="pl-dev"><i class="d-ok"></i><b>Kitchen gas</b><span>77%</span></div>
+              <div class="pl-dev"><i class="d-warn"></i><b>Utility gas</b><span>18%</span></div>
+              <div class="pl-dev"><i class="d-info"></i><b>Garden repeater</b><span>27 min ago</span></div>
+            </div>
+          </div>
+         </div>
+
+          <!-- context stack -->
+          <div class="pl-stack">
+            <section class="pl-card">
+              <header>
+                <h2>Garage</h2>
+                <span class="pl-lab">2 devices</span>
+              </header>
+              <div class="pl-room">
+                <div class="pl-metric is-warn">
+                  <p class="pl-lab">Gas</p>
+                  <div class="pl-mv">412<sup>ppm</sup></div>
+                  <p class="pl-delta">Limit 350 · rising since 09:31</p>
+                </div>
+                <div class="pl-metric">
+                  <p class="pl-lab">Temperature</p>
+                  <div class="pl-mv">26.9<sup>°C</sup></div>
+                  <p class="pl-delta">+1.4 in the last hour</p>
+                </div>
+              </div>
+              <div class="pl-acts" style="margin-top:16px">
+                <button>Silence for 30 min<small>Alert stays in the log</small></button>
+                <button>Open garage vent<small>Relay rp_garden</small></button>
+              </div>
+            </section>
+
+            <section class="pl-card">
+              <header>
+                <h2>Today</h2>
+                <span class="pl-lab">5 events</span>
+              </header>
+              <div class="pl-ev"><i class="d-crit"></i><time>09:42</time><p>Gas above threshold <em>· Garage, 412 ppm</em></p></div>
+              <div class="pl-ev"><i class="d-warn"></i><time>09:15</time><p>Back door left unlocked <em>· 12 minutes</em></p></div>
+              <div class="pl-ev"><i class="d-info"></i><time>08:50</time><p>Nat came in the front door <em>· card ADMIN-01</em></p></div>
+              <div class="pl-ev"><i class="d-warn"></i><time>07:58</time><p>Utility sensor battery low <em>· 18%</em></p></div>
+              <div class="pl-ev"><i class="d-info"></i><time>07:12</time><p>Hub updated to 1.4.2</p></div>
+            </section>
+
+            <section class="pl-card">
+              <header><h2>Quick actions</h2></header>
+              <div class="pl-acts">
+                <button>Lock everything<small>2 doors</small></button>
+                <button>Play chime<small>Hub speaker</small></button>
+                <button>Manage cards<small>4 active</small></button>
+                <button>Add device<small>Pairing mode</small></button>
+              </div>
+            </section>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========================= D — GLASS ========================= -->
+  <section class="mock" id="m4" role="tabpanel" aria-labelledby="t4">
+    <div class="spec">
+      <div>
+        <p class="spec-kicker">Direction D</p>
+        <h2>Glass</h2>
+        <p>Liquid Glass treated as a material, not a filter. Depth comes from a specular top edge, a three-stop shadow stack and concentric corner radii — not from glow. The wallpaper behind is desaturated almost to neutral so the glass has something quiet to refract; colour appears only where a reading needs attention.</p>
+      </div>
+      <dl>
+        <dt>Palette</dt>
+        <dd>
+          <div class="sw"><span style="background:#EDEFF2"></span><span style="background:#23272B"></span><span style="background:#58718F"></span><span style="background:#4E8A6B"></span><span style="background:#B8873C"></span><span style="background:#B5544C"></span></div>
+        </dd>
+        <dt>Type</dt>
+        <dd>SF Pro Display on Mac, Segoe UI Variable on Windows · light tabular numerals at −0.03em</dd>
+      </dl>
+      <dl>
+        <dt>Structure</dt>
+        <dd>Floating toolbar, large title, attention card, stat strip, then a restrained bento.</dd>
+        <dt>Best if</dt>
+        <dd>You want it to feel like a shipped consumer product rather than an engineering readout.</dd>
+      </dl>
+    </div>
+
+    <div class="frame">
+      <div class="m-glass">
+        <div class="gl-bg" aria-hidden="true"></div>
+        <!-- Generated lens filters land here, one per pane. -->
+        <svg class="gl-defs" aria-hidden="true" focusable="false"><defs></defs></svg>
+
+        <div class="gl-page">
+          <!-- floating toolbar -->
+          <div class="gl-pane gl-bar">
+            <span class="gl-home">Arduino888</span>
+            <div class="gl-seg" role="group" aria-label="View">
+              <button aria-current="true">Home</button>
+              <button>Alerts</button>
+              <button>Devices</button>
+              <button>Access</button>
+            </div>
+            <span class="gl-pill is-warn"><i></i> 1 needs attention</span>
+          </div>
+
+          <!-- large title -->
+          <div class="gl-title">
+            <h1>Good morning</h1>
+            <p>Everything is running normally except the garage. Updated just now.</p>
+          </div>
+
+          <!-- attention card -->
+          <div class="gl-pane gl-hero">
+            <div>
+              <h2><span class="gl-dot"></span>Garage air quality is elevated</h2>
+              <p>The garage sensor has been climbing since 9:31 and is now above the 350 ppm limit. The vent relay is still reachable, so you can clear it from here.</p>
+              <div class="gl-btns">
+                <button class="gl-btn is-primary">Open the vent</button>
+                <button class="gl-btn is-ghost">Silence for 30 minutes</button>
+                <button class="gl-btn is-ghost">See history</button>
+              </div>
+            </div>
+            <div class="gl-inner is-warn">
+              <p class="gl-lab">Garage sensor</p>
+              <div class="gl-v gl-num">412<small>ppm</small></div>
+              <p class="gl-sub" style="margin-top:2px">Limit 350 · up 96 in 16 min</p>
+              <svg class="gl-spark" viewBox="0 0 210 54" role="img" aria-label="Garage gas rising from 300 to 412 parts per million over 16 minutes">
+                <defs>
+                  <linearGradient id="glGasFill" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stop-color="#B8873C" stop-opacity=".3"/>
+                    <stop offset="100%" stop-color="#B8873C" stop-opacity="0"/>
+                  </linearGradient>
+                </defs>
+                <path d="M0,42 L21,40 L42,41 L63,36 L84,33 L105,28 L126,24 L147,17 L168,14 L189,11 L206,9 L210,9 L210,54 L0,54 Z" fill="url(#glGasFill)"/>
+                <polyline fill="none" stroke="#B8873C" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+                  points="0,42 21,40 42,41 63,36 84,33 105,28 126,24 147,17 168,14 189,11 206,9"/>
+                <circle cx="206" cy="9" r="4" fill="#fff" stroke="#B8873C" stroke-width="2.5"/>
+              </svg>
+            </div>
+          </div>
+
+          <!-- stat strip -->
+          <div class="gl-stats">
+            <div class="gl-pane gl-stat">
+              <p class="gl-lab">Devices online</p>
+              <div class="gl-v gl-num">6<small>of 7</small></div>
+            </div>
+            <div class="gl-pane gl-stat">
+              <p class="gl-lab">Sensors reporting</p>
+              <div class="gl-v gl-num">4<small>of 4</small></div>
+            </div>
+            <div class="gl-pane gl-stat is-warn">
+              <p class="gl-lab">Open alerts</p>
+              <div class="gl-v gl-num">2<small>1 critical</small></div>
+            </div>
+            <div class="gl-pane gl-stat">
+              <p class="gl-lab">Uptime</p>
+              <div class="gl-v gl-num">14<small>d 6h</small></div>
+            </div>
+          </div>
+
+          <!-- bento -->
+          <div class="gl-bento">
+            <section class="gl-pane gl-card gl-a-climate">
+              <header><h3>Climate</h3><span class="gl-lab">Living room</span></header>
+              <div class="gl-big gl-num">22.4<sup>°C</sup></div>
+              <p class="gl-sub">Humidity 48% · low 19.8, high 25.1 today</p>
+              <svg class="gl-spark" viewBox="0 0 240 62" role="img" aria-label="Living room temperature over 24 hours, between 19.8 and 25.1 degrees">
+                <defs>
+                  <linearGradient id="glTempFill" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stop-color="#58718F" stop-opacity=".26"/>
+                    <stop offset="100%" stop-color="#58718F" stop-opacity="0"/>
+                  </linearGradient>
+                </defs>
+                <path d="M0,50 L26,48 L52,53 L78,45 L104,38 L130,34 L156,27 L182,30 L208,21 L236,17 L240,17 L240,62 L0,62 Z" fill="url(#glTempFill)"/>
+                <polyline fill="none" stroke="#58718F" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+                  points="0,50 26,48 52,53 78,45 104,38 130,34 156,27 182,30 208,21 236,17"/>
+                <circle cx="236" cy="17" r="4" fill="#fff" stroke="#58718F" stroke-width="2.5"/>
+              </svg>
+            </section>
+
+            <section class="gl-pane gl-card gl-a-air">
+              <header><h3>Air quality</h3><span class="gl-lab">Limit 350 ppm</span></header>
+              <div class="gl-gas">
+                <div>
+                  <div class="gl-row"><span class="gl-nm">Kitchen</span><span class="gl-pv">118 ppm</span></div>
+                  <div class="gl-track"><i style="width:24%"></i><span class="gl-lim" style="left:70%"></span></div>
+                </div>
+                <div>
+                  <div class="gl-row"><span class="gl-nm">Garage</span><span class="gl-pv is-warn">412 ppm</span></div>
+                  <div class="gl-track"><i class="w" style="width:82%"></i><span class="gl-lim" style="left:70%"></span></div>
+                </div>
+                <div>
+                  <div class="gl-row"><span class="gl-nm">Utility room</span><span class="gl-pv">96 ppm</span></div>
+                  <div class="gl-track"><i style="width:19%"></i><span class="gl-lim" style="left:70%"></span></div>
+                </div>
+              </div>
+            </section>
+
+            <section class="gl-pane gl-card gl-a-alerts">
+              <header><h3>Recent activity</h3><span class="gl-lab">Today</span></header>
+              <div class="gl-alerts">
+                <div class="gl-al"><i class="a-crit"></i><p>Gas above threshold in the garage<span>9:42 AM · 412 ppm, limit 350</span></p></div>
+                <div class="gl-al"><i class="a-warn"></i><p>Back door left unlocked<span>9:15 AM · 12 minutes and counting</span></p></div>
+                <div class="gl-al"><i class="a-info"></i><p>Nat came in the front door<span>8:50 AM · card ADMIN-01</span></p></div>
+                <div class="gl-al"><i class="a-warn"></i><p>Utility sensor battery low<span>7:58 AM · 18% remaining</span></p></div>
+                <div class="gl-al"><i class="a-info"></i><p>Hub updated to 1.4.2<span>7:12 AM · restarted cleanly</span></p></div>
+                <div class="gl-al"><i class="a-ok"></i><p>Kitchen sensor rejoined the mesh<span>6:40 AM</span></p></div>
+              </div>
+            </section>
+
+            <section class="gl-pane gl-card gl-a-doors">
+              <header><h3>Doors</h3><span class="gl-lab">2 locks</span></header>
+              <div class="gl-door">
+                <div><div class="gl-dn">Front door</div><div class="gl-ds">Locked since 8:50 AM</div></div>
+                <button class="gl-sw" aria-pressed="true" aria-label="Front door lock"></button>
+              </div>
+              <div class="gl-door">
+                <div><div class="gl-dn">Back door</div><div class="gl-ds is-warn">Unlocked 12 minutes ago</div></div>
+                <button class="gl-sw" aria-pressed="false" aria-label="Back door lock"></button>
+              </div>
+            </section>
+
+            <section class="gl-pane gl-card gl-a-cast">
+              <header><h3>Playing on the hub</h3><span class="gl-lab">60%</span></header>
+              <div class="gl-cast">
+                <div class="gl-art">
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M9 18V5l11-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="17" cy="16" r="3"/></svg>
+                </div>
+                <div class="gl-tk">
+                  <b>Westminster chime</b>
+                  <span>Doorbell tone · hub_01</span>
+                </div>
+              </div>
+              <div class="gl-scrub"><i></i><b></b></div>
+              <div class="gl-times"><span>0:12</span><span>0:32</span></div>
+            </section>
+
+            <section class="gl-pane gl-card gl-a-devices">
+              <header><h3>Devices</h3><span class="gl-lab">6 of 7 online</span></header>
+              <div class="gl-devs">
+                <div class="gl-dev">
+                  <svg class="gl-ring" viewBox="0 0 24 24"><circle class="gl-tr" cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="9" stroke="#4E8A6B" stroke-dasharray="47.5 56.5" transform="rotate(-90 12 12)"/></svg>
+                  <div class="gl-dt"><b>Doorbell</b><span>84%</span></div>
+                </div>
+                <div class="gl-dev">
+                  <svg class="gl-ring" viewBox="0 0 24 24"><circle class="gl-tr" cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="9" stroke="#4E8A6B" stroke-dasharray="56.5 56.5" transform="rotate(-90 12 12)"/></svg>
+                  <div class="gl-dt"><b>Hub display</b><span>Mains</span></div>
+                </div>
+                <div class="gl-dev">
+                  <svg class="gl-ring" viewBox="0 0 24 24"><circle class="gl-tr" cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="9" stroke="#4E8A6B" stroke-dasharray="40.2 56.5" transform="rotate(-90 12 12)"/></svg>
+                  <div class="gl-dt"><b>Front lock</b><span>71%</span></div>
+                </div>
+                <div class="gl-dev">
+                  <svg class="gl-ring" viewBox="0 0 24 24"><circle class="gl-tr" cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="9" stroke="#4E8A6B" stroke-dasharray="35.6 56.5" transform="rotate(-90 12 12)"/></svg>
+                  <div class="gl-dt"><b>Back lock</b><span>63%</span></div>
+                </div>
+                <div class="gl-dev">
+                  <svg class="gl-ring" viewBox="0 0 24 24"><circle class="gl-tr" cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="9" stroke="#4E8A6B" stroke-dasharray="43.5 56.5" transform="rotate(-90 12 12)"/></svg>
+                  <div class="gl-dt"><b>Kitchen gas</b><span>77%</span></div>
+                </div>
+                <div class="gl-dev">
+                  <svg class="gl-ring" viewBox="0 0 24 24"><circle class="gl-tr" cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="9" stroke="#B8873C" stroke-dasharray="10.2 56.5" transform="rotate(-90 12 12)"/></svg>
+                  <div class="gl-dt"><b>Utility gas</b><span>18%</span></div>
+                </div>
+                <div class="gl-dev">
+                  <svg class="gl-ring" viewBox="0 0 24 24"><circle class="gl-tr" cx="12" cy="12" r="9"/></svg>
+                  <div class="gl-dt"><b>Garden repeater</b><span>Offline 27m</span></div>
+                </div>
+              </div>
+            </section>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+</div>
+
+<script>
+(function () {
+  var tabs = Array.prototype.slice.call(document.querySelectorAll('.switcher [role="tab"]'));
+  var mocks = Array.prototype.slice.call(document.querySelectorAll('.mock'));
+
+  function show(tab) {
+    var target = tab.getAttribute('aria-controls');
+    tabs.forEach(function (t) { t.setAttribute('aria-selected', String(t === tab)); });
+    mocks.forEach(function (m) {
+      m.classList.toggle('is-on', target === 'all' || m.id === target);
+    });
+    // Panes are unmeasurable until their tab is actually displayed.
+    requestAnimationFrame(applyLenses);
+  }
+
+  tabs.forEach(function (tab) {
+    tab.addEventListener('click', function () { show(tab); });
+  });
+
+  // Locks are live enough to feel real when clicked.
+  document.querySelectorAll('.pa-sw, .gl-sw').forEach(function (sw) {
+    sw.addEventListener('click', function () {
+      sw.setAttribute('aria-pressed', sw.getAttribute('aria-pressed') === 'true' ? 'false' : 'true');
+    });
+  });
+
+  /* ----------------------------------------------------------------
+     Real refraction for direction D.
+
+     A rounded-rect signed distance field is rasterised into a
+     displacement map: red carries X displacement, green carries Y,
+     both measured outward from the nearest edge and falling off to
+     nothing a short way in. feDisplacementMap then bends the actual
+     backdrop through it, so content moving behind the glass visibly
+     distorts at the rim — which is the part a blur can never fake.
+
+     Three passes at slightly different scales, recombined one per
+     colour channel, give the chromatic fringe real glass has.
+
+     backdrop-filter: url() is Chromium-only. Everywhere else the
+     stylesheet's plain blur+saturate stands, which still looks fine,
+     just inert.
+  ---------------------------------------------------------------- */
+  var lensOK = CSS.supports('backdrop-filter', 'url(#a)') ||
+               CSS.supports('-webkit-backdrop-filter', 'url(#a)');
+
+  function buildMap(w, h, radius, band) {
+    var c = document.createElement('canvas');
+    c.width = w; c.height = h;
+    var ctx = c.getContext('2d');
+    var img = ctx.createImageData(w, h);
+    var d = img.data;
+    var hw = w / 2, hh = h / 2;
+    var r = Math.min(radius, hw, hh);
+
+    function sd(x, y) {                     // negative inside the shape
+      var qx = Math.abs(x) - hw + r;
+      var qy = Math.abs(y) - hh + r;
+      var ax = qx > 0 ? qx : 0;
+      var ay = qy > 0 ? qy : 0;
+      var inner = Math.max(qx, qy);
+      return Math.sqrt(ax * ax + ay * ay) + (inner < 0 ? inner : 0) - r;
+    }
+
+    for (var py = 0; py < h; py++) {
+      for (var px = 0; px < w; px++) {
+        var x = px - hw + 0.5, y = py - hh + 0.5;
+        var dist = sd(x, y);
+        var i = (py * w + px) * 4;
+        d[i + 2] = 128; d[i + 3] = 255;
+
+        if (dist > 0) { d[i] = 128; d[i + 1] = 128; continue; }
+
+        var t = 1 + dist / band;            // 1 at the rim, 0 band px in
+        if (t <= 0) { d[i] = 128; d[i + 1] = 128; continue; }
+
+        // outward normal = gradient of the distance field
+        var nx = sd(x + 1, y) - sd(x - 1, y);
+        var ny = sd(x, y + 1) - sd(x, y - 1);
+        var len = Math.sqrt(nx * nx + ny * ny) || 1;
+        nx /= len; ny /= len;
+
+        var m = Math.pow(t, 2.2);           // thin in the middle, thick at the rim
+        d[i]     = Math.max(0, Math.min(255, Math.round(128 + nx * 127 * m)));
+        d[i + 1] = Math.max(0, Math.min(255, Math.round(128 + ny * 127 * m)));
+      }
+    }
+    ctx.putImageData(img, 0, 0);
+    return c.toDataURL();
+  }
+
+  var SVGNS = 'http://www.w3.org/2000/svg';
+  function el(name, attrs) {
+    var n = document.createElementNS(SVGNS, name);
+    for (var k in attrs) n.setAttribute(k, attrs[k]);
+    return n;
+  }
+
+  var lensSeq = 0;
+  function applyLenses() {
+    var defs = document.querySelector('.m-glass .gl-defs defs');
+    if (!lensOK || !defs) return;
+
+    // Toolbar only. It is the one element that genuinely floats over
+    // moving content, and a displacement filter per card costs far more
+    // than it shows — the cards sit on wallpaper with nothing to bend.
+    document.querySelectorAll('.m-glass .gl-bar').forEach(function (pane) {
+      var w = Math.round(pane.offsetWidth), h = Math.round(pane.offsetHeight);
+      if (!w || !h) return;                 // hidden tab — nothing to measure yet
+      if (pane.dataset.lensW == w && pane.dataset.lensH == h) return;
+
+      var radius = parseFloat(getComputedStyle(pane).borderTopLeftRadius) || 26;
+      var band = Math.min(30, Math.max(14, Math.min(w, h) * 0.28));
+      var href = buildMap(w, h, radius, band);
+
+      if (pane.dataset.lensId) {
+        var old = document.getElementById(pane.dataset.lensId);
+        if (old) old.remove();
+      }
+      var id = 'gl-lens-' + (++lensSeq);
+
+      var f = el('filter', {
+        id: id, filterUnits: 'objectBoundingBox', primitiveUnits: 'userSpaceOnUse',
+        x: '0%', y: '0%', width: '100%', height: '100%',
+        'color-interpolation-filters': 'sRGB'
+      });
+      f.appendChild(el('feImage', {
+        result: 'map', x: 0, y: 0, width: w, height: h,
+        preserveAspectRatio: 'none', href: href
+      }));
+
+      // one pass per channel — the scale spread is the chromatic fringe
+      [['R', 30], ['G', 34], ['B', 38]].forEach(function (p) {
+        f.appendChild(el('feDisplacementMap', {
+          in: 'SourceGraphic', in2: 'map', scale: p[1],
+          xChannelSelector: 'R', yChannelSelector: 'G', result: 'p' + p[0]
+        }));
+      });
+      f.appendChild(el('feColorMatrix', { in: 'pR', type: 'matrix', result: 'cR',
+        values: '1 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 1 0' }));
+      f.appendChild(el('feColorMatrix', { in: 'pG', type: 'matrix', result: 'cG',
+        values: '0 0 0 0 0  0 1 0 0 0  0 0 0 0 0  0 0 0 1 0' }));
+      f.appendChild(el('feColorMatrix', { in: 'pB', type: 'matrix', result: 'cB',
+        values: '0 0 0 0 0  0 0 0 0 0  0 0 1 0 0  0 0 0 1 0' }));
+      f.appendChild(el('feComposite', { in: 'cR', in2: 'cG', operator: 'arithmetic',
+        k1: 0, k2: 1, k3: 1, k4: 0, result: 'rg' }));
+      f.appendChild(el('feComposite', { in: 'rg', in2: 'cB', operator: 'arithmetic',
+        k1: 0, k2: 1, k3: 1, k4: 0 }));
+
+      defs.appendChild(f);
+      pane.dataset.lensId = id;
+      pane.dataset.lensW = w;
+      pane.dataset.lensH = h;
+      // Much less blur than frosted glass — Liquid Glass distorts
+      // rather than obscures.
+      pane.style.backdropFilter = pane.style.webkitBackdropFilter =
+        'saturate(1.7) blur(7px) url(#' + id + ')';
+    });
+  }
+
+  var lensTimer;
+  window.addEventListener('resize', function () {
+    clearTimeout(lensTimer);
+    lensTimer = setTimeout(applyLenses, 180);
+  });
+
+  // Single-choice button groups: room crumbs and the segmented control.
+  ['.m-plan .pl-crumbs', '.m-glass .gl-seg'].forEach(function (sel) {
+    var group = document.querySelector(sel);
+    if (!group) return;
+    var btns = Array.prototype.slice.call(group.querySelectorAll('button'));
+    btns.forEach(function (b) {
+      b.addEventListener('click', function () {
+        btns.forEach(function (o) { o.removeAttribute('aria-current'); });
+        b.setAttribute('aria-current', 'true');
+      });
+    });
+  });
+
+  applyLenses();
+})();
+</script>
+</body>
+</html>

@@ -19,6 +19,7 @@ import {
   getLockStatus
 } from '@/services/devices.service';
 import type { DevicesStatus, GasReading, Alert, DoorWindow } from '@/types/dashboard';
+import { getCurrentTheme, setTheme as applyGlassTheme, type GlassTheme } from '@/components/glass/theme';
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -27,7 +28,7 @@ export default function DashboardPage() {
   const [gasReadings, setGasReadings] = useState<GasReading[]>([]);
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [loading, setLoading] = useState(true);
-  const [theme, setTheme] = useState<'purple' | 'green'>('purple');
+  const [theme, setThemeState] = useState<GlassTheme>('light');
   const [expandedCard, setExpandedCard] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [activeView, setActiveView] = useState<string>('dashboard');
@@ -120,13 +121,18 @@ export default function DashboardPage() {
     return () => clearInterval(interval);
   }, []);
 
-  // Apply theme to document root
   useEffect(() => {
-    document.documentElement.setAttribute('data-theme', theme);
-  }, [theme]);
+    setThemeState(getCurrentTheme());
+  }, []);
 
   const toggleTheme = () => {
-    setTheme(prev => prev === 'purple' ? 'green' : 'purple');
+    const next = getCurrentTheme() === 'dark' ? 'light' : 'dark';
+    setThemeState(next);
+    if (window.Glass) {
+      applyGlassTheme(next);
+      return;
+    }
+    document.documentElement.setAttribute('data-theme', next);
   };
 
   const toggleSidebar = () => {

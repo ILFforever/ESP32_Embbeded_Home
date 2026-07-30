@@ -2,23 +2,30 @@
 import { useState, FormEvent, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
+import { getCurrentTheme, setTheme as applyGlassTheme, type GlassTheme } from '@/components/glass/theme';
 
 export default function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [theme, setTheme] = useState<'purple' | 'green'>('purple');
+  const [theme, setThemeState] = useState<GlassTheme>('light');
 
   const router = useRouter();
   const { login } = useAuth();
 
   useEffect(() => {
-    document.documentElement.setAttribute('data-theme', theme);
-  }, [theme]);
+    setThemeState(getCurrentTheme());
+  }, []);
 
   const toggleTheme = () => {
-    setTheme(prev => prev === 'purple' ? 'green' : 'purple');
+    const next = getCurrentTheme() === 'dark' ? 'light' : 'dark';
+    setThemeState(next);
+    if (window.Glass) {
+      applyGlassTheme(next);
+      return;
+    }
+    document.documentElement.setAttribute('data-theme', next);
   };
 
   const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
