@@ -422,7 +422,7 @@ export function DeviceStatusCard({ devices = [], sensors = [], isExpanded = fals
         .toggle-btn.active {
           background: linear-gradient(135deg, var(--accent) 0%, var(--accent-h) 100%);
           color: #fff;
-          box-shadow: 0 2px 8px rgba(var(--primary-color-rgb), 0.3);
+          box-shadow: var(--accent-glow);
         }
 
         .device-status-compact {
@@ -447,7 +447,7 @@ export function DeviceStatusCard({ devices = [], sensors = [], isExpanded = fals
         }
 
         .stat-icon {
-          color: var(--primary-color);
+          color: var(--accent);
           flex-shrink: 0;
         }
 
@@ -469,7 +469,7 @@ export function DeviceStatusCard({ devices = [], sensors = [], isExpanded = fals
         .stat-value {
           font-size: 2rem;
           font-weight: 700;
-          color: var(--primary-color);
+          color: var(--accent);
           line-height: 1;
         }
 
@@ -538,7 +538,7 @@ export function DeviceStatusCard({ devices = [], sensors = [], isExpanded = fals
         }
 
         .summary-icon {
-          color: var(--primary-color);
+          color: var(--accent);
           flex-shrink: 0;
         }
 
@@ -587,21 +587,21 @@ export function DeviceStatusCard({ devices = [], sensors = [], isExpanded = fals
         }
 
         .devices-list::-webkit-scrollbar-thumb {
-          background: var(--primary-color);
+          background: var(--accent);
           border-radius: 3px;
         }
 
         .device-item {
           background: rgba(0, 0, 0, 0.3);
-          border: 1px solid rgba(var(--primary-color-rgb), 0.3);
+          border: 1px solid var(--outline);
           border-radius: 8px;
           padding: 1rem;
           transition: all 0.3s ease;
         }
 
         .device-item:hover {
-          border-color: var(--primary-color);
-          box-shadow: 0 2px 8px rgba(var(--primary-color-rgb), 0.2);
+          border-color: var(--accent);
+          box-shadow: var(--lift-sm);
         }
 
         .device-item.online {
@@ -619,7 +619,7 @@ export function DeviceStatusCard({ devices = [], sensors = [], isExpanded = fals
           gap: 1rem;
           margin-bottom: 1rem;
           padding-bottom: 1rem;
-          border-bottom: 1px solid rgba(var(--primary-color-rgb), 0.2);
+          border-bottom: 1px solid var(--hairline);
         }
 
         .device-item-icon {
@@ -692,7 +692,7 @@ export function DeviceStatusCard({ devices = [], sensors = [], isExpanded = fals
         }
 
         .detail-value {
-          color: var(--primary-color);
+          color: var(--accent);
           font-family: 'Courier New', monospace;
           font-weight: 600;
         }

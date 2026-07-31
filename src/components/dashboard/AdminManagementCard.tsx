@@ -1,9 +1,9 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Shield, UserPlus, Trash2, Users, User, Cpu, Plus, X, BellRing, Home, Copy, CheckCircle } from 'lucide-react';
-import { UserData, getAdmins, getUsers, deleteAdmin, deleteUser, registerUser } from '@/services/auth.service';
-import { getDeviceStatusClass, getDeviceStatusText, registerDevice, deleteDevice } from '@/services/devices.service';
+import { BellRing, CheckCircle, Copy, Cpu, Home, Plus, Shield, Trash2, User, UserPlus, Users, X } from 'lucide-react';
+import { UserData, deleteAdmin, deleteUser, getAdmins, getUsers, registerUser } from '@/services/auth.service';
+import { deleteDevice, getDeviceStatusText, registerDevice } from '@/services/devices.service';
 import type { BackendDevice } from '@/types/dashboard';
 
 interface AdminManagementCardProps {
@@ -25,65 +25,78 @@ interface AddDeviceFormData {
   name: string;
 }
 
+type DeleteTarget =
+  | { kind: 'admin'; id: string; name: string }
+  | { kind: 'user'; id: string; name: string }
+  | { kind: 'device'; id: string; name: string };
+
+const emptyUserForm: AddUserFormData = {
+  name: '',
+  telephone_number: '',
+  email: '',
+  password: '',
+  role: 'user',
+};
+
+const emptyDeviceForm: AddDeviceFormData = {
+  device_id: '',
+  device_type: 'sensor',
+  name: '',
+};
+
+function DeviceIcon({ type }: { type: string }) {
+  const Icon = type.toLowerCase() === 'doorbell'
+    ? BellRing
+    : type.toLowerCase() === 'hub' || type.toLowerCase() === 'main_lcd'
+      ? Home
+      : Cpu;
+  return <Icon size={18} aria-hidden="true" />;
+}
+
+function StatusChip({ online, lastSeen, type }: { online: boolean; lastSeen?: string | null; type: string }) {
+  const label = getDeviceStatusText(online, lastSeen || null, type);
+  const tone = online ? 'g-chip--ok' : 'g-chip--warn';
+  return <span className={`g-chip ${tone}`}>{label}</span>;
+}
+
 export function AdminManagementCard({ isExpanded = false, devices = [] }: AdminManagementCardProps) {
   const [admins, setAdmins] = React.useState<UserData[]>([]);
   const [users, setUsers] = React.useState<UserData[]>([]);
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [showAddUserForm, setShowAddUserForm] = useState(false);
-  const [formData, setFormData] = useState<AddUserFormData>({
-    name: '',
-    telephone_number: '',
-    email: '',
-    password: '',
-    role: 'user'
-  });
+  const [formData, setFormData] = useState<AddUserFormData>(emptyUserForm);
   const [formError, setFormError] = useState<string | null>(null);
-
-  // Device registration state
   const [showAddDeviceForm, setShowAddDeviceForm] = useState(false);
-  const [deviceFormData, setDeviceFormData] = useState<AddDeviceFormData>({
-    device_id: '',
-    device_type: 'sensor',
-    name: ''
-  });
+  const [deviceFormData, setDeviceFormData] = useState<AddDeviceFormData>(emptyDeviceForm);
   const [deviceFormError, setDeviceFormError] = useState<string | null>(null);
   const [registeredToken, setRegisteredToken] = useState<string | null>(null);
   const [tokenCopied, setTokenCopied] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
 
-  // Helper function to get the appropriate icon for each device type
-  const getDeviceIcon = (deviceType: string) => {
-    switch (deviceType.toLowerCase()) {
-      case 'doorbell':
-        return BellRing;
-      case 'hub':
-      case 'main_lcd':
-        return Home;
-      default:
-        return Cpu;
-    }
-  };
-
-  // Fetch admins and users on component mount
   React.useEffect(() => {
     fetchData();
   }, []);
 
-  // Refresh data when expanded
   React.useEffect(() => {
-    if (isExpanded) {
-      fetchData();
-    }
+    if (isExpanded) fetchData();
   }, [isExpanded]);
+
+  React.useEffect(() => {
+    if (!deleteTarget) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setDeleteTarget(null);
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [deleteTarget]);
 
   const fetchData = async () => {
     setLoading(true);
     setError(null);
     try {
-      const [adminsData, usersData] = await Promise.all([
-        getAdmins(),
-        getUsers()
-      ]);
+      const [adminsData, usersData] = await Promise.all([getAdmins(), getUsers()]);
       setAdmins(adminsData);
       setUsers(usersData);
     } catch (err: any) {
@@ -91,36 +104,6 @@ export function AdminManagementCard({ isExpanded = false, devices = [] }: AdminM
       console.error('Error fetching admin/user data:', err);
     } finally {
       setLoading(false);
-    }
-  };
-
-  const handleDeleteAdmin = async (adminId: string) => {
-    if (!confirm('Are you sure you want to delete this admin?')) return;
-
-    try {
-      const result = await deleteAdmin(adminId);
-      if (result.success) {
-        setAdmins(admins.filter(admin => admin.id !== adminId));
-      } else {
-        alert(result.message || 'Failed to delete admin');
-      }
-    } catch (err: any) {
-      alert(err.message || 'Failed to delete admin');
-    }
-  };
-
-  const handleDeleteUser = async (userId: string) => {
-    if (!confirm('Are you sure you want to delete this user?')) return;
-
-    try {
-      const result = await deleteUser(userId);
-      if (result.success) {
-        setUsers(users.filter(user => user.id !== userId));
-      } else {
-        alert(result.message || 'Failed to delete user');
-      }
-    } catch (err: any) {
-      alert(err.message || 'Failed to delete user');
     }
   };
 
@@ -134,31 +117,21 @@ export function AdminManagementCard({ isExpanded = false, devices = [] }: AdminM
     e.preventDefault();
     setFormError(null);
 
-    // Validate phone number format
     if (!/^\d{3}-\d{7}$/.test(formData.telephone_number)) {
-      setFormError('Telephone number must be in format XXX-XXXXXXX');
+      setFormError('Use the phone format XXX-XXXXXXX.');
       return;
     }
 
-    // Validate password length
     if (formData.password.length < 6) {
-      setFormError('Password must be at least 6 characters');
+      setFormError('Password must be at least 6 characters.');
       return;
     }
 
     try {
       const result = await registerUser(formData);
       if (result.success) {
-        // Refresh the data
         await fetchData();
-        // Reset form
-        setFormData({
-          name: '',
-          telephone_number: '',
-          email: '',
-          password: '',
-          role: 'user'
-        });
+        setFormData(emptyUserForm);
         setShowAddUserForm(false);
       } else {
         setFormError(result.message || 'Failed to add user');
@@ -168,7 +141,6 @@ export function AdminManagementCard({ isExpanded = false, devices = [] }: AdminM
     }
   };
 
-  // Device handlers
   const handleDeviceFormChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
     setDeviceFormData(prev => ({ ...prev, [name]: value }));
@@ -179,25 +151,16 @@ export function AdminManagementCard({ isExpanded = false, devices = [] }: AdminM
     e.preventDefault();
     setDeviceFormError(null);
 
-    // Validate device_id format (alphanumeric and underscores only)
     if (!/^[a-zA-Z0-9_]+$/.test(deviceFormData.device_id)) {
-      setDeviceFormError('Device ID must contain only letters, numbers, and underscores');
+      setDeviceFormError('Device ID can only use letters, numbers, and underscores.');
       return;
     }
 
     try {
       const result = await registerDevice(deviceFormData);
       if (result.status === 'ok') {
-        // Store the token to display
         setRegisteredToken(result.api_token);
-        // Reset form (but keep it open to show token)
-        setDeviceFormData({
-          device_id: '',
-          device_type: 'sensor',
-          name: ''
-        });
-        // Trigger refresh of device list (parent component should refetch)
-        window.location.reload();
+        setDeviceFormData(emptyDeviceForm);
       } else {
         setDeviceFormError(result.message || 'Failed to register device');
       }
@@ -206,624 +169,285 @@ export function AdminManagementCard({ isExpanded = false, devices = [] }: AdminM
     }
   };
 
-  const handleDeleteDevice = async (deviceId: string, deviceName: string) => {
-    if (!confirm(`Are you sure you want to delete device "${deviceName}"? This action cannot be undone and will remove all device data.`)) {
-      return;
-    }
+  const confirmDelete = async () => {
+    if (!deleteTarget) return;
+    setActionError(null);
 
     try {
-      const result = await deleteDevice(deviceId);
-      if (result.status === 'ok') {
-        // Refresh the page to update the device list
-        window.location.reload();
-      } else {
-        alert(result.message || 'Failed to delete device');
+      if (deleteTarget.kind === 'admin') {
+        const result = await deleteAdmin(deleteTarget.id);
+        if (!result.success) {
+          setActionError(result.message || 'Failed to delete admin');
+          return;
+        }
+        setAdmins(admins.filter(admin => admin.id !== deleteTarget.id));
       }
+
+      if (deleteTarget.kind === 'user') {
+        const result = await deleteUser(deleteTarget.id);
+        if (!result.success) {
+          setActionError(result.message || 'Failed to delete user');
+          return;
+        }
+        setUsers(users.filter(user => user.id !== deleteTarget.id));
+      }
+
+      if (deleteTarget.kind === 'device') {
+        const result = await deleteDevice(deleteTarget.id);
+        if (result.status !== 'ok') {
+          setActionError(result.message || 'Failed to delete device');
+          return;
+        }
+        window.location.reload();
+      }
+
+      setDeleteTarget(null);
     } catch (err: any) {
-      alert(err.message || 'Failed to delete device');
+      setActionError(err.message || `Failed to delete ${deleteTarget.kind}`);
     }
   };
 
   const handleCopyToken = async () => {
-    if (registeredToken) {
-      try {
-        await navigator.clipboard.writeText(registeredToken);
-        setTokenCopied(true);
-        setTimeout(() => setTokenCopied(false), 2000);
-      } catch (err) {
-        console.error('Failed to copy token:', err);
-      }
+    if (!registeredToken) return;
+    try {
+      await navigator.clipboard.writeText(registeredToken);
+      setTokenCopied(true);
+      setTimeout(() => setTokenCopied(false), 2000);
+    } catch (err) {
+      setDeviceFormError('Copy failed. Select the token and copy it manually.');
+      console.error('Failed to copy token:', err);
     }
   };
 
-  const handleCloseDeviceForm = () => {
+  const closeDeviceForm = () => {
     setShowAddDeviceForm(false);
     setDeviceFormError(null);
     setRegisteredToken(null);
     setTokenCopied(false);
   };
 
-  return (
-    <div className="card">
-      <div className="card-header">
-        <div className="card-title-group">
-          <Shield size={20} />
-          <h3>ADMINISTRATION</h3>
-        </div>
+  const openUserForm = (role: 'user' | 'admin') => {
+    setFormData(prev => ({ ...prev, role }));
+    setFormError(null);
+    setShowAddUserForm(true);
+  };
+
+  const renderUserForm = () => (
+    <form onSubmit={handleAddUser} className="g-pane g-card g-stack">
+      <div className="g-row g-row--between">
+        <h3>Add {formData.role}</h3>
+        <button type="button" className="g-icon-btn" onClick={() => setShowAddUserForm(false)} aria-label="Close add person form">
+          <X size={16} />
+        </button>
       </div>
 
-      <div className="card-content">
+      {formError && <div className="g-chip g-chip--crit" role="alert">{formError}</div>}
+
+      <div className="g-grid g-grid--2">
+        <label className="g-field">
+          <span>Role</span>
+          <select name="role" value={formData.role} onChange={handleFormChange} required>
+            <option value="user">User</option>
+            <option value="admin">Admin</option>
+          </select>
+        </label>
+        <label className="g-field">
+          <span>Name</span>
+          <input type="text" name="name" value={formData.name} onChange={handleFormChange} required placeholder="Full name" />
+        </label>
+        <label className="g-field">
+          <span>Email</span>
+          <input type="email" name="email" value={formData.email} onChange={handleFormChange} required placeholder="email@example.com" />
+        </label>
+        <label className="g-field">
+          <span>Phone</span>
+          <input type="text" name="telephone_number" value={formData.telephone_number} onChange={handleFormChange} required placeholder="012-3456789" pattern="\d{3}-\d{7}" />
+        </label>
+        <label className="g-field">
+          <span>Password</span>
+          <input type="password" name="password" value={formData.password} onChange={handleFormChange} required minLength={6} placeholder="At least 6 characters" />
+        </label>
+      </div>
+
+      <div className="g-row">
+        <button type="submit" className="g-btn g-btn--primary">Add {formData.role}</button>
+      </div>
+    </form>
+  );
+
+  const renderDeviceForm = () => (
+    <form onSubmit={handleAddDevice} className="g-pane g-card g-stack">
+      <div className="g-row g-row--between">
+        <h3>Register device</h3>
+        <button type="button" className="g-icon-btn" onClick={closeDeviceForm} aria-label="Close device form">
+          <X size={16} />
+        </button>
+      </div>
+
+      {deviceFormError && <div className="g-chip g-chip--crit" role="alert">{deviceFormError}</div>}
+
+      {registeredToken ? (
+        <div className="g-stack">
+          <div className="g-chip g-chip--ok"><CheckCircle size={14} /> Device registered</div>
+          <p className="g-sub">Save this API token now. It will not be shown again.</p>
+          <div className="g-input-group">
+            <input className="g-mono" type="text" value={registeredToken} readOnly aria-label="New device API token" />
+          </div>
+          <div className="g-row">
+            <button type="button" className="g-btn g-btn--primary" onClick={handleCopyToken}>
+              {tokenCopied ? <CheckCircle size={16} /> : <Copy size={16} />}
+              {tokenCopied ? 'Copied' : 'Copy token'}
+            </button>
+            <button type="button" className="g-btn g-btn--ghost" onClick={closeDeviceForm}>Close</button>
+          </div>
+        </div>
+      ) : (
+        <>
+          <div className="g-grid g-grid--2">
+            <label className="g-field">
+              <span>Device type</span>
+              <select name="device_type" value={deviceFormData.device_type} onChange={handleDeviceFormChange} required>
+                <option value="sensor">Sensor</option>
+                <option value="doorbell">Doorbell</option>
+                <option value="hub">Hub</option>
+                <option value="main_lcd">Main LCD</option>
+                <option value="main_mesh">Main Mesh</option>
+              </select>
+            </label>
+            <label className="g-field">
+              <span>Device ID</span>
+              <input type="text" name="device_id" value={deviceFormData.device_id} onChange={handleDeviceFormChange} required placeholder="db_001" pattern="[a-zA-Z0-9_]+" />
+            </label>
+            <label className="g-field">
+              <span>Device name</span>
+              <input type="text" name="name" value={deviceFormData.name} onChange={handleDeviceFormChange} placeholder="Front doorbell" />
+            </label>
+          </div>
+          <button type="submit" className="g-btn g-btn--primary">Register device</button>
+        </>
+      )}
+    </form>
+  );
+
+  const peopleRows = [
+    ...admins.map(admin => ({ id: admin.id, name: admin.name, email: admin.email, phone: admin.telephone_number, role: 'Admin' as const })),
+    ...users.map(user => ({ id: user.id, name: user.name, email: user.email, phone: user.telephone_number, role: 'User' as const })),
+  ];
+
+  return (
+    <>
+      <div className="g-stack">
+        <header>
+          <div className="g-row g-row--between">
+            <h2>Admin</h2>
+            <Shield size={18} aria-hidden="true" />
+          </div>
+          <p className="g-sub">People, access roles, and enrolled boards.</p>
+        </header>
+
         {!isExpanded ? (
-          /* Compact view */
-          <div className="security-compact">
-            <div className="security-overview">
-              <div className="overview-item">
-                <Users size={20} />
-                <span>ADMINS</span>
-                <span className="status-indicator">
-                  {admins.length}
-                </span>
-              </div>
-              <div className="overview-item">
-                <User size={20} />
-                <span>USERS</span>
-                <span className="status-indicator">
-                  {users.length}
-                </span>
-              </div>
-              <div className="overview-item">
-                <Cpu size={20} />
-                <span>DEVICES</span>
-                <span className="status-indicator">
-                  {devices.length}
-                </span>
-              </div>
-            </div>
+          <div className="g-grid g-grid--3">
+            <div className="g-tile"><p className="g-label">Admins</p><div className="g-metric-sm g-num">{admins.length}</div></div>
+            <div className="g-tile"><p className="g-label">Users</p><div className="g-metric-sm g-num">{users.length}</div></div>
+            <div className="g-tile"><p className="g-label">Devices</p><div className="g-metric-sm g-num">{devices.length}</div></div>
           </div>
         ) : (
-          /* Expanded view */
-          <div className="security-expanded">
-            {loading && <div className="loading-message">Loading...</div>}
-            {error && <div className="error-message">{error}</div>}
+          <div className="g-stack">
+            {loading && <div className="g-empty"><strong>Loading people</strong><p>Fetching admin and user records.</p></div>}
+            {error && <div className="g-chip g-chip--crit" role="alert">{error}</div>}
 
-            {/* Add User Form */}
-            {showAddUserForm && (
-              <div className="add-user-form-container">
-                <form onSubmit={handleAddUser} className="add-user-form">
-                  <div className="form-header">
-                    <h4>ADD NEW {formData.role.toUpperCase()}</h4>
-                    <button
-                      type="button"
-                      className="btn-close-form"
-                      onClick={() => {
-                        setShowAddUserForm(false);
-                        setFormError(null);
-                      }}
-                    >
-                      <X size={20} />
-                    </button>
-                  </div>
-
-                  {formError && <div className="form-error">{formError}</div>}
-
-                  <div className="form-group">
-                    <label>Role</label>
-                    <select name="role" value={formData.role} onChange={handleFormChange} required>
-                      <option value="user">User</option>
-                      <option value="admin">Admin</option>
-                    </select>
-                  </div>
-
-                  <div className="form-group">
-                    <label>Name</label>
-                    <input
-                      type="text"
-                      name="name"
-                      value={formData.name}
-                      onChange={handleFormChange}
-                      required
-                      placeholder="Full Name"
-                    />
-                  </div>
-
-                  <div className="form-group">
-                    <label>Email</label>
-                    <input
-                      type="email"
-                      name="email"
-                      value={formData.email}
-                      onChange={handleFormChange}
-                      required
-                      placeholder="email@example.com"
-                    />
-                  </div>
-
-                  <div className="form-group">
-                    <label>Phone (XXX-XXXXXXX)</label>
-                    <input
-                      type="text"
-                      name="telephone_number"
-                      value={formData.telephone_number}
-                      onChange={handleFormChange}
-                      required
-                      placeholder="012-3456789"
-                      pattern="\d{3}-\d{7}"
-                    />
-                  </div>
-
-                  <div className="form-group">
-                    <label>Password (min 6 characters)</label>
-                    <input
-                      type="password"
-                      name="password"
-                      value={formData.password}
-                      onChange={handleFormChange}
-                      required
-                      minLength={6}
-                      placeholder="••••••"
-                    />
-                  </div>
-
-                  <div className="form-actions">
-                    <button type="submit" className="btn-action btn-submit">
-                      ADD {formData.role.toUpperCase()}
-                    </button>
-                  </div>
-                </form>
-              </div>
-            )}
-
-            {/* Admins Section */}
-            <div className="security-section">
-              <div className="section-header">
-                <h4>ADMINS ({admins.length})</h4>
-                <div className="section-actions">
-                  <button
-                    className="btn-action-sm btn-add"
-                    onClick={() => {
-                      setFormData(prev => ({ ...prev, role: 'admin' }));
-                      setShowAddUserForm(true);
-                    }}
-                  >
-                    <UserPlus size={16} />
-                    ADD ADMIN
-                  </button>
-                </div>
-              </div>
-              <div className="devices-grid">
-                {admins.length === 0 && !loading && (
-                  <div className="empty-message">No admins found</div>
-                )}
-                {admins.map(admin => (
-                  <div key={admin.id} className="security-device-card">
-                    <div className="device-header">
-                      <Users className="device-icon" size={24} />
-                      <div className="device-info-header">
-                        <h5>{admin.name}</h5>
-                        <span className="device-location">{admin.email}</span>
-                      </div>
-                    </div>
-                    
-                    <div className="admin-info">
-                      <span className="info-label">Phone:</span>
-                      <span className="info-value">{admin.telephone_number}</span>
-                    </div>
-                    <div className="device-actions">
-                      <button
-                        className="btn-action btn-delete"
-                        onClick={() => handleDeleteAdmin(admin.id)}
-                      >
-                        <Trash2 size={16} />
-                        REMOVE
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
+            <div className="g-row g-row--wrap">
+              <button className="g-btn g-btn--primary" onClick={() => openUserForm('admin')}><UserPlus size={16} /> Add admin</button>
+              <button className="g-btn g-btn--ghost" onClick={() => openUserForm('user')}><UserPlus size={16} /> Add user</button>
+              <button className="g-btn g-btn--ghost" onClick={() => setShowAddDeviceForm(true)}><Plus size={16} /> Register device</button>
             </div>
 
-            {/* Users Section */}
-            <div className="security-section">
-              <div className="section-header">
-                <h4>USERS ({users.length})</h4>
-                <div className="section-actions">
-                  <button
-                    className="btn-action-sm btn-add"
-                    onClick={() => {
-                      setFormData(prev => ({ ...prev, role: 'user' }));
-                      setShowAddUserForm(true);
-                    }}
-                  >
-                    <UserPlus size={16} />
-                    ADD USER
-                  </button>
-                </div>
+            {showAddUserForm && renderUserForm()}
+            {showAddDeviceForm && renderDeviceForm()}
+
+            <section className="g-stack">
+              <div className="g-row g-row--between">
+                <h3>People</h3>
+                <span className="g-chip">{peopleRows.length} total</span>
               </div>
-              <div className="devices-grid">
-                {users.length === 0 && !loading && (
-                  <div className="empty-message">No users found</div>
-                )}
-                {users.map(user => (
-                  <div key={user.id} className="security-device-card">
-                    <div className="device-header">
-                      <User className="device-icon" size={24} />
-                      <div className="device-info-header">
-                        <h5>{user.name}</h5>
-                        <span className="device-location">{user.email}</span>
-                      </div>
-                    </div>
-                    
-                    <div className="admin-info">
-                      <span className="info-label">Phone:</span>
-                      <span className="info-value">{user.telephone_number}</span>
-                    </div>
-                    <div className="device-actions">
-                      <button
-                        className="btn-action btn-delete"
-                        onClick={() => handleDeleteUser(user.id)}
-                      >
-                        <Trash2 size={16} />
-                        REMOVE
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Devices Section */}
-            <div className="security-section">
-              <div className="section-header">
-                <h4>DEVICES / BOARDS ({devices.length})</h4>
-                <div className="section-actions">
-                  <button
-                    className="btn-action-sm btn-add"
-                    onClick={() => setShowAddDeviceForm(true)}
-                  >
-                    <Plus size={16} />
-                    REGISTER DEVICE
-                  </button>
-                </div>
-              </div>
-
-              {/* Add Device Form */}
-              {showAddDeviceForm && (
-                <div className="add-user-form-container">
-                  <form onSubmit={handleAddDevice} className="add-user-form">
-                    <div className="form-header">
-                      <h4>REGISTER NEW DEVICE</h4>
-                      <button
-                        type="button"
-                        className="btn-close-form"
-                        onClick={handleCloseDeviceForm}
-                      >
-                        <X size={20} />
-                      </button>
-                    </div>
-
-                    {deviceFormError && <div className="form-error">{deviceFormError}</div>}
-
-                    {registeredToken ? (
-                      /* Show token after successful registration */
-                      <div className="token-display">
-                        <h5 style={{ color: 'var(--success)', marginBottom: '1rem' }}>
-                          <CheckCircle size={20} style={{ display: 'inline', marginRight: '0.5rem' }} />
-                          Device Registered Successfully!
-                        </h5>
-                        <p style={{ color: 'rgba(255, 255, 255, 0.7)', marginBottom: '1rem', fontSize: '0.9rem' }}>
-                          Save this API token securely. It will not be shown again!
-                        </p>
-                        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                          <input
-                            type="text"
-                            value={registeredToken}
-                            readOnly
-                            style={{
-                              flex: 1,
-                              background: 'rgba(0, 0, 0, 0.5)',
-                              border: '1px solid var(--primary-color)',
-                              borderRadius: '4px',
-                              color: '#FFF',
-                              padding: '0.75rem',
-                              fontSize: '0.85rem',
-                              fontFamily: 'monospace'
-                            }}
-                          />
-                          <button
-                            type="button"
-                            onClick={handleCopyToken}
-                            className="btn-action"
-                            style={{ padding: '0.75rem 1rem', background: tokenCopied ? 'var(--success)' : 'var(--primary-color)' }}
-                          >
-                            {tokenCopied ? <CheckCircle size={16} /> : <Copy size={16} />}
-                          </button>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={handleCloseDeviceForm}
-                          className="btn-action btn-submit"
-                          style={{ marginTop: '1rem', width: '100%' }}
-                        >
-                          CLOSE
-                        </button>
-                      </div>
-                    ) : (
-                      /* Show registration form */
-                      <>
-                        <div className="form-group">
-                          <label>Device Type</label>
-                          <select
-                            name="device_type"
-                            value={deviceFormData.device_type}
-                            onChange={handleDeviceFormChange}
-                            required
-                          >
-                            <option value="sensor">Sensor</option>
-                            <option value="doorbell">Doorbell</option>
-                            <option value="hub">Hub</option>
-                            <option value="main_lcd">Main LCD</option>
-                            <option value="main_mesh">Main Mesh</option>
-                          </select>
-                        </div>
-
-                        <div className="form-group">
-                          <label>Device ID</label>
-                          <input
-                            type="text"
-                            name="device_id"
-                            value={deviceFormData.device_id}
-                            onChange={handleDeviceFormChange}
-                            required
-                            placeholder="e.g., db_001, hb_001, ss_001"
-                            pattern="[a-zA-Z0-9_]+"
-                          />
-                          <small style={{ color: 'rgba(255, 255, 255, 0.5)', fontSize: '0.75rem' }}>
-                            Only letters, numbers, and underscores
-                          </small>
-                        </div>
-
-                        <div className="form-group">
-                          <label>Device Name (Optional)</label>
-                          <input
-                            type="text"
-                            name="name"
-                            value={deviceFormData.name}
-                            onChange={handleDeviceFormChange}
-                            placeholder="e.g., My Doorbell, Living Room Sensor"
-                          />
-                        </div>
-
-                        <div className="form-actions">
-                          <button type="submit" className="btn-action btn-submit">
-                            REGISTER DEVICE
-                          </button>
-                        </div>
-                      </>
-                    )}
-                  </form>
+              {peopleRows.length === 0 && !loading ? (
+                <div className="g-empty"><Users size={22} /><strong>No people found</strong><p>Add an admin or user to grant access.</p></div>
+              ) : (
+                <div className="g-scroll">
+                  <table className="g-table" aria-label="Administrators and users">
+                    <thead><tr><th>Name</th><th>Email</th><th>Phone</th><th>Role</th><th className="g-num-cell">Action</th></tr></thead>
+                    <tbody>
+                      {peopleRows.map(person => (
+                        <tr key={`${person.role}-${person.id}`}>
+                          <td><span className="g-row"><span className="g-dot g-dot--ok"></span>{person.name}</span></td>
+                          <td>{person.email}</td>
+                          <td className="g-mono">{person.phone}</td>
+                          <td><span className="g-chip">{person.role}</span></td>
+                          <td className="g-num-cell">
+                            <button className="g-btn g-btn--ghost" onClick={() => setDeleteTarget({ kind: person.role === 'Admin' ? 'admin' : 'user', id: person.id, name: person.name })}>
+                              <Trash2 size={15} /> Remove
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               )}
+            </section>
 
-              <div className="devices-grid">
-                {devices.length === 0 && !loading && (
-                  <div className="empty-message">No devices found</div>
-                )}
-                {devices.map(device => {
-                  const DeviceIcon = getDeviceIcon(device.type);
-                  return (
-                    <div key={device.device_id} className="security-device-card">
-                      <div className="device-header">
-                        <DeviceIcon className="device-icon" size={24} />
-                        <div className="device-info-header">
-                          <h5>{device.name}</h5>
-                          <span className="device-location">{device.type}</span>
-                        </div>
-                      </div>
-                      <div className="device-status-container">
-                        <span className={`status-indicator ${getDeviceStatusClass(device.online, device.last_seen, device.type)}`}>
-                          {getDeviceStatusText(device.online, device.last_seen, device.type)}
-                        </span>
-                      </div>
-                      <div className="admin-info">
-                        <span className="info-label">Device ID:</span>
-                        <span className="info-value" style={{ fontSize: '0.8em' }}>{device.device_id}</span>
-                      </div>
-                      <div className="device-actions">
-                        <button
-                          className="btn-action btn-delete"
-                          onClick={() => handleDeleteDevice(device.device_id, device.name)}
-                        >
-                          <Trash2 size={16} />
-                          REMOVE
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
+            <section className="g-stack">
+              <div className="g-row g-row--between">
+                <h3>Devices</h3>
+                <span className="g-chip">{devices.length} enrolled</span>
               </div>
-            </div>
+              {devices.length === 0 && !loading ? (
+                <div className="g-empty"><Cpu size={22} /><strong>No devices found</strong><p>Register a board to issue an API token.</p></div>
+              ) : (
+                <div className="g-scroll">
+                  <table className="g-table" aria-label="Enrolled devices">
+                    <thead><tr><th>Device</th><th>ID</th><th>Type</th><th>Status</th><th className="g-num-cell">Action</th></tr></thead>
+                    <tbody>
+                      {devices.map(device => (
+                        <tr key={device.device_id}>
+                          <td><span className="g-row"><DeviceIcon type={device.type} />{device.name}</span></td>
+                          <td className="g-mono">{device.device_id}</td>
+                          <td>{device.type}</td>
+                          <td><StatusChip online={device.online} lastSeen={device.last_seen} type={device.type} /></td>
+                          <td className="g-num-cell">
+                            <button className="g-btn g-btn--ghost" onClick={() => setDeleteTarget({ kind: 'device', id: device.device_id, name: device.name })}>
+                              <Trash2 size={15} /> Remove
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </section>
           </div>
         )}
       </div>
 
-      <style jsx>{`
-        .add-user-form-container {
-          background: rgba(0, 0, 0, 0.3);
-          border: 1px solid var(--primary-color);
-          border-radius: 8px;
-          padding: 1.5rem;
-          margin-bottom: 1.5rem;
-        }
-
-        .add-user-form {
-          display: flex;
-          flex-direction: column;
-          gap: 1rem;
-        }
-
-        .form-header {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          margin-bottom: 0.5rem;
-        }
-
-        .form-header h4 {
-          color: var(--primary-color);
-          font-size: 1.1rem;
-          font-weight: 600;
-          letter-spacing: 1px;
-          margin: 0;
-        }
-
-        .btn-close-form {
-          background: none;
-          border: none;
-          color: #FF6600;
-          cursor: pointer;
-          padding: 0.25rem;
-          transition: all 0.2s;
-        }
-
-        .btn-close-form:hover {
-          color: #FF0000;
-          transform: scale(1.1);
-        }
-
-        .form-error {
-          background: rgba(255, 0, 0, 0.1);
-          border: 1px solid #FF6600;
-          color: #FF6600;
-          padding: 0.75rem;
-          border-radius: 4px;
-          font-size: 0.9rem;
-        }
-
-        .form-group {
-          display: flex;
-          flex-direction: column;
-          gap: 0.5rem;
-        }
-
-        .form-group label {
-          color: var(--primary-color);
-          font-size: 0.85rem;
-          font-weight: 600;
-          letter-spacing: 0.5px;
-          text-transform: uppercase;
-        }
-
-        .form-group input,
-        .form-group select {
-          background: rgba(0, 0, 0, 0.5);
-          border: 1px solid rgba(var(--primary-color-rgb), 0.3);
-          border-radius: 4px;
-          color: #FFF;
-          padding: 0.75rem;
-          font-size: 0.95rem;
-          font-family: 'Courier New', monospace;
-          transition: all 0.2s;
-        }
-
-        .form-group input:focus,
-        .form-group select:focus {
-          outline: none;
-          border-color: var(--primary-color);
-          box-shadow: 0 0 8px rgba(var(--primary-color-rgb), 0.3);
-        }
-
-        .form-group input::placeholder {
-          color: rgba(255, 255, 255, 0.3);
-        }
-
-        .form-actions {
-          display: flex;
-          justify-content: flex-end;
-          margin-top: 0.5rem;
-        }
-
-        .btn-submit {
-          background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
-          padding: 0.75rem 1.5rem;
-        }
-
-        .btn-submit:hover {
-          transform: translateY(-2px);
-          box-shadow: 0 4px 12px rgba(var(--primary-color-rgb), 0.4);
-        }
-
-        .btn-add {
-          display: flex;
-          align-items: center;
-          gap: 0.5rem;
-          background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
-        }
-
-        .btn-add:hover {
-          transform: translateY(-2px);
-          box-shadow: 0 2px 8px rgba(var(--primary-color-rgb), 0.4);
-        }
-
-        .btn-delete {
-          display: flex;
-          align-items: center;
-          gap: 0.5rem;
-          background: linear-gradient(135deg, #FF6600, #FF0000);
-        }
-
-        .btn-delete:hover {
-          transform: translateY(-2px);
-          box-shadow: 0 4px 12px rgba(255, 102, 0, 0.4);
-        }
-
-        .btn-delete:disabled {
-          opacity: 0.3;
-          cursor: not-allowed;
-          transform: none;
-        }
-
-        .btn-delete:disabled:hover {
-          transform: none;
-          box-shadow: none;
-        }
-
-        .admin-info {
-          display: flex;
-          gap: 0.5rem;
-          font-size: 0.85rem;
-          padding: 0.5rem 0;
-        }
-
-        .info-label {
-          color: rgba(255, 255, 255, 0.5);
-        }
-
-        .info-value {
-          color: var(--primary-color);
-          font-weight: 600;
-        }
-
-        .loading-message,
-        .error-message,
-        .empty-message {
-          padding: 1rem;
-          text-align: center;
-          color: rgba(255, 255, 255, 0.5);
-          font-style: italic;
-        }
-
-        .error-message {
-          color: #FF6600;
-          background: rgba(255, 102, 0, 0.1);
-          border: 1px solid #FF6600;
-          border-radius: 4px;
-        }
-
-        .btn-action-sm:disabled {
-          opacity: 0.3;
-          cursor: not-allowed;
-        }
-      `}</style>
-    </div>
+      {deleteTarget && (
+        <div className="g-modal" role="dialog" aria-modal="true" aria-labelledby="admin-remove-title" onClick={() => setDeleteTarget(null)}>
+          <div className="g-pane g-modal__card" onClick={(event) => event.stopPropagation()}>
+            <div className="g-modal__head">
+              <div>
+                <h2 id="admin-remove-title">Remove {deleteTarget.name}</h2>
+                <p>This removes {deleteTarget.kind === 'device' ? 'the enrolled device and its data' : 'this person from access'} immediately.</p>
+              </div>
+              <button className="g-icon-btn" onClick={() => setDeleteTarget(null)} aria-label="Close"><X size={16} /></button>
+            </div>
+            {actionError && <div className="g-chip g-chip--crit" role="alert">{actionError}</div>}
+            <div className="g-modal__foot">
+              <button className="g-btn g-btn--ghost" onClick={() => setDeleteTarget(null)}>Cancel</button>
+              <button className="g-btn g-btn--danger" onClick={confirmDelete}>Remove</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 }

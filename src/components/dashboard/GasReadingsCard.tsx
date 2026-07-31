@@ -1,6 +1,15 @@
 import React, { useState } from 'react';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
-import { Wind, RefreshCw } from 'lucide-react';
+import {
+  CartesianGrid,
+  Line,
+  LineChart,
+  ReferenceLine,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts';
+import { RefreshCw, Wind } from 'lucide-react';
 import type { GasReading } from '@/types/dashboard';
 
 interface GasReadingsCardProps {
@@ -8,6 +17,8 @@ interface GasReadingsCardProps {
   isExpanded?: boolean;
   onRefresh?: () => void;
 }
+
+const chartMargins = { top: 18, right: 22, left: 6, bottom: 18 };
 
 export function GasReadingsCard({ gasReadings, isExpanded = false, onRefresh }: GasReadingsCardProps) {
   const [selectedSensor, setSelectedSensor] = useState<string | null>(null);
@@ -21,211 +32,184 @@ export function GasReadingsCard({ gasReadings, isExpanded = false, onRefresh }: 
     }
   };
 
-  const getStatusColor = (status: string) => {
+  const getStatusTokenClass = (status: GasReading['status']) => {
     switch (status) {
       case 'safe':
-        return '#00FF88';
+        return 'is-ok';
       case 'warning':
-        return '#FFAA00';
+        return 'is-warn';
       case 'danger':
-        return '#FF0000';
-      default:
-        return '#FFF';
-    }
-  };
-
-  const getStatusClass = (status: string) => {
-    switch (status) {
-      case 'safe':
-        return 'gas-status-safe';
-      case 'warning':
-        return 'gas-status-warning';
-      case 'danger':
-        return 'gas-status-danger';
+        return 'is-crit';
       default:
         return '';
     }
   };
 
+  const getChipClass = (status: GasReading['status']) => {
+    switch (status) {
+      case 'safe':
+        return 'g-chip g-chip--ok';
+      case 'warning':
+        return 'g-chip g-chip--warn';
+      case 'danger':
+        return 'g-chip g-chip--crit';
+      default:
+        return 'g-chip';
+    }
+  };
+
+  const getMeterClass = (status: GasReading['status']) => {
+    if (status === 'danger') return 'is-crit';
+    if (status === 'warning') return 'is-warn';
+    return '';
+  };
+
+  const selectedReading = selectedSensor
+    ? gasReadings.find(reading => reading.sensor_id === selectedSensor)
+    : null;
+
+  const readingAverage = selectedReading
+    ? selectedReading.history.reduce((sum, h) => sum + h.value, 0) / Math.max(selectedReading.history.length, 1)
+    : 0;
+
   return (
-    <div className="card">
-      <div className="card-header">
-        <div className="card-title-group">
-          <Wind size={20} />
-          <h3>GAS SENSORS</h3>
+    <div className="g-pane g-card">
+      <header>
+        <div className="g-row">
+          <Wind size={20} aria-hidden="true" />
+          <h3>Air quality</h3>
         </div>
         <button
-          className="card-refresh-icon"
+          className="g-icon-btn"
           onClick={(e) => { e.stopPropagation(); handleRefresh(); }}
           disabled={refetching}
+          aria-label="Refresh gas readings"
         >
-          <RefreshCw size={20} className={refetching ? 'spinning' : ''} />
+          <RefreshCw size={17} className={refetching ? 'spinning' : ''} aria-hidden="true" />
         </button>
-      </div>
+      </header>
 
-      <div className="card-content">
-        {!isExpanded ? (
-          /* Compact view - show current readings */
-          <div className="gas-compact">
-            {gasReadings.map(reading => (
-              <div key={reading.sensor_id} className={`gas-item ${getStatusClass(reading.status)}`}>
-                <div className="gas-header">
-                  <span className="gas-location">{reading.location}</span>
-                  <span className={`gas-status status-${reading.status}`}>
-                    {reading.status.toUpperCase()}
-                  </span>
+      {!isExpanded ? (
+        <div className="g-stack">
+          {gasReadings.length > 0 ? (
+            gasReadings.map(reading => {
+              const pct = Math.max(0, Math.min(100, Math.round((reading.ppm / 500) * 100)));
+              return (
+                <div key={reading.sensor_id}>
+                  <div className="g-meter-row">
+                    <span>{reading.location}</span>
+                    <b className={getStatusTokenClass(reading.status)}>{reading.ppm.toFixed(0)} ppm</b>
+                  </div>
+                  <div className="g-meter">
+                    <i className={getMeterClass(reading.status)} style={{ width: `${pct}%` }} />
+                    <span className="g-meter__limit" style={{ left: '30%' }} />
+                  </div>
                 </div>
-                <div className="gas-value">{reading.ppm.toFixed(0)} PPM</div>
-              </div>
-            ))}
-          </div>
-        ) : (
-          /* Expanded view - Grafana-style charts */
-          <div className="gas-expanded">
-            <div className="chart-controls">
-              <div className="sensor-selector">
-                <button
-                  className={`sensor-button ${selectedSensor === null ? 'active' : ''}`}
-                  onClick={() => setSelectedSensor(null)}
-                >
-                  ALL SENSORS
-                </button>
-                {gasReadings.map(reading => (
-                  <button
-                    key={reading.sensor_id}
-                    className={`sensor-button ${selectedSensor === reading.sensor_id ? 'active' : ''}`}
-                    onClick={() => setSelectedSensor(reading.sensor_id)}
-                  >
-                    {reading.location}
-                  </button>
-                ))}
-              </div>
-              <button
-                className="card-refresh-icon"
-                onClick={(e) => { e.stopPropagation(); handleRefresh(); }}
-                disabled={refetching}
-                style={{ marginLeft: 'auto' }}
-              >
-                <RefreshCw size={20} className={refetching ? 'spinning' : ''} />
-              </button>
+              );
+            })
+          ) : (
+            <div className="g-empty">
+              <strong>No air readings</strong>
+              <p>No gas sensors have reported yet.</p>
             </div>
+          )}
+        </div>
+      ) : (
+        <div className="g-stack">
+          <div className="g-row g-row--between g-row--wrap">
+            <div className="g-seg" data-choice aria-label="Gas sensors">
+              <button
+                type="button"
+                aria-current={selectedSensor === null ? 'true' : undefined}
+                onClick={() => setSelectedSensor(null)}
+              >
+                Overview
+              </button>
+              {gasReadings.map(reading => (
+                <button
+                  type="button"
+                  key={reading.sensor_id}
+                  aria-current={selectedSensor === reading.sensor_id ? 'true' : undefined}
+                  onClick={() => setSelectedSensor(reading.sensor_id)}
+                >
+                  {reading.location}
+                </button>
+              ))}
+            </div>
+            <button
+              className="g-btn g-btn--ghost"
+              onClick={(e) => { e.stopPropagation(); handleRefresh(); }}
+              disabled={refetching}
+            >
+              <RefreshCw size={16} className={refetching ? 'spinning' : ''} aria-hidden="true" />
+              Refresh
+            </button>
+          </div>
 
-            {selectedSensor === null ? (
-              /* Show all sensors overview */
-              <div className="chart-container">
-                <h4>GAS SENSOR OVERVIEW</h4>
-                <div className="sensors-grid">
-                  {gasReadings.map(reading => (
-                    <div key={reading.sensor_id} className={`sensor-card ${getStatusClass(reading.status)}`}>
-                      <h5>{reading.location}</h5>
-                      <div className="sensor-value-large" style={{ color: getStatusColor(reading.status) }}>
-                        {reading.ppm.toFixed(0)} PPM
-                      </div>
-                      <div className="sensor-status">
-                        STATUS: <span className={`status-${reading.status}`}>{reading.status.toUpperCase()}</span>
-                      </div>
-                      <div className="sensor-details">
-                        <p>ID: {reading.sensor_id}</p>
-                        {reading.gas_level !== undefined && (
-                          <p>GAS LEVEL: {reading.gas_level.toFixed(0)}</p>
-                        )}
-                        <p>SAFE: &lt;100 PPM</p>
-                        <p>WARNING: 100-150 PPM</p>
-                        <p>DANGER: &gt;150 PPM</p>
-                      </div>
-                    </div>
-                  ))}
+          {selectedReading ? (
+            <>
+              <div className="g-grid g-grid--3">
+                <div className={`g-tile ${getStatusTokenClass(selectedReading.status)}`}>
+                  <p className="g-label">Now</p>
+                  <div className="g-metric-sm g-num">{selectedReading.ppm.toFixed(0)}<small>ppm</small></div>
+                </div>
+                <div className="g-tile">
+                  <p className="g-label">24h average</p>
+                  <div className="g-metric-sm g-num">{readingAverage.toFixed(0)}<small>ppm</small></div>
+                </div>
+                <div className="g-tile">
+                  <p className="g-label">Status</p>
+                  <span className={getChipClass(selectedReading.status)}>{selectedReading.status}</span>
                 </div>
               </div>
-            ) : (
-              /* Show single sensor with history */
-              <div className="chart-container">
-                {gasReadings
-                  .filter(reading => reading.sensor_id === selectedSensor)
-                  .map(reading => (
-                    <div key={reading.sensor_id}>
-                      <div className="sensor-details-header">
-                        <div className="detail-item">
-                          <span className="detail-label">LOCATION:</span>
-                          <span className="detail-value">{reading.location}</span>
-                        </div>
-                        <div className="detail-item">
-                          <span className="detail-label">CURRENT PPM:</span>
-                          <span className="detail-value" style={{ color: getStatusColor(reading.status) }}>
-                            {reading.ppm.toFixed(0)} PPM
-                          </span>
-                        </div>
-                        <div className="detail-item">
-                          <span className="detail-label">STATUS:</span>
-                          <span className={`detail-value status-${reading.status}`}>
-                            {reading.status.toUpperCase()}
-                          </span>
-                        </div>
-                        <div className="detail-item">
-                          <span className="detail-label">AVG (24H):</span>
-                          <span className="detail-value">
-                            {(reading.history.reduce((sum, h) => sum + h.value, 0) / reading.history.length).toFixed(0)} PPM
-                          </span>
-                        </div>
-                        {reading.gas_level !== undefined && (
-                          <div className="detail-item">
-                            <span className="detail-label">GAS LEVEL:</span>
-                            <span className="detail-value">
-                              {reading.gas_level.toFixed(0)}
-                            </span>
-                          </div>
-                        )}
-                      </div>
-                      <h4>GAS LEVELS HISTORY - {reading.location.toUpperCase()} (24H)</h4>
-                      <ResponsiveContainer width="100%" height={400}>
-                        <LineChart
-                          data={reading.history.map(h => ({
-                            timestamp: new Date(h.timestamp).toLocaleTimeString(),
-                            ppm: h.value.toFixed(0)
-                          }))}
-                          margin={{ top: 20, right: 30, left: 20, bottom: 20 }}
-                        >
-                          <CartesianGrid strokeDasharray="3 3" stroke="#333" />
-                          <XAxis
-                            dataKey="timestamp"
-                            stroke="#FFF"
-                            tick={{ fill: '#FFF', fontFamily: 'monospace' }}
-                            interval="preserveStartEnd"
-                          />
-                          <YAxis
-                            stroke="#FFF"
-                            tick={{ fill: '#FFF', fontFamily: 'monospace' }}
-                            label={{ value: 'Gas Level (PPM)', angle: -90, position: 'insideLeft', fill: '#FFF' }}
-                          />
-                          {/* Reference lines for thresholds */}
-                          <ReferenceLine y={100} stroke="#FFAA00" strokeDasharray="3 3" label={{ value: 'WARNING', fill: '#FFAA00', fontFamily: 'monospace' }} />
-                          <ReferenceLine y={150} stroke="#FF0000" strokeDasharray="3 3" label={{ value: 'DANGER', fill: '#FF0000', fontFamily: 'monospace' }} />
-                          <Tooltip
-                            contentStyle={{
-                              backgroundColor: '#1a1a1a',
-                              border: '2px solid #FF6600',
-                              borderRadius: '4px',
-                              fontFamily: 'monospace',
-                              textTransform: 'uppercase'
-                            }}
-                          />
-                          <Line
-                            type="monotone"
-                            dataKey="ppm"
-                            stroke={getStatusColor(reading.status)}
-                            strokeWidth={2}
-                            dot={false}
-                            activeDot={{ r: 6 }}
-                          />
-                        </LineChart>
-                      </ResponsiveContainer>
-                    </div>
-                  ))}
+              <div className={selectedReading.status === 'safe' ? 'g-chart' : 'g-chart g-chart--warn'} role="img" aria-label={`${selectedReading.location} gas history over 24 hours`}>
+                <ResponsiveContainer width="100%" height={360}>
+                  <LineChart
+                    data={selectedReading.history.map(h => ({
+                      timestamp: new Date(h.timestamp).toLocaleTimeString(),
+                      ppm: Number(h.value.toFixed(0)),
+                    }))}
+                    margin={chartMargins}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--hairline)" />
+                    <XAxis dataKey="timestamp" tick={{ fill: 'var(--ink-3)', fontFamily: 'var(--mono)', fontSize: 11 }} stroke="var(--hairline)" interval="preserveStartEnd" />
+                    <YAxis tick={{ fill: 'var(--ink-3)', fontFamily: 'var(--mono)', fontSize: 11 }} stroke="var(--hairline)" width={36} />
+                    <ReferenceLine y={100} stroke="var(--warn)" strokeDasharray="5 4" label={{ value: 'warn 100', fill: 'var(--ink-3)', fontSize: 11 }} />
+                    <ReferenceLine y={150} stroke="var(--crit)" strokeDasharray="5 4" label={{ value: 'danger 150', fill: 'var(--ink-3)', fontSize: 11 }} />
+                    <Tooltip
+                      contentStyle={{
+                        background: 'var(--modal-bg)',
+                        border: '1px solid var(--outline)',
+                        borderRadius: 'var(--r-field)',
+                        color: 'var(--ink)',
+                        fontFamily: 'var(--font)',
+                      }}
+                      labelStyle={{ color: 'var(--ink-2)' }}
+                    />
+                    <Line type="monotone" dataKey="ppm" stroke="currentColor" strokeWidth={2.2} dot={false} activeDot={{ r: 5 }} />
+                  </LineChart>
+                </ResponsiveContainer>
               </div>
-            )}
-          </div>
-        )}
-      </div>
+            </>
+          ) : (
+            <div className="g-grid g-grid--3">
+              {gasReadings.map(reading => (
+                <div key={reading.sensor_id} className={`g-tile ${getStatusTokenClass(reading.status)}`}>
+                  <div className="g-row g-row--between">
+                    <p className="g-label">{reading.location}</p>
+                    <span className={getChipClass(reading.status)}>{reading.status}</span>
+                  </div>
+                  <div className="g-metric-sm g-num">{reading.ppm.toFixed(0)}<small>ppm</small></div>
+                  <p className="g-sub">
+                    ID {reading.sensor_id}
+                    {reading.gas_level !== undefined ? ` · raw ${reading.gas_level.toFixed(0)}` : ''}
+                  </p>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

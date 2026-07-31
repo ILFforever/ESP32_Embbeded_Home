@@ -19,7 +19,7 @@ import {
   getLockStatus
 } from '@/services/devices.service';
 import type { DevicesStatus, GasReading, Alert, DoorWindow } from '@/types/dashboard';
-import { getCurrentTheme, setTheme as applyGlassTheme, type GlassTheme } from '@/components/glass/theme';
+import { getCurrentTheme, toggleTheme as toggleGlassTheme, type GlassTheme } from '@/components/glass/theme';
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -30,8 +30,6 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [theme, setThemeState] = useState<GlassTheme>('light');
   const [expandedCard, setExpandedCard] = useState<string | null>(null);
-  const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [activeView, setActiveView] = useState<string>('dashboard');
   const [systemOnline, setSystemOnline] = useState<boolean>(false);
   const [allDevicesOnline, setAllDevicesOnline] = useState<boolean>(false);
   const [doorLockStates, setDoorLockStates] = useState<Record<string, 'locked' | 'unlocked'>>({});
@@ -125,58 +123,27 @@ export default function DashboardPage() {
     setThemeState(getCurrentTheme());
   }, []);
 
-  const toggleTheme = () => {
-    const next = getCurrentTheme() === 'dark' ? 'light' : 'dark';
-    setThemeState(next);
-    if (window.Glass) {
-      applyGlassTheme(next);
-      return;
-    }
-    document.documentElement.setAttribute('data-theme', next);
-  };
+  useEffect(() => {
+    if (!expandedCard) return;
 
-  const toggleSidebar = () => {
-    setSidebarOpen(!sidebarOpen);
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        closeExpandedCard();
+      }
+    };
+
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [expandedCard]);
+
+  const toggleTheme = () => {
+    const next = toggleGlassTheme();
+    setThemeState(next);
   };
 
   const handleLogout = () => {
     logout();
     router.push('/login');
-  };
-
-  const handleMenuClick = (menuItem: string) => {
-    setActiveView(menuItem);
-
-    // Handle specific menu actions
-    switch (menuItem) {
-      case 'alerts':
-        openExpandedCard('alerts');
-        break;
-      case 'analytics':
-        // Analytics view - could open a dedicated analytics card in the future
-        openExpandedCard('system-status');
-        break;
-      case 'devices':
-        // Only admins can access device management
-        if (user?.role === 'admin') {
-          openExpandedCard('admin');
-        }
-        break;
-      case 'settings':
-        // Only admins can access settings
-        if (user?.role === 'admin') {
-          openExpandedCard('admin');
-        }
-        break;
-      default:
-        // Dashboard view - close any expanded cards
-        closeExpandedCard();
-    }
-
-    // Close sidebar on mobile after selection
-    if (window.innerWidth < 768) {
-      setSidebarOpen(false);
-    }
   };
 
   const openExpandedCard = (cardId: string) => {
@@ -185,6 +152,13 @@ export default function DashboardPage() {
 
   const closeExpandedCard = () => {
     setExpandedCard(null);
+  };
+
+  const handleCardKey = (event: React.KeyboardEvent<HTMLElement>, cardId: string) => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      openExpandedCard(cardId);
+    }
   };
 
   // Get real door lock devices from backend (filter for dl_* devices)
@@ -251,11 +225,19 @@ export default function DashboardPage() {
     }
 
     return (
-      <div className="modal-overlay" onClick={closeExpandedCard}>
-        <button className="modal-close" onClick={closeExpandedCard}>
-          ✕
-        </button>
-        <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+      <div className="g-modal" role="dialog" aria-modal="true" onClick={closeExpandedCard}>
+        <div className="g-pane g-modal__card g-modal__card--wide" onClick={(e) => e.stopPropagation()}>
+          <div className="g-modal__head">
+            <div>
+              <h2>{expandedCard.replace(/-/g, ' ')}</h2>
+              <p>Live details from Arduino888.</p>
+            </div>
+            <button className="g-icon-btn" onClick={closeExpandedCard} aria-label="Close">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                <path d="M18 6 6 18M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
           {content}
         </div>
       </div>
@@ -264,238 +246,168 @@ export default function DashboardPage() {
 
   return (
     <ProtectedRoute>
-      {/* Sidebar */}
-      <aside className={`sidebar ${!sidebarOpen ? 'closed' : ''}`}>
-        <div className="sidebar-header">
-          <div className="sidebar-logo">Arduino888 Smart Home</div>
-          <button className="sidebar-toggle" onClick={toggleSidebar}>
-            ☰
+      <main className="g-page">
+        <div className="g-pane g-bar">
+          <span className="g-bar__brand">Arduino888</span>
+          <nav className="g-seg" data-choice aria-label="Sections">
+            <a href="/dashboard" aria-current="page">Home</a>
+            <a href="/">Plan</a>
+            <a href="/dashboard">Access</a>
+            <a href="/dashboard">Admin</a>
+          </nav>
+          <button className="g-icon-btn g-theme" onClick={toggleTheme} aria-label="Toggle theme" aria-pressed={theme === 'dark'}>
+            <svg className="g-theme__moon" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+              <path d="M21 13.3A8.5 8.5 0 1 1 10.7 3a6.7 6.7 0 0 0 10.3 10.3Z" />
+            </svg>
+            <svg className="g-theme__sun" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+              <circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" />
+            </svg>
           </button>
+          <button className="g-btn g-btn--ghost" onClick={handleLogout}>Sign out</button>
+          <span className={`g-pill ${systemOnline && allDevicesOnline ? 'is-ok' : 'is-warn'}`}>
+            <i></i>
+            {systemOnline && allDevicesOnline ? 'All systems normal' : `${devicesStatus?.summary.offline || 1} needs attention`}
+          </span>
         </div>
-        <nav>
-          <ul className="sidebar-nav">
-            <li className="sidebar-nav-item">
-              <div
-                className={`sidebar-nav-link ${activeView === 'dashboard' ? 'active' : ''}`}
-                onClick={() => handleMenuClick('dashboard')}
-                style={{ cursor: 'pointer' }}
-              >
-                <span className="sidebar-nav-icon">🏠</span>
-                <span>Dashboard</span>
-              </div>
-            </li>
-            <li className="sidebar-nav-item">
-              <div
-                className={`sidebar-nav-link ${activeView === 'alerts' ? 'active' : ''}`}
-                onClick={() => handleMenuClick('alerts')}
-                style={{ cursor: 'pointer' }}
-              >
-                <span className="sidebar-nav-icon">🔔</span>
-                <span>Alerts</span>
-              </div>
-            </li>
-            <li className="sidebar-nav-item">
-              <div
-                className={`sidebar-nav-link ${activeView === 'analytics' ? 'active' : ''}`}
-                onClick={() => handleMenuClick('analytics')}
-                style={{ cursor: 'pointer' }}
-              >
-                <span className="sidebar-nav-icon">📊</span>
-                <span>Analytics</span>
-              </div>
-            </li>
-            {user?.role === 'admin' && (
-              <li className="sidebar-nav-item">
-                <div
-                  className={`sidebar-nav-link ${activeView === 'settings' ? 'active' : ''}`}
-                  onClick={() => handleMenuClick('settings')}
-                  style={{ cursor: 'pointer' }}
-                >
-                  <span className="sidebar-nav-icon">⚙️</span>
-                  <span>Settings</span>
-                </div>
-              </li>
-            )}
-          </ul>
-        </nav>
 
-        {/* Sidebar Footer with Theme and Logout */}
-        <div className="sidebar-footer">
-          {/* Theme Switcher */}
-          <div className="sidebar-theme-switcher">
-            <span className="sidebar-label">Theme</span>
-            <div className="theme-toggle" data-theme={theme} onClick={toggleTheme}>
-              <div className="theme-toggle-slider"></div>
-              <span className="theme-icon theme-icon-purple">●</span>
-              <span className="theme-icon theme-icon-green">●</span>
+        <div className="g-title">
+          <h1>Good morning</h1>
+          <p>
+            {!systemOnline
+              ? 'The backend is not reporting as online. Device cards will recover when the service responds.'
+              : allDevicesOnline
+                ? 'Everything is running normally. Updated just now.'
+                : `${devicesStatus?.summary.offline || 0} device${devicesStatus?.summary.offline === 1 ? '' : 's'} need attention. Updated just now.`}
+          </p>
+        </div>
+
+        {(!systemOnline || !allDevicesOnline || alerts.length > 0) && (
+          <div className="g-pane dash-hero">
+            <div>
+              <h2><span className={`g-dot ${systemOnline ? 'g-dot--warn' : 'g-dot--crit'}`}></span> Check the home status</h2>
+              <p>
+                {alerts[0]?.message || (!systemOnline
+                  ? 'The Arduino888 backend did not confirm health. Check the service before changing device state.'
+                  : 'One or more devices have stopped reporting. Open devices or recent activity for the latest detail.')}
+              </p>
+              <div className="g-row g-row--wrap">
+                <button className="g-btn g-btn--primary" onClick={() => openExpandedCard(alerts.length ? 'alerts' : 'system-status')}>Review now</button>
+                <button className="g-btn g-btn--ghost" onClick={() => openExpandedCard('system-status')}>Open devices</button>
+              </div>
+            </div>
+            <div className={`g-tile ${systemOnline ? 'is-warn' : 'is-crit'}`}>
+              <p className="g-label">Attention</p>
+              <div className="g-metric-sm g-num">{alerts.length || devicesStatus?.summary.offline || 1}</div>
             </div>
           </div>
+        )}
 
-          {/* Logout Button */}
-          <button className="sidebar-logout-btn" onClick={handleLogout}>
-            <span className="sidebar-nav-icon">🚪</span>
-            <span>Logout</span>
-          </button>
+        <div className="g-grid g-grid--4">
+          <div className="g-pane g-card">
+            <p className="g-label">Devices online</p>
+            <div className="g-metric-sm g-num">{devicesStatus?.summary.online ?? 0}<small>of {devicesStatus?.summary.total ?? 0}</small></div>
+          </div>
+          <div className="g-pane g-card">
+            <p className="g-label">Sensors reporting</p>
+            <div className="g-metric-sm g-num">{gasReadings.length}<small>gas readings</small></div>
+          </div>
+          <div className={`g-pane g-card ${alerts.length ? 'is-warn' : ''}`}>
+            <p className="g-label">Open alerts</p>
+            <div className="g-metric-sm g-num">{alerts.length}</div>
+          </div>
+          <div className="g-pane g-card">
+            <p className="g-label">Backend</p>
+            <div className="g-metric-sm">{systemOnline ? 'Online' : 'Offline'}</div>
+          </div>
         </div>
-      </aside>
 
-      {/* Sidebar Overlay for Mobile */}
-      <div
-        className={`sidebar-overlay ${sidebarOpen ? 'visible' : ''}`}
-        onClick={toggleSidebar}
-      ></div>
-
-      {/* Main Content */}
-      <div className={`main-content ${sidebarOpen ? 'with-sidebar' : ''}`}>
-        <div className="dashboard-container">
-          {/* Header */}
-          <header className="dashboard-header">
-            <div className="dashboard-header-left">
-              {!sidebarOpen && (
-                <button className="sidebar-toggle" onClick={toggleSidebar}>
-                  ☰
-                </button>
-              )}
-              <h1>Arduino888 Smart Home</h1>
-            </div>
-
-            <div className="dashboard-header-right">
-              <div className="header-info">
-                <span className={`status-dot ${systemOnline && allDevicesOnline ? 'status-online' : 'status-offline'}`}></span>
-                <span>
-                  {!systemOnline
-                    ? 'SYSTEM OFFLINE'
-                    : allDevicesOnline
-                      ? 'ALL SYSTEMS OPERATIONAL'
-                      : `${devicesStatus?.summary.offline || 0} DEVICE(S) OFFLINE`
-                  }
-                </span>
-              </div>
-            </div>
-          </header>
-
-          {/* Dashboard Grid */}
-          <div className="dashboard-grid">
-            {/* System Status - spans 2 rows x 2 columns */}
-            <div
-              className="dashboard-card grid-system-status"
+        <div className="dash-bento">
+            <section
+              className="g-pane g-card d-devices"
+              role="button"
+              tabIndex={0}
+              onKeyDown={(event) => handleCardKey(event, 'system-status')}
               onClick={() => openExpandedCard('system-status')}
             >
-              <button className="card-eye-icon" onClick={(e) => { e.stopPropagation(); openExpandedCard('system-status'); }}>
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
-                  <circle cx="12" cy="12" r="3"></circle>
-                </svg>
-              </button>
               <SystemStatusCard devicesStatus={devicesStatus} />
-            </div>
+            </section>
 
-            {/* Alerts - spans 2 rows x 2 columns */}
-            <div
-              className="dashboard-card grid-alerts"
+            <section
+              className="d-alerts"
+              role="button"
+              tabIndex={0}
+              onKeyDown={(event) => handleCardKey(event, 'alerts')}
               onClick={() => openExpandedCard('alerts')}
             >
-              <button className="card-eye-icon" onClick={(e) => { e.stopPropagation(); openExpandedCard('alerts'); }}>
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
-                  <circle cx="12" cy="12" r="3"></circle>
-                </svg>
-              </button>
               <AlertsCard alerts={alerts} onRefresh={fetchAlerts} />
-            </div>
+            </section>
 
-            {/* Temperature - spans 1 row x 2 columns */}
-            <div
-              className="dashboard-card grid-temperature"
+            <section
+              className="d-climate"
+              role="button"
+              tabIndex={0}
+              onKeyDown={(event) => handleCardKey(event, 'temperature')}
               onClick={() => openExpandedCard('temperature')}
             >
-              <button className="card-eye-icon" onClick={(e) => { e.stopPropagation(); openExpandedCard('temperature'); }}>
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
-                  <circle cx="12" cy="12" r="3"></circle>
-                </svg>
-              </button>
               <TemperatureCard />
-            </div>
+            </section>
 
-            {/* Gas Readings - spans 1 row x 2 columns */}
-            <div
-              className="dashboard-card grid-gas"
+            <section
+              className="d-air"
+              role="button"
+              tabIndex={0}
+              onKeyDown={(event) => handleCardKey(event, 'gas')}
               onClick={() => openExpandedCard('gas')}
             >
-              <button className="card-eye-icon" onClick={(e) => { e.stopPropagation(); openExpandedCard('gas'); }}>
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
-                  <circle cx="12" cy="12" r="3"></circle>
-                </svg>
-              </button>
               <GasReadingsCard gasReadings={gasReadings} onRefresh={fetchGasReadings} />
-            </div>
+            </section>
 
-            {/* Doors/Windows - spans 1 row x 2 columns */}
-            <div
-              className="dashboard-card grid-doors"
+            <section
+              className="g-pane g-card d-doors"
+              role="button"
+              tabIndex={0}
+              onKeyDown={(event) => handleCardKey(event, 'doors')}
               onClick={() => openExpandedCard('doors')}
             >
-              <button className="card-eye-icon" onClick={(e) => { e.stopPropagation(); openExpandedCard('doors'); }}>
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
-                  <circle cx="12" cy="12" r="3"></circle>
-                </svg>
-              </button>
               <DoorCard doorsWindows={doorsWindows} />
-            </div>
+            </section>
 
 
-            {/* Admin Management - spans 1 row x 2 columns - Only visible to admins */}
             {user?.role === 'admin' && (
-              <div
-                className="dashboard-card grid-admin"
+              <section
+                className="g-pane g-card d-admin"
+                role="button"
+                tabIndex={0}
+                onKeyDown={(event) => handleCardKey(event, 'admin')}
                 onClick={() => openExpandedCard('admin')}
               >
-                <button className="card-eye-icon" onClick={(e) => { e.stopPropagation(); openExpandedCard('admin'); }}>
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
-                    <circle cx="12" cy="12" r="3"></circle>
-                  </svg>
-                </button>
                 <AdminManagementCard devices={devicesStatus?.devices || []} />
-              </div>
+              </section>
             )}
             
-            {/* NFC Management - spans 1 row x 2 columns */}
-            <div
-                className="dashboard-card grid-nfc"
-                onClick={() => openExpandedCard('nfc')}
-              >
-                <button className="card-eye-icon" onClick={(e) => { e.stopPropagation(); openExpandedCard('nfc'); }}>
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
-                    <circle cx="12" cy="12" r="3"></circle>
-                  </svg>
-                </button>
-                <NfcManagementCard />
-              </div>
+            <section
+              className="g-pane g-card d-nfc"
+              role="button"
+              tabIndex={0}
+              onKeyDown={(event) => handleCardKey(event, 'nfc')}
+              onClick={() => openExpandedCard('nfc')}
+            >
+              <NfcManagementCard />
+            </section>
 
-            {/* Music Broadcast - spans 1 row x 2 columns */}
-            <div
-              className="dashboard-card grid-music"
+            <section
+              className="g-pane g-card d-cast"
+              role="button"
+              tabIndex={0}
+              onKeyDown={(event) => handleCardKey(event, 'music')}
               onClick={() => openExpandedCard('music')}
             >
-              <button className="card-eye-icon" onClick={(e) => { e.stopPropagation(); openExpandedCard('music'); }}>
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
-                  <circle cx="12" cy="12" r="3"></circle>
-                </svg>
-              </button>
               <MusicBroadcastCard />
-            </div>
-          </div>
-
-          {/* Expanded Card Modal */}
-          {renderExpandedCard()}
+            </section>
         </div>
-      </div>
+
+        {renderExpandedCard()}
+      </main>
     </ProtectedRoute>
   );
 }

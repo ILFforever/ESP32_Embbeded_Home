@@ -54,8 +54,8 @@ function lensSupported(): boolean {
     typeof window !== 'undefined' &&
     typeof CSS !== 'undefined' &&
     typeof CSS.supports === 'function' &&
-    (CSS.supports('backdrop-filter', 'url(#a)') ||
-      CSS.supports('-webkit-backdrop-filter', 'url(#a)'))
+    (CSS.supports('backdrop-filter', 'blur(1px)') ||
+      CSS.supports('-webkit-backdrop-filter', 'blur(1px)'))
   );
 }
 
@@ -342,6 +342,7 @@ export default function GlassRuntime() {
     window.addEventListener('resize', onResize);
     window.addEventListener('glass:themechange', onThemeChange);
     observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+    observer.observe(document.body, { childList: true, subtree: true });
     media.addEventListener('change', onThemeChange);
 
     document.querySelectorAll<HTMLInputElement>('.g-slider').forEach(paintSlider);

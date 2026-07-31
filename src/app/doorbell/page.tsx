@@ -309,7 +309,7 @@ export default function DoorbellControlPage() {
             // Fetch latest visitors
             const visitorsData = await getLatestVisitors(deviceIdToUse, 20);
             if (visitorsData.status === 'ok') {
-              setLatestVisitors(visitorsData.visitors);
+              setLatestVisitors(Array.isArray(visitorsData.visitors) ? visitorsData.visitors : []);
             }
 
             // Fetch actual camera/mic status from backend
@@ -981,2029 +981,354 @@ export default function DoorbellControlPage() {
     return "status-safe";
   };
 
+  const statusClass = getStatusClass();
+  const statusTone = statusClass === "status-online" ? "" : statusClass === "status-warning" ? " is-warn" : " is-off";
+  const effectiveDeviceId = getEffectiveDeviceId();
+  const knownVisitors = latestVisitors.filter((visitor) => visitor.recognized).length;
+  const visitorCount = latestVisitors.length;
+  const dbHealthOk = faceDatabaseInfo?.db_status === "valid";
+  const dbStatusLabel = faceDatabaseInfo?.db_status || "unknown";
+  const closeAddFaceModal = () => {
+    if (commandLoading !== "add_face") {
+      setShowAddFaceModal(false);
+      setNewFaceName("");
+    }
+  };
+  const closeRenameFaceModal = () => {
+    if (commandLoading !== "rename_face") {
+      setShowRenameFaceModal(false);
+      setRenameNewName("");
+      setRenameFaceId(1);
+    }
+  };
+  const formatVisitorTime = (visitor: Visitor) => {
+    const stamp = visitor.detected_at || visitor.timestamp;
+    if (!stamp) return "N/A";
+    const value = stamp._seconds ? stamp._seconds * 1000 : stamp;
+    return new Date(value).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" });
+  };
+
   return (
     <ProtectedRoute>
-      <div className="main-content" style={{ marginLeft: 0 }}>
-        <div className="dashboard-container">
-          <header className="dashboard-header">
-            <div className="dashboard-header-left">
-              <button
-                className="sidebar-toggle"
-                onClick={() => router.push("/dashboard")}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                }}
-                title="Back to Dashboard"
-              >
-                <ArrowLeft size={20} />
-              </button>
-              <h1>DOORBELL CONTROL</h1>
-            </div>
-            <div className="dashboard-header-right">
-              <div className="header-info">
-                <span className={`status-dot ${getStatusClass()}`}></span>
-                <span>{getStatusText()}</span>
-              </div>
-            </div>
-          </header>
+      <div className="g-page">
+        <div className="g-pane g-bar">
+          <button className="g-back" type="button" onClick={() => router.push("/dashboard")} title="Back to dashboard">
+            <ArrowLeft size={16} aria-hidden="true" />
+            Home
+          </button>
+          <span className="g-bar__brand">Doorbell</span>
+          <div className="g-spacer" />
+          <button className="g-theme" type="button" aria-label="Switch between light and dark" title="Switch theme">
+            <svg className="g-theme__moon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z" /></svg>
+            <svg className="g-theme__sun" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M19.1 4.9l-1.4 1.4M6.3 17.7l-1.4 1.4" /></svg>
+          </button>
+          <button className="g-icon-btn" type="button" onClick={() => setShowSettings(true)} aria-label="Doorbell settings">
+            <Settings size={16} aria-hidden="true" />
+          </button>
+          <span className={`g-pill${statusTone}`}><i /> {getStatusText()}</span>
+        </div>
 
-          {/* Latest Visitors */}
-          <div
-            className="card control-card-large"
-            style={{ marginBottom: "var(--spacing-lg, 24px)" }}
-          >
-            <div className="card-header">
-              <h3>LATEST VISITORS</h3>
+        <div className="g-title">
+          <h1>Front door</h1>
+          <p>{loading ? "Checking the doorbell connection." : `Camera and microphone controls for ${effectiveDeviceId || "the doorbell"}. ${visitorCount} visitors loaded.`}</p>
+        </div>
+
+        <div className="doorbell-grid">
+          <section className="g-pane g-card doorbell-live">
+            <header>
+              <h2>Live view</h2>
+              <div className="g-row g-row--wrap" style={{ gap: "var(--s-2)" }}>
+                <button className="g-btn g-btn--ghost" type="button" onClick={handleCameraToggle} disabled={commandLoading === "camera" || isDeviceOffline()}>
+                  <Camera size={16} aria-hidden="true" />
+                  {commandLoading === "camera" ? "Working" : cameraActive ? "Stop stream" : "Start stream"}
+                </button>
+                <button className="g-btn g-btn--ghost" type="button" onClick={handleMicToggle} disabled={!micActive || isDeviceOffline()}>
+                  <Mic size={16} aria-hidden="true" />
+                  {!micActive ? "Mic auto" : audioMuted ? "Unmute" : "Mute"}
+                </button>
+              </div>
+            </header>
+
+            <div className="g-media" style={{ minHeight: 320 }}>
+              {(cameraActive || streamConnecting) && (
+                <span className="g-media__badge"><span className="g-dot g-dot--ok" /> {streamConnecting ? "CONNECTING" : "LIVE"}</span>
+              )}
+              {streamConnecting ? (
+                <div className="g-media__empty">
+                  <Camera size={40} aria-hidden="true" />
+                  <p style={{ margin: 0 }}>Connecting to camera stream<br /><span className="g-dim">Waiting for the ESP32 stream.</span></p>
+                </div>
+              ) : effectiveDeviceId && cameraActive ? (
+                <img
+                  src={`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000"}/api/v1/stream/camera/${effectiveDeviceId}`}
+                  alt="Live camera feed"
+                  style={{ width: "100%", height: "100%", minHeight: 320, objectFit: "contain", display: "block" }}
+                  onError={() => setStreamError("Failed to load camera stream. Make sure the camera is streaming.")}
+                  onLoad={() => setStreamError(null)}
+                />
+              ) : (
+                <div className="g-media__empty">
+                  <Camera size={40} aria-hidden="true" />
+                  <p style={{ margin: 0 }}>{!effectiveDeviceId ? "No device paired" : "Camera is not active"}<br /><span className="g-dim">Start the camera to view the live stream.</span></p>
+                </div>
+              )}
             </div>
-            <div className="card-content">
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "repeat(auto-fill, minmax(120px, 1fr))",
-                  gap: "16px",
-                  padding: "8px",
-                  maxHeight: "600px",
-                  overflowY: "auto",
-                }}
-              >
-                {latestVisitors.length > 0 ? (
-                  latestVisitors.map((visitor) => (
-                    <div
-                      key={visitor.id}
-                      onClick={() => handleVisitorClick(visitor)}
-                      style={{
-                        display: "flex",
-                        flexDirection: "column",
-                        alignItems: "center",
-                        gap: "8px",
-                        cursor: "pointer",
-                        transition: "transform 0.2s ease",
-                      }}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.transform = "scale(1.05)";
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.transform = "scale(1)";
-                      }}
-                    >
-                      <div
-                        style={{
-                          width: "100px",
-                          height: "100px",
-                          borderRadius: "16px",
-                          overflow: "hidden",
-                          border: visitor.recognized
-                            ? "3px solid #4CAF50"
-                            : "3px solid #FF9800",
-                          boxShadow: "0 2px 8px rgba(0, 0, 0, 0.15)",
-                          backgroundColor: "#f0f0f0",
-                        }}
-                      >
-                        {visitor.image ? (
-                          <img
-                            src={visitor.image}
-                            alt={visitor.name}
-                            style={{
-                              width: "100%",
-                              height: "100%",
-                              objectFit: "cover",
-                            }}
-                            onError={(e) => {
-                              (e.target as HTMLImageElement).style.display =
-                                "none";
-                            }}
-                          />
-                        ) : (
-                          <div
-                            style={{
-                              width: "100%",
-                              height: "100%",
-                              display: "flex",
-                              alignItems: "center",
-                              justifyContent: "center",
-                              fontSize: "48px",
-                              color: "#999",
-                            }}
-                          >
-                            👤
-                          </div>
-                        )}
-                      </div>
-                      <div
-                        style={{
-                          textAlign: "center",
-                          fontSize: "12px",
-                          fontWeight: "600",
-                          color: visitor.recognized ? "#4CAF50" : "#FF9800",
-                          maxWidth: "100px",
-                          overflow: "hidden",
-                          textOverflow: "ellipsis",
-                          whiteSpace: "nowrap",
-                        }}
-                      >
-                        {visitor.name}
-                      </div>
-                      {visitor.confidence > 0 && (
-                        <div
-                          style={{
-                            fontSize: "10px",
-                            color: "#666",
-                          }}
-                        >
-                          {(visitor.confidence * 100).toFixed(0)}%
-                        </div>
+
+            {streamError && <div className="g-error" style={{ marginTop: "var(--s-4)" }}>{streamError}</div>}
+            {effectiveDeviceId && (cameraActive || micActive) && (
+              <p className="g-sub" style={{ textAlign: "center" }}>Streaming from <span className="g-mono">{effectiveDeviceId}</span></p>
+            )}
+
+            {effectiveDeviceId && micActive && (
+              <div className="g-tile" style={{ marginTop: "var(--s-4)", display: "flex", alignItems: "center", gap: "var(--s-3)" }}>
+                <Mic size={20} aria-hidden="true" style={{ color: "var(--accent)", flex: "none" }} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: "14px", fontWeight: 600 }}>Audio stream {audioMuted ? "muted" : "playing"}</div>
+                  <div className="g-sub" style={{ margin: "2px 0 0", fontSize: "12px" }}>PCM · 16 kHz · mono</div>
+                </div>
+                <span className={`g-chip ${audioMuted ? "g-chip--warn" : "g-chip--ok"}`}>{audioMuted ? "Muted" : "Connected"}</span>
+              </div>
+            )}
+
+            {effectiveDeviceId && micActive && !audioMuted && (
+              <div className="g-log" style={{ marginTop: "var(--s-4)" }}>
+                <div><strong>Raw PCM audio processor</strong></div>
+                <div>Status: {audioDebugInfo}</div>
+                <div>Stream URL: https://embedded-smarthome.fly.dev/api/v1/stream/audio/db_001</div>
+                <div>Format: PCM s16le, 16 kHz, mono</div>
+              </div>
+            )}
+          </section>
+
+          <section className="g-pane g-card doorbell-visitors">
+            <header><h2>Who's been by</h2><span className="g-label">Latest {visitorCount || 0}</span></header>
+            {latestVisitors.length > 0 ? (
+              <div className="g-avatars">
+                {latestVisitors.map((visitor) => (
+                  <button
+                    key={visitor.id}
+                    type="button"
+                    className={`g-avatar ${visitor.recognized ? "g-avatar--known" : "g-avatar--unknown"}`}
+                    onClick={() => handleVisitorClick(visitor)}
+                    style={{ border: 0, background: "transparent", color: "inherit", padding: 0, cursor: "pointer" }}
+                  >
+                    <span className="g-avatar__img">
+                      {visitor.image ? (
+                        <img src={visitor.image} alt={visitor.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
+                      ) : (
+                        <Users size={30} aria-hidden="true" />
                       )}
-                    </div>
-                  ))
-                ) : (
-                  <div
-                    style={{
-                      gridColumn: "1 / -1",
-                      textAlign: "center",
-                      padding: "40px 20px",
-                      color: "#6c757d",
-                      fontSize: "14px",
-                    }}
-                  >
-                    No visitors detected yet
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-          <div className="control-page-grid">
-            {/* Microphone/Stream Control */}
-            <div className="card">
-              <div className="card-header">
-                <h3>STREAM CONTROL</h3>
-              </div>
-              <div className="card-content">
-                {/* Stream Controls */}
-                <div
-                  style={{
-                    display: "flex",
-                    gap: "12px",
-                    marginBottom: "20px",
-                    padding: "16px",
-                    backgroundColor: "rgba(33, 150, 243, 0.05)",
-                    borderRadius: "8px",
-                    border: "1px solid rgba(33, 150, 243, 0.2)",
-                  }}
-                >
-                  <button
-                    className={`btn-control ${cameraActive ? "btn-stop" : "btn-start"
-                      }`}
-                    onClick={handleCameraToggle}
-                    disabled={commandLoading === "camera" || isDeviceOffline()}
-                    style={{
-                      flex: 1,
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      gap: "8px",
-                      padding: "12px 24px",
-                      fontSize: "14px",
-                      fontWeight: "600",
-                    }}
-                  >
-                    <Camera size={18} />
-                    {commandLoading === "camera"
-                      ? "PROCESSING..."
-                      : cameraActive
-                        ? "STOP STREAM"
-                        : "START STREAM"}
+                    </span>
+                    <b>{visitor.name}</b>
+                    <span>{visitor.confidence > 0 ? `${(visitor.confidence * 100).toFixed(0)}%` : formatVisitorTime(visitor)}</span>
                   </button>
-                  <button
-                    className={`btn-control ${audioMuted ? "btn-start" : "btn-stop"
-                      }`}
-                    onClick={handleMicToggle}
-                    disabled={!micActive || isDeviceOffline()}
-                    style={{
-                      flex: 1,
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      gap: "8px",
-                      padding: "12px 24px",
-                      fontSize: "14px",
-                      fontWeight: "600",
-                    }}
-                  >
-                    <Mic size={18} />
-                    {!micActive
-                      ? "MIC (AUTO)"
-                      : audioMuted
-                        ? "UNMUTE"
-                        : "MUTE"}
-                  </button>
+                ))}
+              </div>
+            ) : (
+              <div className="g-empty"><Users size={32} aria-hidden="true" /><strong>No visitors yet</strong><p>The latest face detections will appear here.</p></div>
+            )}
+            <p className="g-sub">{knownVisitors} recognised. Unknown visitors stay amber until named.</p>
+          </section>
+        </div>
+
+        <div className="doorbell-secondary">
+          <section className="g-pane g-card doorbell-people">
+            <header><h2>Recognised people</h2><span className={`g-chip ${dbHealthOk ? "g-chip--ok" : "g-chip--warn"}`}>{dbHealthOk ? "Database healthy" : dbStatusLabel}</span></header>
+            <div className="g-grid g-grid--2" style={{ marginBottom: "var(--s-4)" }}>
+              <div className="g-tile"><p className="g-label">People enrolled</p><div className="g-metric-sm g-num" style={{ marginTop: 6 }}>{faceDatabaseInfo?.count ?? 0}</div></div>
+              <div className="g-tile"><p className="g-label">Device id</p><div className="g-mono" style={{ marginTop: 8, fontSize: "14px" }}>{effectiveDeviceId || "N/A"}</div></div>
+            </div>
+            <p className="g-label" style={{ marginBottom: 8 }}>Enrolled</p>
+            {faceDatabaseInfo?.faces?.length ? (
+              <div className="g-row g-row--wrap" style={{ gap: 6, marginBottom: "var(--s-5)" }}>
+                {faceDatabaseInfo.faces.map((face) => <span key={face.id} className="g-chip">{face.id} · {face.name}</span>)}
+              </div>
+            ) : (
+              <p className="g-sub" style={{ marginBottom: "var(--s-5)" }}>No enrolled faces reported by the device.</p>
+            )}
+            <div className="g-row g-row--wrap" style={{ gap: "var(--s-2)" }}>
+              <button className="g-btn g-btn--ghost" type="button" onClick={handleFaceRecognitionToggle}>{faceRecognition ? "Set idle" : "Trigger recognition"}</button>
+              <button className="g-btn g-btn--ghost" type="button" onClick={handleSyncDatabase} disabled={commandLoading === "sync_database"}><Database size={16} aria-hidden="true" />{commandLoading === "sync_database" ? "Syncing" : "Sync now"}</button>
+              {user?.role === "admin" && <button className="g-btn g-btn--primary" type="button" onClick={handleAddFace} disabled={commandLoading === "add_face"}><UserPlus size={16} aria-hidden="true" />Add a person</button>}
+              {user?.role === "admin" && <button className="g-btn g-btn--ghost" type="button" onClick={() => setShowRenameFaceModal(true)} disabled={commandLoading === "rename_face"}>Rename</button>}
+              {user?.role === "admin" && <button className="g-btn g-btn--danger" type="button" onClick={() => setShowDeleteLastConfirm(true)} disabled={commandLoading === "delete_last_face"}>Remove last</button>}
+            </div>
+            <p className="g-sub" style={{ fontSize: "12px" }}>Adding and removing people is admin-only.</p>
+          </section>
+
+          <section className="g-pane g-card doorbell-audio">
+            <header><h2>Chime and audio</h2><span className="g-chip">Volume {ampVolume}/21</span></header>
+            <div className="g-stack">
+              <div className="g-field g-field--mono">
+                <label htmlFor="db-url">Stream URL</label>
+                <div className="g-input-group">
+                  <input id="db-url" type="text" value={ampUrl} onChange={(e) => setAmpUrl(e.target.value)} placeholder="Enter stream URL" />
+                  <select aria-label="Preset station" value="" onChange={(e) => setAmpUrl(e.target.value)}>
+                    <option value="">Choose</option>
+                    <option value="https://stream.live.vc.bbcmedia.co.uk/bbc_world_service_east_asia">BBC World Service</option>
+                    <option value="https://play.streamafrica.net/japancitypop">Japan City Pop</option>
+                    <option value="http://stream.radioparadise.com/aac-128">Radio Paradise</option>
+                  </select>
                 </div>
-
-                <div
-                  style={{
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: "16px",
-                    alignItems: "center",
-                  }}
-                >
-                  {/* Camera Stream */}
-                  <div
-                    style={{
-                      width: "100%",
-                      position: "relative",
-                      backgroundColor: "#000",
-                      borderRadius: "12px",
-                      overflow: "hidden",
-                      boxShadow: "0 4px 12px rgba(0, 0, 0, 0.2)",
-                    }}
-                  >
-                    {streamConnecting ? (
-                      <div
-                        style={{
-                          width: "100%",
-                          minHeight: "250px",
-                          display: "flex",
-                          flexDirection: "column",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          color: "#2196F3",
-                          gap: "16px",
-                        }}
-                      >
-                        <Camera size={48} color="#2196F3" />
-                        <div style={{ fontSize: "16px", fontWeight: "600" }}>
-                          Connecting to camera stream...
-                        </div>
-                        <div
-                          style={{
-                            width: "40px",
-                            height: "40px",
-                            border: "4px solid rgba(33, 150, 243, 0.2)",
-                            borderTopColor: "#2196F3",
-                            borderRadius: "50%",
-                            animation: "spin 1s linear infinite",
-                          }}
-                        />
-                        <div style={{ fontSize: "12px", color: "#888" }}>
-                          Waiting for ESP32 to start streaming...
-                        </div>
-                      </div>
-                    ) : getEffectiveDeviceId() && cameraActive ? (
-                      <>
-                        <img
-                          src={`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000"
-                            }/api/v1/stream/camera/${getEffectiveDeviceId()}`}
-                          alt="Live Camera Feed"
-                          style={{
-                            width: "100%",
-                            height: "auto",
-                            display: "block",
-                            minHeight: "250px",
-                            objectFit: "contain",
-                          }}
-                          onError={() => {
-                            setStreamError("Failed to load camera stream. Make sure the camera is streaming.");
-                          }}
-                          onLoad={() => {
-                            setStreamError(null);
-                          }}
-                        />
-                        <div
-                          style={{
-                            position: "absolute",
-                            top: "12px",
-                            left: "12px",
-                            backgroundColor: "rgba(76, 175, 80, 0.9)",
-                            color: "white",
-                            padding: "6px 12px",
-                            borderRadius: "6px",
-                            fontSize: "12px",
-                            fontWeight: "600",
-                            display: "flex",
-                            alignItems: "center",
-                            gap: "6px",
-                          }}
-                        >
-                          <span
-                            style={{
-                              width: "8px",
-                              height: "8px",
-                              backgroundColor: "#fff",
-                              borderRadius: "50%",
-                              animation: "pulse 2s ease-in-out infinite",
-                            }}
-                          />
-                          LIVE
-                        </div>
-                      </>
-                    ) : (
-                      <div
-                        style={{
-                          width: "100%",
-                          minHeight: "250px",
-                          display: "flex",
-                          flexDirection: "column",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          color: "#666",
-                          gap: "12px",
-                        }}
-                      >
-                        <Camera size={48} color="#444" />
-                        <div style={{ fontSize: "16px", fontWeight: "600" }}>
-                          {!getEffectiveDeviceId()
-                            ? "No device paired"
-                            : !cameraActive
-                              ? "Camera is not active"
-                              : "Waiting for stream..."}
-                        </div>
-                        {!cameraActive && getEffectiveDeviceId() && (
-                          <div style={{ fontSize: "14px", color: "#888" }}>
-                            Start the camera to view live stream
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Stream Error Message */}
-                  {streamError && (
-                    <div
-                      style={{
-                        width: "100%",
-                        padding: "12px",
-                        backgroundColor: "rgba(244, 67, 54, 0.1)",
-                        border: "1px solid rgba(244, 67, 54, 0.3)",
-                        borderRadius: "8px",
-                        color: "#d32f2f",
-                        fontSize: "14px",
-                        fontWeight: "500",
-                      }}
-                    >
-                      ⚠ {streamError}
-                    </div>
-                  )}
-
-                  {/* Stream Info */}
-                  {getEffectiveDeviceId() && (cameraActive || micActive) && (
-                    <div
-                      style={{
-                        width: "100%",
-                        fontSize: "12px",
-                        color: "#888",
-                        textAlign: "center",
-                      }}
-                    >
-                      Streaming from device: <span style={{ fontFamily: "monospace", color: "#2196F3" }}>{getEffectiveDeviceId()}</span>
-                    </div>
-                  )}
-
-                  {/* Audio Stream Active */}
-                  {getEffectiveDeviceId() && micActive && (
-                    <div
-                      style={{
-                        width: "100%",
-                        padding: "16px",
-                        backgroundColor: "rgba(33, 150, 243, 0.1)",
-                        border: "1px solid rgba(33, 150, 243, 0.3)",
-                        borderRadius: "8px",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "space-between",
-                        gap: "16px",
-                        marginTop: "16px",
-                      }}
-                    >
-                      <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-                        <Mic size={24} color="#2196F3" />
-                        <div>
-                          <div style={{ fontSize: "14px", fontWeight: "600", color: "#2196F3" }}>
-                            Audio Stream Active
-                          </div>
-                          <div style={{ fontSize: "12px", color: "#666" }}>
-                            PCM Audio Stream (16kHz, 16-bit, Mono) - {audioMuted ? "Muted" : "Playing"}
-                          </div>
-                        </div>
-                      </div>
-                      <div style={{
-                        padding: "8px 16px",
-                        fontSize: "13px",
-                        fontWeight: "600",
-                        color: audioMuted ? "#f44336" : "#4caf50",
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "6px",
-                      }}>
-                        {audioMuted ? "🔇 MUTED" : "🔊 PLAYING"}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Audio Processor Status */}
-                  {getEffectiveDeviceId() && micActive && !audioMuted && (
-                    <>
-                      <div
-                        style={{
-                          width: "100%",
-                          marginTop: "16px",
-                          padding: "12px",
-                          backgroundColor: "rgba(76, 175, 80, 0.1)",
-                          border: "1px solid rgba(76, 175, 80, 0.3)",
-                          borderRadius: "8px",
-                          fontSize: "12px",
-                          fontFamily: "monospace",
-                          color: "#4caf50",
-                        }}
-                      >
-                        <div style={{ fontWeight: "600", marginBottom: "8px" }}>
-                          🎵 RAW PCM AUDIO PROCESSOR
-                        </div>
-                        <div>
-                          Status: {audioDebugInfo}
-                        </div>
-                        <div>
-                          Stream URL: https://embedded-smarthome.fly.dev/api/v1/stream/audio/db_001
-                        </div>
-                        <div>
-                          Format: PCM s16le, 16kHz, mono
-                        </div>
-                        <div style={{ marginTop: "8px", fontSize: "11px", color: "#666" }}>
-                          Using Web Audio API for raw PCM processing
-                        </div>
-                      </div>
-                      <div
-                        style={{
-                          width: "100%",
-                          marginTop: "8px",
-                          padding: "8px",
-                          backgroundColor: "rgba(33, 150, 243, 0.05)",
-                          borderRadius: "6px",
-                          fontSize: "11px",
-                          color: "#666",
-                        }}
-                      >
-                        💡 Raw PCM audio is being converted to playable format in real-time. Check browser console for detailed logs.
-                      </div>
-                    </>
-                  )}
-                </div>
+              </div>
+              <div className="g-field">
+                <label htmlFor="db-vol">Volume · <output>{ampVolume}</output> of 21</label>
+                <input
+                  id="db-vol"
+                  className="g-slider"
+                  type="range"
+                  min="0"
+                  max="21"
+                  value={ampVolume}
+                  onChange={(e) => handleVolumeChange(parseInt(e.target.value))}
+                  onMouseUp={(e) => handleVolumeSend(parseInt((e.target as HTMLInputElement).value))}
+                  onTouchEnd={(e) => handleVolumeSend(parseInt((e.target as HTMLInputElement).value))}
+                  style={{ backgroundImage: `linear-gradient(to right, var(--accent) 0 ${(ampVolume / 21) * 100}%, var(--sunken) ${(ampVolume / 21) * 100}% 100%)` }}
+                />
+              </div>
+              <div className="g-row" style={{ gap: "var(--s-2)" }}>
+                <button className="g-btn g-btn--primary" type="button" onClick={handlePlayAmplifier} disabled={commandLoading === "amp_play"} style={{ flex: 1 }}>{commandLoading === "amp_play" ? "Sending" : "Play"}</button>
+                <button className="g-btn g-btn--ghost" type="button" onClick={handleStopAmplifier} disabled={commandLoading === "amp_stop"} style={{ flex: 1 }}>{commandLoading === "amp_stop" ? "Stopping" : "Stop"}</button>
+                <button className="g-btn g-btn--ghost" type="button" onClick={handleRestartAmplifier} disabled={commandLoading === "amp_restart"} style={{ flex: 1 }}>Restart</button>
               </div>
             </div>
+          </section>
 
-            {/* Audio Control & Face Recognition */}
-            <div className="card">
-              <div className="card-header">
-                <h3>AUDIO CONTROL</h3>
+          <section className="g-pane g-card doorbell-activity">
+            <header><h2>Recent activity</h2><span className="g-label">last 10</span></header>
+            {recentActivity.length > 0 ? (
+              <div className="g-list">
+                {recentActivity.slice(0, 6).map((event, index) => (
+                  <div key={event.id || index} className="g-list__row">
+                    <i className={`g-dot ${getActivityStatusClass(event) === "status-danger" ? "g-dot--crit" : getActivityStatusClass(event) === "status-warning" ? "g-dot--warn" : "g-dot--ok"}`} />
+                    <p>{getActivityDescription(event)}<span>{formatActivityTime(event.timestamp)}</span></p>
+                    <span className={`g-chip ${getActivityStatusClass(event) === "status-danger" ? "g-chip--crit" : getActivityStatusClass(event) === "status-warning" ? "g-chip--warn" : "g-chip--ok"}`}>{getActivityStatus(event)}</span>
+                  </div>
+                ))}
               </div>
-              <div className="card-content">
-                <div className="control-panel">
-                  <div className="control-status">
-                    <Volume2 size={48} className="status-info-large" />
-                    <div className="status-label">
-                      <span className="status-text">AMPLIFIER</span>
-                      <span className="status-description">
-                        Stream audio to amplifier
-                      </span>
-                    </div>
-                  </div>
-                  <div
-                    style={{
-                      display: "flex",
-                      flexDirection: "column",
-                      gap: "8px",
-                      width: "100%",
-                      marginTop: "12px",
-                    }}
-                  >
-                    <div
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "12px",
-                      }}
-                    >
-                      <label
-                        style={{
-                          fontSize: "13px",
-                          fontWeight: "600",
-                          color: "#555",
-                          minWidth: "80px",
-                        }}
-                      >
-                        VOLUME: {ampVolume}
-                      </label>
-                      <input
-                        type="range"
-                        min="0"
-                        max="21"
-                        value={ampVolume}
-                        onChange={(e) =>
-                          handleVolumeChange(parseInt(e.target.value))
-                        }
-                        onMouseUp={(e) =>
-                          handleVolumeSend(
-                            parseInt((e.target as HTMLInputElement).value)
-                          )
-                        }
-                        onTouchEnd={(e) =>
-                          handleVolumeSend(
-                            parseInt((e.target as HTMLInputElement).value)
-                          )
-                        }
-                        className="volume-slider"
-                        style={{
-                          flex: 1,
-                          height: "6px",
-                          borderRadius: "3px",
-                          background: `linear-gradient(to right, #4CAF50 0%, #4CAF50 ${(ampVolume / 21) * 100
-                            }%, #e0e0e0 ${(ampVolume / 21) * 100
-                            }%, #e0e0e0 100%)`,
-                          outline: "none",
-                          cursor: "pointer",
-                          transition: "background 0.15s ease",
-                        }}
-                      />
-                    </div>
-                    <div style={{ position: "relative", width: "100%" }}>
-                      <input
-                        type="text"
-                        value={ampUrl}
-                        onChange={(e) => setAmpUrl(e.target.value)}
-                        placeholder="Enter stream URL (e.g., http://stream.example.com/audio)"
-                        className="control-input"
-                        style={{
-                          width: "100%",
-                          padding: "10px 45px 10px 12px",
-                          borderRadius: "6px",
-                          border: "2px solid #e0e0e0",
-                          fontSize: "13px",
-                          fontFamily: "monospace",
-                          transition: "all 0.2s ease",
-                          outline: "none",
-                          backgroundColor: "#f8f9fa",
-                        }}
-                        onFocus={(e) => {
-                          e.target.style.borderColor = "#2196F3";
-                          e.target.style.backgroundColor = "#fff";
-                        }}
-                        onBlur={(e) => {
-                          e.target.style.borderColor = "#e0e0e0";
-                          e.target.style.backgroundColor = "#f8f9fa";
-                        }}
-                      />
-                      <select
-                        onChange={(e) => setAmpUrl(e.target.value)}
-                        value=""
-                        className="stream-selector"
-                        style={{
-                          position: "absolute",
-                          right: "4px",
-                          top: "50%",
-                          transform: "translateY(-50%)",
-                          padding: "6px 8px",
-                          borderRadius: "4px",
-                          border: "1px solid #e0e0e0",
-                          fontSize: "13px",
-                          backgroundColor: "#fff",
-                          cursor: "pointer",
-                          outline: "none",
-                          transition: "all 0.2s ease",
-                          appearance: "none",
-                          WebkitAppearance: "none",
-                          MozAppearance: "none",
-                          backgroundImage:
-                            "url(\"data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23333' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e\")",
-                          backgroundRepeat: "no-repeat",
-                          backgroundPosition: "center",
-                          backgroundSize: "18px",
-                          width: "32px",
-                          height: "32px",
-                          color: "transparent",
-                        }}
-                        onMouseEnter={(e) => {
-                          (
-                            e.target as HTMLSelectElement
-                          ).style.backgroundColor = "#f0f0f0";
-                        }}
-                        onMouseLeave={(e) => {
-                          (
-                            e.target as HTMLSelectElement
-                          ).style.backgroundColor = "#fff";
-                        }}
-                      >
-                        <option value="" style={{ color: "#000" }}>
-                          Select Station
-                        </option>
-                        <option
-                          value="https://stream.live.vc.bbcmedia.co.uk/bbc_world_service_east_asia"
-                          style={{ color: "#000" }}
-                        >
-                          BBC World Service
-                        </option>
-                        <option
-                          value="https://play.streamafrica.net/japancitypop"
-                          style={{ color: "#000" }}
-                        >
-                          Japan City Pop
-                        </option>
-                        <option
-                          value="http://stream.radioparadise.com/aac-128"
-                          style={{ color: "#000" }}
-                        >
-                          Radio Paradise
-                        </option>
-                      </select>
-                    </div>
-                    <div style={{ display: "flex", gap: "8px" }}>
-                      <button
-                        className="btn-control btn-start"
-                        onClick={handlePlayAmplifier}
-                        disabled={commandLoading === "amp_play"}
-                        style={{ flex: 1 }}
-                      >
-                        {commandLoading === "amp_play" ? "SENDING..." : "PLAY"}
-                      </button>
-                      <button
-                        className="btn-control btn-stop"
-                        onClick={handleStopAmplifier}
-                        disabled={commandLoading === "amp_stop"}
-                        style={{ flex: 1 }}
-                      >
-                        {commandLoading === "amp_stop" ? "STOPPING..." : "STOP"}
-                      </button>
-                    </div>
-                  </div>
-                </div>
+            ) : (
+              <div className="g-empty"><Database size={32} aria-hidden="true" /><strong>No recent activity</strong><p>Doorbell events will appear here after the first heartbeat.</p></div>
+            )}
+          </section>
+        </div>
 
-                <div className="control-divider"></div>
-
-                <div className="card-header" style={{ paddingTop: "8px" }}>
-                  <h3>FACE RECOGNITION</h3>
-                </div>
-                <div className="control-panel">
-                  <div className="control-status">
-                    <Users
-                      size={48}
-                      className={
-                        faceRecognition
-                          ? "status-active-large"
-                          : "status-inactive-large"
-                      }
-                    />
-                    <div className="status-label">
-                      <span className="status-text">
-                        {faceRecognition ? "TRIGGERED" : "IDLE"}
-                      </span>
-                      <span className="status-description">
-                        {faceRecognition
-                          ? "Identifying visitors"
-                          : "Face recognition idle"}
-                      </span>
-                    </div>
-                  </div>
-                  <div
-                    style={{
-                      display: "flex",
-                      gap: "8px",
-                      flexWrap: "wrap",
-                      marginTop: "12px",
-                    }}
-                  >
-                    <button
-                      className={`btn-control ${faceRecognition ? "btn-stop" : "btn-start"
-                        }`}
-                      onClick={handleFaceRecognitionToggle}
-                    >
-                      {faceRecognition ? "IDLE" : "TRIGGER"}
-                    </button>
-                    <button
-                      className="btn-control btn-warning"
-                      onClick={handleSyncDatabase}
-                      disabled={commandLoading === "sync_database"}
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "6px",
-                        flex: "1 1 auto",
-                      }}
-                    >
-                      <Database size={16} />
-                      {commandLoading === "sync_database"
-                        ? "SYNCING..."
-                        : "SYNC DATABASE"}
-                    </button>
-                    {user?.role === "admin" && (
-                      <>
-                        <button
-                          className="btn-control btn-start"
-                          onClick={handleAddFace}
-                          disabled={commandLoading === "add_face"}
-                          style={{
-                            display: "flex",
-                            alignItems: "center",
-                            gap: "6px",
-                            flex: "1 1 auto",
-                          }}
-                        >
-                          <UserPlus size={16} />
-                          {commandLoading === "add_face"
-                            ? "ADDING..."
-                            : "ADD FACE"}
-                        </button>
-                        <button
-                          className="btn-control btn-warning"
-                          onClick={() => setShowRenameFaceModal(true)}
-                          disabled={commandLoading === "rename_face"}
-                          style={{
-                            display: "flex",
-                            alignItems: "center",
-                            gap: "6px",
-                            flex: "1 1 auto",
-                          }}
-                        >
-                          <Settings size={16} />
-                          {commandLoading === "rename_face"
-                            ? "RENAMING..."
-                            : "RENAME FACE"}
-                        </button>
-                        <button
-                          className="btn-control btn-danger"
-                          onClick={() => setShowDeleteLastConfirm(true)}
-                          disabled={commandLoading === "delete_last_face"}
-                          style={{
-                            display: "flex",
-                            alignItems: "center",
-                            gap: "6px",
-                            flex: "1 1 auto",
-                          }}
-                        >
-                          <Power size={16} />
-                          {commandLoading === "delete_last_face"
-                            ? "DELETING..."
-                            : "DELETE LAST"}
-                        </button>
-                      </>
-                    )}
-                  </div>
-
-                  {/* Face Database Info Display */}
-                  {faceDatabaseInfo && (
-                    <div
-                      style={{
-                        marginTop: "16px",
-                        padding: "12px",
-                        background:
-                          "linear-gradient(135deg, rgba(156, 39, 176, 0.1) 0%, rgba(123, 31, 162, 0.1) 100%)",
-                        borderRadius: "8px",
-                        border: "1px solid rgba(156, 39, 176, 0.3)",
-                      }}
-                    >
-                      <div
-                        style={{
-                          fontSize: "12px",
-                          fontWeight: "600",
-                          color: "#9c27b0",
-                          marginBottom: "8px",
-                        }}
-                      >
-                        DATABASE STATUS
-                      </div>
-                      <div
-                        style={{
-                          display: "flex",
-                          gap: "16px",
-                          flexWrap: "wrap",
-                        }}
-                      >
-                        <div style={{ flex: "1", minWidth: "120px" }}>
-                          <div
-                            style={{
-                              fontSize: "11px",
-                              color: "rgba(255,255,255,0.6)",
-                              marginBottom: "4px",
-                            }}
-                          >
-                            Face Count
-                          </div>
-                          <div
-                            style={{
-                              fontSize: "18px",
-                              fontWeight: "700",
-                              color: "#fff",
-                            }}
-                          >
-                            {faceDatabaseInfo.count}
-                          </div>
-                        </div>
-                        <div style={{ flex: "1", minWidth: "120px" }}>
-                          <div
-                            style={{
-                              fontSize: "11px",
-                              color: "rgba(255,255,255,0.6)",
-                              marginBottom: "4px",
-                            }}
-                          >
-                            DB Health
-                          </div>
-                          <div
-                            style={{
-                              fontSize: "14px",
-                              fontWeight: "600",
-                              color:
-                                faceDatabaseInfo.db_status === "valid"
-                                  ? "#4caf50"
-                                  : "#f44336",
-                            }}
-                          >
-                            {faceDatabaseInfo.db_status?.toUpperCase() ||
-                              "UNKNOWN"}
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Face List */}
-                      {faceDatabaseInfo.faces &&
-                        faceDatabaseInfo.faces.length > 0 && (
-                          <div style={{ marginTop: "12px" }}>
-                            <div
-                              style={{
-                                fontSize: "11px",
-                                color: "rgba(255,255,255,0.6)",
-                                marginBottom: "6px",
-                              }}
-                            >
-                              Enrolled Faces
-                            </div>
-                            <div
-                              style={{
-                                display: "flex",
-                                gap: "6px",
-                                flexWrap: "wrap",
-                              }}
-                            >
-                              {faceDatabaseInfo.faces.map((face) => (
-                                <div
-                                  key={face.id}
-                                  style={{
-                                    padding: "4px 10px",
-                                    background: "rgba(156, 39, 176, 0.2)",
-                                    borderRadius: "12px",
-                                    fontSize: "11px",
-                                    fontWeight: "500",
-                                    color: "#e1bee7",
-                                    border: "1px solid rgba(156, 39, 176, 0.4)",
-                                  }}
-                                >
-                                  ID {face.id}: {face.name}
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                    </div>
-                  )}
-                </div>
-              </div>
+        <div className="g-grid g-grid--2 doorbell-maintenance">
+          <section className="g-pane g-card">
+            <header><h2>Submodule command</h2><span className="g-label">Maintenance</span></header>
+            <div className="g-grid g-grid--2">
+              <button className="g-action" type="button" onClick={handleCameraRestart} disabled={commandLoading === "camera_restart"}>
+                <Camera size={18} aria-hidden="true" /> {commandLoading === "camera_restart" ? "Restarting camera" : "Restart camera"}
+                <small>Use this when the live stream stops responding.</small>
+              </button>
+              <button className="g-action" type="button" onClick={handleRestartAmplifier} disabled={commandLoading === "amp_restart"}>
+                <Volume2 size={18} aria-hidden="true" /> {commandLoading === "amp_restart" ? "Restarting amplifier" : "Restart amplifier"}
+                <small>Restarts only the audio board.</small>
+              </button>
+              <button className="g-action" type="button" onClick={() => setShowWifiSettings(true)} disabled={commandLoading === "amp_wifi"}>
+                <Settings size={18} aria-hidden="true" /> Amplifier Wi-Fi
+                <small>Send SSID and password to the amplifier.</small>
+              </button>
+              <button className="g-action" type="button" onClick={handleSystemRestart} disabled={commandLoading === "system_restart"}>
+                <Power size={18} aria-hidden="true" /> {commandLoading === "system_restart" ? "Restarting system" : "Restart doorbell"}
+                <small>The device will be offline for about 30 seconds.</small>
+              </button>
             </div>
+          </section>
 
-            {/* SubModule Command & Recent Activity */}
-            <div className="card">
-              <div className="card-header">
-                <h3>SUBMODULE COMMAND</h3>
-              </div>
-              <div className="card-content">
-                <div className="control-panel">
-                  <div
-                    style={{
-                      display: "flex",
-                      flexDirection: "column",
-                      gap: "12px",
-                    }}
-                  >
-                    <div
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "12px",
-                        padding: "12px",
-                        background:
-                          "linear-gradient(135deg, rgba(255, 193, 7, 0.1) 0%, rgba(255, 152, 0, 0.1) 100%)",
-                        borderRadius: "8px",
-                        border: "1px solid rgba(255, 193, 7, 0.3)",
-                      }}
-                    >
-                      <Camera
-                        size={32}
-                        className="status-warning-large"
-                        style={{ flexShrink: 0 }}
-                      />
-                      <button
-                        className="btn-control"
-                        onClick={handleCameraRestart}
-                        disabled={commandLoading === "camera_restart"}
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          gap: "8px",
-                          flex: 1,
-                          fontWeight: "bold",
-                          background: "rgba(0, 0, 0, 0.4)",
-                          border: "1px solid rgba(255, 255, 255, 0.2)",
-                          color: "#fff",
-                        }}
-                      >
-                        <RotateCw
-                          size={18}
-                          className={
-                            commandLoading === "camera_restart"
-                              ? "rotating"
-                              : ""
-                          }
-                        />
-                        {commandLoading === "camera_restart"
-                          ? "RESTARTING..."
-                          : "RESTART CAMERA"}
-                      </button>
-                    </div>
-                    <div
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "12px",
-                        padding: "12px",
-                        background:
-                          "linear-gradient(135deg, rgba(243, 33, 33, 0.1) 0%, rgba(192, 44, 21, 0.1) 100%)",
-                        borderRadius: "8px",
-                        border: "1px solid rgba(243, 79, 33, 0.3)",
-                      }}
-                    >
-                      <Volume2
-                        size={32}
-                        className="status-info-large"
-                        style={{ flexShrink: 0 }}
-                      />
-                      <div
-                        style={{
-                          display: "flex",
-                          flexDirection: "column",
-                          gap: "8px",
-                          flex: 1,
-                        }}
-                      >
-                        <button
-                          className="btn-control"
-                          onClick={handleRestartAmplifier}
-                          disabled={commandLoading === "amp_restart"}
-                          style={{
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                            gap: "8px",
-                            flex: 1,
-                            fontWeight: "bold",
-                            background: "rgba(0, 0, 0, 0.4)",
-                            border: "1px solid rgba(255, 255, 255, 0.2)",
-                            color: "#fff",
-                          }}
-                        >
-                          <RotateCw
-                            size={18}
-                            className={
-                              commandLoading === "amp_restart" ? "rotating" : ""
-                            }
-                          />
-                          {commandLoading === "amp_restart"
-                            ? "RESTARTING..."
-                            : "RESTART AMPLIFIER"}
-                        </button>
-
-                        <button
-                          className="btn-control btn-info"
-                          onClick={() => setShowWifiSettings(true)}
-                          disabled={commandLoading === "amp_wifi"}
-                          style={{
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                            gap: "8px",
-                            flex: 1,
-                            fontWeight: "bold",
-                            background: "rgba(0, 0, 0, 0.4)",
-                            border: "1px solid rgba(255, 255, 255, 0.2)",
-                            color: "#fff",
-                          }}
-                        >
-                          <Settings size={14} />
-                          WIFI
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-                <div className="control-divider"></div>
-
-                <div className="card-header" style={{ paddingTop: "8px" }}>
-                  <h3>RECENT ACTIVITY</h3>
-                </div>
-                <div className="activity-list">
-                  {recentActivity.length > 0 ? (
-                    recentActivity.map((event, index) => (
-                      <div key={event.id || index} className="activity-item">
-                        <span className="activity-time">
-                          {formatActivityTime(event.timestamp)}
-                        </span>
-                        <span className="activity-desc">
-                          {getActivityDescription(event)}
-                        </span>
-                        <span
-                          className={`activity-status ${getActivityStatusClass(
-                            event
-                          )}`}
-                        >
-                          {getActivityStatus(event)}
-                        </span>
-                      </div>
-                    ))
-                  ) : (
-                    <div
-                      style={{
-                        textAlign: "center",
-                        padding: "40px 20px",
-                        color: "#6c757d",
-                        fontSize: "14px",
-                        fontStyle: "italic",
-                      }}
-                    >
-                      No recent activity
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {/* System Control & Device Info */}
-            <div className="card">
-              <div className="card-header">
-                <h3>SYSTEM CONTROL</h3>
-              </div>
-              <div className="card-content">
-                <div className="control-panel">
-                  <div className="control-status">
-                    <Power size={48} className="status-danger-large" />
-                    <div className="status-label">
-                      <span className="status-text">SYSTEM POWER</span>
-                      <span className="status-description">
-                        Restart the doorbell device
-                      </span>
-                    </div>
-                  </div>
-                  <button
-                    className="btn-control btn-danger"
-                    onClick={handleSystemRestart}
-                    disabled={commandLoading === "system_restart"}
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      gap: "6px",
-                      marginTop: "12px",
-                    }}
-                  >
-                    <RotateCw size={16} />
-                    {commandLoading === "system_restart"
-                      ? "RESTARTING..."
-                      : "RESTART SYSTEM"}
-                  </button>
-                </div>
-
-                <div className="control-divider"></div>
-
-                <div className="device-info-section">
-                  <h4>DEVICE INFORMATION</h4>
-                  <div className="info-grid">
-                    <div className="info-item">
-                      <span className="info-label">Device ID:</span>
-                      <span className="info-value">
-                        {doorbellDevice?.device_id || "N/A"}
-                      </span>
-                    </div>
-                    <div className="info-item">
-                      <span className="info-label">Status:</span>
-                      <span className="info-value">{getStatusText()}</span>
-                    </div>
-                    <div className="info-item">
-                      <span className="info-label">IP Address:</span>
-                      <span className="info-value">
-                        {isDeviceOffline()
-                          ? "-"
-                          : (doorbellDevice?.ip_address || "N/A")}
-                      </span>
-                    </div>
-                    <div className="info-item">
-                      <span className="info-label">Last Seen:</span>
-                      <span className="info-value">
-                        {doorbellDevice?.last_seen
-                          ? new Date(doorbellDevice.last_seen).toLocaleString()
-                          : "Never"}
-                      </span>
-                    </div>
-                    <div className="info-item">
-                      <span className="info-label">WiFi Signal:</span>
-                      <span className="info-value">
-                        {isDeviceOffline()
-                          ? "-"
-                          : (doorbellDevice?.wifi_rssi
-                            ? `${doorbellDevice.wifi_rssi} dBm`
-                            : "N/A")}
-                      </span>
-                    </div>
-                    <div className="info-item">
-                      <span className="info-label">Free Heap:</span>
-                      <span className="info-value">
-                        {isDeviceOffline()
-                          ? "-"
-                          : (doorbellDevice?.free_heap
-                            ? `${(doorbellDevice.free_heap / 1024).toFixed(1)} KB`
-                            : "N/A")}
-                      </span>
-                    </div>
-                    <div className="info-item">
-                      <span className="info-label">Uptime:</span>
-                      <span className="info-value">
-                        {isDeviceOffline()
-                          ? "-"
-                          : (doorbellDevice?.uptime_ms
-                            ? `${Math.floor(
-                              doorbellDevice.uptime_ms / 3600000
-                            )}h ${Math.floor(
-                              (doorbellDevice.uptime_ms % 3600000) / 60000
-                            )}m`
-                            : "N/A")}
-                      </span>
-                    </div>
-                  </div>
-                  {/* <button
-                    className="btn-control btn-info"
-                    onClick={() => setShowSettings(true)}
-                    style={{
-                      marginTop: "16px",
-                      width: "100%",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      gap: "6px",
-                    }}
-                  >
-                    ⚙️ PAIR DEVICE
-                  </button> */}
-                </div>
-              </div>
-            </div>
-          </div>
+          <section className="g-pane g-card">
+            <header><h2>Device information</h2><button className="g-btn g-btn--ghost" type="button" onClick={() => setShowSettings(true)}>Pair device</button></header>
+            <dl className="g-info">
+              <div><dt>Device ID</dt><dd>{doorbellDevice?.device_id || "N/A"}</dd></div>
+              <div><dt>Status</dt><dd>{getStatusText()}</dd></div>
+              <div><dt>IP address</dt><dd>{isDeviceOffline() ? "-" : doorbellDevice?.ip_address || "N/A"}</dd></div>
+              <div><dt>Last seen</dt><dd>{doorbellDevice?.last_seen ? new Date(doorbellDevice.last_seen).toLocaleString() : "Never"}</dd></div>
+              <div><dt>Wi-Fi signal</dt><dd>{isDeviceOffline() ? "-" : doorbellDevice?.wifi_rssi ? `${doorbellDevice.wifi_rssi} dBm` : "N/A"}</dd></div>
+              <div><dt>Free heap</dt><dd>{isDeviceOffline() ? "-" : doorbellDevice?.free_heap ? `${(doorbellDevice.free_heap / 1024).toFixed(1)} KB` : "N/A"}</dd></div>
+              <div><dt>Uptime</dt><dd>{isDeviceOffline() ? "-" : doorbellDevice?.uptime_ms ? `${Math.floor(doorbellDevice.uptime_ms / 3600000)}h ${Math.floor((doorbellDevice.uptime_ms % 3600000) / 60000)}m` : "N/A"}</dd></div>
+            </dl>
+          </section>
         </div>
       </div>
 
-      {/* WiFi Settings Modal */}
       {showWifiSettings && (
-        <div
-          style={{
-            position: "fixed",
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            backgroundColor: "rgba(0, 0, 0, 0.5)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 1000,
-          }}
-        >
-          <div
-            style={{
-              backgroundColor: "white",
-              borderRadius: "8px",
-              padding: "24px",
-              maxWidth: "400px",
-              width: "90%",
-              boxShadow: "0 4px 6px rgba(0, 0, 0, 0.1)",
-            }}
-          >
-            <h3 style={{ marginTop: 0, marginBottom: "16px", color: "#333" }}>
-              Amplifier WiFi Settings
-            </h3>
-            <div
-              style={{ display: "flex", flexDirection: "column", gap: "12px" }}
-            >
-              <input
-                type="text"
-                value={wifiSsid}
-                onChange={(e) => setWifiSsid(e.target.value)}
-                placeholder="WiFi SSID"
-                className="control-input"
-                style={{
-                  padding: "10px",
-                  fontSize: "14px",
-                  borderRadius: "4px",
-                  border: "1px solid #ddd",
-                }}
-              />
-              <input
-                type="password"
-                value={wifiPassword}
-                onChange={(e) => setWifiPassword(e.target.value)}
-                placeholder="WiFi Password"
-                className="control-input"
-                style={{
-                  padding: "10px",
-                  fontSize: "14px",
-                  borderRadius: "4px",
-                  border: "1px solid #ddd",
-                }}
-              />
-              <div style={{ display: "flex", gap: "8px", marginTop: "8px" }}>
-                <button
-                  className="btn-control btn-warning"
-                  onClick={handleSetAmplifierWifi}
-                  disabled={commandLoading === "amp_wifi"}
-                  style={{ flex: 1, fontSize: "14px", padding: "10px" }}
-                >
-                  {commandLoading === "amp_wifi" ? "SAVING..." : "SAVE"}
-                </button>
-                <button
-                  className="btn-control"
-                  onClick={() => setShowWifiSettings(false)}
-                  style={{
-                    flex: 1,
-                    fontSize: "14px",
-                    padding: "10px",
-                    backgroundColor: "#6c757d",
-                    borderColor: "#6c757d",
-                  }}
-                >
-                  CANCEL
-                </button>
-              </div>
+        <div className="g-modal" role="dialog" aria-modal="true" aria-labelledby="m-wifi-h" onClick={() => setShowWifiSettings(false)}>
+          <div className="g-pane g-modal__card" onClick={(e) => e.stopPropagation()}>
+            <div className="g-modal__head"><div><h2 id="m-wifi-h">Amplifier Wi-Fi settings</h2><p>Send network credentials to the audio board.</p></div><button className="g-icon-btn" type="button" onClick={() => setShowWifiSettings(false)} aria-label="Close"><Power size={15} aria-hidden="true" /></button></div>
+            <div className="g-stack">
+              <div className="g-field"><label htmlFor="wifi-ssid">Wi-Fi SSID</label><input id="wifi-ssid" type="text" value={wifiSsid} onChange={(e) => setWifiSsid(e.target.value)} /></div>
+              <div className="g-field"><label htmlFor="wifi-password">Wi-Fi password</label><input id="wifi-password" type="password" value={wifiPassword} onChange={(e) => setWifiPassword(e.target.value)} /></div>
             </div>
+            <div className="g-modal__foot"><button className="g-btn g-btn--ghost" type="button" onClick={() => setShowWifiSettings(false)}>Cancel</button><button className="g-btn g-btn--primary" type="button" onClick={handleSetAmplifierWifi} disabled={commandLoading === "amp_wifi"}>{commandLoading === "amp_wifi" ? "Saving" : "Save"}</button></div>
           </div>
         </div>
       )}
 
-      {/* Add Face Modal */}
       {showAddFaceModal && (
-        <div
-          onClick={() => {
-            if (commandLoading !== "add_face") {
-              setShowAddFaceModal(false);
-              setNewFaceName("");
-            }
-          }}
-          style={{
-            position: "fixed",
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            backgroundColor: "rgba(0, 0, 0, 0.6)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 1000,
-          }}
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              backgroundColor: "white",
-              borderRadius: "12px",
-              padding: "28px",
-              maxWidth: "450px",
-              width: "90%",
-              boxShadow: "0 8px 24px rgba(0, 0, 0, 0.15)",
-            }}
-          >
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "12px",
-                marginBottom: "20px",
-              }}
-            >
-              <UserPlus size={28} color="#4CAF50" />
-              <h3 style={{ margin: 0, color: "#333", fontSize: "20px" }}>
-                Add New Face
-              </h3>
-            </div>
-            <div
-              style={{ display: "flex", flexDirection: "column", gap: "16px" }}
-            >
-              <div>
-                <label
-                  style={{
-                    display: "block",
-                    fontSize: "13px",
-                    fontWeight: "600",
-                    color: "#555",
-                    marginBottom: "6px",
-                  }}
-                >
-                  Name *
-                </label>
-                <input
-                  type="text"
-                  value={newFaceName}
-                  onChange={(e) => setNewFaceName(e.target.value)}
-                  placeholder="Enter person's name"
-                  className="control-input"
-                  disabled={commandLoading === "add_face"}
-                  style={{
-                    width: "100%",
-                    padding: "12px",
-                    fontSize: "14px",
-                    borderRadius: "6px",
-                    border: "2px solid #e0e0e0",
-                    outline: "none",
-                    transition: "border-color 0.2s ease",
-                  }}
-                  onFocus={(e) => {
-                    e.target.style.borderColor = "#4CAF50";
-                  }}
-                  onBlur={(e) => {
-                    e.target.style.borderColor = "#e0e0e0";
-                  }}
-                />
-              </div>
-              <div
-                style={{
-                  backgroundColor: "rgba(33, 150, 243, 0.1)",
-                  padding: "12px",
-                  borderRadius: "6px",
-                  border: "1px solid rgba(33, 150, 243, 0.3)",
-                  fontSize: "12px",
-                  color: "#555",
-                  lineHeight: "1.5",
-                }}
-              >
-                <strong style={{ color: "#2196F3" }}>Instructions:</strong>
-                <br />
-                The system will start recognizing faces. When a face is detected,
-                it will automatically assign the provided name to that person.
-              </div>
-              <div
-                style={{
-                  display: "flex",
-                  gap: "10px",
-                  marginTop: "8px",
-                }}
-              >
-                <button
-                  className="btn-control btn-start"
-                  onClick={handleSubmitAddFace}
-                  disabled={commandLoading === "add_face"}
-                  style={{
-                    flex: 1,
-                    fontSize: "14px",
-                    padding: "12px",
-                    fontWeight: "600",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    gap: "8px",
-                  }}
-                >
-                  {commandLoading === "add_face" ? (
-                    <>
-                      <div
-                        style={{
-                          width: "16px",
-                          height: "16px",
-                          border: "2px solid rgba(255, 255, 255, 0.3)",
-                          borderTopColor: "#fff",
-                          borderRadius: "50%",
-                          animation: "spin 1s linear infinite",
-                        }}
-                      />
-                      PROCESSING...
-                    </>
-                  ) : (
-                    <>
-                      <UserPlus size={16} />
-                      START ENROLLMENT
-                    </>
-                  )}
-                </button>
-                <button
-                  className="btn-control"
-                  onClick={() => {
-                    setShowAddFaceModal(false);
-                    setNewFaceName("");
-                  }}
-                  disabled={commandLoading === "add_face"}
-                  style={{
-                    flex: 1,
-                    fontSize: "14px",
-                    padding: "12px",
-                    fontWeight: "600",
-                    backgroundColor: "#6c757d",
-                    borderColor: "#6c757d",
-                  }}
-                >
-                  CANCEL
-                </button>
-              </div>
-            </div>
+        <div className="g-modal" role="dialog" aria-modal="true" aria-labelledby="m-addface-h" onClick={closeAddFaceModal}>
+          <div className="g-pane g-modal__card" onClick={(e) => e.stopPropagation()}>
+            <div className="g-modal__head"><div><h2 id="m-addface-h">Add a person</h2><p>They need to stand in front of the camera while the doorbell captures their face.</p></div><button className="g-icon-btn" type="button" onClick={closeAddFaceModal} aria-label="Close"><Power size={15} aria-hidden="true" /></button></div>
+            <div className="g-field"><label htmlFor="face-name">Their name</label><input id="face-name" type="text" value={newFaceName} onChange={(e) => setNewFaceName(e.target.value)} placeholder="Mum" disabled={commandLoading === "add_face"} /><span className="g-field__hint">Shown in the activity log whenever they are recognised.</span></div>
+            <div className="g-modal__foot"><button className="g-btn g-btn--ghost" type="button" onClick={closeAddFaceModal} disabled={commandLoading === "add_face"}>Cancel</button><button className="g-btn g-btn--primary" type="button" onClick={handleSubmitAddFace} disabled={commandLoading === "add_face"}>{commandLoading === "add_face" ? "Processing" : "Start capture"}</button></div>
           </div>
         </div>
       )}
 
-      {/* Rename Face Modal */}
       {showRenameFaceModal && (
-        <div
-          onClick={() => {
-            if (commandLoading !== "rename_face") {
-              setShowRenameFaceModal(false);
-              setRenameNewName("");
-              setRenameFaceId(1);
-            }
-          }}
-          style={{
-            position: "fixed",
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            backgroundColor: "rgba(0, 0, 0, 0.6)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 1000,
-          }}
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              backgroundColor: "white",
-              borderRadius: "12px",
-              padding: "28px",
-              maxWidth: "450px",
-              width: "90%",
-              boxShadow: "0 8px 24px rgba(0, 0, 0, 0.15)",
-            }}
-          >
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "12px",
-                marginBottom: "20px",
-              }}
-            >
-              <Settings size={28} color="#FF9800" />
-              <h3 style={{ margin: 0, color: "#333", fontSize: "20px" }}>
-                Rename Face
-              </h3>
+        <div className="g-modal" role="dialog" aria-modal="true" aria-labelledby="m-rename-h" onClick={closeRenameFaceModal}>
+          <div className="g-pane g-modal__card" onClick={(e) => e.stopPropagation()}>
+            <div className="g-modal__head"><div><h2 id="m-rename-h">Rename a person</h2><p>Changes the name on their stored face, not the face itself.</p></div><button className="g-icon-btn" type="button" onClick={closeRenameFaceModal} aria-label="Close"><Power size={15} aria-hidden="true" /></button></div>
+            <div className="g-stack">
+              <div className="g-field"><label htmlFor="rename-face-id">Face ID</label><input id="rename-face-id" type="number" min="1" value={renameFaceId} onChange={(e) => setRenameFaceId(parseInt(e.target.value) || 1)} disabled={commandLoading === "rename_face"} /></div>
+              <div className="g-field"><label htmlFor="rename-face-name">New name</label><input id="rename-face-name" type="text" value={renameNewName} onChange={(e) => setRenameNewName(e.target.value)} placeholder="Natthapat" disabled={commandLoading === "rename_face"} /></div>
             </div>
-            <div
-              style={{ display: "flex", flexDirection: "column", gap: "16px" }}
-            >
-              <div>
-                <label
-                  style={{
-                    display: "block",
-                    fontSize: "13px",
-                    fontWeight: "600",
-                    color: "#555",
-                    marginBottom: "6px",
-                  }}
-                >
-                  Face ID *
-                </label>
-                <input
-                  type="number"
-                  min="1"
-                  value={renameFaceId}
-                  onChange={(e) => setRenameFaceId(parseInt(e.target.value) || 1)}
-                  placeholder="Enter face ID (e.g., 1, 2, 3...)"
-                  className="control-input"
-                  disabled={commandLoading === "rename_face"}
-                  style={{
-                    width: "100%",
-                    padding: "12px",
-                    fontSize: "14px",
-                    borderRadius: "6px",
-                    border: "2px solid #e0e0e0",
-                    outline: "none",
-                    transition: "border-color 0.2s ease",
-                  }}
-                  onFocus={(e) => {
-                    e.target.style.borderColor = "#FF9800";
-                  }}
-                  onBlur={(e) => {
-                    e.target.style.borderColor = "#e0e0e0";
-                  }}
-                />
-              </div>
-              <div>
-                <label
-                  style={{
-                    display: "block",
-                    fontSize: "13px",
-                    fontWeight: "600",
-                    color: "#555",
-                    marginBottom: "6px",
-                  }}
-                >
-                  New Name *
-                </label>
-                <input
-                  type="text"
-                  value={renameNewName}
-                  onChange={(e) => setRenameNewName(e.target.value)}
-                  placeholder="Enter new name"
-                  className="control-input"
-                  disabled={commandLoading === "rename_face"}
-                  style={{
-                    width: "100%",
-                    padding: "12px",
-                    fontSize: "14px",
-                    borderRadius: "6px",
-                    border: "2px solid #e0e0e0",
-                    outline: "none",
-                    transition: "border-color 0.2s ease",
-                  }}
-                  onFocus={(e) => {
-                    e.target.style.borderColor = "#FF9800";
-                  }}
-                  onBlur={(e) => {
-                    e.target.style.borderColor = "#e0e0e0";
-                  }}
-                />
-              </div>
-              <div
-                style={{
-                  display: "flex",
-                  gap: "10px",
-                  marginTop: "8px",
-                }}
-              >
-                <button
-                  className="btn-control btn-warning"
-                  onClick={handleRenameFaceSubmit}
-                  disabled={commandLoading === "rename_face"}
-                  style={{
-                    flex: 1,
-                    fontSize: "14px",
-                    padding: "12px",
-                    fontWeight: "600",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    gap: "8px",
-                  }}
-                >
-                  {commandLoading === "rename_face" ? "RENAMING..." : "RENAME"}
-                </button>
-                <button
-                  className="btn-control"
-                  onClick={() => {
-                    setShowRenameFaceModal(false);
-                    setRenameNewName("");
-                    setRenameFaceId(1);
-                  }}
-                  disabled={commandLoading === "rename_face"}
-                  style={{
-                    flex: 1,
-                    fontSize: "14px",
-                    padding: "12px",
-                    fontWeight: "600",
-                    backgroundColor: "#6c757d",
-                    borderColor: "#6c757d",
-                  }}
-                >
-                  CANCEL
-                </button>
-              </div>
-            </div>
+            <div className="g-modal__foot"><button className="g-btn g-btn--ghost" type="button" onClick={closeRenameFaceModal} disabled={commandLoading === "rename_face"}>Cancel</button><button className="g-btn g-btn--primary" type="button" onClick={handleRenameFaceSubmit} disabled={commandLoading === "rename_face"}>{commandLoading === "rename_face" ? "Renaming" : "Rename"}</button></div>
           </div>
         </div>
       )}
 
-      {/* Delete Last Face Confirmation Modal */}
       {showDeleteLastConfirm && (
-        <div
-          onClick={() => setShowDeleteLastConfirm(false)}
-          style={{
-            position: "fixed",
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            backgroundColor: "rgba(0, 0, 0, 0.6)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 1000,
-          }}
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              backgroundColor: "white",
-              borderRadius: "12px",
-              padding: "28px",
-              maxWidth: "400px",
-              width: "90%",
-              boxShadow: "0 8px 24px rgba(0, 0, 0, 0.15)",
-            }}
-          >
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "12px",
-                marginBottom: "20px",
-              }}
-            >
-              <Power size={28} color="#F44336" />
-              <h3 style={{ margin: 0, color: "#333", fontSize: "20px" }}>
-                Delete Last Face
-              </h3>
-            </div>
-            <p style={{ fontSize: "14px", color: "#555", lineHeight: "1.5", marginBottom: "20px" }}>
-              Are you sure you want to delete the last enrolled face from the database?
-              This action cannot be undone.
-            </p>
-            <div style={{ display: "flex", gap: "10px" }}>
-              <button
-                className="btn-control btn-danger"
-                onClick={handleDeleteLastFace}
-                style={{
-                  flex: 1,
-                  fontSize: "14px",
-                  padding: "12px",
-                  fontWeight: "600",
-                }}
-              >
-                DELETE
-              </button>
-              <button
-                className="btn-control"
-                onClick={() => setShowDeleteLastConfirm(false)}
-                style={{
-                  flex: 1,
-                  fontSize: "14px",
-                  padding: "12px",
-                  fontWeight: "600",
-                  backgroundColor: "#6c757d",
-                  borderColor: "#6c757d",
-                }}
-              >
-                CANCEL
-              </button>
-            </div>
+        <div className="g-modal" role="dialog" aria-modal="true" aria-labelledby="m-delete-h" onClick={() => setShowDeleteLastConfirm(false)}>
+          <div className="g-pane g-modal__card" onClick={(e) => e.stopPropagation()}>
+            <div className="g-modal__head"><div><h2 id="m-delete-h">Remove the last enrolled face?</h2><p>The doorbell will stop recognising that person. You can add them again later.</p></div></div>
+            <div className="g-modal__foot"><button className="g-btn g-btn--ghost" type="button" onClick={() => setShowDeleteLastConfirm(false)}>Cancel</button><button className="g-btn g-btn--danger" type="button" onClick={handleDeleteLastFace} disabled={commandLoading === "delete_last_face"}>{commandLoading === "delete_last_face" ? "Removing" : "Remove"}</button></div>
           </div>
         </div>
       )}
 
-      {/* Visitor Details Modal */}
+      {showSettings && (
+        <div className="g-modal" role="dialog" aria-modal="true" aria-labelledby="m-settings-h" onClick={() => setShowSettings(false)}>
+          <div className="g-pane g-modal__card" onClick={(e) => e.stopPropagation()}>
+            <div className="g-modal__head"><div><h2 id="m-settings-h">Doorbell settings</h2><p>Only change this if the app should point at a different board.</p></div><button className="g-icon-btn" type="button" onClick={() => setShowSettings(false)} aria-label="Close"><Power size={15} aria-hidden="true" /></button></div>
+            <div className="g-field g-field--mono"><label htmlFor="dev-id">Device ID</label><input id="dev-id" type="text" value={customDeviceId} onChange={(e) => setCustomDeviceId(e.target.value)} placeholder="db_001" /><span className="g-field__hint">Leave blank to use whatever the server reports.</span></div>
+            <div className="g-modal__foot"><button className="g-btn g-btn--ghost" type="button" onClick={handleClearSettings}>Use server default</button><button className="g-btn g-btn--primary" type="button" onClick={handleSaveSettings}>Save</button></div>
+          </div>
+        </div>
+      )}
+
       {showVisitorDetails && selectedVisitor && (
-        <div
-          onClick={() => setShowVisitorDetails(false)}
-          style={{
-            position: "fixed",
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            backgroundColor: "rgba(0, 0, 0, 0.7)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 1000,
-            padding: "20px",
-            overflowY: "auto",
-          }}
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            className="card"
-            style={{
-              borderRadius: "12px",
-              padding: "24px",
-              maxWidth: "500px",
-              width: "100%",
-              boxShadow: "0 8px 24px rgba(0, 0, 0, 0.2)",
-              margin: "auto",
-              maxHeight: "fit-content",
-            }}
-          >
-            <div
-              style={{
-                display: "flex",
-                gap: "20px",
-              }}
-            >
-              {/* Image on the left */}
-              <div
-                style={{
-                  flex: "0 0 auto",
-                }}
-              >
-                <div
-                  style={{
-                    width: "180px",
-                    height: "180px",
-                    borderRadius: "16px",
-                    overflow: "hidden",
-                    border: selectedVisitor.recognized
-                      ? "4px solid #4CAF50"
-                      : "4px solid #FF9800",
-                    boxShadow: "0 4px 12px rgba(0, 0, 0, 0.15)",
-                    backgroundColor: "#f0f0f0",
-                  }}
-                >
-                  {selectedVisitor.image ? (
-                    <img
-                      src={selectedVisitor.image}
-                      alt={selectedVisitor.name}
-                      style={{
-                        width: "100%",
-                        height: "100%",
-                        objectFit: "cover",
-                      }}
-                    />
-                  ) : (
-                    <div
-                      style={{
-                        width: "100%",
-                        height: "100%",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        fontSize: "96px",
-                        color: "#999",
-                      }}
-                    >
-                      👤
-                    </div>
-                  )}
+        <div className="g-modal" role="dialog" aria-modal="true" aria-labelledby="m-visitor-h" onClick={() => setShowVisitorDetails(false)}>
+          <div className="g-pane g-modal__card g-modal__card--wide" onClick={(e) => e.stopPropagation()}>
+            <div className="g-modal__head"><div><h2 id="m-visitor-h">{selectedVisitor.name}</h2><p>{selectedVisitor.recognized ? "Recognised visitor" : "Unknown visitor"}</p></div><button className="g-icon-btn" type="button" onClick={() => setShowVisitorDetails(false)} aria-label="Close"><Power size={15} aria-hidden="true" /></button></div>
+            <div className="g-grid g-grid--2">
+              <div className={`g-avatar ${selectedVisitor.recognized ? "g-avatar--known" : "g-avatar--unknown"}`}>
+                <div className="g-avatar__img" style={{ maxWidth: 240, width: "100%", justifySelf: "center" }}>
+                  {selectedVisitor.image ? <img src={selectedVisitor.image} alt={selectedVisitor.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <Users size={48} aria-hidden="true" />}
                 </div>
               </div>
-
-              {/* Information on the right */}
-              <div
-                style={{
-                  flex: "1",
-                  display: "flex",
-                  flexDirection: "column",
-                }}
-              >
-                <h2
-                  style={{
-                    marginTop: 0,
-                    marginBottom: "14px",
-                    color: selectedVisitor.recognized ? "#4CAF50" : "#FF9800",
-                    fontSize: "22px",
-                    fontWeight: "700",
-                  }}
-                >
-                  {selectedVisitor.name}
-                </h2>
-
-                <div
-                  style={{
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: "12px",
-                    flex: 1,
-                  }}
-                >
-                  {/* Recognition Status */}
-                  <div>
-                    <div
-                      style={{
-                        fontSize: "12px",
-                        fontWeight: "600",
-                        color: "#666",
-                        textTransform: "uppercase",
-                        marginBottom: "4px",
-                      }}
-                    >
-                      Status
-                    </div>
-                    <div
-                      style={{
-                        display: "inline-block",
-                        padding: "6px 12px",
-                        borderRadius: "20px",
-                        backgroundColor: selectedVisitor.recognized
-                          ? "rgba(76, 175, 80, 0.1)"
-                          : "rgba(255, 152, 0, 0.1)",
-                        color: selectedVisitor.recognized
-                          ? "#4CAF50"
-                          : "#FF9800",
-                        fontWeight: "600",
-                        fontSize: "14px",
-                      }}
-                    >
-                      {selectedVisitor.recognized ? "✓ Recognized" : "⚠ Unknown"}
-                    </div>
-                  </div>
-
-                  {/* Confidence */}
-                  {selectedVisitor.confidence > 0 && (
-                    <div>
-                      <div
-                        style={{
-                          fontSize: "12px",
-                          fontWeight: "600",
-                          color: "#666",
-                          textTransform: "uppercase",
-                          marginBottom: "4px",
-                        }}
-                      >
-                        Confidence
-                      </div>
-                      <div
-                        style={{
-                          fontSize: "18px",
-                          fontWeight: "700",
-                        }}
-                      >
-                        {(selectedVisitor.confidence * 100).toFixed(1)}%
-                      </div>
-                      <div
-                        style={{
-                          marginTop: "4px",
-                          height: "8px",
-                          backgroundColor: "#e0e0e0",
-                          borderRadius: "4px",
-                          overflow: "hidden",
-                        }}
-                      >
-                        <div
-                          style={{
-                            height: "100%",
-                            width: `${selectedVisitor.confidence * 100}%`,
-                            backgroundColor: selectedVisitor.recognized
-                              ? "#4CAF50"
-                              : "#FF9800",
-                            transition: "width 0.3s ease",
-                          }}
-                        />
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Detection Time */}
-                  <div>
-                    <div
-                      style={{
-                        fontSize: "12px",
-                        fontWeight: "600",
-                        color: "#666",
-                        textTransform: "uppercase",
-                        marginBottom: "4px",
-                      }}
-                    >
-                      Detected At
-                    </div>
-                    <div
-                      style={{
-                        fontSize: "14px",
-                      }}
-                    >
-                      {selectedVisitor.detected_at
-                        ? new Date(
-                          selectedVisitor.detected_at._seconds
-                            ? selectedVisitor.detected_at._seconds * 1000
-                            : selectedVisitor.detected_at
-                        ).toLocaleString("en-US", {
-                          dateStyle: "medium",
-                          timeStyle: "short",
-                        })
-                        : "N/A"}
-                    </div>
-                  </div>
-
-                  {/* Visitor ID */}
-                  <div>
-                    <div
-                      style={{
-                        fontSize: "12px",
-                        fontWeight: "600",
-                        color: "#666",
-                        textTransform: "uppercase",
-                        marginBottom: "4px",
-                      }}
-                    >
-                      Detection ID
-                    </div>
-                    <div
-                      style={{
-                        fontSize: "12px",
-                        color: "#999",
-                        fontFamily: "monospace",
-                        wordBreak: "break-all",
-                      }}
-                    >
-                      {selectedVisitor.id}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Close Button */}
-                <button
-                  onClick={() => setShowVisitorDetails(false)}
-                  className="btn-control"
-                  style={{
-                    marginTop: "24px",
-                    width: "100%",
-                    backgroundColor: "#6c757d",
-                    borderColor: "#6c757d",
-                    padding: "12px",
-                    fontSize: "14px",
-                    fontWeight: "600",
-                  }}
-                >
-                  CLOSE
-                </button>
+              <div className="g-stack">
+                <dl className="g-info">
+                  <div><dt>Status</dt><dd>{selectedVisitor.recognized ? "Recognised" : "Unknown"}</dd></div>
+                  <div><dt>Confidence</dt><dd>{selectedVisitor.confidence > 0 ? `${(selectedVisitor.confidence * 100).toFixed(1)}%` : "N/A"}</dd></div>
+                  <div><dt>Detected at</dt><dd>{selectedVisitor.detected_at ? new Date(selectedVisitor.detected_at._seconds ? selectedVisitor.detected_at._seconds * 1000 : selectedVisitor.detected_at).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" }) : "N/A"}</dd></div>
+                  <div><dt>Detection ID</dt><dd>{selectedVisitor.id}</dd></div>
+                </dl>
+                {selectedVisitor.confidence > 0 && <div><div className="g-meter-row"><span className="g-label">Confidence</span><b>{(selectedVisitor.confidence * 100).toFixed(0)}%</b></div><div className="g-meter"><i className={selectedVisitor.recognized ? "" : "is-warn"} style={{ width: `${selectedVisitor.confidence * 100}%` }} /></div></div>}
               </div>
             </div>
+            <div className="g-modal__foot"><button className="g-btn g-btn--ghost" type="button" onClick={() => setShowVisitorDetails(false)}>Close</button></div>
           </div>
         </div>
       )}
-
-      {/* Volume Slider Styles & Animations */}
-      <style jsx>{`
-        @keyframes pulse {
-          0%, 100% {
-            opacity: 1;
-          }
-          50% {
-            opacity: 0.3;
-          }
-        }
-
-        @keyframes spin {
-          0% {
-            transform: rotate(0deg);
-          }
-          100% {
-            transform: rotate(360deg);
-          }
-        }
-
-        .volume-slider::-webkit-slider-thumb {
-          appearance: none;
-          width: 18px;
-          height: 18px;
-          border-radius: 50%;
-          background: #4caf50;
-          cursor: pointer;
-          box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
-          transition: all 0.2s ease;
-        }
-
-        .volume-slider::-webkit-slider-thumb:hover {
-          background: #45a049;
-          box-shadow: 0 3px 6px rgba(0, 0, 0, 0.3);
-          transform: scale(1.1);
-        }
-
-        .volume-slider::-webkit-slider-thumb:active {
-          background: #3d8b40;
-          box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
-          transform: scale(0.95);
-        }
-
-        .volume-slider::-moz-range-thumb {
-          width: 18px;
-          height: 18px;
-          border-radius: 50%;
-          background: #4caf50;
-          cursor: pointer;
-          border: none;
-          box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
-          transition: all 0.2s ease;
-        }
-
-        .volume-slider::-moz-range-thumb:hover {
-          background: #45a049;
-          box-shadow: 0 3px 6px rgba(0, 0, 0, 0.3);
-          transform: scale(1.1);
-        }
-
-        .volume-slider::-moz-range-thumb:active {
-          background: #3d8b40;
-          box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
-          transform: scale(0.95);
-        }
-      `}</style>
     </ProtectedRoute>
   );
 }

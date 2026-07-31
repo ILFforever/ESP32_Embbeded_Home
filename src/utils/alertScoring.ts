@@ -129,11 +129,13 @@ function getRecencyScore(timestamp: string, currentTime: Date): number {
  * - Non-face-detection: 0 points
  */
 function getRecognitionScore(alert: Alert): number {
-  if (!alert.tags.includes('face-detection')) {
+  const tags = getAlertTags(alert);
+
+  if (!tags.includes('face-detection')) {
     return 0;
   }
 
-  if (alert.tags.includes('unknown')) {
+  if (tags.includes('unknown')) {
     return 10;
   }
 
@@ -149,8 +151,10 @@ function getRecognitionScore(alert: Alert): number {
  * - Confidence 1.0: 0 points
  */
 function getConfidenceScore(alert: Alert): number {
+  const tags = getAlertTags(alert);
+
   // Only apply to recognized faces
-  if (!alert.tags.includes('face-detection') || alert.tags.includes('unknown')) {
+  if (!tags.includes('face-detection') || tags.includes('unknown')) {
     return 0;
   }
 
@@ -168,22 +172,28 @@ function getConfidenceScore(alert: Alert): number {
  * but are still important for system monitoring.
  */
 function getTagBasedScore(alert: Alert): number {
-  if (alert.tags.includes('device-restart')) {
+  const tags = getAlertTags(alert);
+
+  if (tags.includes('device-restart')) {
     return 15; // e.g., a device unexpectedly restarted
   }
-  if (alert.tags.includes('device-offline')) {
+  if (tags.includes('device-offline')) {
     return 20; // A device went offline, potentially critical
   }
-  if (alert.tags.includes('device-online')) {
+  if (tags.includes('device-online')) {
     return 5; // A device came back online, good to know but low priority
   }
-  if (alert.tags.includes('firmware-update')) {
+  if (tags.includes('firmware-update')) {
     return 10; // Firmware update status
   }
-  if (alert.tags.includes('battery-low')) {
+  if (tags.includes('battery-low')) {
     return 20; // Low battery is a high-priority warning
   }
   return 0;
+}
+
+function getAlertTags(alert: Alert): string[] {
+  return Array.isArray(alert.tags) ? alert.tags : [];
 }
 
 /**
