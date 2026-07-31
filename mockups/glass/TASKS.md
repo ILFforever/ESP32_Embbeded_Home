@@ -292,6 +292,24 @@ Find them with:
 `grep -rhoE 'var\(--[a-z0-9-]+\)' src/ | sort -u` then check each against
 `src/app/globals.css`.
 
+### C0b · Sparklines are blocked on backend history
+**Status:** ⛔ blocked (not a frontend bug) · **Size:** S once unblocked
+
+`src/components/glass/Sparkline.tsx` is built, verified rendering, and wired
+into the Climate card. It draws nothing because the live backend returns an
+empty array:
+
+    GET /api/v1/devices/{ss_001,hb_001}/sensors/readings?hours=24  ->  readings: []
+
+The component correctly renders nothing below two points — a single reading is
+not a trend. "Summary before detail, trend at a glance" was the premise of the
+dashboard layout, so until the backend persists sensor history the dashboard
+shows instantaneous values only.
+
+Nothing to do on the frontend. When history lands, Climate picks it up with no
+change; Air quality and the hero tile then want the same treatment
+(`GasReading` already declares `history: SensorReading[]`).
+
 ### C1 · Delete dead CSS
 **Status:** ☐ todo · **Size:** S
 After B1–B6, sweep `globals.css` for unused selectors (`.sidebar-*`,
