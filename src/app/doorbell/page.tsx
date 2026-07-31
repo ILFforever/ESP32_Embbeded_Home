@@ -30,6 +30,7 @@ import {
 import { getCookie } from "@/utils/cookies";
 import type { FaceDatabaseInfo, Visitor } from "@/services/devices.service";
 import type { Device } from "@/types/dashboard";
+import { notify, confirmDialog } from '@/components/glass/GlassRuntime';
 
 interface ActivityEvent {
   id: string;
@@ -397,9 +398,9 @@ export default function DoorbellControlPage() {
       localStorage.setItem("doorbell_device_id", customDeviceId.trim());
       setSavedDeviceId(customDeviceId.trim());
       setShowSettings(false);
-      alert("Device ID saved successfully!");
+      void notify("Device ID saved successfully!");
     } else {
-      alert("Please enter a valid device ID");
+      void notify("Please enter a valid device ID");
     }
   };
 
@@ -408,7 +409,7 @@ export default function DoorbellControlPage() {
     setSavedDeviceId(null);
     setCustomDeviceId("");
     setShowSettings(false);
-    alert("Device ID cleared. Using backend default.");
+    void notify("Device ID cleared. Using backend default.");
   };
 
   // Helper function to check if stream is ready
@@ -537,10 +538,10 @@ export default function DoorbellControlPage() {
     setCommandLoading("camera_restart");
     try {
       await sendCommand(deviceId, 'camera_restart');
-      alert("Camera restart command sent");
+      void notify("Camera restart command sent");
     } catch (error) {
       console.error("Error restarting camera:", error);
-      alert("Failed to restart camera");
+      void notify("Failed to restart camera");
     } finally {
       setCommandLoading(null);
     }
@@ -575,14 +576,14 @@ export default function DoorbellControlPage() {
     try {
       const response = await sendCommand(deviceId, 'amp_play', { url: ampUrl });
       if (response.status === "ok") {
-        alert("Amplifier play command sent");
+        void notify("Amplifier play command sent");
       } else {
         console.error("Failed to play amplifier:", response);
-        alert("Failed to play amplifier");
+        void notify("Failed to play amplifier");
       }
     } catch (error) {
       console.error("Error playing amplifier:", error);
-      alert("Failed to play amplifier");
+      void notify("Failed to play amplifier");
     } finally {
       setCommandLoading(null);
     }
@@ -596,14 +597,14 @@ export default function DoorbellControlPage() {
     try {
       const response = await sendCommand(deviceId, 'amp_stop');
       if (response.status === "ok") {
-        alert("Amplifier stopped");
+        void notify("Amplifier stopped");
       } else {
         console.error("Failed to stop amplifier:", response);
-        alert("Failed to stop amplifier");
+        void notify("Failed to stop amplifier");
       }
     } catch (error) {
       console.error("Error stopping amplifier:", error);
-      alert("Failed to stop amplifier");
+      void notify("Failed to stop amplifier");
     } finally {
       setCommandLoading(null);
     }
@@ -617,14 +618,14 @@ export default function DoorbellControlPage() {
     try {
       const response = await sendCommand(deviceId, 'amp_restart');
       if (response.status === "ok") {
-        alert("Amplifier restart command sent");
+        void notify("Amplifier restart command sent");
       } else {
         console.error("Failed to restart amplifier:", response);
-        alert("Failed to restart amplifier");
+        void notify("Failed to restart amplifier");
       }
     } catch (error) {
       console.error("Error restarting amplifier:", error);
-      alert("Failed to restart amplifier");
+      void notify("Failed to restart amplifier");
     } finally {
       setCommandLoading(null);
     }
@@ -648,11 +649,11 @@ export default function DoorbellControlPage() {
         console.log(`Volume set to ${finalVolume}: ${response.message}`);
       } else {
         console.error("Failed to set volume:", response);
-        alert("Failed to set amplifier volume");
+        void notify("Failed to set amplifier volume");
       }
     } catch (error) {
       console.error("Error setting amplifier volume:", error);
-      alert("Failed to set amplifier volume");
+      void notify("Failed to set amplifier volume");
     }
   };
 
@@ -661,7 +662,7 @@ export default function DoorbellControlPage() {
     if (!deviceId) return;
 
     if (!wifiSsid || !wifiPassword) {
-      alert("Please enter both SSID and password");
+      void notify("Please enter both SSID and password");
       return;
     }
 
@@ -669,7 +670,7 @@ export default function DoorbellControlPage() {
     try {
       const response = await sendCommand(deviceId, 'amp_wifi', { ssid: wifiSsid, password: wifiPassword });
       if (response.status === "ok") {
-        alert(
+        void notify(
           "WiFi credentials saved. Amplifier will use new credentials on next stream."
         );
         setWifiSsid("");
@@ -677,11 +678,11 @@ export default function DoorbellControlPage() {
         setShowWifiSettings(false);
       } else {
         console.error("Failed to set WiFi:", response);
-        alert("Failed to set amplifier WiFi");
+        void notify("Failed to set amplifier WiFi");
       }
     } catch (error) {
       console.error("Error setting amplifier WiFi:", error);
-      alert("Failed to set amplifier WiFi");
+      void notify("Failed to set amplifier WiFi");
     } finally {
       setCommandLoading(null);
     }
@@ -702,12 +703,12 @@ export default function DoorbellControlPage() {
       await syncFaceDatabase(deviceId);
       console.log("✓ Face database sync command queued");
 
-      alert(
+      void notify(
         "Database sync command queued!\n\nThe device will execute:\n• Face count\n• Database check\n• Face list\n\nCheck device serial output for results."
       );
     } catch (error) {
       console.error("Error syncing database:", error);
-      alert("Failed to sync database.");
+      void notify("Failed to sync database.");
     } finally {
       setCommandLoading(null);
     }
@@ -722,7 +723,7 @@ export default function DoorbellControlPage() {
     if (!deviceId) return;
 
     if (!newFaceName || !newFaceName.trim()) {
-      alert("Please enter a name for the face.");
+      void notify("Please enter a name for the face.");
       return;
     }
 
@@ -747,7 +748,7 @@ export default function DoorbellControlPage() {
 
       if (response.ok && data.status === "ok") {
         console.log(`✓ Face enrollment command queued:`, data);
-        alert(
+        void notify(
           `Face enrollment started for "${newFaceName}"!\n\nCommand ID: ${data.command_id}\n\nPlease position your face in front of the camera.\n\n${data.message}`
         );
 
@@ -760,11 +761,11 @@ export default function DoorbellControlPage() {
         setFaceDatabaseInfo(faceDbInfo);
       } else {
         console.error("Failed to enroll face:", data);
-        alert(`Failed to start face enrollment: ${data.message || "Unknown error"}`);
+        void notify(`Failed to start face enrollment: ${data.message || "Unknown error"}`);
       }
     } catch (error) {
       console.error("Error adding face:", error);
-      alert("Failed to start face enrollment. Please try again.");
+      void notify("Failed to start face enrollment. Please try again.");
     } finally {
       setCommandLoading(null);
     }
@@ -776,12 +777,12 @@ export default function DoorbellControlPage() {
     if (!deviceId) return;
 
     if (!renameNewName || !renameNewName.trim()) {
-      alert("Please enter a new name.");
+      void notify("Please enter a new name.");
       return;
     }
 
     if (renameFaceId < 1) {
-      alert("Please enter a valid face ID (1 or greater).");
+      void notify("Please enter a valid face ID (1 or greater).");
       return;
     }
 
@@ -791,7 +792,7 @@ export default function DoorbellControlPage() {
 
       if (response.status === "ok") {
         console.log(`✓ Rename face command queued:`, response);
-        alert(
+        void notify(
           `Face ID ${renameFaceId} will be renamed to "${renameNewName.trim()}"\n\n${response.message || ""}`
         );
 
@@ -805,11 +806,11 @@ export default function DoorbellControlPage() {
         setFaceDatabaseInfo(faceDbInfo);
       } else {
         console.error("Failed to rename face:", response);
-        alert(`Failed: ${response.message || "Unknown error"}`);
+        void notify(`Failed: ${response.message || "Unknown error"}`);
       }
     } catch (error) {
       console.error("Error renaming face:", error);
-      alert("Failed to rename face. Please try again.");
+      void notify("Failed to rename face. Please try again.");
     } finally {
       setCommandLoading(null);
     }
@@ -827,7 +828,7 @@ export default function DoorbellControlPage() {
 
       if (response.status === "ok") {
         console.log(`✓ Delete last face command queued:`, response);
-        alert(
+        void notify(
           `Last enrolled face will be deleted.\n\n${response.message || ""}`
         );
 
@@ -836,11 +837,11 @@ export default function DoorbellControlPage() {
         setFaceDatabaseInfo(faceDbInfo);
       } else {
         console.error("Failed to delete last face:", response);
-        alert(`Failed: ${response.message || "Unknown error"}`);
+        void notify(`Failed: ${response.message || "Unknown error"}`);
       }
     } catch (error) {
       console.error("Error deleting last face:", error);
-      alert("Failed to delete face. Please try again.");
+      void notify("Failed to delete face. Please try again.");
     } finally {
       setCommandLoading(null);
     }
@@ -852,8 +853,9 @@ export default function DoorbellControlPage() {
     if (!deviceId) return;
 
     if (
-      !confirm(
-        "Are you sure you want to restart the doorbell system? It will be offline for about 30 seconds."
+      !await confirmDialog(
+        "It will be offline for about 30 seconds. Nobody will be recognised while it reboots.",
+        { title: "Restart the doorbell?", danger: true, okLabel: "Restart" }
       )
     ) {
       return;
@@ -862,10 +864,10 @@ export default function DoorbellControlPage() {
     setCommandLoading("system_restart");
     try {
       await sendCommand(deviceId, 'system_restart');
-      alert("System restart command sent. Device will reboot shortly.");
+      void notify("System restart command sent. Device will reboot shortly.");
     } catch (error) {
       console.error("Error restarting system:", error);
-      alert("Failed to restart system");
+      void notify("Failed to restart system");
     } finally {
       setCommandLoading(null);
     }

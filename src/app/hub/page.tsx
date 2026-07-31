@@ -24,6 +24,7 @@ import {
   getSensorReadings,
 } from '@/services/devices.service';
 import type { BackendDevice } from '@/types/dashboard';
+import { notify, confirmDialog } from '@/components/glass/GlassRuntime';
 import {
   ArrowLeft,
   Mic,
@@ -288,10 +289,10 @@ export default function HubControlPage() {
       setRestarting(true);
       await sendCommand(hubDevice.device_id, 'system_restart');
       setShowRestartModal(false);
-      alert('Hub restart command sent successfully!');
+      void notify('Hub restart command sent successfully!');
     } catch (error) {
       console.error('Error restarting hub:', error);
-      alert('Failed to restart hub. Please try again.');
+      void notify('Failed to restart hub. Please try again.');
     } finally {
       setRestarting(false);
     }
@@ -311,15 +312,15 @@ export default function HubControlPage() {
       });
 
       if (result) {
-        alert(`Alert sent successfully! Command ID: ${result.command_id}`);
+        void notify(`Alert sent successfully! Command ID: ${result.command_id}`);
         setAlertMessage('');
         setShowAlertModal(false);
       } else {
-        alert('Failed to send alert. Please try again.');
+        void notify('Failed to send alert. Please try again.');
       }
     } catch (error) {
       console.error('Error sending alert:', error);
-      alert('Failed to send alert. Please try again.');
+      void notify('Failed to send alert. Please try again.');
     } finally {
       setSendingAlert(false);
     }
@@ -331,10 +332,10 @@ export default function HubControlPage() {
     try {
       setAmpLoading(true);
       await sendCommand(hubDevice.device_id, 'amp_play', { url: streamUrl });
-      alert('Play command sent to Hub amplifier!');
+      void notify('Play command sent to Hub amplifier!');
     } catch (error) {
       console.error('Error playing stream:', error);
-      alert('Failed to play stream. Please try again.');
+      void notify('Failed to play stream. Please try again.');
     } finally {
       setAmpLoading(false);
     }
@@ -346,10 +347,10 @@ export default function HubControlPage() {
     try {
       setAmpLoading(true);
       await sendCommand(hubDevice.device_id, 'amp_stop');
-      alert('Stop command sent to Hub amplifier!');
+      void notify('Stop command sent to Hub amplifier!');
     } catch (error) {
       console.error('Error stopping stream:', error);
-      alert('Failed to stop stream. Please try again.');
+      void notify('Failed to stop stream. Please try again.');
     } finally {
       setAmpLoading(false);
     }
@@ -361,10 +362,10 @@ export default function HubControlPage() {
     try {
       setAmpLoading(true);
       await sendCommand(hubDevice.device_id, 'amp_restart');
-      alert('Restart command sent to Hub amplifier!');
+      void notify('Restart command sent to Hub amplifier!');
     } catch (error) {
       console.error('Error restarting amplifier:', error);
-      alert('Failed to restart amplifier. Please try again.');
+      void notify('Failed to restart amplifier. Please try again.');
     } finally {
       setAmpLoading(false);
     }
@@ -382,7 +383,7 @@ export default function HubControlPage() {
       console.log(`Volume set to ${finalVolume}`);
     } catch (error) {
       console.error('Error setting volume:', error);
-      alert('Failed to set volume. Please try again.');
+      void notify('Failed to set volume. Please try again.');
     }
   };
 
@@ -395,7 +396,7 @@ export default function HubControlPage() {
       setMicActive(!micActive);
     } catch (error) {
       console.error('Error toggling mic:', error);
-      alert('Failed to toggle microphone');
+      void notify('Failed to toggle microphone');
     }
   };
 
