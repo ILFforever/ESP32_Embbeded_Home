@@ -20,6 +20,7 @@ import {
 } from '@/services/devices.service';
 import type { DevicesStatus, GasReading, Alert, DoorWindow } from '@/types/dashboard';
 import { getCurrentTheme, toggleTheme as toggleGlassTheme, type GlassTheme } from '@/components/glass/theme';
+import { getAlertTitle } from '@/utils/alertText';
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -281,17 +282,34 @@ export default function DashboardPage() {
           </p>
         </div>
 
-        {(!systemOnline || !allDevicesOnline || alerts.length > 0) && (
+        {(() => {
+          const topAlert = alerts.find(a => !a.read) ?? alerts[0];
+          const offlineCount = devicesStatus?.summary.offline || 0;
+          return (!systemOnline || !allDevicesOnline || alerts.length > 0) && (
           <div className="g-pane dash-hero">
             <div>
-              <h2><span className={`g-dot ${systemOnline ? 'g-dot--warn' : 'g-dot--crit'}`}></span> Check the home status</h2>
+              {/* Name the problem, then offer the fix. "Check the home status"
+                  is a label, not information, and alert.message is the system
+                  talking to itself ("hb_001: Command 'mic_stop' failed"). */}
+              <h2>
+                <span className={`g-dot ${systemOnline ? 'g-dot--warn' : 'g-dot--crit'}`}></span>{' '}
+                {!systemOnline
+                  ? 'The hub has stopped reporting'
+                  : topAlert
+                    ? getAlertTitle(topAlert)
+                    : `${offlineCount} device${offlineCount === 1 ? ' has' : 's have'} stopped reporting`}
+              </h2>
               <p>
-                {alerts[0]?.message || (!systemOnline
-                  ? 'The Arduino888 backend did not confirm health. Check the service before changing device state.'
-                  : 'One or more devices have stopped reporting. Open devices or recent activity for the latest detail.')}
+                {!systemOnline
+                  ? 'Nothing on this page is live until the service responds. Device controls are disabled to avoid sending commands into the dark.'
+                  : topAlert
+                    ? `${topAlert.source} · ${new Date(topAlert.timestamp).toLocaleString()}`
+                    : 'Open devices to see which ones, and when they were last heard from.'}
               </p>
               <div className="g-row g-row--wrap">
-                <button className="g-btn g-btn--primary" onClick={() => openExpandedCard(alerts.length ? 'alerts' : 'system-status')}>Review now</button>
+                <button className="g-btn g-btn--primary" onClick={() => openExpandedCard(alerts.length ? 'alerts' : 'system-status')}>
+                  {topAlert ? 'See the alert' : 'Open devices'}
+                </button>
                 <button className="g-btn g-btn--ghost" onClick={() => openExpandedCard('system-status')}>Open devices</button>
               </div>
             </div>
@@ -300,7 +318,8 @@ export default function DashboardPage() {
               <div className="g-metric-sm g-num">{alerts.length || devicesStatus?.summary.offline || 1}</div>
             </div>
           </div>
-        )}
+        );
+        })()}
 
         <div className="g-grid g-grid--4">
           <div className="g-pane g-card">

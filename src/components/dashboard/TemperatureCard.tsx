@@ -11,6 +11,7 @@ import {
 } from 'recharts';
 import { RefreshCw, Thermometer } from 'lucide-react';
 import type { TemperatureData } from '@/types/dashboard';
+import Sparkline from '@/components/glass/Sparkline';
 import {
   findHubDevice,
   getAllDevices,
@@ -165,25 +166,49 @@ export function TemperatureCard({ isExpanded = false }: TemperatureCardProps) {
           <p>Waiting for the sensors to report back.</p>
         </div>
       ) : !isExpanded ? (
-        <div className="g-grid g-grid--2">
-          {temperatureData.length > 0 ? (
-            temperatureData.map(data => (
-              <div key={data.room} className={`g-tile${data.current === 0 ? ' is-warn' : ''}`}>
-                <p className="g-label">{data.room}</p>
-                <div className="g-metric-sm g-num">
-                  {data.current.toFixed(1)}
-                  <small>&deg;C</small>
-                </div>
-                <p className="g-sub">{data.humidity?.toFixed(0) ?? 0}% humidity</p>
+        temperatureData.length > 0 ? (() => {
+          /* One hero reading with its trend, then the rest as a quiet row.
+             Four equal tiles gave the eye nowhere to land, and none of them
+             showed which way the temperature was going. */
+          const [primary, ...rest] = temperatureData;
+          const series = (primary.history ?? []).map(h => h.value).filter(Number.isFinite);
+          const low = series.length ? Math.min(...series) : primary.current;
+          const high = series.length ? Math.max(...series) : primary.current;
+
+          return (
+            <>
+              <div className="g-metric-lg g-num">
+                {primary.current.toFixed(1)}
+                <sup>&deg;C</sup>
               </div>
-            ))
-          ) : (
-            <div className="g-empty">
-              <strong>No climate data</strong>
-              <p>No temperature sensors have reported yet.</p>
-            </div>
-          )}
-        </div>
+              <p className="g-sub">
+                {primary.room} · {primary.humidity?.toFixed(0) ?? 0}% humidity
+                {series.length > 1 && ` · low ${low.toFixed(1)}, high ${high.toFixed(1)} today`}
+              </p>
+
+              {rest.length > 0 && (
+                <div className="g-row g-row--wrap" style={{ gap: 'var(--s-4)', marginTop: 'var(--s-3)' }}>
+                  {rest.map(data => (
+                    <span key={data.room} style={{ fontSize: '12.5px' }}>
+                      <span className="g-dim">{data.room}</span>{' '}
+                      <span className="g-num">{data.current.toFixed(1)}&deg;C</span>
+                    </span>
+                  ))}
+                </div>
+              )}
+
+              <Sparkline
+                values={series}
+                label={`${primary.room} temperature over time, between ${low.toFixed(1)} and ${high.toFixed(1)} degrees`}
+              />
+            </>
+          );
+        })() : (
+          <div className="g-empty">
+            <strong>No climate data</strong>
+            <p>No temperature sensors have reported yet.</p>
+          </div>
+        )
       ) : (
         <div className="g-stack">
           <div className="g-row g-row--between g-row--wrap">

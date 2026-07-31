@@ -27,6 +27,7 @@ import type { Alert } from '@/types/dashboard';
 import { alertLevelToType } from '@/types/dashboard';
 import { markAlertAsRead } from '@/services/devices.service';
 import { getAlertPriorityCategory, sortAlertsByPriority, type ScoredAlert } from '@/utils/alertScoring';
+import { alertTags, getAlertTitle } from '@/utils/alertText';
 
 interface AlertsCardProps {
   alerts: Alert[];
@@ -56,7 +57,6 @@ const priorityChipClass = (score: number) => {
   return 'g-chip';
 };
 
-const alertTags = (alert: Alert): string[] => Array.isArray(alert.tags) ? alert.tags : [];
 
 export function AlertsCard({ alerts, isExpanded = false, onRefresh }: AlertsCardProps) {
   const [selectedFilters, setSelectedFilters] = useState<string[]>([]);
@@ -91,42 +91,6 @@ export function AlertsCard({ alerts, isExpanded = false, onRefresh }: AlertsCard
     return date.toLocaleDateString();
   };
 
-  const getAlertTitle = (alert: Alert): string => {
-    const tags = alertTags(alert);
-
-    if (tags.includes('face-detection')) {
-      return tags.includes('unknown') ? 'Unknown person at the door' : 'Known person at the door';
-    }
-    if (tags.includes('motion-detected')) return 'Motion at the doorbell';
-    if (tags.includes('doorbell')) return 'Doorbell pressed';
-    if (tags.includes('device-offline')) return `${alert.source}: Offline`;
-    if (tags.includes('device-online')) return `${alert.source}: Online`;
-    if (tags.includes('device-restart')) return `${alert.source}: Restarted`;
-    if (tags.includes('door-unlocked')) return 'Door unlocked';
-    if (tags.includes('door-locked')) return 'Door locked';
-    if (tags.includes('window-opened')) return 'Window opened';
-    if (tags.includes('access-granted')) return 'Access granted';
-    if (tags.includes('access-denied')) return 'Access denied';
-    if (tags.includes('unauthorized')) return 'Unauthorized access attempt';
-    if (tags.includes('gas-leak')) return 'Gas above threshold';
-    if (tags.includes('smoke-detected')) return 'Smoke detected';
-    if (tags.includes('fire')) return 'Fire alert';
-    if (tags.includes('high-temperature')) return 'High temperature';
-    if (tags.includes('low-temperature')) return 'Low temperature';
-    if (tags.includes('high-humidity')) return 'High humidity';
-    if (tags.includes('low-humidity')) return 'Low humidity';
-    if (tags.includes('poor-air-quality')) return 'Poor air quality';
-    if (tags.includes('low-battery')) return `${alert.source}: Low battery`;
-    if (tags.includes('battery-critical')) return `${alert.source}: Critical battery`;
-    if (tags.includes('connection-lost')) return `${alert.source}: Connection lost`;
-    if (tags.includes('weak-signal')) return `${alert.source}: Weak signal`;
-    if (tags.includes('device-log')) {
-      if (tags.includes('error')) return `${alert.source}: Error`;
-      if (tags.includes('warning')) return `${alert.source}: Warning`;
-      return `${alert.source}: Info`;
-    }
-    return alert.source || 'Alert';
-  };
 
   const getAlertCategory = (alert: Alert): string => {
     const tags = alertTags(alert);
@@ -355,23 +319,13 @@ export function AlertsCard({ alerts, isExpanded = false, onRefresh }: AlertsCard
                 <p>Everything is quiet right now.</p>
               </div>
             ) : (
-              <div className="g-grid g-grid--auto">
-                {alertCategories.map(category => (
-                  <button
-                    key={category.name}
-                    className="g-action"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      setPopupCategory(category.name);
-                    }}
-                  >
-                    <span className="g-row g-row--between">
-                      <span className="g-row">{getCategoryIcon(category.name)} {category.name}</span>
-                      <span className="g-chip g-chip--warn">{category.count}</span>
-                    </span>
-                    <small>{category.alerts[0] ? getAlertTitle(category.alerts[0]) : 'No unread alerts'}</small>
-                  </button>
-                ))}
+              /* The event list from the mockup. Category counters told you
+                 how many things happened but never what any of them were —
+                 "General 15" is the system describing itself. renderAlertRow
+                 already emits the right markup; the compact view just was
+                 not using it. */
+              <div className="g-list">
+                {sortAlertsByPriority(unreadAlerts).slice(0, 6).map(alert => renderAlertRow(alert))}
               </div>
             )}
           </div>
