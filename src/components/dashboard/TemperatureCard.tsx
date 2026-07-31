@@ -172,7 +172,7 @@ export function TemperatureCard({ isExpanded = false }: TemperatureCardProps) {
                 <p className="g-label">{data.room}</p>
                 <div className="g-metric-sm g-num">
                   {data.current.toFixed(1)}
-                  <small>deg C</small>
+                  <small>&deg;C</small>
                 </div>
                 <p className="g-sub">{data.humidity?.toFixed(0) ?? 0}% humidity</p>
               </div>
@@ -220,7 +220,7 @@ export function TemperatureCard({ isExpanded = false }: TemperatureCardProps) {
             <div className="g-grid g-grid--3">
               <div className="g-tile">
                 <p className="g-label">Now</p>
-                <div className="g-metric-sm g-num">{currentRoom.current.toFixed(1)}<small>deg C</small></div>
+                <div className="g-metric-sm g-num">{currentRoom.current.toFixed(1)}<small>&deg;C</small></div>
               </div>
               <div className="g-tile">
                 <p className="g-label">Humidity</p>
@@ -228,7 +228,7 @@ export function TemperatureCard({ isExpanded = false }: TemperatureCardProps) {
               </div>
               <div className="g-tile">
                 <p className="g-label">24h average</p>
-                <div className="g-metric-sm g-num">{currentAverage.toFixed(1)}<small>deg C</small></div>
+                <div className="g-metric-sm g-num">{currentAverage.toFixed(1)}<small>&deg;C</small></div>
               </div>
             </div>
           )}

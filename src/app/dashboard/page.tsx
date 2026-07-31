@@ -277,7 +277,7 @@ export default function DashboardPage() {
               ? 'The backend is not reporting as online. Device cards will recover when the service responds.'
               : allDevicesOnline
                 ? 'Everything is running normally. Updated just now.'
-                : `${devicesStatus?.summary.offline || 0} device${devicesStatus?.summary.offline === 1 ? '' : 's'} need attention. Updated just now.`}
+                : `${devicesStatus?.summary.offline || 0} device${devicesStatus?.summary.offline === 1 ? ' needs' : 's need'} attention. Updated just now.`}
           </p>
         </div>
 

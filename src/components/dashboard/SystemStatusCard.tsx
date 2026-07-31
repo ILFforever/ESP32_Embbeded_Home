@@ -212,7 +212,7 @@ export function SystemStatusCard({ devicesStatus, isExpanded = false }: SystemSt
             <Radio size={15} /> Sensors
           </button>
         </div>
-        <span className={`g-pill ${devicesNeedingAttention ? 'is-warn' : 'is-ok'}`}><i /> {devicesNeedingAttention || 'No'} need attention</span>
+        <span className={`g-pill ${devicesNeedingAttention ? 'is-warn' : 'is-ok'}`}><i /> {devicesNeedingAttention || 'No'} {devicesNeedingAttention === 1 ? 'needs' : 'need'} attention</span>
       </div>
 
       <div className="dash-modal-grid">
@@ -318,7 +318,7 @@ export function SystemStatusCard({ devicesStatus, isExpanded = false }: SystemSt
 
             <div className="g-grid g-grid--2" style={{ marginTop: 'var(--s-5)' }}>
               {selectedSensor.sensor_data?.temperature !== undefined && (
-                <div className="g-tile"><p className="g-label"><Thermometer size={14} /> Temperature</p><div className="g-metric-sm g-num">{selectedSensor.online ? selectedSensor.sensor_data.temperature.toFixed(1) : '-'}<small>deg C</small></div></div>
+                <div className="g-tile"><p className="g-label"><Thermometer size={14} /> Temperature</p><div className="g-metric-sm g-num">{selectedSensor.online ? selectedSensor.sensor_data.temperature.toFixed(1) : '-'}<small>&deg;C</small></div></div>
               )}
               {selectedSensor.sensor_data?.humidity !== undefined && (
                 <div className="g-tile"><p className="g-label"><Droplet size={14} /> Humidity</p><div className="g-metric-sm g-num">{selectedSensor.online ? selectedSensor.sensor_data.humidity.toFixed(1) : '-'}<small>%</small></div></div>

@@ -428,11 +428,21 @@ export default function GlassRuntime() {
     document.addEventListener('input', onInput);
     window.addEventListener('resize', onResize);
     window.addEventListener('glass:themechange', onThemeChange);
-    // data-theme only. Watching the body subtree rebuilt the displacement
-    // map on every DOM mutation — measured 694 extra canvas rasterisations
-    // across 20 unrelated node insertions, and the dashboard polls every
-    // 5s. Route changes are already covered by the pathname effect below.
     observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+
+    // Toolbars can mount late — pages that render their chrome only after
+    // async data arrives miss the initial pass and end up with no lens.
+    // So we do watch the body, but two things make it cheap where the
+    // original was not: it is debounced, and it calls refreshLens WITHOUT
+    // force, so the width/height/theme signature cache short-circuits an
+    // unchanged bar before any canvas work happens. Forcing here rebuilt
+    // the map on every mutation — 694 rasterisations per 20 insertions.
+    let mountTimer = 0;
+    const mountObserver = new MutationObserver(() => {
+      window.clearTimeout(mountTimer);
+      mountTimer = window.setTimeout(() => refreshLens(false), 100);
+    });
+    mountObserver.observe(document.body, { childList: true, subtree: true });
     media.addEventListener('change', onThemeChange);
 
     document.querySelectorAll<HTMLInputElement>('.g-slider').forEach(paintSlider);
@@ -445,8 +455,10 @@ export default function GlassRuntime() {
       window.removeEventListener('resize', onResize);
       window.removeEventListener('glass:themechange', onThemeChange);
       observer.disconnect();
+      mountObserver.disconnect();
       media.removeEventListener('change', onThemeChange);
       window.clearTimeout(timer);
+      window.clearTimeout(mountTimer);
       delete window.Glass;
     };
   }, [refreshLens]);
