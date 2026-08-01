@@ -20,56 +20,44 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
     }
   }, [isAuthenticated, isLoading, router]);
 
-  // Show loading state while checking authentication
+  /* All three branches were inline-styled off-system — the admin denial
+     was still painting #667eea, the old purple theme's primary. */
   if (isLoading) {
     return (
-      <div style={{
-        display: 'flex',
-        justifyContent: 'center',
-        alignItems: 'center',
-        height: '100vh',
-        fontSize: '18px',
-        color: '#666'
-      }}>
-        Loading...
+      <div className="g-waiting">
+        <div className="g-waiting__inner">
+          <div className="g-spinner" aria-hidden="true" />
+          <h1>Just a moment</h1>
+          <p aria-live="polite">Checking your sign-in.</p>
+        </div>
       </div>
     );
   }
 
-  // Redirect to login if not authenticated
+  // Redirecting to /login. Say so rather than flashing a blank page.
   if (!isAuthenticated) {
-    return null; 
+    return (
+      <div className="g-waiting">
+        <div className="g-waiting__inner">
+          <div className="g-spinner" aria-hidden="true" />
+          <h1>Taking you to sign in</h1>
+          <p aria-live="polite">You need to be signed in to see this.</p>
+        </div>
+      </div>
+    );
   }
 
-
-  // Check admin access if required
   if (requireAdmin && user?.role !== 'admin') {
     return (
-      <div style={{
-        display: 'flex',
-        flexDirection: 'column',
-        justifyContent: 'center',
-        alignItems: 'center',
-        height: '100vh',
-        gap: '20px'
-      }}>
-        <h2 style={{ color: '#c33', margin: 0 }}>Access Denied</h2>
-        <p style={{ color: '#666', margin: 0 }}>
-          You don't have permission to access this page.
-        </p>
-        <a
-          href="/dashboard"
-          style={{
-            padding: '10px 20px',
-            backgroundColor: '#667eea',
-            color: 'white',
-            textDecoration: 'none',
-            borderRadius: '6px',
-            marginTop: '10px'
-          }}
-        >
-          Go to Dashboard
-        </a>
+      <div className="g-waiting">
+        <div className="g-pane g-card g-waiting__inner" style={{ padding: 'var(--s-6)' }}>
+          <h1>You don&rsquo;t have access to this</h1>
+          <p>
+            This page is for admins. Ask someone with an admin account to make the
+            change, or to give you admin access.
+          </p>
+          <a className="g-btn g-btn--primary" href="/dashboard">Back to the dashboard</a>
+        </div>
       </div>
     );
   }

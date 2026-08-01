@@ -959,6 +959,44 @@ body {
   .dash-modal-grid, .dash-modal-grid--2 { grid-template-columns: 1fr; }
 }
 
+/* ---------- 9b. WAITING STATES ---------------------------
+   Intermediate screens were missed by the migration and still
+   referenced .dashboard-loading / .loading-page / .loading-spinner,
+   all of which were deleted with the old stylesheet — so they rendered
+   completely unstyled. .spinning was missing too, which meant every
+   refresh icon was silently not animating.
+
+   Copy says what is happening and what is being waited on, not
+   "LOADING SYSTEM...". Under prefers-reduced-motion the global rule
+   stops the rotation; the text still carries the meaning.
+--------------------------------------------------------- */
+@keyframes g-spin { to { transform: rotate(360deg); } }
+
+.spinning { animation: g-spin 900ms linear infinite; transform-origin: 50% 50%; }
+
+.g-spinner {
+  width: 34px; height: 34px; flex: none;
+  border-radius: 50%;
+  border: 3px solid var(--sunken);
+  border-top-color: var(--accent);
+  animation: g-spin 800ms linear infinite;
+}
+.g-spinner--sm { width: 20px; height: 20px; border-width: 2px; }
+
+/* Full-page waiting screen: root redirect, auth check, first load. */
+.g-waiting {
+  position: relative;
+  z-index: 1;
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: var(--s-5);
+  text-align: center;
+}
+.g-waiting__inner { display: flex; flex-direction: column; align-items: center; gap: var(--s-4); max-width: 42ch; }
+.g-waiting h1 { margin: 0; font-size: 21px; font-weight: 600; letter-spacing: -.018em; }
+.g-waiting p { margin: 0; color: var(--ink-2); font-size: 13.5px; }
+
 /* ---------- 10. MODALS ---------------------------------- */
 .g-modal {
   position: fixed; inset: 0; z-index: 60;

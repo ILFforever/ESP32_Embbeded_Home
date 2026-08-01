@@ -179,9 +179,12 @@ export default function DashboardPage() {
 
   if (loading) {
     return (
-      <div className="dashboard-loading">
-        <div className="loading-spinner"></div>
-        <p>LOADING SYSTEM...</p>
+      <div className="g-waiting">
+        <div className="g-waiting__inner">
+          <div className="g-spinner" aria-hidden="true" />
+          <h1>Good morning</h1>
+          <p aria-live="polite">Fetching devices, sensors and alerts.</p>
+        </div>
       </div>
     );
   }

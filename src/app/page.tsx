@@ -33,13 +33,15 @@ export default function Home() {
     }
   }, [isAuthenticated, isLoading, router]);
 
-  // Show loading state while checking authentication
+  /* Only on screen for a moment, but it was using .loading-page /
+     .loading-spinner — classes deleted with the old stylesheet — so it
+     rendered completely unstyled. */
   return (
-    <div className="loading-page">
-      <div className="loading-content">
-        <div className="loading-spinner"></div>
-        <h1>ESP32 SMART HOME</h1>
-        <p>Initializing system...</p>
+    <div className="g-waiting">
+      <div className="g-waiting__inner">
+        <div className="g-spinner" aria-hidden="true" />
+        <h1>Arduino888 Smart Home</h1>
+        <p aria-live="polite">Checking whether you are signed in.</p>
       </div>
     </div>
   );
