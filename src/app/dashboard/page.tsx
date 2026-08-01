@@ -40,7 +40,7 @@ export default function DashboardPage() {
   const fetchAlerts = async () => {
     try {
       // Fetch all alerts with a limit of 50
-      const alertsData = await getAlerts({ limit: 50 });
+      const alertsData = await getAlerts();
       setAlerts(alertsData);
     } catch (error) {
       console.error('Error loading alerts:', error);
