@@ -125,6 +125,14 @@ export default function DashboardPage() {
     setThemeState(getCurrentTheme());
   }, []);
 
+  /* Access and Admin live in expanded cards on this page, so other pages
+     link here with ?card=. Without this the nav would have to point at
+     /dashboard and drop you somewhere you did not ask for. */
+  useEffect(() => {
+    const card = new URLSearchParams(window.location.search).get('card');
+    if (card) setExpandedCard(card);
+  }, []);
+
   useEffect(() => {
     if (!expandedCard) return;
 
@@ -262,6 +270,7 @@ export default function DashboardPage() {
               expanded cards that actually hold that content. */}
           <nav className="g-seg" data-choice aria-label="Sections">
             <a href="/dashboard" aria-current="page">Home</a>
+            <a href="/plan">Plan</a>
             <button type="button" onClick={() => openExpandedCard('doors')}>Access</button>
             {user?.role === 'admin' && (
               <button type="button" onClick={() => openExpandedCard('admin')}>Admin</button>

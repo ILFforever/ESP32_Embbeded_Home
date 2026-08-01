@@ -1003,6 +1003,58 @@ body {
 .g-waiting h1 { margin: 0; font-size: 21px; font-weight: 600; letter-spacing: -.018em; }
 .g-waiting p { margin: 0; color: var(--ink-2); font-size: 13.5px; }
 
+/* ---------- 9c. FLOOR PLAN -------------------------------
+   Ported from mockups/glass/plan.html. Everything is a class so it
+   follows the theme — a hardcoded hex, or a var() inside an SVG
+   presentation attribute, breaks in one theme or the other.
+--------------------------------------------------------- */
+.pl-wrap { display: grid; grid-template-columns: 1.55fr 1fr; gap: var(--s-4); align-items: start; }
+.pl-stage { padding: 16px 18px 14px; }
+.pl-stage > header { display: flex; align-items: center; justify-content: space-between; gap: var(--s-3); margin-bottom: var(--s-3); }
+.pl-svg { width: 100%; height: auto; display: block; }
+.pl-legend { display: flex; gap: var(--s-5); flex-wrap: wrap; border-top: 1px solid var(--hairline); margin-top: var(--s-3); padding-top: 11px; }
+.pl-legend span { display: flex; align-items: center; gap: 7px; font-size: 11.5px; color: var(--ink-2); }
+
+.pl-room { fill: color-mix(in srgb, var(--ink) 6%, transparent); transition: fill .18s var(--ease); }
+.pl-hit { cursor: pointer; }
+.pl-hit:hover .pl-room { fill: color-mix(in srgb, var(--ink) 11%, transparent); }
+.pl-hit[aria-current="true"] .pl-room { fill: color-mix(in srgb, var(--accent) 27%, transparent); }
+.pl-hit:focus { outline: none; }
+.pl-hit:focus-visible .pl-room { fill: color-mix(in srgb, var(--accent) 27%, transparent); }
+.pl-hit:focus-visible .pl-focus { stroke: var(--accent); stroke-width: 2.5; }
+.pl-focus { fill: none; stroke: none; }
+
+/* Everything painted over the rooms is decoration. Without this the walls,
+   tags and pins sit on top of the room rects and swallow the click — and
+   they are siblings, so it never bubbles to the room. */
+.pl-wall, .pl-wall-i, .pl-door, .pl-name,
+.pl-leader, .pl-tag, .pl-val, .pl-pin, .pl-halo { pointer-events: none; }
+
+.pl-wall   { fill: none; stroke: var(--ink); stroke-width: 4.5; stroke-linecap: square; }
+.pl-wall-i { fill: none; stroke: color-mix(in srgb, var(--ink) 62%, transparent); stroke-width: 2.5; }
+.pl-door   { fill: none; stroke: var(--ink-3); stroke-width: 1.5; }
+.pl-name { fill: var(--ink-3); font-family: var(--mono); font-size: 10px; letter-spacing: .16em; text-transform: uppercase; }
+.pl-leader { stroke: var(--outline); stroke-width: 1; }
+.pl-tag { fill: color-mix(in srgb, var(--ground) 86%, transparent); stroke: var(--outline); stroke-width: 1; }
+.pl-tag.is-warn { stroke: var(--warn); }
+.pl-tag.is-off  { stroke: var(--outline); }
+.pl-val { fill: var(--ink); font-family: var(--mono); font-size: 11px; }
+.pl-val.is-warn { fill: var(--warn); }
+.pl-val.is-off  { fill: var(--ink-3); }
+.pl-pin { stroke: var(--ground); stroke-width: 2; }
+.pl-pin.is-ok   { fill: var(--ok); }
+.pl-pin.is-warn { fill: var(--warn); }
+.pl-pin.is-off  { fill: var(--ink-3); }
+.pl-halo { fill: var(--warn); opacity: .18; }
+
+.pl-metrics { display: grid; grid-template-columns: repeat(2, 1fr); gap: var(--s-4) var(--s-5); }
+.pl-devs { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: var(--s-3); }
+.pl-dev { display: flex; align-items: center; gap: 9px; min-width: 0; font-size: 12.5px; }
+.pl-dev b { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; }
+.pl-dev span { font-size: 11px; color: var(--ink-3); }
+
+@media (max-width: 1000px) { .pl-wrap { grid-template-columns: 1fr; } }
+
 /* ---------- 10. MODALS ---------------------------------- */
 .g-modal {
   position: fixed; inset: 0; z-index: 60;
