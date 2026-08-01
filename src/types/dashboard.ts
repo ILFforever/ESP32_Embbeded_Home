@@ -85,12 +85,20 @@ export interface TemperatureData {
   current: number;
   history: SensorReading[];
   humidity?: number;
+  /* Liveness travels with the reading. Without it the UI cannot tell a
+     live value from one persisted months ago, and renders both the same. */
+  online?: boolean;
+  last_seen?: string | null;
 }
 
 export interface GasReading {
   sensor_id: string;
   location: string;
   ppm: number;
+  /* See TemperatureData: a stale 0 ppm reads as "safe" but means
+     "we have not heard from this sensor". */
+  online?: boolean;
+  last_seen?: string | null;
   gas_level?: number;
   status: 'safe' | 'warning' | 'danger';
   history: SensorReading[];

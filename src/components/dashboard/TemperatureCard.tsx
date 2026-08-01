@@ -12,6 +12,7 @@ import {
 import { RefreshCw, Thermometer } from 'lucide-react';
 import type { TemperatureData } from '@/types/dashboard';
 import Sparkline from '@/components/glass/Sparkline';
+import { lastSeenLabel, relativeTime } from '@/utils/time';
 import {
   findHubDevice,
   getAllDevices,
@@ -63,6 +64,8 @@ export function TemperatureCard({ isExpanded = false }: TemperatureCardProps) {
             room: 'Hub',
             current: temperature,
             humidity,
+            online: hub.online,
+            last_seen: hub.last_seen ?? null,
             history: history.length > 0 ? history : [{ timestamp: new Date().toISOString(), value: temperature }],
           });
         }
@@ -71,6 +74,7 @@ export function TemperatureCard({ isExpanded = false }: TemperatureCardProps) {
       const sensorIds = ['ss_001', 'ss_002', 'ss_003'];
 
       for (const sensorId of sensorIds) {
+        const sensorDevice = devices.find(d => d.device_id === sensorId);
         const deviceSensors = await getDeviceSensors(sensorId);
         const sensorReadings = await getSensorReadings(sensorId, 24);
         const match = sensorId.match(/ss_(\d+)/);
@@ -89,13 +93,17 @@ export function TemperatureCard({ isExpanded = false }: TemperatureCardProps) {
             room: roomName,
             current: temperature,
             humidity,
+            online: sensorDevice?.online ?? false,
+            last_seen: sensorDevice?.last_seen ?? null,
             history: history.length > 0 ? history : [{ timestamp: new Date().toISOString(), value: temperature }],
           });
         } else {
           allTemperatureData.push({
-            room: `${roomName} (Offline)`,
+            room: roomName,
             current: 0,
             humidity: 0,
+            online: false,
+            last_seen: sensorDevice?.last_seen ?? null,
             history: [{ timestamp: new Date().toISOString(), value: 0 }],
           });
         }
@@ -170,28 +178,47 @@ export function TemperatureCard({ isExpanded = false }: TemperatureCardProps) {
           /* One hero reading with its trend, then the rest as a quiet row.
              Four equal tiles gave the eye nowhere to land, and none of them
              showed which way the temperature was going. */
-          const [primary, ...rest] = temperatureData;
+          /* Prefer a sensor that is actually reporting. Showing a value
+             persisted months ago as though it were current is worse than
+             showing nothing — the reader has no way to tell. */
+          const live = temperatureData.filter(d => d.online);
+          const [primary, ...rest] = live.length ? [...live, ...temperatureData.filter(d => !d.online)] : temperatureData;
           const series = (primary.history ?? []).map(h => h.value).filter(Number.isFinite);
           const low = series.length ? Math.min(...series) : primary.current;
           const high = series.length ? Math.max(...series) : primary.current;
 
           return (
             <>
-              <div className="g-metric-lg g-num">
-                {primary.current.toFixed(1)}
-                <sup>&deg;C</sup>
-              </div>
-              <p className="g-sub">
-                {primary.room} · {primary.humidity?.toFixed(0) ?? 0}% humidity
-                {series.length > 1 && ` · low ${low.toFixed(1)}, high ${high.toFixed(1)} today`}
-              </p>
+              {primary.online ? (
+                <>
+                  <div className="g-metric-lg g-num">
+                    {primary.current.toFixed(1)}
+                    <sup>&deg;C</sup>
+                  </div>
+                  <p className="g-sub">
+                    {primary.room} · {primary.humidity?.toFixed(0) ?? 0}% humidity
+                    {series.length > 1 && ` · low ${low.toFixed(1)}, high ${high.toFixed(1)} today`}
+                  </p>
+                </>
+              ) : (
+                <>
+                  <div className="g-metric-lg g-num g-dim">&mdash;</div>
+                  <p className="g-sub">
+                    {primary.room} is not reporting · last seen {relativeTime(primary.last_seen)}
+                  </p>
+                </>
+              )}
 
               {rest.length > 0 && (
                 <div className="g-row g-row--wrap" style={{ gap: 'var(--s-4)', marginTop: 'var(--s-3)' }}>
                   {rest.map(data => (
                     <span key={data.room} style={{ fontSize: '12.5px' }}>
                       <span className="g-dim">{data.room}</span>{' '}
-                      <span className="g-num">{data.current.toFixed(1)}&deg;C</span>
+                      {data.online ? (
+                        <span className="g-num">{data.current.toFixed(1)}&deg;C</span>
+                      ) : (
+                        <span className="g-dim" title={lastSeenLabel(data.last_seen)}>&mdash;</span>
+                      )}
                     </span>
                   ))}
                 </div>

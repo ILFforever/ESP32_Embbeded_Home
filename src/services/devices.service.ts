@@ -1411,6 +1411,8 @@ export async function getGasReadingsForDashboard(): Promise<GasReading[]> {
           sensor_id: device.device_id,
           location: locationName,
           ppm: coPpm,
+          online: device.online,
+          last_seen: device.last_seen ?? null,
           gas_level: currentData.sensors.gas_level || 0,
           status,
           history,

@@ -149,7 +149,10 @@ export function SystemStatusCard({ devicesStatus, isExpanded = false }: SystemSt
       <>
         <header>
           <h2>Devices</h2>
-          <span className="g-label">{nonSensorOnlineDevices} of {nonSensorDevices.length} online</span>
+          {/* The authoritative count from the backend's summary. The
+              nonSensor/sensor subsets below exclude door locks, so they
+              sum to 5 of 6 and disagree with the stat strip. */}
+          <span className="g-label">{devicesStatus?.summary.online ?? 0} of {devicesStatus?.summary.total ?? 0} online</span>
         </header>
 
         {compactDevices.length > 0 ? (
@@ -218,7 +221,7 @@ export function SystemStatusCard({ devicesStatus, isExpanded = false }: SystemSt
       <div className="dash-modal-grid">
         <div className="g-tile">
           <p className="g-label">Devices online</p>
-          <div className="g-metric-sm g-num">{nonSensorOnlineDevices}<small>of {nonSensorDevices.length}</small></div>
+          <div className="g-metric-sm g-num">{devicesStatus?.summary.online ?? 0}<small>of {devicesStatus?.summary.total ?? 0}</small></div>
         </div>
         <div className="g-tile">
           <p className="g-label">Sensors online</p>

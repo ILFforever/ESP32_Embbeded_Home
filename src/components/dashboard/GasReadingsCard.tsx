@@ -11,6 +11,7 @@ import {
 } from 'recharts';
 import { RefreshCw, Wind } from 'lucide-react';
 import type { GasReading } from '@/types/dashboard';
+import { lastSeenLabel, relativeTime } from '@/utils/time';
 
 interface GasReadingsCardProps {
   gasReadings: GasReading[];
@@ -93,16 +94,31 @@ export function GasReadingsCard({ gasReadings, isExpanded = false, onRefresh }: 
         <div className="g-stack">
           {gasReadings.length > 0 ? (
             gasReadings.map(reading => {
-              const pct = Math.max(0, Math.min(100, Math.round((reading.ppm / 500) * 100)));
+              /* An offline sensor gets no number at all. Its last persisted
+                 value is often 0, and a greyed "0 ppm" still reads as zero
+                 at a glance — which is the opposite of the truth, that we
+                 have not heard from it. On a gas sensor that matters. */
+              const stale = reading.online === false;
+              const pct = stale ? 0 : Math.max(0, Math.min(100, Math.round((reading.ppm / 500) * 100)));
               return (
                 <div key={reading.sensor_id}>
                   <div className="g-meter-row">
-                    <span>{reading.location}</span>
-                    <b className={getStatusTokenClass(reading.status)}>{reading.ppm.toFixed(0)} ppm</b>
+                    <span className={stale ? 'g-dim' : undefined}>{reading.location}</span>
+                    {stale ? (
+                      <b className="g-dim" style={{ fontWeight: 400, fontSize: '12.5px' }}>
+                        No reading · last seen {relativeTime(reading.last_seen)}
+                      </b>
+                    ) : (
+                      <b className={getStatusTokenClass(reading.status)}>{reading.ppm.toFixed(0)} ppm</b>
+                    )}
                   </div>
                   <div className="g-meter">
-                    <i className={getMeterClass(reading.status)} style={{ width: `${pct}%` }} />
-                    <span className="g-meter__limit" style={{ left: '30%' }} />
+                    {!stale && (
+                      <>
+                        <i className={getMeterClass(reading.status)} style={{ width: `${pct}%` }} />
+                        <span className="g-meter__limit" style={{ left: '30%' }} />
+                      </>
+                    )}
                   </div>
                 </div>
               );
