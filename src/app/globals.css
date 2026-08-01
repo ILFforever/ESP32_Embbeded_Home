@@ -604,6 +604,36 @@ body {
   :root:not([data-theme="light"]) .g-theme .g-theme__moon { display: none; }
 }
 
+/* ---------- 7b. INTERACTION HYGIENE ----------------------
+   A click that drifts a pixel selects the control's own label, which
+   flashes a blue selection over the card. Mobile adds its own grey tap
+   flash on top. Neither is meaningful feedback — the control already
+   has :active and :focus-visible states.
+
+   Scoped to things you operate. Plain cards keep normal selection, so
+   device ids and readings stay copyable.
+--------------------------------------------------------- */
+.g-btn,
+.g-action,
+.g-switch,
+.g-icon-btn,
+.g-theme,
+.g-back,
+.g-seg a,
+.g-seg button,
+.pl-hit,
+[role="button"] {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* The label inside a control is never the thing you meant to select. */
+.g-btn *,
+.g-action *,
+[role="button"] > header,
+[role="button"] .g-label { -webkit-user-select: none; user-select: none; }
+
 /* ---------- 8. FORM FIELDS ------------------------------- */
 .g-field { display: flex; flex-direction: column; gap: 6px; }
 .g-field > label { font-size: 12px; font-weight: 600; color: var(--ink-2); }
