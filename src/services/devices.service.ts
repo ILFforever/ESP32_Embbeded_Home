@@ -1347,20 +1347,23 @@ export async function getGasReadingsForDashboard(): Promise<GasReading[]> {
     // Fetch gas sensor data from each device
     const gasReadings: GasReading[] = [];
 
-    for (const device of sensorDevices) {
+    /* Concurrently, not one at a time. Each sensor costs two round trips
+       (current + history), so walking three of them in series was six
+       serial hops before the card could render. */
+    await Promise.all(sensorDevices.map(async (device) => {
       try {
         // Get current sensor data
         const currentData = await getCurrentSensorData(device.device_id);
 
         if (!currentData || !currentData.sensors) {
           console.log(`No sensor data for ${device.device_id}`);
-          continue;
+          return;
         }
 
         // Check if device has co_ppm data
         if (currentData.sensors.co_ppm === undefined || currentData.sensors.co_ppm === null) {
           console.log(`Device ${device.device_id} has no co_ppm data`);
-          continue;
+          return;
         }
 
         console.log(`Found gas sensor data for ${device.device_id}:`, currentData.sensors);
@@ -1421,9 +1424,8 @@ export async function getGasReadingsForDashboard(): Promise<GasReading[]> {
 
       } catch (error) {
         console.error(`Error processing device ${device.device_id}:`, error);
-        continue;
       }
-    }
+    }));
 
     console.log('Final gas readings:', gasReadings);
 

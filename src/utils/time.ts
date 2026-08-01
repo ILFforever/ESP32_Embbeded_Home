@@ -34,3 +34,14 @@ export function relativeTime(input: string | number | Date | null | undefined): 
 export function lastSeenLabel(input: string | number | Date | null | undefined): string {
   return `Last seen ${relativeTime(input)}`;
 }
+
+/**
+ * Time-of-day greeting. "Good morning" was hardcoded, so the dashboard
+ * said it at 6:41pm.
+ */
+export function greeting(now: Date = new Date()): string {
+  const h = now.getHours();
+  if (h < 12) return 'Good morning';
+  if (h < 18) return 'Good afternoon';
+  return 'Good evening';
+}

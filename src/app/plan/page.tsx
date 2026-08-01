@@ -39,16 +39,26 @@ export default function PlanPage() {
       try {
         const devices = await getAllDevices();
         setDevicesStatus(devices);
-        setGasReadings(await getGasReadingsForDashboard());
-        setAlerts(await getAlerts());
+        // Paint the plan now; readings refine what is already drawn.
+        setLoading(false);
 
+        void getGasReadingsForDashboard().then(setGasReadings)
+          .catch(e => console.error('Error loading gas readings:', e));
+        void getAlerts().then(setAlerts)
+          .catch(e => console.error('Error loading alerts:', e));
+
+        // Concurrently — a lock at a time meant one round trip each.
+        const entries = await Promise.all(
+          devices.devices
+            .filter(d => d.device_id.startsWith('dl_'))
+            .map(lock =>
+              getLockStatus(lock.device_id)
+                .then(status => [lock.device_id, status?.lock_state] as const)
+                .catch(() => [lock.device_id, undefined] as const),
+            ),
+        );
         const locks: Record<string, 'locked' | 'unlocked'> = {};
-        for (const lock of devices.devices.filter(d => d.device_id.startsWith('dl_'))) {
-          try {
-            const status = await getLockStatus(lock.device_id);
-            if (status) locks[lock.device_id] = status.lock_state;
-          } catch { /* a single lock failing should not blank the plan */ }
-        }
+        entries.forEach(([id, state]) => { if (state) locks[id] = state; });
         setLockStates(locks);
       } catch (error) {
         console.error('Error loading plan data:', error);
