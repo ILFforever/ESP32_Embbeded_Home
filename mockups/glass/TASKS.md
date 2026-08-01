@@ -292,22 +292,20 @@ Find them with:
 `grep -rhoE 'var\(--[a-z0-9-]+\)' src/ | sort -u` then check each against
 `src/app/globals.css`.
 
-### C0b · Sparklines are blocked on backend history
-**Status:** ⛔ blocked (not a frontend bug) · **Size:** S once unblocked
+### C0b · Sparklines wait on devices reporting, not on backend work
+**Status:** ⛔ blocked on hardware, not code · **Size:** none
 
 `src/components/glass/Sparkline.tsx` is built, verified rendering, and wired
-into the Climate card. It draws nothing because the live backend returns an
-empty array:
+into the Climate card. It draws nothing today because every device is offline.
 
-    GET /api/v1/devices/{ss_001,hb_001}/sensors/readings?hours=24  ->  readings: []
+Checked against the backend source: history **is** implemented.
+`storeSensorHistory` (controllers/devices.js) writes to
+`devices/{id}/sensors/history/readings` on a 30-minute cadence — but only when
+a device reports sensor data. Devices last reported 17 Mar and 8 Dec, so the
+24h query returns `readings: []`.
 
-The component correctly renders nothing below two points — a single reading is
-not a trend. "Summary before detail, trend at a glance" was the premise of the
-dashboard layout, so until the backend persists sensor history the dashboard
-shows instantaneous values only.
-
-Nothing to do on the frontend. When history lands, Climate picks it up with no
-change; Air quality and the hero tile then want the same treatment
+Nothing to do on either side. When the boards come back, Climate starts drawing
+with no code change; Air quality and the hero tile then want the same treatment
 (`GasReading` already declares `history: SensorReading[]`).
 
 ### C1 · Delete dead CSS
