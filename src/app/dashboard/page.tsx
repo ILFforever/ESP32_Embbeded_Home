@@ -249,16 +249,23 @@ export default function DashboardPage() {
     );
   };
 
+  const offlineTotal = devicesStatus?.summary.offline || 0;
+
   return (
     <ProtectedRoute>
       <main className="g-page">
         <div className="g-pane g-bar">
           <span className="g-bar__brand">Arduino888</span>
+          {/* Every item goes somewhere real. Plan was never migrated out of
+              the mockups, and Access/Admin both pointed back at /dashboard —
+              three of four links were dead. Access and Admin open the
+              expanded cards that actually hold that content. */}
           <nav className="g-seg" data-choice aria-label="Sections">
             <a href="/dashboard" aria-current="page">Home</a>
-            <a href="/">Plan</a>
-            <a href="/dashboard">Access</a>
-            <a href="/dashboard">Admin</a>
+            <button type="button" onClick={() => openExpandedCard('doors')}>Access</button>
+            {user?.role === 'admin' && (
+              <button type="button" onClick={() => openExpandedCard('admin')}>Admin</button>
+            )}
           </nav>
           <button className="g-icon-btn g-theme" onClick={toggleTheme} aria-label="Toggle theme" aria-pressed={theme === 'dark'}>
             <svg className="g-theme__moon" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
@@ -268,10 +275,17 @@ export default function DashboardPage() {
               <circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" />
             </svg>
           </button>
-          <button className="g-btn g-btn--ghost" onClick={handleLogout}>Sign out</button>
+          <button className="g-btn g-btn--ghost g-bar__signout" onClick={handleLogout}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9" />
+            </svg>
+            <span>Sign out</span>
+          </button>
           <span className={`g-pill ${systemOnline && allDevicesOnline ? 'is-ok' : 'is-warn'}`}>
             <i></i>
-            {systemOnline && allDevicesOnline ? 'All systems normal' : `${devicesStatus?.summary.offline || 1} needs attention`}
+            {systemOnline && allDevicesOnline
+              ? 'All systems normal'
+              : `${offlineTotal} ${offlineTotal === 1 ? 'needs' : 'need'} attention`}
           </span>
         </div>
 
