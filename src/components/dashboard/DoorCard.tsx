@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Lock, RefreshCw, Unlock, X } from 'lucide-react';
 import type { DoorWindow } from '@/types/dashboard';
+import { relativeTime } from '@/utils/time';
 import {
   sendCommand,
   getLockStatus,
@@ -32,7 +33,7 @@ function formatTimestamp(timestamp: string | null | undefined) {
   if (!timestamp) return 'Not reported';
   const date = new Date(timestamp);
   if (Number.isNaN(date.getTime())) return 'Not reported';
-  return date.toLocaleString();
+  return relativeTime(date);
 }
 
 function formatUptime(ms: number | null | undefined) {

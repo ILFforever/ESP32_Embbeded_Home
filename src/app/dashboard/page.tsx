@@ -21,6 +21,7 @@ import {
 import type { DevicesStatus, GasReading, Alert, DoorWindow } from '@/types/dashboard';
 import { getCurrentTheme, toggleTheme as toggleGlassTheme, type GlassTheme } from '@/components/glass/theme';
 import { getAlertTitle } from '@/utils/alertText';
+import { relativeTime } from '@/utils/time';
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -285,6 +286,8 @@ export default function DashboardPage() {
         {(() => {
           const topAlert = alerts.find(a => !a.read) ?? alerts[0];
           const offlineCount = devicesStatus?.summary.offline || 0;
+          const unreadCount = alerts.filter(a => !a.read).length;
+          const urgentCount = alerts.filter(a => !a.read && a.level === 'IMPORTANT').length;
           return (!systemOnline || !allDevicesOnline || alerts.length > 0) && (
           <div className="g-pane dash-hero">
             <div>
@@ -303,7 +306,7 @@ export default function DashboardPage() {
                 {!systemOnline
                   ? 'Nothing on this page is live until the service responds. Device controls are disabled to avoid sending commands into the dark.'
                   : topAlert
-                    ? `${topAlert.source} · ${new Date(topAlert.timestamp).toLocaleString()}`
+                    ? `${topAlert.source} · ${relativeTime(topAlert.timestamp)}`
                     : 'Open devices to see which ones, and when they were last heard from.'}
               </p>
               <div className="g-row g-row--wrap">
@@ -313,9 +316,18 @@ export default function DashboardPage() {
                 <button className="g-btn g-btn--ghost" onClick={() => openExpandedCard('system-status')}>Open devices</button>
               </div>
             </div>
+            {/* A bare "50" says nothing. Name what is being counted and
+                qualify it, the way the stat strip does. */}
             <div className={`g-tile ${systemOnline ? 'is-warn' : 'is-crit'}`}>
-              <p className="g-label">Attention</p>
-              <div className="g-metric-sm g-num">{alerts.length || devicesStatus?.summary.offline || 1}</div>
+              <p className="g-label">{unreadCount ? 'Unread alerts' : 'Devices offline'}</p>
+              <div className="g-metric-sm g-num">
+                {unreadCount || offlineCount}
+                <small>
+                  {unreadCount
+                    ? (urgentCount ? `${urgentCount} urgent` : 'none urgent')
+                    : `of ${devicesStatus?.summary.total ?? 0}`}
+                </small>
+              </div>
             </div>
           </div>
         );

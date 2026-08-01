@@ -4,6 +4,7 @@ import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Cpu, Droplet, Radio, Thermometer, Wind, Zap } from 'lucide-react';
 import type { DevicesStatus, Device } from '@/types/dashboard';
+import { relativeTime } from '@/utils/time';
 import {
   getDeviceStatusClass as getStatusClass,
   getDeviceStatusText as getStatusText,
@@ -42,7 +43,7 @@ function formatTimestamp(timestamp: any): string {
         : new Date(timestamp);
 
     if (Number.isNaN(date.getTime())) return 'Never';
-    return date.toLocaleString();
+    return relativeTime(date);
   } catch {
     return 'Never';
   }

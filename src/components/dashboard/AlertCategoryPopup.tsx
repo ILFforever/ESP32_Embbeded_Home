@@ -4,6 +4,7 @@ import type { Alert } from '@/types/dashboard';
 import { alertLevelToType } from '@/types/dashboard';
 import { markAlertAsRead } from '@/services/devices.service';
 import { sortAlertsByPriority, getAlertPriorityCategory, type ScoredAlert } from '@/utils/alertScoring';
+import { relativeTime } from '@/utils/time';
 
 interface AlertCategoryPopupProps {
   category: string;
@@ -33,21 +34,7 @@ export function AlertCategoryPopup({ category, alerts, icon, onClose, onRefresh 
     }
   };
 
-  const formatTimestamp = (timestamp: string) => {
-    const date = new Date(timestamp);
-    const now = new Date();
-    const diffMs = now.getTime() - date.getTime();
-    const diffMins = Math.floor(diffMs / 60000);
-    const diffHours = Math.floor(diffMs / 3600000);
-    const diffDays = Math.floor(diffMs / 86400000);
-
-    if (diffMins < 1) return 'Just now';
-    if (diffMins < 60) return `${diffMins}m ago`;
-    if (diffHours < 24) return `${diffHours}h ago`;
-    if (diffDays < 7) return `${diffDays}d ago`;
-    return date.toLocaleDateString();
-  };
-
+  
   const getAlertTitle = (alert: Alert): string => {
     if (alert.tags.includes('face-detection')) {
       if (alert.tags.includes('unknown')) return 'Unknown Person Detected';
@@ -126,7 +113,7 @@ export function AlertCategoryPopup({ category, alerts, icon, onClose, onRefresh 
                         <span className="alert-type">{alert.level}</span>
                         {getPriorityBadge(alert)}
                         <span className="alert-timestamp">
-                          {formatTimestamp(alert.timestamp)}
+                          {relativeTime(alert.timestamp)}
                         </span>
                       </div>
                     </div>
@@ -174,7 +161,7 @@ export function AlertCategoryPopup({ category, alerts, icon, onClose, onRefresh 
                         <span className="alert-type">{alert.level}</span>
                         {getPriorityBadge(alert)}
                         <span className="alert-timestamp">
-                          {formatTimestamp(alert.timestamp)}
+                          {relativeTime(alert.timestamp)}
                         </span>
                       </div>
                     </div>
@@ -197,7 +184,7 @@ export function AlertCategoryPopup({ category, alerts, icon, onClose, onRefresh 
                       <div className="alert-footer">
                         <span className="alert-device">Source: {alert.source}</span>
                         {alert.read_at && (
-                          <span className="alert-read-time">Read {formatTimestamp(alert.read_at)}</span>
+                          <span className="alert-read-time">Read {relativeTime(alert.read_at)}</span>
                         )}
                       </div>
                     </div>

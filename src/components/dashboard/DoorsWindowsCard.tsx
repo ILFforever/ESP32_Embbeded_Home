@@ -1,6 +1,7 @@
 import React from 'react';
 import { DoorClosed, DoorOpen, Lock, Unlock } from 'lucide-react';
 import type { DoorWindow } from '@/types/dashboard';
+import { relativeTime } from '@/utils/time';
 
 interface DoorsWindowsCardProps {
   doorsWindows: DoorWindow[];
@@ -47,7 +48,7 @@ function batteryDash(battery?: number) {
 function formatTime(value: string) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return 'Not reported';
-  return date.toLocaleString();
+  return relativeTime(date);
 }
 
 function DoorWindowRow({ item }: { item: DoorWindow }) {

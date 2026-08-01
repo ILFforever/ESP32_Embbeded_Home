@@ -28,6 +28,7 @@ import { alertLevelToType } from '@/types/dashboard';
 import { markAlertAsRead } from '@/services/devices.service';
 import { getAlertPriorityCategory, sortAlertsByPriority, type ScoredAlert } from '@/utils/alertScoring';
 import { alertTags, getAlertTitle } from '@/utils/alertText';
+import { relativeTime } from '@/utils/time';
 
 interface AlertsCardProps {
   alerts: Alert[];
@@ -76,21 +77,7 @@ export function AlertsCard({ alerts, isExpanded = false, onRefresh }: AlertsCard
     return () => document.removeEventListener('keydown', closeOnEscape);
   }, [popupCategory]);
 
-  const formatTimestamp = (timestamp: string) => {
-    const date = new Date(timestamp);
-    const now = new Date();
-    const diffMs = now.getTime() - date.getTime();
-    const diffMins = Math.floor(diffMs / 60000);
-    const diffHours = Math.floor(diffMs / 3600000);
-    const diffDays = Math.floor(diffMs / 86400000);
-
-    if (diffMins < 1) return 'Just now';
-    if (diffMins < 60) return `${diffMins}m ago`;
-    if (diffHours < 24) return `${diffHours}h ago`;
-    if (diffDays < 7) return `${diffDays}d ago`;
-    return date.toLocaleDateString();
-  };
-
+  
 
   const getAlertCategory = (alert: Alert): string => {
     const tags = alertTags(alert);
@@ -238,7 +225,7 @@ export function AlertsCard({ alerts, isExpanded = false, onRefresh }: AlertsCard
       <i className={levelDotClass(alert.level)} />
       <p>
         {getAlertTitle(alert)}
-        <span>{formatTimestamp(alert.timestamp)} · {alert.source}</span>
+        <span>{relativeTime(alert.timestamp)} · {alert.source}</span>
         {isExpanded && (
           <>
             <span>{alert.message}</span>

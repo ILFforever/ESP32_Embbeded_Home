@@ -25,6 +25,7 @@ import {
 } from '@/services/devices.service';
 import type { BackendDevice } from '@/types/dashboard';
 import { notify, confirmDialog } from '@/components/glass/GlassRuntime';
+import { relativeTime } from '@/utils/time';
 import {
   ArrowLeft,
   Mic,
@@ -77,7 +78,7 @@ const formatTimestamp = (timestamp: any): string => {
     }
 
     if (Number.isNaN(date.getTime())) return 'Invalid date';
-    return date.toLocaleTimeString();
+    return relativeTime(date);
   } catch (error) {
     console.error('Error formatting timestamp:', error);
     return 'Invalid date';
@@ -90,7 +91,7 @@ const formatDateTime = (timestamp: any): string => {
     const date = timestamp._seconds
       ? new Date(timestamp._seconds * 1000)
       : new Date(timestamp);
-    return Number.isNaN(date.getTime()) ? 'Invalid date' : date.toLocaleString();
+    return Number.isNaN(date.getTime()) ? 'Invalid date' : relativeTime(date);
   } catch {
     return 'Invalid date';
   }
