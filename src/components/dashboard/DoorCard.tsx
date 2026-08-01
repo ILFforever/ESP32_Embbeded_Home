@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
-import { DoorOpen, DoorClosed, Lock, Unlock, RefreshCw, X } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { Lock, RefreshCw, Unlock, X } from 'lucide-react';
 import type { DoorWindow } from '@/types/dashboard';
+import { relativeTime } from '@/utils/time';
 import {
   sendCommand,
   getLockStatus,
@@ -14,6 +15,53 @@ interface DoorCardProps {
   isExpanded?: boolean;
 }
 
+type NoticeTone = 'warn' | 'crit';
+
+const RING_CIRCUMFERENCE = 56.5;
+
+function statusTone(status: DoorWindow['status']) {
+  if (status === 'locked' || status === 'closed') return 'ok';
+  if (status === 'unlocked') return 'warn';
+  return 'crit';
+}
+
+function statusCopy(status: DoorWindow['status'] | 'lock' | 'unlock') {
+  return status.charAt(0).toUpperCase() + status.slice(1);
+}
+
+function formatTimestamp(timestamp: string | null | undefined) {
+  if (!timestamp) return 'Not reported';
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) return 'Not reported';
+  return relativeTime(date);
+}
+
+function formatUptime(ms: number | null | undefined) {
+  if (ms == null) return 'N/A';
+  const hours = Math.floor(ms / 3600000);
+  const minutes = Math.floor((ms % 3600000) / 60000);
+  return `${hours}h ${minutes}m`;
+}
+
+function batteryDash(battery?: number) {
+  const pct = Math.max(0, Math.min(100, battery ?? 0));
+  return `${((pct / 100) * RING_CIRCUMFERENCE).toFixed(1)} ${RING_CIRCUMFERENCE}`;
+}
+
+function ringClass(battery?: number) {
+  if (battery == null) return 'g-ring__fill is-idle';
+  if (battery <= 20) return 'g-ring__fill is-crit';
+  if (battery <= 40) return 'g-ring__fill is-warn';
+  return 'g-ring__fill';
+}
+
+function statusChipClass(tone: string) {
+  if (tone === 'ok') return 'g-chip g-chip--ok';
+  if (tone === 'warn') return 'g-chip g-chip--warn';
+  if (tone === 'crit') return 'g-chip g-chip--crit';
+  return 'g-chip';
+}
+
 export function DoorCard({ doorsWindows, isExpanded = false }: DoorCardProps) {
   const [loadingStates, setLoadingStates] = useState<Record<string, boolean>>({});
   const [loadingAll, setLoadingAll] = useState<null | 'lock' | 'unlock'>(null);
@@ -21,58 +69,38 @@ export function DoorCard({ doorsWindows, isExpanded = false }: DoorCardProps) {
   const [selectedDoorId, setSelectedDoorId] = useState<string | null>(null);
   const [lockStatus, setLockStatus] = useState<DoorLockStatus | null>(null);
   const [fetchingStatus, setFetchingStatus] = useState(false);
+  const [notice, setNotice] = useState<{ tone: NoticeTone; title: string; message: string } | null>(null);
 
-  const getStatusIcon = (item: DoorWindow) => {
-    if (item.type === 'door') {
-      return item.status === 'locked' ? (
-        <Lock className="status-icon status-locked" size={24} />
-      ) : item.status === 'unlocked' ? (
-        <Unlock className="status-icon status-unlocked" size={24} />
-      ) : (
-        <DoorOpen className="status-icon status-open" size={24} />
-      );
-    }
-    return null;
-  };
+  useEffect(() => {
+    if (!notice && !showStatusModal) return;
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'locked':
-      case 'closed':
-        return '#00FF88';
-      case 'unlocked':
-        return '#FFAA00';
-      case 'open':
-        return '#FF6600';
-      default:
-        return '#FFF';
-    }
-  };
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      if (notice) setNotice(null);
+      if (showStatusModal) closeStatusModal();
+    };
 
-  const getOnlineStatusBadge = (online: boolean | undefined) => {
-    const isOnline = online ?? false;
-    return (
-      <span className={`status-indicator ${isOnline ? 'status-online' : 'status-offline'}`}>
-        {isOnline ? 'ONLINE' : 'OFFLINE'}
-      </span>
-    );
+    document.addEventListener('keydown', handleEscape);
+    return () => document.removeEventListener('keydown', handleEscape);
+  }, [notice, showStatusModal]);
+
+  const showNotice = (tone: NoticeTone, title: string, message: string) => {
+    setNotice({ tone, title, message });
   };
 
   const handleLockAction = async (doorId: string, action: 'lock' | 'unlock') => {
     try {
       setLoadingStates(prev => ({ ...prev, [doorId]: true }));
 
-      // Send command with timeout parameter
       const result = await sendCommand(doorId, action, { timeout: 5000 });
 
       if (result && result.status === 'ok') {
         console.log(`${action} command sent successfully:`, result);
 
-        // Poll for state change with 10 second timeout
         const expectedState = action === 'lock' ? 'locked' : 'unlocked';
         const startTime = Date.now();
-        const maxWaitTime = 20000; // 20 seconds
-        const pollInterval = 1000; // Check every 1000ms
+        const maxWaitTime = 20000;
+        const pollInterval = 1000;
 
         const checkStatus = async (): Promise<boolean> => {
           try {
@@ -81,13 +109,11 @@ export function DoorCard({ doorsWindows, isExpanded = false }: DoorCardProps) {
               return true;
             }
 
-            // Check if timeout exceeded
             if (Date.now() - startTime > maxWaitTime) {
               console.log(`Timeout waiting for ${action} state change`);
               return false;
             }
 
-            // Continue polling
             await new Promise(resolve => setTimeout(resolve, pollInterval));
             return checkStatus();
           } catch (error) {
@@ -98,11 +124,11 @@ export function DoorCard({ doorsWindows, isExpanded = false }: DoorCardProps) {
 
         await checkStatus();
       } else {
-        alert(`Failed to ${action} door. Please try again.`);
+        showNotice('crit', `Could not ${action} the door`, 'Check that the lock is online, then try again.');
       }
     } catch (error) {
       console.error(`Error sending ${action} command:`, error);
-      alert(`Failed to ${action} door. Please try again.`);
+      showNotice('crit', `Could not ${action} the door`, 'Check that the lock is online, then try again.');
     } finally {
       setLoadingStates(prev => ({ ...prev, [doorId]: false }));
     }
@@ -112,10 +138,9 @@ export function DoorCard({ doorsWindows, isExpanded = false }: DoorCardProps) {
     setLoadingAll('lock');
     try {
       await lockAllDoors();
-      // Optionally, refresh state after a delay
     } catch (error) {
       console.error('Failed to lock all doors', error);
-      alert('One or more doors failed to lock. Please check their status.');
+      showNotice('warn', 'Some doors did not lock', 'Check each lock status before leaving the house.');
     } finally {
       setLoadingAll(null);
     }
@@ -125,15 +150,13 @@ export function DoorCard({ doorsWindows, isExpanded = false }: DoorCardProps) {
     setLoadingAll('unlock');
     try {
       await unlockAllDoors();
-      // Optionally, refresh state after a delay
     } catch (error) {
       console.error('Failed to unlock all doors', error);
-      alert('One or more doors failed to unlock. Please check their status.');
+      showNotice('warn', 'Some doors did not unlock', 'Check each lock status and retry the unlock command.');
     } finally {
       setLoadingAll(null);
     }
   };
-
 
   const fetchLockStatus = async (doorId: string) => {
     try {
@@ -142,7 +165,7 @@ export function DoorCard({ doorsWindows, isExpanded = false }: DoorCardProps) {
       setLockStatus(status);
     } catch (error) {
       console.error('Error fetching lock status:', error);
-      alert('Failed to fetch lock status');
+      showNotice('crit', 'Status did not load', 'Check that the lock is online, then refresh status again.');
     } finally {
       setFetchingStatus(false);
     }
@@ -160,383 +183,228 @@ export function DoorCard({ doorsWindows, isExpanded = false }: DoorCardProps) {
     setLockStatus(null);
   };
 
-  const formatTimestamp = (timestamp: string) => {
-    try {
-      return new Date(timestamp).toLocaleString();
-    } catch (error) {
-      return 'N/A';
-    }
-  };
-
-  // Filter out windows - only show doors
   const doors = doorsWindows.filter(item => item.type === 'door');
+  const unlockedCount = doors.filter(door => door.status !== 'locked').length;
+
+  const DoorStatusTile = ({ door }: { door: DoorWindow }) => {
+    const tone = statusTone(door.status);
+    const online = door.online ?? false;
+    const nextAction = door.status === 'locked' ? 'unlock' : 'lock';
+
+    return (
+      <div className={`g-tile ${tone === 'warn' ? 'is-warn' : tone === 'crit' ? 'is-crit' : ''}`}>
+        <div className="g-row g-row--between">
+          <div className="g-row">
+            <span className={`g-dot g-dot--${online ? tone : 'off'}`} />
+            <strong>{door.name}</strong>
+          </div>
+          <svg className="g-ring" viewBox="0 0 24 24" aria-label={`${door.name} battery ${door.battery ?? 0} percent`}>
+            <circle className="g-ring__track" cx="12" cy="12" r="9" />
+            <circle
+              className={ringClass(door.battery)}
+              cx="12"
+              cy="12"
+              r="9"
+              strokeDasharray={batteryDash(door.battery)}
+              transform="rotate(-90 12 12)"
+            />
+          </svg>
+        </div>
+
+        <div className="g-row g-row--between" style={{ marginTop: 'var(--s-3)' }}>
+          <span className={statusChipClass(online ? tone : 'idle')}>{online ? statusCopy(door.status) : 'Offline'}</span>
+          <span className="g-num">{door.battery ?? 0}%</span>
+        </div>
+
+        <p className="g-sub">{door.location} · changed {formatTimestamp(door.last_changed)}</p>
+
+        <div className="g-row g-row--wrap" style={{ marginTop: 'var(--s-4)' }}>
+          <button
+            className={nextAction === 'lock' ? 'g-btn g-btn--primary' : 'g-btn g-btn--ghost'}
+            type="button"
+            onClick={() => handleLockAction(door.id, nextAction)}
+            disabled={loadingStates[door.id] || !online}
+          >
+            {nextAction === 'lock' ? <Lock size={16} aria-hidden="true" /> : <Unlock size={16} aria-hidden="true" />}
+            {loadingStates[door.id] ? `${nextAction === 'lock' ? 'Locking' : 'Unlocking'}` : online ? statusCopy(nextAction) : 'Offline'}
+          </button>
+          <button className="g-btn g-btn--ghost" type="button" onClick={() => openStatusModal(door.id)}>
+            <RefreshCw size={16} aria-hidden="true" />
+            Status
+          </button>
+        </div>
+      </div>
+    );
+  };
 
   return (
     <>
-      <div className="card">
-        <div className="card-header">
-          <div className="card-title-group">
-            <DoorClosed size={20} />
-            <h3>DOORS</h3>
+      <header>
+        <h2>Doors</h2>
+        <span className={`g-label ${unlockedCount ? 'is-warn' : ''}`}>
+          {doors.length} {doors.length === 1 ? 'lock' : 'locks'}
+        </span>
+      </header>
+
+      {!isExpanded ? (
+        doors.length ? (
+          <div className="g-divided">
+            {doors.slice(0, 3).map(door => {
+              const tone = statusTone(door.status);
+
+              return (
+                <div key={door.id} className="g-row g-row--between">
+                  <div>
+                    <div className="g-row">
+                      <i className={`g-dot g-dot--${tone}`} />
+                      <strong>{door.name}</strong>
+                    </div>
+                    <p className="g-sub">
+                      {statusCopy(door.status)} since {formatTimestamp(door.last_changed)}
+                    </p>
+                  </div>
+                  <button
+                    className="g-switch"
+                    type="button"
+                    aria-pressed={door.status === 'locked'}
+                    aria-label={`${door.name} lock state`}
+                    tabIndex={-1}
+                    onClick={(event) => event.preventDefault()}
+                  />
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="g-empty">
+            <strong>No door locks</strong>
+            <p>No lock devices have reported yet.</p>
+          </div>
+        )
+      ) : (
+        <div className="g-stack">
+          <div className="dash-modal-grid dash-modal-grid--2">
+            <div className="g-tile">
+              <p className="g-label">Doors</p>
+              <div className="g-metric-sm g-num">{doors.length}</div>
+            </div>
+            <div className={unlockedCount ? 'g-tile is-warn' : 'g-tile'}>
+              <p className="g-label">Unlocked or open</p>
+              <div className="g-metric-sm g-num">{unlockedCount}</div>
+            </div>
+          </div>
+
+          <div className="g-row g-row--wrap">
+            <button className="g-btn g-btn--primary" type="button" onClick={handleLockAll} disabled={loadingAll !== null}>
+              <Lock size={16} aria-hidden="true" />
+              {loadingAll === 'lock' ? 'Locking all' : 'Lock all'}
+            </button>
+            <button className="g-btn g-btn--ghost" type="button" onClick={handleUnlockAll} disabled={loadingAll !== null}>
+              <Unlock size={16} aria-hidden="true" />
+              {loadingAll === 'unlock' ? 'Unlocking all' : 'Unlock all'}
+            </button>
+          </div>
+
+          <div className="g-grid g-grid--2">
+            {doors.map(door => <DoorStatusTile key={door.id} door={door} />)}
           </div>
         </div>
+      )}
 
-        <div className="card-content">
-          {!isExpanded ? (
-            /* Compact view */
-            <div className="doors-windows-compact">
-              {doors.map(item => (
-                <div
-                  key={item.id}
-                  className="door-window-item-compact"
-                  onClick={() => openStatusModal(item.id)}
-                  style={{ cursor: 'pointer' }}
-                >
-                  {getStatusIcon(item)}
-                  <div className="item-info">
-                    <span className="item-name">{item.name}</span>
-                    <span
-                      className="item-status"
-                      style={{ color: getStatusColor(item.status) }}
-                    >
-                      {item.status.toUpperCase()}
-                    </span>
-                  </div>
-                </div>
-              ))}
-              {/* Buttons for Lock All / Unlock All */}
-              <div style={{ gridColumn: '1 / -1', display: 'flex', gap: 'var(--spacing-md)', marginTop: 'var(--spacing-md)' }}>
-                <div
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '4px',
-                    padding: '6px',
-                    background: 'linear-gradient(135deg, rgba(255, 152, 0, 0.1) 0%, rgba(248, 150, 30, 0.1) 100%)',
-                    borderRadius: '8px',
-                    border: '1px solid rgba(255, 152, 0, 0.3)',
-                    flex: 1,
-                    minWidth: 0,
-                  }}
-                >
-                  <Unlock size={20} style={{ flexShrink: 0, color: 'var(--warning)' }} />
-                  <button
-                    className="btn-control"
-                    onClick={handleUnlockAll}
-                    disabled={loadingAll !== null}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: '4px',
-                      flex: 1,
-                      minWidth: 0,
-                      width: '100%',
-                      background: 'rgba(0, 0, 0, 0.4)',
-                      border: '1px solid rgba(255, 255, 255, 0.2)',
-                      color: '#fff',
-                      whiteSpace: 'nowrap',
-                      fontSize: '12px',
-                      padding: '8px 12px',
-                    }}
-                  >
-                    {loadingAll === 'unlock' ? 'UNLOCKING...' : 'UNLOCK ALL'}
-                  </button>
-                </div>
-                <div
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '4px',
-                    padding: '6px',
-                    background: 'linear-gradient(135deg, rgba(0, 212, 170, 0.1) 0%, rgba(0, 168, 120, 0.1) 100%)',
-                    borderRadius: '8px',
-                    border: '1px solid rgba(0, 212, 170, 0.3)',
-                    flex: 1,
-                    minWidth: 0,
-                  }}
-                >
-                  <Lock size={20} style={{ flexShrink: 0, color: 'var(--success)' }} />
-                  <button
-                    className="btn-control"
-                    onClick={handleLockAll}
-                    disabled={loadingAll !== null}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: '4px',
-                      flex: 1,
-                      minWidth: 0,
-                      width: '100%',
-                      background: 'rgba(0, 0, 0, 0.4)',
-                      border: '1px solid rgba(255, 255, 255, 0.2)',
-                      color: '#fff',
-                      whiteSpace: 'nowrap',
-                      fontSize: '12px',
-                      padding: '8px 12px',
-                    }}
-                  >
-                    {loadingAll === 'lock' ? 'LOCKING...' : 'LOCK ALL'}
-                  </button>
-                </div>
-              </div>
-            </div>
-          ) : (
-            /* Expanded view */
-            <div className="doors-windows-expanded">
-              <div className="section">
-                <div className="items-grid">
-                  {doors.map(door => (
-                    <div key={door.id} className="door-window-card">
-                      <div
-                        className="card-icon-header"
-                        onClick={() => openStatusModal(door.id)}
-                        style={{ cursor: 'pointer' }}
-                      >
-                        {getStatusIcon(door)}
-                        {getOnlineStatusBadge(door.online)}
-                      </div>
-                      <h5>{door.name}</h5>
-                      <div className="status-badge" style={{ borderColor: getStatusColor(door.status) }}>
-                        <span style={{ color: getStatusColor(door.status) }}>
-                          {door.status.toUpperCase()}
-                        </span>
-                      </div>
-                      <div className="item-details">
-                        <p>
-                          <span className="detail-label">LOCATION:</span> {door.location}
-                        </p>
-                        <p>
-                          <span className="detail-label">LAST CHANGED:</span>{' '}
-                          {new Date(door.last_changed).toLocaleString()}
-                        </p>
-                        <p>
-                          <span className="detail-label">ID:</span> {door.id}
-                        </p>
-                      </div>
-                      <div className="item-actions">
-                        {door.status === 'locked' ? (
-                          <button
-                            className="btn-action btn-unlock"
-                            onClick={() => handleLockAction(door.id, 'unlock')}
-                            disabled={loadingStates[door.id] || !door.online}
-                            style={{
-                              backgroundColor: !door.online ? 'var(--bg-secondary)' : undefined,
-                              color: !door.online ? '#000000' : undefined,
-                              cursor: !door.online ? 'not-allowed' : undefined,
-                              opacity: !door.online ? 0.6 : undefined,
-                              fontSize: !door.online ? '18px' : undefined,
-                              fontWeight: !door.online ? '700' : undefined
-                            }}
-                          >
-                            {loadingStates[door.id] ? 'UNLOCKING...' : !door.online ? 'OFFLINE' : 'UNLOCK'}
-                          </button>
-                        ) : (
-                          <button
-                            className="btn-action btn-lock"
-                            onClick={() => handleLockAction(door.id, 'lock')}
-                            disabled={loadingStates[door.id] || !door.online}
-                            style={{
-                              backgroundColor: !door.online ? 'var(--bg-secondary)' : undefined,
-                              color: !door.online ? '#000000' : undefined,
-                              cursor: !door.online ? 'not-allowed' : undefined,
-                              opacity: !door.online ? 0.6 : undefined,
-                              fontSize: !door.online ? '18px' : undefined,
-                              fontWeight: !door.online ? '700' : undefined
-                            }}
-                          >
-                            {loadingStates[door.id] ? 'LOCKING...' : !door.online ? 'OFFLINE' : 'LOCK'}
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Status Modal */}
       {showStatusModal && selectedDoorId && (
-        <div className="modal-overlay" onClick={closeStatusModal}>
-          <button className="modal-close" onClick={closeStatusModal}>
-            <X size={24} />
-          </button>
-          <div className="modal-card" onClick={(e) => e.stopPropagation()}>
-            <div className="card">
-              <div className="card-header">
-                <div className="card-title-group">
-                  <Lock size={24} />
-                  <h3>DOOR LOCK STATUS</h3>
-                </div>
-                <button
-                  onClick={() => fetchLockStatus(selectedDoorId)}
-                  disabled={fetchingStatus}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '6px',
-                    padding: '10px 20px',
-                    fontSize: '14px',
-                    fontWeight: '600',
-                    backgroundColor: '#5B7FFF',
-                    color: '#fff',
-                    border: 'none',
-                    borderRadius: '6px',
-                    cursor: fetchingStatus ? 'not-allowed' : 'pointer',
-                    opacity: fetchingStatus ? 0.6 : 1,
-                    transition: 'all 0.2s ease',
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.5px'
-                  }}
-                  onMouseEnter={(e) => {
-                    if (!fetchingStatus) {
-                      e.currentTarget.style.backgroundColor = '#4A6EEE';
-                    }
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.backgroundColor = '#5B7FFF';
-                  }}
-                >
-                  <RefreshCw size={16} className={fetchingStatus ? 'rotating' : ''} />
-                  {fetchingStatus ? 'Refreshing...' : 'Refresh'}
-                </button>
+        <div className="g-modal" role="dialog" aria-modal="true" aria-labelledby="door-status-title" onClick={closeStatusModal}>
+          <div className="g-pane g-modal__card g-modal__card--wide" onClick={(event) => event.stopPropagation()}>
+            <div className="g-modal__head">
+              <div>
+                <h2 id="door-status-title">Door lock status</h2>
+                <p>Live lock state, heartbeat, and pending commands for the selected door.</p>
               </div>
-              <div className="card-content">
-                {fetchingStatus && !lockStatus ? (
-                  <div style={{ textAlign: 'center', padding: '40px' }}>
-                    <RefreshCw size={48} className="rotating" style={{ margin: '0 auto 16px', opacity: 0.5 }} />
-                    <p>Loading status...</p>
-                  </div>
-                ) : lockStatus ? (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                    {/* Row 1: Device ID, Device Name, Online, Lock State, Last Action, Last Action Time */}
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
-                      <div>
-                        <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '4px', textTransform: 'uppercase' }}>
-                          Device ID:
-                        </div>
-                        <div style={{ fontSize: '16px', fontWeight: '500' }}>
-                          {lockStatus.device_id}
-                        </div>
-                      </div>
-                      <div>
-                        <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '4px', textTransform: 'uppercase' }}>
-                          Device Name:
-                        </div>
-                        <div style={{ fontSize: '16px', fontWeight: '500' }}>
-                          {lockStatus.device_name}
-                        </div>
-                      </div>
-                      <div>
-                        <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '4px', textTransform: 'uppercase' }}>
-                          Online:
-                        </div>
-                        <div>
-                          <span className={`status-indicator ${lockStatus.online ? 'status-online' : 'status-offline'}`}>
-                            {lockStatus.online ? 'YES' : 'NO'}
-                          </span>
-                        </div>
-                      </div>
-                      <div>
-                        <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '4px', textTransform: 'uppercase' }}>
-                          Lock State:
-                        </div>
-                        <div style={{
-                          fontSize: '16px',
-                          fontWeight: 'bold',
-                          color: lockStatus.lock_state === 'locked' ? '#00FF88' : '#FFAA00'
-                        }}>
-                          {lockStatus.lock_state.toUpperCase()}
-                        </div>
-                      </div>
-                      <div>
-                        <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '4px', textTransform: 'uppercase' }}>
-                          Last Action:
-                        </div>
-                        <div style={{ fontSize: '16px', fontWeight: '500' }}>
-                          {lockStatus.last_action.toUpperCase()}
-                        </div>
-                      </div>
-                      <div>
-                        <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '4px', textTransform: 'uppercase' }}>
-                          Last Action Time:
-                        </div>
-                        <div style={{ fontSize: '16px', fontWeight: '500' }}>
-                          {formatTimestamp(lockStatus.last_action_time)}
-                        </div>
-                      </div>
-                    </div>
+              <button className="g-icon-btn" type="button" aria-label="Close" onClick={closeStatusModal}>
+                <X size={16} aria-hidden="true" />
+              </button>
+            </div>
 
-                    {/* Row 2: Last Heartbeat, WiFi Signal, Uptime */}
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
-                      <div>
-                        <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '4px', textTransform: 'uppercase' }}>
-                          Last Heartbeat:
-                        </div>
-                        <div style={{ fontSize: '16px', fontWeight: '500' }}>
-                          {formatTimestamp(lockStatus.last_heartbeat)}
-                        </div>
-                      </div>
-                      <div>
-                        <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '4px', textTransform: 'uppercase' }}>
-                          WiFi Signal:
-                        </div>
-                        <div style={{ fontSize: '16px', fontWeight: '500' }}>
-                          {lockStatus.wifi_rssi !== null ? `${lockStatus.wifi_rssi} dBm` : 'N/A'}
-                        </div>
-                      </div>
-                      <div>
-                        <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '4px', textTransform: 'uppercase' }}>
-                          Uptime:
-                        </div>
-                        <div style={{ fontSize: '16px', fontWeight: '500' }}>
-                          {lockStatus.uptime_ms !== null
-                            ? `${Math.floor(lockStatus.uptime_ms / 3600000)}h ${Math.floor((lockStatus.uptime_ms % 3600000) / 60000)}m`
-                            : 'N/A'}
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Row 3: Pending Commands - Full Width */}
-                    <div>
-                      <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '4px', textTransform: 'uppercase' }}>
-                        Pending Commands:
-                      </div>
-                      <div>
-                        <span className={`status-indicator ${lockStatus.has_pending_commands ? 'status-warning' : 'status-online'}`}>
-                          {lockStatus.has_pending_commands ? `YES (${lockStatus.pending_commands.length})` : 'NO'}
-                        </span>
-                      </div>
-                      {lockStatus.has_pending_commands && lockStatus.pending_commands.length > 0 && (
-                        <div style={{
-                          marginTop: '12px',
-                          padding: '12px',
-                          background: 'rgba(255, 170, 0, 0.1)',
-                          border: '1px solid rgba(255, 170, 0, 0.3)',
-                          borderRadius: '4px'
-                        }}>
-                          <p style={{ fontSize: '14px', marginBottom: '8px', color: 'var(--warning)' }}>
-                            Pending Commands:
-                          </p>
-                          {lockStatus.pending_commands.map((cmd: any, idx: number) => (
-                            <div key={idx} style={{ fontSize: '13px', marginLeft: '12px', marginBottom: '4px' }}>
-                              • {cmd.action || 'Unknown action'}
-                            </div>
-                          ))}
-                        </div>
-                      )}
+            {fetchingStatus && !lockStatus ? (
+              <div className="g-empty">
+                <RefreshCw size={32} className="spinning" aria-hidden="true" />
+                <strong>Loading lock status</strong>
+                <p>Waiting for the lock to report back.</p>
+              </div>
+            ) : lockStatus ? (
+              <div className="g-stack">
+                <div className="dash-modal-grid">
+                  <div className="g-tile">
+                    <p className="g-label">Lock state</p>
+                    <div className={`g-metric-sm g-num ${lockStatus.lock_state === 'locked' ? 'is-ok' : 'is-warn'}`}>
+                      {lockStatus.lock_state}
                     </div>
                   </div>
-                ) : (
-                  <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text-secondary)' }}>
-                    <p>Failed to load lock status</p>
+                  <div className={lockStatus.online ? 'g-tile' : 'g-tile is-warn'}>
+                    <p className="g-label">Online</p>
+                    <div className="g-metric-sm g-num">{lockStatus.online ? 'Yes' : 'No'}</div>
+                  </div>
+                  <div className={lockStatus.has_pending_commands ? 'g-tile is-warn' : 'g-tile'}>
+                    <p className="g-label">Pending</p>
+                    <div className="g-metric-sm g-num">{lockStatus.pending_commands.length}</div>
+                  </div>
+                </div>
+
+                <dl className="g-info">
+                  <div><dt>Device ID</dt><dd>{lockStatus.device_id}</dd></div>
+                  <div><dt>Device name</dt><dd>{lockStatus.device_name}</dd></div>
+                  <div><dt>Last action</dt><dd>{lockStatus.last_action}</dd></div>
+                  <div><dt>Last action time</dt><dd>{formatTimestamp(lockStatus.last_action_time)}</dd></div>
+                  <div><dt>Last heartbeat</dt><dd>{formatTimestamp(lockStatus.last_heartbeat)}</dd></div>
+                  <div><dt>Wi-Fi signal</dt><dd>{lockStatus.wifi_rssi !== null ? `${lockStatus.wifi_rssi} dBm` : 'N/A'}</dd></div>
+                  <div><dt>Uptime</dt><dd>{formatUptime(lockStatus.uptime_ms)}</dd></div>
+                </dl>
+
+                {lockStatus.has_pending_commands && lockStatus.pending_commands.length > 0 && (
+                  <div className="g-log">
+                    {lockStatus.pending_commands.map((cmd: { action?: string }, idx: number) => (
+                      <div key={`${cmd.action || 'pending'}-${idx}`}>{cmd.action || 'Unknown action'}</div>
+                    ))}
                   </div>
                 )}
+
+                <div className="g-modal__foot">
+                  <button
+                    className="g-btn g-btn--ghost"
+                    type="button"
+                    onClick={() => fetchLockStatus(selectedDoorId)}
+                    disabled={fetchingStatus}
+                  >
+                    <RefreshCw size={16} className={fetchingStatus ? 'spinning' : ''} aria-hidden="true" />
+                    Refresh
+                  </button>
+                </div>
               </div>
+            ) : (
+              <div className="g-empty">
+                <strong>Status did not load</strong>
+                <p>Check that the lock is online, then refresh status again.</p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {notice && (
+        <div className="g-modal" role="dialog" aria-modal="true" aria-labelledby="door-notice-title" onClick={() => setNotice(null)}>
+          <div className="g-pane g-modal__card" onClick={(event) => event.stopPropagation()}>
+            <div className="g-modal__head">
+              <div>
+                <h2 id="door-notice-title">{notice.title}</h2>
+                <p>{notice.message}</p>
+              </div>
+              <button className="g-icon-btn" type="button" aria-label="Close" onClick={() => setNotice(null)}>
+                <X size={16} aria-hidden="true" />
+              </button>
+            </div>
+            <div className="g-modal__foot">
+              <button className={notice.tone === 'crit' ? 'g-btn g-btn--danger' : 'g-btn g-btn--primary'} type="button" onClick={() => setNotice(null)}>
+                OK
+              </button>
             </div>
           </div>
         </div>

@@ -665,6 +665,75 @@ body {
   padding: 11px 13px; font-size: 13px; color: var(--crit);
 }
 
+/* Login has no toolbar, so it supplies its own centred frame and a
+   fixed theme button while still using the shared Glass controls. */
+.login {
+  min-height: 100vh;
+  justify-content: center;
+  padding-top: var(--s-5);
+}
+.login::before { display: none; }
+.login__theme {
+  position: fixed;
+  top: 18px;
+  right: 18px;
+  z-index: 5;
+}
+.login__card { padding: 30px 30px 26px; }
+.login__mark {
+  width: calc(var(--s-6) * 2);
+  height: calc(var(--s-6) * 2);
+  border-radius: var(--r-tile);
+  background: var(--accent);
+  color: var(--on-accent);
+  display: grid;
+  place-items: center;
+  margin-bottom: var(--s-5);
+  box-shadow: var(--accent-glow);
+}
+.login h1 {
+  margin: 0;
+  font-size: 27px;
+  font-weight: 600;
+  letter-spacing: -.02em;
+}
+.login__sub {
+  margin: 6px 0 var(--s-6);
+  color: var(--ink-2);
+  font-size: 14px;
+}
+.login form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-4);
+}
+.login__error { margin-bottom: var(--s-4); }
+.login__error svg {
+  flex: none;
+  margin-top: 1px;
+}
+.login__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.login__link {
+  font-size: 12.5px;
+  color: var(--accent);
+  text-decoration: none;
+  padding: 4px 2px;
+  margin: -4px -2px;
+}
+.login__link:hover { text-decoration: underline; }
+.login__foot {
+  margin: var(--s-6) 0 0;
+  padding-top: var(--s-4);
+  border-top: 1px solid var(--hairline);
+  font-size: 12px;
+  color: var(--ink-3);
+  text-align: center;
+}
+
 /* ---------- 9. DATA DISPLAY ----------------------------- */
 .g-meter { height: 8px; border-radius: var(--r-chip); background: var(--sunken); position: relative; }
 .g-meter i {
@@ -805,6 +874,128 @@ body {
   border-radius: var(--r-field); padding: 12px 14px;
   max-height: 220px; overflow-y: auto; color: var(--ink-2);
 }
+
+/* Dashboard shell layout ported from the approved dashboard mockup. These
+   selectors are page composition, not reusable component primitives. */
+.dash-hero { display: grid; grid-template-columns: 1fr auto; gap: var(--s-6); align-items: center; padding: 22px; }
+.dash-hero h2 { margin: 0 0 6px; font-size: 21px; font-weight: 600; letter-spacing: -.018em; }
+.dash-hero p { margin: 0 0 var(--s-4); color: var(--ink-2); font-size: 14px; max-width: 52ch; }
+.dash-hero .g-tile { min-width: 232px; }
+
+.dash-bento {
+  display: grid; gap: var(--s-4);
+  grid-template-columns: repeat(3, 1fr);
+  grid-template-areas:
+    "climate air    alerts"
+    "doors   cast   alerts"
+    "devices admin  nfc";
+}
+.d-climate { grid-area: climate; } .d-air { grid-area: air; }
+.d-alerts  { grid-area: alerts; }  .d-doors { grid-area: doors; }
+.d-cast    { grid-area: cast; }    .d-devices { grid-area: devices; }
+.d-admin   { grid-area: admin; }   .d-nfc { grid-area: nfc; }
+
+.dash-bento > section {
+  min-width: 0;
+  cursor: pointer;
+}
+.dash-bento > section > .g-pane { height: 100%; }
+.dash-bento > section:hover h2,
+.dash-bento > section:hover h3 { color: var(--accent); }
+.dash-bento > section:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+
+.dash-modal-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--s-4); margin-bottom: var(--s-5); }
+.dash-modal-grid--2 { grid-template-columns: repeat(2, 1fr); }
+.dash-modal-actions { display: flex; gap: var(--s-2); flex-wrap: wrap; }
+
+/* Drill-down page compositions ported from doorbell.html and hub.html. */
+.doorbell-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(280px, .65fr);
+  gap: var(--s-4);
+}
+.doorbell-secondary {
+  display: grid;
+  grid-template-columns: minmax(240px, .9fr) minmax(280px, 1fr) minmax(300px, 1.1fr);
+  gap: var(--s-4);
+  margin-top: var(--s-4);
+}
+.doorbell-maintenance { margin-top: var(--s-4); }
+
+.hub-sensors {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--s-4);
+}
+.hub-grid {
+  display: grid;
+  gap: var(--s-4);
+  grid-template-columns: 1fr 1fr 1fr;
+  grid-template-areas:
+    "mic audio info"
+    "activity audio info";
+  align-items: start;
+}
+.hub-a-mic { grid-area: mic; }
+.hub-a-audio { grid-area: audio; }
+.hub-a-info { grid-area: info; }
+.hub-a-activity { grid-area: activity; }
+
+@media (max-width: 1100px) {
+  .doorbell-grid,
+  .doorbell-secondary {
+    grid-template-columns: 1fr;
+  }
+  .hub-sensors { grid-template-columns: 1fr; }
+  .hub-grid {
+    grid-template-columns: 1fr;
+    grid-template-areas: "mic" "audio" "activity" "info";
+  }
+}
+
+@media (max-width: 780px) {
+  .dash-bento { grid-template-columns: 1fr; grid-template-areas: "climate" "air" "alerts" "doors" "cast" "devices" "admin" "nfc"; }
+  .dash-hero { grid-template-columns: 1fr; }
+  .dash-modal-grid, .dash-modal-grid--2 { grid-template-columns: 1fr; }
+}
+
+/* ---------- 9b. WAITING STATES ---------------------------
+   Intermediate screens were missed by the migration and still
+   referenced .dashboard-loading / .loading-page / .loading-spinner,
+   all of which were deleted with the old stylesheet — so they rendered
+   completely unstyled. .spinning was missing too, which meant every
+   refresh icon was silently not animating.
+
+   Copy says what is happening and what is being waited on, not
+   "LOADING SYSTEM...". Under prefers-reduced-motion the global rule
+   stops the rotation; the text still carries the meaning.
+--------------------------------------------------------- */
+@keyframes g-spin { to { transform: rotate(360deg); } }
+
+.spinning { animation: g-spin 900ms linear infinite; transform-origin: 50% 50%; }
+
+.g-spinner {
+  width: 34px; height: 34px; flex: none;
+  border-radius: 50%;
+  border: 3px solid var(--sunken);
+  border-top-color: var(--accent);
+  animation: g-spin 800ms linear infinite;
+}
+.g-spinner--sm { width: 20px; height: 20px; border-width: 2px; }
+
+/* Full-page waiting screen: root redirect, auth check, first load. */
+.g-waiting {
+  position: relative;
+  z-index: 1;
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: var(--s-5);
+  text-align: center;
+}
+.g-waiting__inner { display: flex; flex-direction: column; align-items: center; gap: var(--s-4); max-width: 42ch; }
+.g-waiting h1 { margin: 0; font-size: 21px; font-weight: 600; letter-spacing: -.018em; }
+.g-waiting p { margin: 0; color: var(--ink-2); font-size: 13.5px; }
 
 /* ---------- 10. MODALS ---------------------------------- */
 .g-modal {

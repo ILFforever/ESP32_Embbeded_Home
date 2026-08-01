@@ -54,6 +54,11 @@ function lensSupported(): boolean {
     typeof window !== 'undefined' &&
     typeof CSS !== 'undefined' &&
     typeof CSS.supports === 'function' &&
+    // Must test url(), not blur(). The lens needs backdrop-filter: url(),
+    // which is Chromium-only; blur() passes almost everywhere. Testing
+    // blur() here makes Safari and Firefox apply a url(#...) they cannot
+    // honour, which invalidates the whole declaration and drops the
+    // toolbar's blur entirely instead of degrading to plain blur.
     (CSS.supports('backdrop-filter', 'url(#a)') ||
       CSS.supports('-webkit-backdrop-filter', 'url(#a)'))
   );
@@ -257,6 +262,88 @@ function paintSlider(s: HTMLInputElement): void {
   }
 }
 
+/* ---------- 7. DIALOGS ---------------------------------------------
+   Replaces window.alert / window.confirm, which ground rule 9 forbids:
+   they are unstyled, block the main thread, and on the doorbell page
+   they fire behind a live camera stream.
+
+   These build a real .g-pane modal on demand, so the whole set of
+   alert() call sites can be swapped mechanically for notify() rather
+   than hand-authoring fifty bespoke modals. Use a purpose-built modal
+   when the dialog needs fields or explanation; use these for the
+   command-result messages that were alert()s.
+------------------------------------------------------------------- */
+function dialogHost(): HTMLElement {
+  let host = document.getElementById('g-dialog');
+  if (!host) {
+    host = document.createElement('div');
+    host.id = 'g-dialog';
+    host.className = 'g-modal';
+    host.setAttribute('role', 'dialog');
+    host.setAttribute('aria-modal', 'true');
+    host.hidden = true;
+    document.body.appendChild(host);
+  }
+  return host;
+}
+
+function showDialog(
+  message: string,
+  opts: { title?: string; confirm?: boolean; danger?: boolean; okLabel?: string } = {},
+): Promise<boolean> {
+  return new Promise((resolve) => {
+    const host = dialogHost();
+    const opener = document.activeElement as HTMLElement | null;
+    const title = opts.title ?? (opts.confirm ? 'Are you sure?' : 'Heads up');
+    const ok = opts.okLabel ?? (opts.confirm ? 'Continue' : 'OK');
+
+    host.innerHTML = `
+      <div class="g-pane g-modal__card" style="width:min(100%,460px)">
+        <div class="g-modal__head">
+          <div>
+            <h2 style="margin:0;font-size:21px;font-weight:600;letter-spacing:-.018em"></h2>
+            <p style="margin:5px 0 0;color:var(--ink-2);font-size:13.5px"></p>
+          </div>
+        </div>
+        <div class="g-modal__foot">
+          ${opts.confirm ? '<button class="g-btn g-btn--ghost" data-dlg="0">Cancel</button>' : ''}
+          <button class="g-btn ${opts.danger ? 'g-btn--danger' : 'g-btn--primary'}" data-dlg="1"></button>
+        </div>
+      </div>`;
+    // textContent, never innerHTML — these strings carry device names and
+    // server messages and must not be able to inject markup.
+    host.querySelector('h2')!.textContent = title;
+    host.querySelector('p')!.textContent = message;
+    host.querySelector<HTMLElement>('[data-dlg="1"]')!.textContent = ok;
+
+    const finish = (value: boolean) => {
+      host.hidden = true;
+      host.innerHTML = '';
+      document.removeEventListener('keydown', onKey);
+      opener?.focus?.();
+      resolve(value);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') finish(false);
+    };
+
+    host.onclick = (e) => {
+      const t = e.target as Element;
+      if (t === host) return finish(false);
+      const btn = t.closest<HTMLElement>('[data-dlg]');
+      if (btn) finish(btn.dataset.dlg === '1');
+    };
+    document.addEventListener('keydown', onKey);
+
+    host.hidden = false;
+    host.querySelector<HTMLElement>('[data-dlg="1"]')?.focus();
+  });
+}
+
+export const notify = (message: string, title?: string) => showDialog(message, { title });
+export const confirmDialog = (message: string, opts?: { title?: string; danger?: boolean; okLabel?: string }) =>
+  showDialog(message, { ...opts, confirm: true });
+
 export default function GlassRuntime() {
   const pathname = usePathname();
 
@@ -342,6 +429,20 @@ export default function GlassRuntime() {
     window.addEventListener('resize', onResize);
     window.addEventListener('glass:themechange', onThemeChange);
     observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+
+    // Toolbars can mount late — pages that render their chrome only after
+    // async data arrives miss the initial pass and end up with no lens.
+    // So we do watch the body, but two things make it cheap where the
+    // original was not: it is debounced, and it calls refreshLens WITHOUT
+    // force, so the width/height/theme signature cache short-circuits an
+    // unchanged bar before any canvas work happens. Forcing here rebuilt
+    // the map on every mutation — 694 rasterisations per 20 insertions.
+    let mountTimer = 0;
+    const mountObserver = new MutationObserver(() => {
+      window.clearTimeout(mountTimer);
+      mountTimer = window.setTimeout(() => refreshLens(false), 100);
+    });
+    mountObserver.observe(document.body, { childList: true, subtree: true });
     media.addEventListener('change', onThemeChange);
 
     document.querySelectorAll<HTMLInputElement>('.g-slider').forEach(paintSlider);
@@ -354,8 +455,10 @@ export default function GlassRuntime() {
       window.removeEventListener('resize', onResize);
       window.removeEventListener('glass:themechange', onThemeChange);
       observer.disconnect();
+      mountObserver.disconnect();
       media.removeEventListener('change', onThemeChange);
       window.clearTimeout(timer);
+      window.clearTimeout(mountTimer);
       delete window.Glass;
     };
   }, [refreshLens]);

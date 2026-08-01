@@ -1,15 +1,22 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import ProtectedRoute from '@/components/auth/ProtectedRoute';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import {
+  CartesianGrid,
+  Line,
+  LineChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts';
 import {
   getAllDevices,
   findHubDevice,
   getHubSensors,
   getHubAmpStreaming,
-  getDeviceStatusClass,
   getDeviceStatusText,
   getAQICategory,
   getDeviceHistory,
@@ -17,22 +24,172 @@ import {
   getSensorReadings,
 } from '@/services/devices.service';
 import type { BackendDevice } from '@/types/dashboard';
+import { notify, confirmDialog } from '@/components/glass/GlassRuntime';
+import { relativeTime } from '@/utils/time';
 import {
-  Thermometer,
-  Droplets,
-  Wind,
-  Activity,
+  ArrowLeft,
+  Mic,
+  Moon,
+  Play,
   Power,
   RefreshCw,
-  ArrowLeft,
-  Volume2,
-  Play,
-  Square,
-  AlertTriangle,
+  RotateCw,
   Send,
-  Mic,
-  RotateCw
+  Square,
+  Sun,
+  X,
 } from 'lucide-react';
+
+type SensorKind = 'temperature' | 'humidity' | 'airquality';
+type Tone = 'ok' | 'warn' | 'crit' | 'off';
+
+const buttonGroupStyle: React.CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(auto-fit, minmax(96px, 1fr))',
+  gap: 'var(--s-2)',
+};
+
+const sensorIconStyle: React.CSSProperties = {
+  width: 34,
+  height: 34,
+  flex: 'none',
+  display: 'grid',
+  placeItems: 'center',
+};
+
+const modalNarrowStyle: React.CSSProperties = {
+  width: 'min(100%, 480px)',
+};
+
+const sliderPaint = (value: number, max = 100) =>
+  `linear-gradient(to right, var(--accent) 0 ${(value / max) * 100}%, var(--sunken) ${(value / max) * 100}% 100%)`;
+
+const formatTimestamp = (timestamp: any): string => {
+  if (!timestamp) return 'Never';
+
+  try {
+    let date: Date;
+    if (timestamp._seconds !== undefined) {
+      date = new Date(timestamp._seconds * 1000);
+    } else if (timestamp instanceof Date) {
+      date = timestamp;
+    } else {
+      date = new Date(timestamp);
+    }
+
+    if (Number.isNaN(date.getTime())) return 'Invalid date';
+    return relativeTime(date);
+  } catch (error) {
+    console.error('Error formatting timestamp:', error);
+    return 'Invalid date';
+  }
+};
+
+const formatDateTime = (timestamp: any): string => {
+  if (!timestamp) return 'Never';
+  try {
+    const date = timestamp._seconds
+      ? new Date(timestamp._seconds * 1000)
+      : new Date(timestamp);
+    return Number.isNaN(date.getTime()) ? 'Invalid date' : relativeTime(date);
+  } catch {
+    return 'Invalid date';
+  }
+};
+
+const formatUptime = (uptimeMs?: number) => {
+  if (!uptimeMs) return 'N/A';
+  const hours = Math.floor(uptimeMs / 3600000);
+  const minutes = Math.floor((uptimeMs % 3600000) / 60000);
+  return `${hours}h ${minutes}m`;
+};
+
+const metricText = (value: number | null | undefined, suffix = '', digits = 1) =>
+  value == null ? 'N/A' : `${value.toFixed(digits)}${suffix}`;
+
+const getTemperatureStatus = (temp: number): { text: string; tone: Tone } => {
+  if (temp < 25) return { text: 'Cold', tone: 'warn' };
+  if (temp <= 30) return { text: 'Comfortable', tone: 'ok' };
+  if (temp <= 40) return { text: 'Warm', tone: 'warn' };
+  return { text: 'Hot', tone: 'crit' };
+};
+
+const getHumidityStatus = (humidity: number): { text: string; tone: Tone } => {
+  if (humidity < 50) return { text: 'Dry', tone: 'warn' };
+  if (humidity <= 65) return { text: 'Comfortable', tone: 'ok' };
+  return { text: 'Humid', tone: 'warn' };
+};
+
+const chipClass = (tone: Tone) => {
+  if (tone === 'ok') return 'g-chip g-chip--ok';
+  if (tone === 'warn') return 'g-chip g-chip--warn';
+  if (tone === 'crit') return 'g-chip g-chip--crit';
+  return 'g-chip';
+};
+
+const toneClass = (tone: Tone) => {
+  if (tone === 'ok') return 'is-ok';
+  if (tone === 'warn') return 'is-warn';
+  if (tone === 'crit') return 'is-crit';
+  return '';
+};
+
+const dotClass = (tone: Tone) => {
+  if (tone === 'ok') return 'g-dot g-dot--ok';
+  if (tone === 'warn') return 'g-dot g-dot--warn';
+  if (tone === 'crit') return 'g-dot g-dot--crit';
+  return 'g-dot g-dot--off';
+};
+
+const activityTone = (event: any): Tone => {
+  if (!event) return 'ok';
+  if (event.type === 'command') {
+    if (event.data?.status === 'failed') return 'crit';
+    if (event.data?.status === 'completed') return 'ok';
+    return 'warn';
+  }
+  if (event.type === 'device_log') {
+    const level = event.data?.level?.toUpperCase() || 'INFO';
+    if (level === 'ERROR' || level === 'CRITICAL') return 'crit';
+    if (level === 'WARNING' || level === 'WARN') return 'warn';
+  }
+  if (event.type === 'heartbeat' || event.type === 'device_state' || event.type === 'sensor_update') return 'ok';
+  return 'off';
+};
+
+const getActivityDescription = (event: any) => {
+  if (!event) return 'Activity detected';
+  if (event.type === 'sensor_update') return `Sensor update - ${Object.keys(event.data || {}).join(', ') || 'hub readings'}`;
+  if (event.type === 'command') return `Command - ${event.data?.action || 'unknown action'}`;
+  if (event.type === 'heartbeat') return `Heartbeat - up ${Math.floor((event.data?.uptime_ms || 0) / 60000)}m`;
+  if (event.type === 'device_state') return `Device state - heap ${event.data?.free_heap ? Math.floor(event.data.free_heap / 1024) : 'N/A'} KB`;
+  if (event.type === 'device_log') return event.data?.message || 'Log entry';
+  return 'Activity detected';
+};
+
+const getActivityStatus = (event: any) => {
+  if (!event) return 'Event';
+  if (event.type === 'command') return event.data?.status || 'pending';
+  if (event.type === 'heartbeat') return 'Active';
+  if (event.type === 'device_state') return 'Online';
+  if (event.type === 'device_log') return event.data?.level || 'INFO';
+  return 'Event';
+};
+
+const average = (values: number[]) => {
+  if (!values.length) return null;
+  return values.reduce((sum, value) => sum + value, 0) / values.length;
+};
+
+const range = (values: number[]) => {
+  if (!values.length) return null;
+  return { min: Math.min(...values), max: Math.max(...values) };
+};
+
+const historyValue = (reading: any, dataKey: 'temperature' | 'humidity' | 'pm2_5' | 'aqi') => {
+  if (dataKey === 'pm2_5') return reading.pm2_5 ?? reading.pm25;
+  return reading[dataKey];
+};
 
 export default function HubControlPage() {
   const router = useRouter();
@@ -42,27 +199,22 @@ export default function HubControlPage() {
   const [loading, setLoading] = useState(true);
   const [restarting, setRestarting] = useState(false);
 
-  // Modal states for sensor graphs
   const [showTemperatureModal, setShowTemperatureModal] = useState(false);
   const [showHumidityModal, setShowHumidityModal] = useState(false);
   const [showAirQualityModal, setShowAirQualityModal] = useState(false);
+  const [showRestartModal, setShowRestartModal] = useState(false);
+  const [showAlertModal, setShowAlertModal] = useState(false);
   const [sensorHistory, setSensorHistory] = useState<any[]>([]);
 
-  // Alert form state
   const [alertMessage, setAlertMessage] = useState('');
   const [alertLevel, setAlertLevel] = useState<'info' | 'warning' | 'error' | 'critical'>('info');
   const [alertDuration, setAlertDuration] = useState(10);
   const [sendingAlert, setSendingAlert] = useState(false);
 
-  // Amplifier state
   const [streamUrl, setStreamUrl] = useState('');
   const [volume, setVolume] = useState(10);
   const [ampLoading, setAmpLoading] = useState(false);
-
-  // Microphone state
   const [micActive, setMicActive] = useState(false);
-
-  // Recent activity
   const [recentActivity, setRecentActivity] = useState<any[]>([]);
 
   useEffect(() => {
@@ -72,10 +224,9 @@ export default function HubControlPage() {
         const hub = findHubDevice(devicesStatus.devices);
 
         if (hub) {
-          console.log('🔍 Hub device found:', hub.device_id, 'Type:', hub.type);
+          console.log('Hub device found:', hub.device_id, 'Type:', hub.type);
           setHubDevice(hub);
 
-          // Fetch hub activity history (same approach as doorbell)
           try {
             const history = await getDeviceHistory(hub.device_id, 20);
             if (history?.history) setRecentActivity(history.history);
@@ -83,20 +234,16 @@ export default function HubControlPage() {
             console.error('Failed to fetch hub activity history:', err);
           }
 
-          // Fetch sensor data using NEW API
           try {
             const sensors = await getHubSensors(hub.device_id);
-            if (sensors) {
-              setSensorData(sensors.sensors);
-            }
+            if (sensors) setSensorData(sensors.sensors);
           } catch (err) {
             console.error('Failed to fetch hub sensors:', err);
           }
 
-          // Fetch amplifier streaming status using NEW API
           try {
             const streaming = await getHubAmpStreaming(hub.device_id);
-            if (streaming) {
+            if (streaming?.amplifier) {
               setAmpStreaming(streaming.amplifier);
               setVolume(streaming.amplifier.volume_level || 10);
             }
@@ -112,24 +259,41 @@ export default function HubControlPage() {
     };
 
     fetchData();
-    // Refresh every 5 seconds
     const interval = setInterval(fetchData, 5000);
     return () => clearInterval(interval);
   }, []);
 
+  const closeSensorModal = () => {
+    setShowTemperatureModal(false);
+    setShowHumidityModal(false);
+    setShowAirQualityModal(false);
+  };
+
+  const closeAllModals = () => {
+    closeSensorModal();
+    setShowRestartModal(false);
+    setShowAlertModal(false);
+  };
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') closeAllModals();
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  });
+
   const handleRestart = async () => {
     if (!hubDevice) return;
-
-    const confirmed = confirm('Are you sure you want to restart the hub? This will take a few minutes.');
-    if (!confirmed) return;
 
     try {
       setRestarting(true);
       await sendCommand(hubDevice.device_id, 'system_restart');
-      alert('Hub restart command sent successfully!');
+      setShowRestartModal(false);
+      void notify('Hub restart command sent successfully!');
     } catch (error) {
       console.error('Error restarting hub:', error);
-      alert('Failed to restart hub. Please try again.');
+      void notify('Failed to restart hub. Please try again.');
     } finally {
       setRestarting(false);
     }
@@ -141,22 +305,23 @@ export default function HubControlPage() {
 
     try {
       setSendingAlert(true);
-      console.log('🔍 Sending alert to hub device_id:', hubDevice.device_id);
+      console.log('Sending alert to hub device_id:', hubDevice.device_id);
       const result = await sendCommand(hubDevice.device_id, 'hub_alert', {
         message: alertMessage,
         level: alertLevel,
-        duration: alertDuration
+        duration: alertDuration,
       });
 
       if (result) {
-        alert(`Alert sent successfully! Command ID: ${result.command_id}`);
+        void notify(`Alert sent successfully! Command ID: ${result.command_id}`);
         setAlertMessage('');
+        setShowAlertModal(false);
       } else {
-        alert('Failed to send alert. Please try again.');
+        void notify('Failed to send alert. Please try again.');
       }
     } catch (error) {
       console.error('Error sending alert:', error);
-      alert('Failed to send alert. Please try again.');
+      void notify('Failed to send alert. Please try again.');
     } finally {
       setSendingAlert(false);
     }
@@ -168,10 +333,10 @@ export default function HubControlPage() {
     try {
       setAmpLoading(true);
       await sendCommand(hubDevice.device_id, 'amp_play', { url: streamUrl });
-      alert('Play command sent to Hub amplifier!');
+      void notify('Play command sent to Hub amplifier!');
     } catch (error) {
       console.error('Error playing stream:', error);
-      alert('Failed to play stream. Please try again.');
+      void notify('Failed to play stream. Please try again.');
     } finally {
       setAmpLoading(false);
     }
@@ -183,10 +348,10 @@ export default function HubControlPage() {
     try {
       setAmpLoading(true);
       await sendCommand(hubDevice.device_id, 'amp_stop');
-      alert('Stop command sent to Hub amplifier!');
+      void notify('Stop command sent to Hub amplifier!');
     } catch (error) {
       console.error('Error stopping stream:', error);
-      alert('Failed to stop stream. Please try again.');
+      void notify('Failed to stop stream. Please try again.');
     } finally {
       setAmpLoading(false);
     }
@@ -198,30 +363,28 @@ export default function HubControlPage() {
     try {
       setAmpLoading(true);
       await sendCommand(hubDevice.device_id, 'amp_restart');
-      alert('Restart command sent to Hub amplifier!');
+      void notify('Restart command sent to Hub amplifier!');
     } catch (error) {
       console.error('Error restarting amplifier:', error);
-      alert('Failed to restart amplifier. Please try again.');
+      void notify('Failed to restart amplifier. Please try again.');
     } finally {
       setAmpLoading(false);
     }
   };
 
   const handleVolumeChange = (newVolume: number) => {
-    // Update local state immediately for responsive UI
     setVolume(newVolume);
   };
 
   const handleVolumeSend = async (finalVolume: number) => {
     if (!hubDevice) return;
 
-    // Send volume command to backend when user releases slider
     try {
       await sendCommand(hubDevice.device_id, 'amp_volume', { level: finalVolume });
       console.log(`Volume set to ${finalVolume}`);
     } catch (error) {
       console.error('Error setting volume:', error);
-      alert('Failed to set volume. Please try again.');
+      void notify('Failed to set volume. Please try again.');
     }
   };
 
@@ -234,1018 +397,581 @@ export default function HubControlPage() {
       setMicActive(!micActive);
     } catch (error) {
       console.error('Error toggling mic:', error);
-      alert('Failed to toggle microphone');
+      void notify('Failed to toggle microphone');
     }
   };
 
-  const getTemperatureStatus = (temp: number) => {
-    if (temp < 25) return { text: 'Cold', color: '#4FC3F7', status: 'status-warning' };
-    if (temp <= 30) return { text: 'Comfortable', color: 'var(--success)', status: 'status-online' };
-    if (temp <= 40) return { text: 'Warm', color: 'var(--warning)', status: 'status-warning' };
-    return { text: 'Hot', color: 'var(--danger)', status: 'status-offline' };
-  };
-
-  const getHumidityStatus = (humidity: number) => {
-    if (humidity < 50) return { text: 'Dry', color: 'var(--warning)', status: 'status-warning' };
-    if (humidity <= 65) return { text: 'Comfortable', color: 'var(--success)', status: 'status-online' };
-    return { text: 'Humid', color: 'var(--warning)', status: 'status-warning' };
-  };
-
-  const formatTimestamp = (timestamp: any): string => {
-    if (!timestamp) return 'Never';
-
-    try {
-      let date: Date;
-
-      // Check if it's a Firestore Timestamp object with _seconds
-      if (timestamp._seconds !== undefined) {
-        date = new Date(timestamp._seconds * 1000);
-      }
-      // Check if it's already a Date object
-      else if (timestamp instanceof Date) {
-        date = timestamp;
-      }
-      // Check if it's a string or number
-      else {
-        date = new Date(timestamp);
-      }
-
-      // Validate the date
-      if (isNaN(date.getTime())) {
-        return 'Invalid Date';
-      }
-
-      return date.toLocaleTimeString();
-    } catch (error) {
-      console.error('Error formatting timestamp:', error);
-      return 'Invalid Date';
-    }
-  };
-
-  // ---- Helper functions for Recent Activity ----
-  const formatActivityTime = (timestamp: any) => {
-    if (timestamp?.toDate) return timestamp.toDate().toLocaleTimeString();
-    if (timestamp?._seconds) return new Date(timestamp._seconds * 1000).toLocaleTimeString();
-    if (typeof timestamp === 'string' || typeof timestamp === 'number') return new Date(timestamp).toLocaleTimeString();
-    return 'N/A';
-  };
-
-  const getActivityDescription = (event: any) => {
-    if (!event) return 'Activity detected';
-    if (event.type === 'sensor_update') return `Sensor update: ${Object.keys(event.data || {}).join(', ')}`;
-    if (event.type === 'command') return `Command: ${event.data?.action || 'unknown'}`;
-    if (event.type === 'heartbeat') return `Heartbeat (uptime ${Math.floor((event.data?.uptime_ms || 0) / 60000)}m)`;
-    if (event.type === 'device_state') return `Device state: heap ${event.data?.free_heap ? Math.floor(event.data.free_heap / 1024) : 'N/A'} KB`;
-    if (event.type === 'device_log') return event.data?.message || 'Log entry';
-    return 'Activity detected';
-  };
-
-  const getActivityStatus = (event: any) => {
-    if (!event) return 'Event';
-    if (event.type === 'command') return event.data?.status || 'pending';
-    if (event.type === 'heartbeat') return 'Active';
-    if (event.type === 'device_state') return 'Online';
-    if (event.type === 'device_log') return event.data?.level || 'INFO';
-    return 'Event';
-  };
-
-  const getActivityStatusClass = (event: any) => {
-    if (!event) return 'status-safe';
-    if (event.type === 'command') {
-      if (event.data?.status === 'completed') return 'status-safe';
-      if (event.data?.status === 'failed') return 'status-danger';
-      return 'status-warning';
-    }
-    if (event.type === 'device_log') {
-      const lvl = event.data?.level?.toUpperCase() || 'INFO';
-      if (lvl === 'ERROR' || lvl === 'CRITICAL') return 'status-danger';
-      if (lvl === 'WARNING' || lvl === 'WARN') return 'status-warning';
-      return 'status-safe';
-    }
-    if (event.type === 'device_state' || event.type === 'heartbeat') return 'status-safe';
-    return 'status-safe';
-  };
-
-  const openSensorModal = async (sensorType: 'temperature' | 'humidity' | 'airquality') => {
+  const openSensorModal = async (sensorType: SensorKind) => {
     if (!hubDevice) return;
 
     try {
-      // Fetch historical sensor readings (24 hours)
       const readings = await getSensorReadings(hubDevice.device_id, 24);
-      if (readings?.readings) {
-        setSensorHistory(readings.readings);
-      }
+      if (readings?.readings) setSensorHistory(readings.readings);
     } catch (error) {
       console.error('Error fetching sensor history:', error);
       setSensorHistory([]);
     }
 
-    // Open the appropriate modal
-    switch (sensorType) {
-      case 'temperature':
-        setShowTemperatureModal(true);
-        break;
-      case 'humidity':
-        setShowHumidityModal(true);
-        break;
-      case 'airquality':
-        setShowAirQualityModal(true);
-        break;
-    }
+    if (sensorType === 'temperature') setShowTemperatureModal(true);
+    if (sensorType === 'humidity') setShowHumidityModal(true);
+    if (sensorType === 'airquality') setShowAirQualityModal(true);
   };
 
-  const closeSensorModal = () => {
-    setShowTemperatureModal(false);
-    setShowHumidityModal(false);
-    setShowAirQualityModal(false);
-  };
-
-  const prepareChartData = (dataKey: 'temperature' | 'humidity' | 'pm2_5' | 'aqi') => {
-    return sensorHistory.map(reading => ({
-      timestamp: new Date(reading.timestamp._seconds * 1000).toLocaleTimeString(),
-      value: Number((reading[dataKey] ?? 0).toFixed(1))
+  const prepareChartData = (dataKey: 'temperature' | 'humidity' | 'pm2_5' | 'aqi') =>
+    sensorHistory.map((reading) => ({
+      timestamp: formatTimestamp(reading.timestamp),
+      value: Number((historyValue(reading, dataKey) ?? 0).toFixed(1)),
     }));
-  };
 
-  if (loading) {
-    return (
-      <ProtectedRoute>
-        <div className="dashboard-loading">
-          <div className="loading-spinner"></div>
-          <p>Loading hub data...</p>
-        </div>
-      </ProtectedRoute>
-    );
-  }
-
-  const statusClass = hubDevice ? getDeviceStatusClass(hubDevice.online, hubDevice.last_seen, hubDevice.type) : 'status-offline';
-  const statusText = hubDevice ? getDeviceStatusText(hubDevice.online, hubDevice.last_seen, hubDevice.type) : 'OFFLINE';
   const tempStatus = sensorData?.temperature != null ? getTemperatureStatus(sensorData.temperature) : null;
   const humidityStatus = sensorData?.humidity != null ? getHumidityStatus(sensorData.humidity) : null;
   const aqiData = sensorData?.aqi ? getAQICategory(sensorData.aqi) : null;
+  const airTone: Tone = sensorData?.aqi == null ? 'off' : sensorData.aqi > 150 ? 'crit' : sensorData.aqi > 50 ? 'warn' : 'ok';
+  const statusText = hubDevice ? getDeviceStatusText(hubDevice.online, hubDevice.last_seen, hubDevice.type) : 'Offline';
+  const onlineTone: Tone = hubDevice?.online ? 'ok' : 'off';
+
+  const temperatureHistory = useMemo(() => sensorHistory.map((r) => historyValue(r, 'temperature')).filter((v) => typeof v === 'number'), [sensorHistory]);
+  const humidityHistory = useMemo(() => sensorHistory.map((r) => historyValue(r, 'humidity')).filter((v) => typeof v === 'number'), [sensorHistory]);
+  const airHistory = useMemo(() => sensorHistory.map((r) => historyValue(r, 'pm2_5')).filter((v) => typeof v === 'number'), [sensorHistory]);
+
+  const currentUrl = ampStreaming?.current_url || '';
+  const isPlaying = Boolean(ampStreaming?.is_playing || ampStreaming?.is_streaming);
+
+  const renderToolbar = () => (
+    <div className="g-pane g-bar">
+      <button className="g-back" type="button" onClick={() => router.push('/dashboard')}>
+        <ArrowLeft size={16} strokeWidth={1.8} />
+        Home
+      </button>
+      <span className="g-bar__brand">Hub</span>
+      <div className="g-spacer" />
+      <button className="g-theme" type="button" aria-label="Switch between light and dark" title="Switch theme">
+        <Moon className="g-theme__moon" size={16} strokeWidth={1.7} />
+        <Sun className="g-theme__sun" size={16} strokeWidth={1.7} />
+      </button>
+      <span className={`g-pill ${onlineTone === 'ok' ? '' : 'is-off'}`}>
+        <i />
+        {statusText}
+      </span>
+    </div>
+  );
+
+  const renderEmpty = (title: string, copy: string) => (
+    <div className="g-empty">
+      <strong>{title}</strong>
+      <p>{copy}</p>
+    </div>
+  );
+
+const renderSensorCard = (
+    kind: SensorKind,
+    title: string,
+    status: { text: string; tone: Tone } | null,
+    value: string,
+    unit: string,
+    detail: string,
+  ) => (
+    <button className={`g-pane g-card hub-sensor ${status ? toneClass(status.tone) : ''}`} type="button" onClick={() => openSensorModal(kind)}>
+      <header>
+        <h3>{title}</h3>
+        <span className={status ? chipClass(status.tone) : 'g-chip'}>{status?.text || 'No reading'}</span>
+      </header>
+      <div className="g-metric-lg g-num">
+        {value}
+        {unit && <sup>{unit}</sup>}
+      </div>
+      <p className="g-sub">{detail}</p>
+      {kind === 'humidity' ? (
+        <>
+          <div className="g-meter" style={{ marginTop: 'var(--s-5)' }}>
+            <i className={status?.tone === 'warn' ? 'is-warn' : status?.tone === 'crit' ? 'is-crit' : ''} style={{ width: `${Math.min(sensorData?.humidity || 0, 100)}%` }} />
+            <span className="g-meter__limit" style={{ left: '60%' }} />
+          </div>
+          <p className="g-sub">Limit marker at 60%</p>
+        </>
+      ) : (
+        <svg
+          className={`g-spark ${kind === 'airquality' ? 'g-spark--warn' : ''}`}
+          viewBox="0 0 240 56"
+          role="img"
+          aria-label={`${title} trend preview`}
+        >
+          <defs>
+            <linearGradient id={`hub-${kind}-spark`} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="currentColor" stopOpacity={kind === 'airquality' ? 0.3 : 0.26} />
+              <stop offset="100%" stopColor="currentColor" stopOpacity={0} />
+            </linearGradient>
+          </defs>
+          <path
+            className="g-spark__area"
+            d={
+              kind === 'airquality'
+                ? 'M0,46 L26,44 L52,45 L78,38 L104,36 L130,29 L156,26 L182,20 L208,17 L236,12 L240,12 L240,56 L0,56 Z'
+                : 'M0,44 L26,42 L52,47 L78,39 L104,33 L130,30 L156,23 L182,26 L208,18 L236,15 L240,15 L240,56 L0,56 Z'
+            }
+            fill={`url(#hub-${kind}-spark)`}
+          />
+          <polyline
+            className="g-spark__line"
+            points={
+              kind === 'airquality'
+                ? '0,46 26,44 52,45 78,38 104,36 130,29 156,26 182,20 208,17 236,12'
+                : '0,44 26,42 52,47 78,39 104,33 130,30 156,23 182,26 208,18 236,15'
+            }
+          />
+          <circle cx="236" cy={kind === 'airquality' ? 12 : 15} r="4" className="g-spark__dot" />
+        </svg>
+      )}
+    </button>
+  );
+
+  const renderChart = (
+    dataKey: 'temperature' | 'humidity' | 'pm2_5',
+    ariaLabel: string,
+    warn = false,
+  ) => (
+    <div role="img" aria-label={ariaLabel}>
+      {sensorHistory.length ? (
+        <ResponsiveContainer width="100%" height={320}>
+          <LineChart data={prepareChartData(dataKey)} margin={{ top: 16, right: 18, left: 0, bottom: 16 }}>
+            <CartesianGrid stroke="var(--hairline)" strokeDasharray="5 4" vertical={false} />
+            <XAxis
+              dataKey="timestamp"
+              stroke="var(--ink-3)"
+              tick={{ fill: 'var(--ink-3)', fontFamily: 'var(--mono)', fontSize: 11 }}
+              interval="preserveStartEnd"
+            />
+            <YAxis
+              stroke="var(--ink-3)"
+              tick={{ fill: 'var(--ink-3)', fontFamily: 'var(--mono)', fontSize: 11 }}
+              width={44}
+            />
+            <Tooltip
+              contentStyle={{
+                background: 'var(--modal-bg)',
+                border: '1px solid var(--outline)',
+                borderRadius: 'var(--r-field)',
+                color: 'var(--ink)',
+                fontFamily: 'var(--mono)',
+              }}
+              labelStyle={{ color: 'var(--ink-2)' }}
+            />
+            <Line
+              type="monotone"
+              dataKey="value"
+              stroke={warn ? 'var(--warn)' : 'var(--accent)'}
+              strokeWidth={2.2}
+              dot={false}
+              activeDot={{ r: 4.5, strokeWidth: 2 }}
+              connectNulls
+              isAnimationActive={false}
+            />
+          </LineChart>
+        </ResponsiveContainer>
+      ) : (
+        renderEmpty('No 24h history yet', 'Open this again after the hub reports more sensor samples.')
+      )}
+    </div>
+  );
+
+  const renderSensorModal = (
+    open: boolean,
+    title: string,
+    subtitle: string,
+    current: string,
+    avg: string,
+    rangeText: string,
+    chartKey: 'temperature' | 'humidity' | 'pm2_5',
+    warn = false,
+  ) => {
+    if (!open) return null;
+
+    return (
+      <div className="g-modal" role="dialog" aria-modal="true" onClick={closeSensorModal}>
+        <div className="g-pane g-modal__card g-modal__card--wide" onClick={(event) => event.stopPropagation()}>
+          <div className="g-modal__head">
+            <div>
+              <h2>{title}</h2>
+              <p>{subtitle}</p>
+            </div>
+            <button className="g-icon-btn" type="button" onClick={closeSensorModal} aria-label="Close">
+              <X size={15} strokeWidth={2} />
+            </button>
+          </div>
+          <div className="g-grid g-grid--3" style={{ marginBottom: 'var(--s-5)' }}>
+            <div className={`g-tile ${warn ? 'is-warn' : ''}`}>
+              <p className="g-label">Now</p>
+              <div className="g-metric-sm g-num">{current}</div>
+            </div>
+            <div className="g-tile">
+              <p className="g-label">24h average</p>
+              <div className="g-metric-sm g-num">{avg}</div>
+            </div>
+            <div className="g-tile">
+              <p className="g-label">Range</p>
+              <div className="g-metric-sm g-num">{rangeText}</div>
+            </div>
+          </div>
+          {renderChart(chartKey, `${title} chart over the last 24 hours`, warn)}
+        </div>
+      </div>
+    );
+  };
+
+  const tempAvg = average(temperatureHistory);
+  const tempRange = range(temperatureHistory);
+  const humAvg = average(humidityHistory);
+  const humRange = range(humidityHistory);
+  const airAvg = average(airHistory);
+  const airRange = range(airHistory);
 
   return (
     <ProtectedRoute>
-      <div className="main-content" style={{ marginLeft: 0 }}>
-        <div className="dashboard-container">
-          <header className="dashboard-header">
-            <div className="dashboard-header-left">
-              <button className="sidebar-toggle" onClick={() => router.push('/dashboard')} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }} title="Back to Dashboard">
-                <ArrowLeft size={20} />
-              </button>
-              <h1>HUB CONTROL</h1>
-            </div>
-            <div className="dashboard-header-right">
-              <div className="header-info">
-                <span className={`status-dot ${statusClass}`}></span>
-                <span>{statusText}</span>
-              </div>
-            </div>
-          </header>
+      <main className="g-page">
+        {renderToolbar()}
 
-          <div className="card control-card-large" style={{ marginBottom: 'var(--spacing-lg, 24px)' }}>
-          <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <h3>HUB SENSORS</h3>
-              {sensorData?.timestamp && (
-                <span style={{ fontSize: '14px', color: 'var(--text-secondary)' }}>
-                  Last updated: {formatTimestamp(sensorData.timestamp)}
-                </span>
+        <div className="g-title">
+          <h1>Hub display</h1>
+          <p>
+            Living room · reading three sensors
+            {sensorData?.timestamp ? ` · last update ${formatTimestamp(sensorData.timestamp)}` : ''}
+          </p>
+        </div>
+
+        {loading ? (
+          <section className="g-pane g-card">{renderEmpty('Loading hub data', 'Fetching sensors, amplifier state, and recent activity.')}</section>
+        ) : (
+          <>
+            <section className="hub-sensors">
+              {renderSensorCard(
+                'temperature',
+                'Temperature',
+                tempStatus,
+                sensorData?.temperature != null ? sensorData.temperature.toFixed(1) : 'N/A',
+                sensorData?.temperature != null ? '°C' : '',
+                'Comfort range 18-25 °C · DHT11',
               )}
-            </div>
-            <div className="card-content">
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '16px' }}>
-                {/* Temperature Card (DHT11) */}
-                <div className="card" style={{ cursor: 'pointer' }} onClick={() => openSensorModal('temperature')}>
-                  <div className="card-header">
-                    <div className="card-title-group">
-                      <Thermometer size={24} />
-                      <h3>TEMPERATURE</h3>
-                    </div>
-                    {tempStatus && (
-                      <span className={`status-indicator ${tempStatus.status}`}>
-                        {tempStatus.text}
-                      </span>
-                    )}
-                  </div>
-                  <div className="card-content">
-                    {sensorData?.temperature != null ? (
-                      <>
-                        <div
-                          className="card-value"
-                          style={{
-                            fontSize: '56px',
-                            color: tempStatus?.color,
-                            textAlign: 'center',
-                            margin: '20px 0',
-                            height: '80px',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center'
-                          }}
-                        >
-                          {sensorData.temperature.toFixed(1)}°C
-                        </div>
-                        <div style={{ textAlign: 'center', color: 'var(--text-secondary)' }}>
-                          <div className="temp-ranges" style={{
-                            display: 'flex',
-                            justifyContent: 'space-around',
-                            marginTop: '85px',
-                            padding: '12px',
-                            background: 'rgba(0,0,0,0.3)',
-                            borderRadius: '8px'
-                          }}>
-                            <div>
-                              <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Comfort Range</div>
-                              <div style={{ fontSize: '14px', fontWeight: 'bold' }}>18-25°C</div>
-                            </div>
-                            <div>
-                              <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Device</div>
-                              <div style={{ fontSize: '14px', fontWeight: 'bold' }}>DHT11</div>
-                            </div>
-                          </div>
-                        </div>
-                      </>
-                    ) : (
-                      <div className="no-alerts">
-                        <Activity size={48} style={{ margin: '0 auto 16px', opacity: 0.3 }} />
-                        <p>No temperature data available</p>
-                      </div>
-                    )}
-                  </div>
-                </div>
+              {renderSensorCard(
+                'humidity',
+                'Humidity',
+                humidityStatus,
+                sensorData?.humidity != null ? sensorData.humidity.toFixed(1) : 'N/A',
+                sensorData?.humidity != null ? '%' : '',
+                'Comfort range 30-60% · DHT11',
+              )}
+              {renderSensorCard(
+                'airquality',
+                'Air quality',
+                sensorData?.pm25 != null ? { text: aqiData?.category || 'Measured', tone: airTone } : null,
+                sensorData?.pm25 != null ? sensorData.pm25.toFixed(1) : 'N/A',
+                sensorData?.pm25 != null ? 'µg/m³' : '',
+                sensorData?.aqi != null ? `PM2.5 · AQI ${sensorData.aqi}` : 'PM2.5 · waiting for AQI',
+              )}
+            </section>
 
-                {/* Humidity Card (DHT11) */}
-                <div className="card" style={{ cursor: 'pointer' }} onClick={() => openSensorModal('humidity')}>
-                  <div className="card-header">
-                    <div className="card-title-group">
-                      <Droplets size={24} />
-                      <h3>HUMIDITY</h3>
-                    </div>
-                    {humidityStatus && (
-                      <span className={`status-indicator ${humidityStatus.status}`}>
-                        {humidityStatus.text}
-                      </span>
-                    )}
-                  </div>
-                  <div className="card-content">
-                    {sensorData?.humidity != null ? (
-                      <>
-                        <div
-                          className="card-value"
-                          style={{
-                            fontSize: '56px',
-                            color: humidityStatus?.color,
-                            textAlign: 'center',
-                            margin: '20px 0',
-                            height: '80px',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center'
-                          }}
-                        >
-                          {sensorData.humidity.toFixed(1)}%
-                        </div>
-                        <div style={{ textAlign: 'center', color: 'var(--text-secondary)' }}>
-                          <div className="progress-bar" style={{ marginTop: '16px' }}>
-                            <div
-                              className="progress-fill"
-                              style={{
-                                width: `${Math.min(sensorData.humidity, 100)}%`,
-                                background: humidityStatus?.color
-                              }}
-                            ></div>
-                          </div>
-                          <div style={{
-                            display: 'flex',
-                            justifyContent: 'space-around',
-                            marginTop: '60px',
-                            padding: '12px',
-                            background: 'rgba(0,0,0,0.3)',
-                            borderRadius: '8px'
-                          }}>
-                            <div>
-                              <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Comfort Range</div>
-                              <div style={{ fontSize: '14px', fontWeight: 'bold' }}>30-60%</div>
-                            </div>
-                            <div>
-                              <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Device</div>
-                              <div style={{ fontSize: '14px', fontWeight: 'bold' }}>DHT11</div>
-                            </div>
-                          </div>
-                        </div>
-                      </>
-                    ) : (
-                      <div className="no-alerts">
-                        <Activity size={48} style={{ margin: '0 auto 16px', opacity: 0.3 }} />
-                        <p>No humidity data available</p>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Air Quality Card (PM2.5) */}
-                <div className="card" style={{ cursor: 'pointer' }} onClick={() => openSensorModal('airquality')}>
-                  <div className="card-header">
-                    <div className="card-title-group">
-                      <Wind size={24} />
-                      <h3>AIR QUALITY (PM2.5)</h3>
-                    </div>
-                    {aqiData && (
-                      <span className={`status-indicator ${aqiData.status}`}>
-                        {aqiData.category}
-                      </span>
-                    )}
-                  </div>
-                  <div className="card-content">
-                    {sensorData?.pm25 != null ? (
-                      <>
-                        <div
-                          className="card-value"
-                          style={{
-                            fontSize: '56px',
-                            color: aqiData?.color,
-                            textAlign: 'center',
-                            margin: '20px 0',
-                            height: '80px',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center'
-                          }}
-                        >
-                          {sensorData.pm25.toFixed(1)}
-                        </div>
-                        <div style={{ textAlign: 'center', color: 'var(--text-secondary)', fontSize: '14px', marginBottom: '8px' }}>
-                          μg/m³
-                        </div>
-                        <div style={{ textAlign: 'center', color: 'var(--text-secondary)' }}>
-                          {sensorData.aqi !== undefined && (
-                            <div style={{
-                              display: 'flex',
-                              justifyContent: 'space-around',
-                              marginTop: '26px',
-                              padding: '12px',
-                              background: 'rgba(0,0,0,0.3)',
-                              borderRadius: '8px'
-                            }}>
-                              <div>
-                                <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>AQI</div>
-                                <div style={{ fontSize: '14px', fontWeight: 'bold', color: aqiData?.color }}>{sensorData.aqi}</div>
-                              </div>
-                              <div>
-                                <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Category</div>
-                                <div style={{ fontSize: '14px', fontWeight: 'bold' }}>{aqiData?.category}</div>
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      </>
-                    ) : (
-                      <div className="no-alerts">
-                        <Activity size={48} style={{ margin: '0 auto 16px', opacity: 0.3 }} />
-                        <p>No air quality data available</p>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="control-page-grid">
-            {/* Microphone Control Card */}
-            <div className="card">
-              <div className="card-header">
-                <div className="card-title-group">
-                  <Mic size={24} />
-                  <h3>MICROPHONE CONTROL</h3>
-                </div>
-              </div>
-              <div className="card-content">
-                <div className="control-panel">
-                  <div className="control-status">
-                    <Mic
-                      size={48}
-                      className={
-                        micActive
-                          ? "status-active-large"
-                          : "status-inactive-large"
-                      }
-                    />
-                    <div className="status-label">
-                      <span className="status-text">
-                        {micActive ? "ACTIVE" : "INACTIVE"}
-                      </span>
-                      <span className="status-description">
-                        {micActive
-                          ? "Microphone is listening"
-                          : "Microphone is muted"}
-                      </span>
+            <section className="hub-grid">
+              <section className="g-pane g-card hub-a-mic">
+                <header>
+                  <h2>Microphone</h2>
+                  <span className="g-label">mic</span>
+                </header>
+                <div className="g-row g-row--between">
+                  <div className="g-row">
+                    <span style={sensorIconStyle}>
+                      <Mic size={22} strokeWidth={1.8} />
+                    </span>
+                    <div>
+                      <div>{micActive ? 'Listening' : 'Muted'}</div>
+                      <p className="g-sub" style={{ margin: 0 }}>
+                        {micActive ? 'Streaming to the hub speaker' : 'Microphone stream is stopped'}
+                      </p>
                     </div>
                   </div>
                   <button
-                    className={`btn-control ${
-                      micActive ? "btn-stop" : "btn-start"
-                    }`}
+                    className="g-switch"
+                    type="button"
+                    aria-pressed={micActive}
+                    aria-label="Microphone"
                     onClick={handleMicToggle}
                     disabled={!hubDevice?.online}
-                    style={{ marginTop: "12px" }}
-                  >
-                    {micActive ? "STOP MIC" : "START MIC"}
-                  </button>
+                  />
                 </div>
-              </div>
-            </div>
+              </section>
 
-            {/* Audio Control Card */}
-            <div className="card">
-              <div className="card-header">
-                <div className="card-title-group">
-                  <Volume2 size={24} />
-                  <h3>AUDIO CONTROL</h3>
+              <section className="g-pane g-card hub-a-audio">
+                <header>
+                  <h2>Amplifier</h2>
+                  <span className={isPlaying ? 'g-chip g-chip--ok' : 'g-chip'}>{isPlaying ? 'Playing' : 'Stopped'}</span>
+                </header>
+
+                <div className="g-tile" style={{ marginBottom: 'var(--s-4)' }}>
+                  <p className="g-label">Now streaming</p>
+                  <p className="g-mono" style={{ margin: '6px 0 0', overflowWrap: 'anywhere' }}>
+                    {currentUrl || 'No stream selected'}
+                  </p>
                 </div>
-                {ampStreaming && (
-                  <span className={`status-indicator ${ampStreaming.is_playing ? 'status-online' : 'status-offline'}`}>
-                    {ampStreaming.is_playing ? 'PLAYING' : 'STOPPED'}
-                  </span>
-                )}
-              </div>
-              <div className="card-content">
-                <div style={{ pointerEvents: 'auto' }}>
-                  <div className="control-status">
-                    <Volume2 size={48} className="status-info-large" />
-                    <div className="status-label">
-                      <span className="status-text">AMPLIFIER</span>
-                      <span className="status-description">
-                        Stream audio to amplifier
-                      </span>
-                    </div>
-                  </div>
-                  {ampStreaming && ampStreaming.is_streaming && ampStreaming.current_url && (
-                    <div style={{
-                      marginTop: '12px',
-                      padding: '12px',
-                      background: 'rgba(0,255,136,0.1)',
-                      border: '1px solid var(--success)',
-                      borderRadius: '4px',
-                      fontSize: '14px'
-                    }}>
-                      <div style={{ color: 'var(--success)', marginBottom: '4px' }}>Now Streaming:</div>
-                      <div style={{ color: '#FFF', wordBreak: 'break-all' }}>{ampStreaming.current_url}</div>
-                    </div>
-                  )}
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '16px' }}>
-                    <div style={{ position: 'relative', width: '100%' }}>
+
+                <div className="g-stack">
+                  <div className="g-field g-field--mono">
+                    <label htmlFor="stream-url">Stream URL</label>
+                    <div className="g-input-group">
                       <input
+                        id="stream-url"
                         type="text"
                         value={streamUrl}
-                        onChange={(e) => setStreamUrl(e.target.value)}
-                        placeholder="Enter stream URL (e.g., http://stream.example.com/audio)"
-                        className="control-input"
+                        onChange={(event) => setStreamUrl(event.target.value)}
+                        placeholder="Stream URL"
                         disabled={!hubDevice?.online}
-                        style={{
-                          width: '100%',
-                          padding: '10px 45px 10px 12px',
-                          borderRadius: '6px',
-                          border: '2px solid #e0e0e0',
-                          fontSize: '13px',
-                          fontFamily: 'monospace',
-                          transition: 'all 0.2s ease',
-                          outline: 'none',
-                          backgroundColor: '#f8f9fa'
-                        }}
-                        onFocus={(e) => {
-                          e.target.style.borderColor = '#2196F3';
-                          e.target.style.backgroundColor = '#fff';
-                        }}
-                        onBlur={(e) => {
-                          e.target.style.borderColor = '#e0e0e0';
-                          e.target.style.backgroundColor = '#f8f9fa';
-                        }}
                       />
                       <select
-                        onChange={(e) => setStreamUrl(e.target.value)}
+                        aria-label="Preset station"
                         value=""
-                        className="stream-selector"
+                        onChange={(event) => setStreamUrl(event.target.value)}
                         disabled={!hubDevice?.online}
-                        style={{
-                          position: 'absolute',
-                          right: '4px',
-                          top: '50%',
-                          transform: 'translateY(-50%)',
-                          padding: '6px 8px',
-                          borderRadius: '4px',
-                          border: '1px solid #e0e0e0',
-                          fontSize: '13px',
-                          backgroundColor: '#fff',
-                          cursor: 'pointer',
-                          outline: 'none',
-                          transition: 'all 0.2s ease',
-                          appearance: 'none',
-                          WebkitAppearance: 'none',
-                          MozAppearance: 'none',
-                          backgroundImage: 'url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 24 24\' fill=\'none\' stroke=\'%23333\' stroke-width=\'2\' stroke-linecap=\'round\' stroke-linejoin=\'round\'%3e%3cpolyline points=\'6 9 12 15 18 9\'%3e%3c/polyline%3e%3c/svg%3e")',
-                          backgroundRepeat: 'no-repeat',
-                          backgroundPosition: 'center',
-                          backgroundSize: '18px',
-                          width: '32px',
-                          height: '32px',
-                          color: 'transparent'
-                        }}
-                        onMouseEnter={(e) => {
-                          (e.target as HTMLSelectElement).style.backgroundColor = '#f0f0f0';
-                        }}
-                        onMouseLeave={(e) => {
-                          (e.target as HTMLSelectElement).style.backgroundColor = '#fff';
-                        }}
                       >
-                        <option value="" style={{ color: '#000' }}>
-                          Select Station
-                        </option>
-                        <option
-                          value="https://stream.live.vc.bbcmedia.co.uk/bbc_world_service_east_asia"
-                          style={{ color: '#000' }}
-                        >
-                          BBC World Service
-                        </option>
-                        <option
-                          value="https://play.streamafrica.net/japancitypop"
-                          style={{ color: '#000' }}
-                        >
-                          Japan City Pop
-                        </option>
-                        <option
-                          value="http://stream.radioparadise.com/aac-128"
-                          style={{ color: '#000' }}
-                        >
-                          Radio Paradise
-                        </option>
+                        <option value="">Preset</option>
+                        <option value="https://stream.live.vc.bbcmedia.co.uk/bbc_world_service_east_asia">BBC World Service</option>
+                        <option value="https://play.streamafrica.net/japancitypop">Japan City Pop</option>
+                        <option value="http://stream.radioparadise.com/aac-128">Radio Paradise</option>
                       </select>
                     </div>
-                    <div>
-                      <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', color: 'var(--text-secondary)' }}>
-                        Volume: {volume} / 21
-                      </label>
-                      <input
-                        type="range"
-                        min={0}
-                        max={21}
-                        value={volume}
-                        onChange={(e) => handleVolumeChange(parseInt(e.target.value))}
-                        onMouseUp={(e) => handleVolumeSend(parseInt((e.target as HTMLInputElement).value))}
-                        onTouchEnd={(e) => handleVolumeSend(parseInt((e.target as HTMLInputElement).value))}
-                        disabled={!hubDevice?.online}
-                        style={{
-                          width: '100%',
-                          cursor: 'pointer'
-                        }}
-                      />
-                    </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px' }}>
-                      <button
-                        className="btn-action"
-                        onClick={handlePlayStream}
-                        disabled={ampLoading || !hubDevice?.online || !streamUrl.trim()}
-                        style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
-                      >
-                        <Play size={18} />
-                        <span>Play</span>
-                      </button>
-                      <button
-                        className="btn-action"
-                        onClick={handleStopStream}
-                        disabled={ampLoading || !hubDevice?.online}
-                        style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
-                      >
-                        <Square size={18} />
-                        <span>Stop</span>
-                      </button>
-                    </div>
                   </div>
-                </div>
-              </div>
-            </div>
 
-            {/* Container for Submodule Commands and Send Alert - Stacked vertically */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              {/* Submodule Command Card - Half Height */}
-              <div className="card" style={{ height: 'fit-content' }}>
-                <div className="card-header">
-                  <div className="card-title-group">
-                    <Activity size={24} />
-                    <h3>SUBMODULE COMMANDS</h3>
-                  </div>
-                </div>
-                <div className="card-content">
-                  <div
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '12px',
-                      padding: '12px',
-                      background: 'linear-gradient(135deg, rgba(243, 33, 33, 0.1) 0%, rgba(192, 44, 21, 0.1) 100%)',
-                      borderRadius: '8px',
-                      border: '1px solid rgba(243, 79, 33, 0.3)',
-                    }}
-                  >
-                    <Volume2
-                      size={32}
-                      className="status-info-large"
-                      style={{ flexShrink: 0 }}
+                  <div className="g-field">
+                    <label htmlFor="volume">Volume · {volume} of 21</label>
+                    <input
+                      id="volume"
+                      className="g-slider"
+                      type="range"
+                      min={0}
+                      max={21}
+                      value={volume}
+                      onChange={(event) => handleVolumeChange(Number(event.target.value))}
+                      onMouseUp={(event) => handleVolumeSend(Number((event.target as HTMLInputElement).value))}
+                      onTouchEnd={(event) => handleVolumeSend(Number((event.target as HTMLInputElement).value))}
+                      disabled={!hubDevice?.online}
+                      style={{ backgroundImage: sliderPaint(volume, 21) }}
                     />
-                    <button
-                      className="btn-control"
-                      onClick={handleRestartAmp}
-                      disabled={ampLoading || !hubDevice?.online}
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        gap: '8px',
-                        flex: 1,
-                        fontWeight: 'bold',
-                        background: 'rgba(0, 0, 0, 0.4)',
-                        border: '1px solid rgba(255, 255, 255, 0.2)',
-                        color: '#fff',
-                      }}
-                    >
-                      <RotateCw
-                        size={18}
-                        className={ampLoading ? 'rotating' : ''}
-                      />
-                      {ampLoading ? 'RESTARTING...' : 'RESTART AMPLIFIER'}
+                  </div>
+
+                  <div style={buttonGroupStyle}>
+                    <button className="g-btn g-btn--primary" type="button" onClick={handlePlayStream} disabled={ampLoading || !hubDevice?.online || !streamUrl.trim()}>
+                      <Play size={16} />
+                      Play
+                    </button>
+                    <button className="g-btn g-btn--ghost" type="button" onClick={handleStopStream} disabled={ampLoading || !hubDevice?.online}>
+                      <Square size={16} />
+                      Stop
+                    </button>
+                    <button className="g-btn g-btn--ghost" type="button" onClick={handleRestartAmp} disabled={ampLoading || !hubDevice?.online}>
+                      <RotateCw size={16} className={ampLoading ? 'rotating' : ''} />
+                      Restart
                     </button>
                   </div>
+                </div>
+              </section>
 
-                  {/* RECENT ACTIVITY (Inserted as requested) */}
-                  <div style={{ marginTop: 16 }} />
-
-                  <div className="card-header" style={{ paddingTop: '8px' }}>
-                    <h3>RECENT ACTIVITY</h3>
-                  </div>
-
-                  <div className="activity-list">
-                    {recentActivity?.length > 0 ? (
-                      recentActivity.map((event: any, index: number) => (
-                        <div key={event.id || index} className="activity-item">
-                          <span className="activity-time">{formatActivityTime(event.timestamp)}</span>
-                          <span className="activity-desc">{getActivityDescription(event)}</span>
-                          <span className={`activity-status ${getActivityStatusClass(event)}`}>
-                            {getActivityStatus(event)}
-                          </span>
-                        </div>
-                      ))
-                    ) : (
-                      <div
-                        style={{
-                          textAlign: 'center',
-                          padding: '20px',
-                          color: '#6c757d',
-                          fontSize: '14px',
-                          fontStyle: 'italic',
-                        }}
-                      >
-                        No recent activity
+              <section className="g-pane g-card hub-a-activity">
+                <header>
+                  <h2>Recent activity</h2>
+                  <span className="g-label">last 20</span>
+                </header>
+                {recentActivity.length > 0 ? (
+                  <div className="g-list">
+                    {recentActivity.slice(0, 5).map((event, index) => (
+                      <div className="g-list__row" key={event.id || index}>
+                        <i className={dotClass(activityTone(event))} />
+                        <p>
+                          {getActivityDescription(event)}
+                          <span>{formatTimestamp(event.timestamp)}</span>
+                        </p>
+                        <span className={chipClass(activityTone(event))}>{getActivityStatus(event)}</span>
                       </div>
-                    )}
+                    ))}
                   </div>
+                ) : (
+                  renderEmpty('No recent activity', 'Hub events will appear here after the next heartbeat or command.')
+                )}
+              </section>
 
-                </div>
-              </div>
-
-              {/* Send Alert to Hub Card - Half Height (commented out) */}
-            </div>
-
-            {/* Hub Information Card - Spans 2 rows */}
-            <div className="card" style={{ gridRow: 'span 2' }}>
-              <div className="card-header">
-                <div className="card-title-group">
-                  <Activity size={24} />
-                  <h3>HUB INFORMATION</h3>
-                </div>
-              </div>
-              <div className="card-content">
+              <section className="g-pane g-card hub-a-info">
+                <header>
+                  <h2>About this hub</h2>
+                  <span className="g-label">{hubDevice?.device_id || 'hub'}</span>
+                </header>
                 {hubDevice ? (
                   <>
-                    <div className="info-grid">
-                      <div className="info-item">
-                        <span className="info-label">Device ID:</span>
-                        <span className="info-value">{hubDevice.device_id || 'N/A'}</span>
+                    <dl className="g-info">
+                      <div>
+                        <dt>Device ID</dt>
+                        <dd>{hubDevice.device_id || 'N/A'}</dd>
                       </div>
-                      <div className="info-item">
-                        <span className="info-label">Status:</span>
-                        <span className={`info-value status-indicator ${statusClass}`}>
-                          {hubDevice.online ? 'Online' : 'Offline'}
-                        </span>
+                      <div>
+                        <dt>Status</dt>
+                        <dd>{hubDevice.online ? 'Online' : 'Offline'}</dd>
                       </div>
-                      <div className="info-item">
-                        <span className="info-label">Type:</span>
-                        <span className="info-value">{hubDevice.type || 'N/A'}</span>
+                      <div>
+                        <dt>Type</dt>
+                        <dd>{hubDevice.type || 'N/A'}</dd>
                       </div>
-                      <div className="info-item">
-                        <span className="info-label">IP Address:</span>
-                        <span className="info-value">
-                          {hubDevice.online ? (hubDevice.ip_address || 'N/A') : '-'}
-                        </span>
+                      <div>
+                        <dt>IP address</dt>
+                        <dd>{hubDevice.online ? hubDevice.ip_address || 'N/A' : '-'}</dd>
                       </div>
-                      <div className="info-item">
-                        <span className="info-label">Last Seen:</span>
-                        <span className="info-value">
-                          {hubDevice.last_seen ? new Date(hubDevice.last_seen).toLocaleString() : 'Never'}
-                        </span>
+                      <div>
+                        <dt>Last seen</dt>
+                        <dd>{formatDateTime(hubDevice.last_seen)}</dd>
                       </div>
-                      <div className="info-item">
-                        <span className="info-label">WiFi Signal:</span>
-                        <span className="info-value">
-                          {hubDevice.online ? (hubDevice.wifi_rssi ? `${hubDevice.wifi_rssi} dBm` : 'N/A') : '-'}
-                        </span>
+                      <div>
+                        <dt>Wi-Fi signal</dt>
+                        <dd>{hubDevice.online ? (hubDevice.wifi_rssi ? `${hubDevice.wifi_rssi} dBm` : 'N/A') : '-'}</dd>
                       </div>
-                      <div className="info-item">
-                        <span className="info-label">Uptime:</span>
-                        <span className="info-value">
-                          {hubDevice.online ? (hubDevice.uptime_ms ? `${Math.floor(hubDevice.uptime_ms / 3600000)}h ${Math.floor((hubDevice.uptime_ms % 3600000) / 60000)}m` : 'N/A') : '-'}
-                        </span>
+                      <div>
+                        <dt>Uptime</dt>
+                        <dd>{hubDevice.online ? formatUptime(hubDevice.uptime_ms) : '-'}</dd>
                       </div>
-                      <div className="info-item">
-                        <span className="info-label">Free Heap:</span>
-                        <span className="info-value">
-                          {hubDevice.online ? (hubDevice.free_heap ? `${(hubDevice.free_heap / 1024).toFixed(1)} KB` : 'N/A') : '-'}
-                        </span>
+                      <div>
+                        <dt>Free memory</dt>
+                        <dd>{hubDevice.online ? (hubDevice.free_heap ? `${(hubDevice.free_heap / 1024).toFixed(1)} KB` : 'N/A') : '-'}</dd>
                       </div>
-                    </div>
-
-                    <div className="action-buttons" style={{ marginTop: '20px' }}>
-                      <button
-                        className="btn-action"
-                        onClick={handleRestart}
-                        disabled={restarting || !hubDevice.online}
-                        style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
-                      >
-                        {restarting ? (
-                          <>
-                            <RefreshCw size={18} className="rotating" />
-                            <span>Restarting...</span>
-                          </>
-                        ) : (
-                          <>
-                            <Power size={18} />
-                            <span>Restart Hub</span>
-                          </>
-                        )}
+                    </dl>
+                    <div className="g-row g-row--wrap" style={{ marginTop: 'var(--s-5)', gap: 'var(--s-2)' }}>
+                      <button className="g-btn g-btn--ghost" type="button" onClick={() => setShowRestartModal(true)} disabled={restarting || !hubDevice.online}>
+                        <Power size={16} />
+                        Restart hub
+                      </button>
+                      <button className="g-btn g-btn--ghost" type="button" onClick={() => setShowAlertModal(true)} disabled={!hubDevice.online}>
+                        <Send size={16} />
+                        Send a message
                       </button>
                     </div>
                   </>
                 ) : (
-                  <div className="no-alerts">
-                    <p>No hub device found</p>
-                  </div>
+                  renderEmpty('No hub device found', 'Enroll or reconnect the hub to show its device information.')
                 )}
+              </section>
+            </section>
+          </>
+        )}
+      </main>
+
+      {renderSensorModal(
+        showTemperatureModal,
+        'Temperature · last 24 hours',
+        'Living room · DHT11 · comfort range 18-25 °C',
+        metricText(sensorData?.temperature, '°C'),
+        tempAvg == null ? metricText(sensorData?.temperature, '°C') : `${tempAvg.toFixed(1)}°C`,
+        tempRange ? `${tempRange.min.toFixed(1)}-${tempRange.max.toFixed(1)}` : 'N/A',
+        'temperature',
+      )}
+      {renderSensorModal(
+        showHumidityModal,
+        'Humidity · last 24 hours',
+        'Living room · DHT11 · comfort range 30-60%',
+        metricText(sensorData?.humidity, '%'),
+        humAvg == null ? metricText(sensorData?.humidity, '%') : `${humAvg.toFixed(1)}%`,
+        humRange ? `${humRange.min.toFixed(1)}-${humRange.max.toFixed(1)}` : 'N/A',
+        'humidity',
+      )}
+      {renderSensorModal(
+        showAirQualityModal,
+        'Air quality · last 24 hours',
+        `PM2.5 in µg/m³${sensorData?.aqi != null ? ` · AQI ${sensorData.aqi}` : ''}`,
+        metricText(sensorData?.pm25, 'µg/m³'),
+        airAvg == null ? metricText(sensorData?.pm25, 'µg/m³') : `${airAvg.toFixed(1)}µg/m³`,
+        airRange ? `${airRange.min.toFixed(1)}-${airRange.max.toFixed(1)}` : 'N/A',
+        'pm2_5',
+        airTone === 'warn' || airTone === 'crit',
+      )}
+
+      {showRestartModal && (
+        <div className="g-modal" role="dialog" aria-modal="true" onClick={() => setShowRestartModal(false)}>
+          <div className="g-pane g-modal__card" style={modalNarrowStyle} onClick={(event) => event.stopPropagation()}>
+            <div className="g-modal__head">
+              <div>
+                <h2>Restart the hub?</h2>
+                <p>It will be offline briefly. Sensor readings and the activity list are kept.</p>
               </div>
+            </div>
+            <div className="g-modal__foot">
+              <button className="g-btn g-btn--ghost" type="button" onClick={() => setShowRestartModal(false)}>
+                Cancel
+              </button>
+              <button className="g-btn g-btn--danger" type="button" onClick={handleRestart} disabled={restarting || !hubDevice?.online}>
+                {restarting ? <RefreshCw size={16} className="rotating" /> : <Power size={16} />}
+                {restarting ? 'Restarting' : 'Restart'}
+              </button>
             </div>
           </div>
         </div>
+      )}
 
-        {/* Temperature Modal */}
-        {showTemperatureModal && (
-          <div className="modal-overlay" onClick={closeSensorModal}>
-            <button className="modal-close" onClick={closeSensorModal}>✕</button>
-            <div className="modal-card" onClick={(e) => e.stopPropagation()}>
-              <div className="card">
-                <div className="card-header">
-                  <div className="card-title-group">
-                    <Thermometer size={24} />
-                    <h3>TEMPERATURE HISTORY (24H)</h3>
-                  </div>
-                  {tempStatus && (
-                    <span className={`status-indicator ${tempStatus.status}`}>
-                      {tempStatus.text}
-                    </span>
-                  )}
+      {showAlertModal && (
+        <div className="g-modal" role="dialog" aria-modal="true" onClick={() => setShowAlertModal(false)}>
+          <form className="g-pane g-modal__card" style={modalNarrowStyle} onClick={(event) => event.stopPropagation()} onSubmit={handleSendAlert}>
+            <div className="g-modal__head">
+              <div>
+                <h2>Send a message</h2>
+                <p>Shows on the hub display for the duration you choose.</p>
+              </div>
+              <button className="g-icon-btn" type="button" onClick={() => setShowAlertModal(false)} aria-label="Close">
+                <X size={15} strokeWidth={2} />
+              </button>
+            </div>
+            <div className="g-stack">
+              <div className="g-field">
+                <label htmlFor="hub-message">Message</label>
+                <input
+                  id="hub-message"
+                  type="text"
+                  value={alertMessage}
+                  onChange={(event) => setAlertMessage(event.target.value)}
+                  placeholder="Dinner is ready"
+                  maxLength={64}
+                />
+                <span className="g-field__hint">Up to 64 characters. The display fits two lines.</span>
+              </div>
+              <div className="g-grid g-grid--2">
+                <div className="g-field">
+                  <label htmlFor="hub-message-level">Importance</label>
+                  <select
+                    id="hub-message-level"
+                    value={alertLevel}
+                    onChange={(event) => setAlertLevel(event.target.value as typeof alertLevel)}
+                  >
+                    <option value="info">Normal</option>
+                    <option value="warning">Warning</option>
+                    <option value="error">Urgent</option>
+                    <option value="critical">Critical</option>
+                  </select>
                 </div>
-                <div className="card-content">
-                  {sensorData?.temperature != null && (
-                    <div className="room-details" style={{ marginBottom: '20px' }}>
-                      <div className="detail-item">
-                        <span className="detail-label">CURRENT:</span>
-                        <span className="detail-value" style={{ color: tempStatus?.color }}>
-                          {sensorData.temperature.toFixed(1)}°C
-                        </span>
-                      </div>
-                      <div className="detail-item">
-                        <span className="detail-label">AVG (24H):</span>
-                        <span className="detail-value">
-                          {sensorHistory.length > 0
-                            ? (sensorHistory.reduce((sum, r) => sum + (r.temperature ?? 0), 0) / sensorHistory.length).toFixed(1)
-                            : sensorData.temperature.toFixed(1)}°C
-                        </span>
-                      </div>
-                      <div className="detail-item">
-                        <span className="detail-label">COMFORT RANGE:</span>
-                        <span className="detail-value">18-25°C</span>
-                      </div>
-                    </div>
-                  )}
-                  <ResponsiveContainer width="100%" height={400}>
-                    <LineChart data={prepareChartData('temperature')} margin={{ top: 20, right: 30, left: 20, bottom: 20 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#333" />
-                      <XAxis
-                        dataKey="timestamp"
-                        stroke="#FFF"
-                        tick={{ fill: '#FFF', fontFamily: 'monospace' }}
-                        interval="preserveStartEnd"
-                      />
-                      <YAxis
-                        stroke="#FFF"
-                        tick={{ fill: '#FFF', fontFamily: 'monospace' }}
-                        label={{ value: 'Temperature (°C)', angle: -90, position: 'insideLeft', fill: '#FFF' }}
-                      />
-                      <Tooltip
-                        contentStyle={{
-                          backgroundColor: '#1a1a1a',
-                          border: '2px solid #FF6600',
-                          borderRadius: '4px',
-                          fontFamily: 'monospace',
-                          textTransform: 'uppercase'
-                        }}
-                      />
-                      <Line
-                        type="monotone"
-                        dataKey="value"
-                        stroke={tempStatus?.color || '#FF6600'}
-                        strokeWidth={2}
-                        dot={false}
-                        activeDot={false}
-                        connectNulls={true}
-                      />
-                    </LineChart>
-                  </ResponsiveContainer>
+                <div className="g-field">
+                  <label htmlFor="hub-message-duration">Show for · {alertDuration}s</label>
+                  <input
+                    id="hub-message-duration"
+                    className="g-slider"
+                    type="range"
+                    min={5}
+                    max={60}
+                    value={alertDuration}
+                    onChange={(event) => setAlertDuration(Number(event.target.value))}
+                    style={{ backgroundImage: sliderPaint(alertDuration - 5, 55) }}
+                  />
                 </div>
               </div>
             </div>
-          </div>
-        )}
-
-        {/* Humidity Modal */}
-        {showHumidityModal && (
-          <div className="modal-overlay" onClick={closeSensorModal}>
-            <button className="modal-close" onClick={closeSensorModal}>✕</button>
-            <div className="modal-card" onClick={(e) => e.stopPropagation()}>
-              <div className="card">
-                <div className="card-header">
-                  <div className="card-title-group">
-                    <Droplets size={24} />
-                    <h3>HUMIDITY HISTORY (24H)</h3>
-                  </div>
-                  {humidityStatus && (
-                    <span className={`status-indicator ${humidityStatus.status}`}>
-                      {humidityStatus.text}
-                    </span>
-                  )}
-                </div>
-                <div className="card-content">
-                  {sensorData?.humidity != null && (
-                    <div className="room-details" style={{ marginBottom: '20px' }}>
-                      <div className="detail-item">
-                        <span className="detail-label">CURRENT:</span>
-                        <span className="detail-value" style={{ color: humidityStatus?.color }}>
-                          {sensorData.humidity.toFixed(1)}%
-                        </span>
-                      </div>
-                      <div className="detail-item">
-                        <span className="detail-label">AVG (24H):</span>
-                        <span className="detail-value">
-                          {sensorHistory.length > 0
-                            ? (sensorHistory.reduce((sum, r) => sum + (r.humidity ?? 0), 0) / sensorHistory.length).toFixed(1)
-                            : sensorData.humidity.toFixed(1)}%
-                        </span>
-                      </div>
-                      <div className="detail-item">
-                        <span className="detail-label">COMFORT RANGE:</span>
-                        <span className="detail-value">30-60%</span>
-                      </div>
-                    </div>
-                  )}
-                  <ResponsiveContainer width="100%" height={400}>
-                    <LineChart data={prepareChartData('humidity')} margin={{ top: 20, right: 30, left: 20, bottom: 20 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#333" />
-                      <XAxis
-                        dataKey="timestamp"
-                        stroke="#FFF"
-                        tick={{ fill: '#FFF', fontFamily: 'monospace' }}
-                        interval="preserveStartEnd"
-                      />
-                      <YAxis
-                        stroke="#FFF"
-                        tick={{ fill: '#FFF', fontFamily: 'monospace' }}
-                        label={{ value: 'Humidity (%)', angle: -90, position: 'insideLeft', fill: '#FFF' }}
-                      />
-                      <Tooltip
-                        contentStyle={{
-                          backgroundColor: '#1a1a1a',
-                          border: '2px solid #4FC3F7',
-                          borderRadius: '4px',
-                          fontFamily: 'monospace',
-                          textTransform: 'uppercase'
-                        }}
-                      />
-                      <Line
-                        type="monotone"
-                        dataKey="value"
-                        stroke={humidityStatus?.color || '#4FC3F7'}
-                        strokeWidth={2}
-                        dot={false}
-                        activeDot={false}
-                        connectNulls={true}
-                      />
-                    </LineChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>
+            <div className="g-modal__foot">
+              <button className="g-btn g-btn--ghost" type="button" onClick={() => setShowAlertModal(false)}>
+                Cancel
+              </button>
+              <button className="g-btn g-btn--primary" type="submit" disabled={sendingAlert || !alertMessage.trim()}>
+                <Send size={16} />
+                {sendingAlert ? 'Sending' : 'Send'}
+              </button>
             </div>
-          </div>
-        )}
-
-        {/* Air Quality Modal */}
-        {showAirQualityModal && (
-          <div className="modal-overlay" onClick={closeSensorModal}>
-            <button className="modal-close" onClick={closeSensorModal}>✕</button>
-            <div className="modal-card" onClick={(e) => e.stopPropagation()}>
-              <div className="card">
-                <div className="card-header">
-                  <div className="card-title-group">
-                    <Wind size={24} />
-                    <h3>AIR QUALITY HISTORY (24H)</h3>
-                  </div>
-                  {aqiData && (
-                    <span className={`status-indicator ${aqiData.status}`}>
-                      {aqiData.category}
-                    </span>
-                  )}
-                </div>
-                <div className="card-content">
-                  {sensorData?.pm25 != null && (
-                    <div className="room-details" style={{ marginBottom: '20px' }}>
-                      <div className="detail-item">
-                        <span className="detail-label">CURRENT PM2.5:</span>
-                        <span className="detail-value" style={{ color: aqiData?.color }}>
-                          {sensorData.pm25.toFixed(1)} μg/m³
-                        </span>
-                      </div>
-                      <div className="detail-item">
-                        <span className="detail-label">AQI:</span>
-                        <span className="detail-value" style={{ color: aqiData?.color }}>
-                          {sensorData.aqi}
-                        </span>
-                      </div>
-                      <div className="detail-item">
-                        <span className="detail-label">AVG (24H):</span>
-                        <span className="detail-value">
-                          {sensorHistory.length > 0
-                            ? (sensorHistory.reduce((sum, r) => sum + (r.pm2_5 ?? 0), 0) / sensorHistory.length).toFixed(1)
-                            : sensorData.pm25.toFixed(1)} μg/m³
-                        </span>
-                      </div>
-                    </div>
-                  )}
-                  <ResponsiveContainer width="100%" height={400}>
-                    <LineChart data={prepareChartData('pm2_5')} margin={{ top: 20, right: 30, left: 20, bottom: 20 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#333" />
-                      <XAxis
-                        dataKey="timestamp"
-                        stroke="#FFF"
-                        tick={{ fill: '#FFF', fontFamily: 'monospace' }}
-                        interval="preserveStartEnd"
-                      />
-                      <YAxis
-                        stroke="#FFF"
-                        tick={{ fill: '#FFF', fontFamily: 'monospace' }}
-                        label={{ value: 'PM2.5 (μg/m³)', angle: -90, position: 'insideLeft', fill: '#FFF' }}
-                      />
-                      <Tooltip
-                        contentStyle={{
-                          backgroundColor: '#1a1a1a',
-                          border: `2px solid ${aqiData?.color || '#00FF88'}`,
-                          borderRadius: '4px',
-                          fontFamily: 'monospace',
-                          textTransform: 'uppercase'
-                        }}
-                      />
-                      <Line
-                        type="monotone"
-                        dataKey="value"
-                        stroke={aqiData?.color || '#00FF88'}
-                        strokeWidth={2}
-                        dot={false}
-                        activeDot={false}
-                        connectNulls={true}
-                      />
-                    </LineChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
+          </form>
+        </div>
+      )}
     </ProtectedRoute>
   );
 }

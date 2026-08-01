@@ -909,8 +909,8 @@ function calculateAQI(pm25: number): number {
 
 // Get AQI category and color
 export function getAQICategory(aqi: number): { category: string; color: string; status: string } {
-  if (aqi <= 50) return { category: 'Good', color: 'var(--success)', status: 'status-online' };
-  if (aqi <= 100) return { category: 'Moderate', color: 'var(--warning)', status: 'status-warning' };
+  if (aqi <= 50) return { category: 'Good', color: 'var(--ok)', status: 'status-online' };
+  if (aqi <= 100) return { category: 'Moderate', color: 'var(--warn)', status: 'status-warning' };
   if (aqi <= 150) return { category: 'Unhealthy for Sensitive Groups', color: '#FF9800', status: 'status-warning' };
   if (aqi <= 200) return { category: 'Unhealthy', color: 'var(--danger)', status: 'status-offline' };
   if (aqi <= 300) return { category: 'Very Unhealthy', color: '#9C27B0', status: 'status-offline' };
@@ -1411,6 +1411,8 @@ export async function getGasReadingsForDashboard(): Promise<GasReading[]> {
           sensor_id: device.device_id,
           location: locationName,
           ppm: coPpm,
+          online: device.online,
+          last_seen: device.last_seen ?? null,
           gas_level: currentData.sensors.gas_level || 0,
           status,
           history,
