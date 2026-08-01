@@ -346,7 +346,7 @@ export function AdminManagementCard({ isExpanded = false, devices = [] }: AdminM
         </header>
 
         {!isExpanded ? (
-          <div className="g-grid g-grid--3">
+          <div className="g-grid g-grid--3 g-grid--stats">
             <div className="g-tile"><p className="g-label">Admins</p><div className="g-metric-sm g-num">{admins.length}</div></div>
             <div className="g-tile"><p className="g-label">Users</p><div className="g-metric-sm g-num">{users.length}</div></div>
             <div className="g-tile"><p className="g-label">Devices</p><div className="g-metric-sm g-num">{devices.length}</div></div>

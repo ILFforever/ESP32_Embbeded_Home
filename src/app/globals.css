@@ -1040,14 +1040,76 @@ body {
 }
 @media (max-width: 780px) {
   .g-page { padding: 16px 16px 32px; }
-  .g-grid--2, .g-grid--3, .g-grid--4 { grid-template-columns: 1fr; }
+  /* Compact numeric tiles read fine two-up on a phone; collapsing a 4-up
+     stat strip to one column turned four small readouts into four
+     full-width blocks and pushed the real content off the first screen. */
+  .g-grid--2, .g-grid--3 { grid-template-columns: 1fr; }
+  .g-grid--4 { grid-template-columns: repeat(2, 1fr); }
+  /* Opt-in: a grid of compact numeric readouts. Stays multi-column on a
+     phone because stacking three one-line numbers into three full-width
+     blocks is pure scroll cost. */
+  .g-grid--stats { grid-template-columns: repeat(3, 1fr); gap: var(--s-2); }
+  .g-grid--stats .g-tile { padding: 12px 13px; }
+  .g-grid--stats .g-metric-sm { font-size: 26px; }
   .g-title h1 { font-size: 27px; }
   .g-metric-lg { font-size: 42px; }
-  .g-bar { flex-wrap: wrap; padding: 10px 12px; border-radius: var(--r-pane); }
+  /* The toolbar is sticky, so every pixel of it is permanently gone from
+     a 844px-tall screen. Tighten it and let the nav scroll rather than
+     wrap onto a third row. */
+  .g-bar { flex-wrap: wrap; gap: var(--s-2); padding: 8px 12px; border-radius: var(--r-pane); }
+  .g-bar__brand { font-size: 14px; }
+  .g-pill { padding: 5px 11px; font-size: 12px; }
   .g-page::before { height: 128px; }
   .g-seg { margin: 0; width: 100%; overflow-x: auto; }
   .g-input-group input { padding-right: 13px; }
   .g-input-group select { position: static; transform: none; width: 100%; margin-top: 8px; }
+}
+
+/* ---------- TOUCH TARGETS --------------------------------
+   Measured on a 390px viewport: .g-btn rendered 40px tall and the icon
+   buttons 34px, against a 44px minimum. Rather than inflate the desktop
+   design, grow the hit area only where the pointer is coarse.
+
+   Where the painted control must stay its designed size — the 51x31
+   switch is an iOS spec, not a guess — a transparent ::before extends
+   the target without changing anything visible.
+--------------------------------------------------------- */
+@media (pointer: coarse) {
+  .g-btn,
+  .g-action { min-height: 44px; }
+
+  .g-icon-btn,
+  .g-theme { width: 44px; height: 44px; }
+
+  .g-seg a,
+  .g-seg button,
+  .g-back { min-height: 44px; display: inline-flex; align-items: center; }
+
+  /* Selects and sliders inherit desktop heights that are too small to hit.
+     The slider's painted track stays 5px — it is drawn as a centred
+     background-image, so growing the element just grows the target. */
+  .g-field select,
+  .g-field input,
+  .g-input-group select { min-height: 44px; }
+  .g-slider { height: 44px; }
+
+  /* Keep the switch 51x31; widen only what the finger hits. */
+  .g-switch { position: relative; }
+  .g-switch::before {
+    content: "";
+    position: absolute;
+    left: 0; right: 0;
+    top: 50%;
+    height: 44px;
+    transform: translateY(-50%);
+  }
+
+  /* Standalone text links need a real target, not just their line box. */
+  .g-field a,
+  .login__link { display: inline-flex; align-items: center; min-height: 44px; padding: 0 4px; margin: 0 -4px; }
+
+  /* Table row actions sit tight on desktop; give them room on touch. */
+  .g-table .g-btn { min-height: 40px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
