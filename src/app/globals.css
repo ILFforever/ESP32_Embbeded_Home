@@ -928,18 +928,21 @@ select {
 .dash-hero p { margin: 0 0 var(--s-4); color: var(--ink-2); font-size: 14px; max-width: 52ch; }
 .dash-hero .g-tile { min-width: 232px; }
 
+/* Admin left the home page for /admin, so the third row is two cards and
+   the activity feed takes the freed height — "what happened today" is the
+   thing people scroll, and it was the one card being cut short. */
 .dash-bento {
   display: grid; gap: var(--s-4);
   grid-template-columns: repeat(3, 1fr);
   grid-template-areas:
     "climate air    alerts"
     "doors   cast   alerts"
-    "devices admin  nfc";
+    "devices nfc    alerts";
 }
 .d-climate { grid-area: climate; } .d-air { grid-area: air; }
 .d-alerts  { grid-area: alerts; }  .d-doors { grid-area: doors; }
 .d-cast    { grid-area: cast; }    .d-devices { grid-area: devices; }
-.d-admin   { grid-area: admin; }   .d-nfc { grid-area: nfc; }
+.d-nfc     { grid-area: nfc; }
 
 .dash-bento > section {
   min-width: 0;
@@ -1000,7 +1003,10 @@ select {
 }
 
 @media (max-width: 780px) {
-  .dash-bento { grid-template-columns: 1fr; grid-template-areas: "climate" "air" "alerts" "doors" "cast" "devices" "admin" "nfc"; }
+  /* Activity first on a phone. The hero and the stat strip have already
+     answered "is anything wrong"; what is left to scroll for is what
+     happened. */
+  .dash-bento { grid-template-columns: 1fr; grid-template-areas: "alerts" "climate" "air" "doors" "devices" "cast" "nfc"; }
   .dash-hero { grid-template-columns: 1fr; }
   .dash-modal-grid, .dash-modal-grid--2 { grid-template-columns: 1fr; }
 }

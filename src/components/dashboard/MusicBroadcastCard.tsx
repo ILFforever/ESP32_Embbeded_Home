@@ -223,9 +223,18 @@ export function MusicBroadcastCard({ isExpanded = false }: MusicBroadcastCardPro
           <div className="g-tile" aria-hidden="true">
             <Volume2 size={24} color="currentColor" />
           </div>
+          {/* "Volume 10 of 21 · waiting for a device" is the control panel
+              describing its own slider position. On the home page the only
+              question is whether you can play something through the house
+              right now. The volume lives in the expanded view, next to the
+              slider that changes it. */}
           <div>
-            <strong>Broadcast audio</strong>
-            <p className="g-sub">Volume {volume} of 21 · {isDeviceAvailable(target) ? 'ready' : 'waiting for a device'}</p>
+            <strong>{isDeviceAvailable(target) ? 'Ready to play' : 'No speaker available'}</strong>
+            <p className="g-sub">
+              {isDeviceAvailable(target)
+                ? `Sound will come out of the ${target === 'both' ? 'doorbell and hub' : target}.`
+                : 'The doorbell and hub are offline, so there is nothing to play through.'}
+            </p>
           </div>
         </div>
       ) : (

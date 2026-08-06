@@ -12,6 +12,7 @@ import {
 import { RefreshCw, Thermometer } from 'lucide-react';
 import type { TemperatureData } from '@/types/dashboard';
 import Sparkline from '@/components/glass/Sparkline';
+import { labelForId } from '@/utils/deviceNames';
 import { lastSeenLabel, relativeTime } from '@/utils/time';
 import {
   findHubDevice,
@@ -77,9 +78,8 @@ export function TemperatureCard({ isExpanded = false }: TemperatureCardProps) {
         const sensorDevice = devices.find(d => d.device_id === sensorId);
         const deviceSensors = await getDeviceSensors(sensorId);
         const sensorReadings = await getSensorReadings(sensorId, 24);
-        const match = sensorId.match(/ss_(\d+)/);
-        const sensorNumber = match ? parseInt(match[1], 10) : sensorId;
-        const roomName = match ? `Sensor ${sensorNumber}` : sensorId;
+        // "Sensor 2" was the id rewritten, not a room. See deviceNames.ts.
+        const roomName = labelForId(sensorId, sensorDevice?.name);
 
         if (deviceSensors && deviceSensors.sensors) {
           const temperature = deviceSensors.sensors.temperature || 0;

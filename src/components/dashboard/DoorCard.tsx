@@ -252,20 +252,30 @@ export function DoorCard({ doorsWindows, isExpanded = false }: DoorCardProps) {
             {doors.slice(0, 3).map(door => {
               const tone = statusTone(door.status);
 
+              /* An offline lock has no current state — only the last one we
+                 were told. The expanded view already said so; the compact
+                 one asserted "Unlocked since Dec 8" for a board that has
+                 been silent since March, while the stat strip above it
+                 said "Not reporting". */
+              const online = door.online ?? false;
+
               return (
                 <div key={door.id} className="g-row g-row--between">
                   <div>
                     <div className="g-row">
-                      <i className={`g-dot g-dot--${tone}`} />
+                      <i className={`g-dot g-dot--${online ? tone : 'off'}`} />
                       <strong>{door.name}</strong>
                     </div>
                     <p className="g-sub">
-                      {statusCopy(door.status)} since {formatTimestamp(door.last_changed)}
+                      {online
+                        ? `${statusCopy(door.status)} since ${formatTimestamp(door.last_changed)}`
+                        : `Not reporting · last ${statusCopy(door.status).toLowerCase()} ${formatTimestamp(door.last_changed)}`}
                     </p>
                   </div>
                   <button
                     className="g-switch"
                     type="button"
+                    disabled={!online}
                     aria-pressed={door.status === 'locked'}
                     aria-label={`${door.name} lock state`}
                     tabIndex={-1}

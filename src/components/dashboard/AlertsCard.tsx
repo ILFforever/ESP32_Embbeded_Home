@@ -26,8 +26,9 @@ import {
 import type { Alert } from '@/types/dashboard';
 import { alertLevelToType } from '@/types/dashboard';
 import { markAlertAsRead } from '@/services/devices.service';
-import { getAlertPriorityCategory, sortAlertsByPriority, type ScoredAlert } from '@/utils/alertScoring';
+import { URGENT_SCORE, getAlertPriorityCategory, sortAlertsByPriority, type ScoredAlert } from '@/utils/alertScoring';
 import { alertTags, getAlertTitle } from '@/utils/alertText';
+import { labelForId } from '@/utils/deviceNames';
 import { relativeTime } from '@/utils/time';
 
 interface AlertsCardProps {
@@ -133,20 +134,15 @@ export function AlertsCard({ alerts, isExpanded = false, onRefresh }: AlertsCard
     }
   };
 
-  const sortedAlerts = useMemo(() => {
-    const allSortedAlerts = sortAlertsByPriority(alerts);
-    const unreadUnknownFaceAlerts = allSortedAlerts.filter(
-      alert => {
-        const tags = alertTags(alert);
-        return !alert.read && tags.includes('face-detection') && tags.includes('unknown');
-      }
-    );
-    const otherAlerts = allSortedAlerts.filter(
-      alert => !unreadUnknownFaceAlerts.some(unknown => unknown.id === alert.id)
-    );
-
-    return [...unreadUnknownFaceAlerts.slice(0, 3), ...otherAlerts].sort((a, b) => b.score - a.score);
-  }, [alerts]);
+  /* Every alert, sorted. This used to keep only the first three unread
+     unknown-face alerts and drop the rest *from the set*, not from the
+     view — so the expanded list, the filters and the urgent count were all
+     computed over a subset. That is why the card said "11 urgent" while
+     the dashboard said 37: 26 unknown-face alerts had been thrown away
+     before anything was counted.
+     Capping the flood is a display concern, so it now happens where the
+     compact list is built and nowhere else. */
+  const sortedAlerts = useMemo(() => sortAlertsByPriority(alerts), [alerts]);
 
   const filteredAlerts = useMemo(() => {
     if (selectedFilters.length === 0) return sortedAlerts;
@@ -155,7 +151,31 @@ export function AlertsCard({ alerts, isExpanded = false, onRefresh }: AlertsCard
 
   const unreadAlerts = filteredAlerts.filter(a => !a.read);
   const readAlerts = filteredAlerts.filter(a => a.read);
-  const highPriorityCount = sortedAlerts.filter(a => !a.read && a.score >= 50).length;
+
+  /* Ten rows for the home page, at most three about unknown faces — a busy
+     doorbell will otherwise fill the card with one repeated event and hide
+     everything else. Ten because this card now spans the full height of
+     the bento grid; at six it ended half empty.
+     This narrows what is shown, never what is counted. */
+  const compactAlerts = useMemo(() => {
+    let unknownFaces = 0;
+    const rows: ScoredAlert[] = [];
+
+    for (const alert of unreadAlerts) {
+      const tags = alertTags(alert);
+      if (tags.includes('face-detection') && tags.includes('unknown')) {
+        if (unknownFaces >= 3) continue;
+        unknownFaces += 1;
+      }
+      rows.push(alert);
+      if (rows.length === 10) break;
+    }
+    return rows;
+  }, [unreadAlerts]);
+  /* URGENT_SCORE, not a literal 50. The dashboard hero used to count
+     level === 'IMPORTANT' while this counted score >= 50, so the same
+     screen said "none urgent" and "11 urgent" at once. */
+  const highPriorityCount = sortedAlerts.filter(a => !a.read && a.score >= URGENT_SCORE).length;
 
   const availableCategories = useMemo(() => {
     const categories = new Set<string>();
@@ -194,7 +214,7 @@ export function AlertsCard({ alerts, isExpanded = false, onRefresh }: AlertsCard
       <i className={levelDotClass(alert.level)} />
       <p>
         {getAlertTitle(alert)}
-        <span>{relativeTime(alert.timestamp)} · {alert.source}</span>
+        <span>{relativeTime(alert.timestamp)} · {labelForId(alert.source)}</span>
         {isExpanded && (
           <>
             <span>{alert.message}</span>
@@ -280,7 +300,7 @@ export function AlertsCard({ alerts, isExpanded = false, onRefresh }: AlertsCard
                already emits the right markup; the compact view just was
                not using it. */
             <div className="g-list">
-              {sortAlertsByPriority(unreadAlerts).slice(0, 6).map(alert => renderAlertRow(alert))}
+              {compactAlerts.map(alert => renderAlertRow(alert))}
             </div>
           )}
         </div>

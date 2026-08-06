@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { getCookie } from '@/utils/cookies';
+import { deviceLabel } from '@/utils/deviceNames';
 import type {
   DevicesStatus,
   Alert,
@@ -1405,10 +1406,11 @@ export async function getGasReadingsForDashboard(): Promise<GasReading[]> {
         if (coPpm > 150) status = 'danger';
         else if (coPpm > 100) status = 'warning';
 
-        // Extract sensor number from device_id (e.g., ss_001 → 1, ss_002 → 2)
-        const match = device.device_id.match(/ss_(\d+)/);
-        const sensorNumber = match ? parseInt(match[1], 10) : gasReadings.length + 1;
-        const locationName = `Sensor ${sensorNumber}`;
+        /* "Sensor 1" is the device id with the underscore taken out — it
+           told the reader nothing and it was the label on the home page.
+           deviceLabel prefers the name someone typed, then falls back to
+           the room from floorPlan.ts ("Kitchen sensor"). */
+        const locationName = deviceLabel(device);
 
         gasReadings.push({
           sensor_id: device.device_id,

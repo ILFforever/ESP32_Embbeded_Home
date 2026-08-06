@@ -20,6 +20,8 @@ import {
 } from '@/services/devices.service';
 import type { DevicesStatus, GasReading, Alert } from '@/types/dashboard';
 import { getAlertTitle } from '@/utils/alertText';
+import { countUrgent, isUrgent, sortAlertsByPriority } from '@/utils/alertScoring';
+import { deviceLabel, labelForId, roomName } from '@/utils/deviceNames';
 import { greeting, relativeTime } from '@/utils/time';
 
 export default function DashboardPage() {
@@ -155,8 +157,9 @@ export default function DashboardPage() {
     .filter(device => device.device_id.startsWith('dl_'))
     .map(device => ({
       id: device.device_id,
-      name: device.name || device.device_id,
-      location: 'Door',
+      // Not device_id. "dl_001" was the label on the Doors card.
+      name: deviceLabel(device),
+      location: roomName(device.device_id) ?? 'Door',
       type: 'door' as const,
       status: doorLockStates[device.device_id] || 'locked',
       last_changed: device.last_seen || new Date().toISOString(),
@@ -164,13 +167,137 @@ export default function DashboardPage() {
       online: device.online
     })) || [];
 
+  /* Everything below reads the house, not the service.
+     A reading from an offline device is not a reading — it is the last
+     thing we heard before it went quiet, and presenting it as current is
+     the one mistake this page must not make. */
+  const onlineLocks = doorsWindows.filter(d => d.online);
+  const unlockedLocks = onlineLocks.filter(d => d.status !== 'locked');
+  const doorSummary: { text: string; tone: 'ok' | 'warn' | 'off' } =
+    doorsWindows.length === 0
+      ? { text: 'None paired', tone: 'off' }
+      : onlineLocks.length === 0
+        ? { text: 'Not reporting', tone: 'off' }
+        : unlockedLocks.length > 0
+          ? { text: `${unlockedLocks.length} unlocked`, tone: 'warn' }
+          : { text: 'All locked', tone: 'ok' };
+
+  const liveGas = gasReadings.filter(g => g.online !== false);
+  const worstGas = liveGas.find(g => g.status === 'danger') ?? liveGas.find(g => g.status === 'warning');
+  const airSummary: { text: string; tone: 'ok' | 'warn' | 'off' } =
+    gasReadings.length === 0
+      ? { text: 'No sensors', tone: 'off' }
+      : liveGas.length === 0
+        ? { text: 'Not reporting', tone: 'off' }
+        : worstGas?.status === 'danger'
+          ? { text: 'Gas detected', tone: 'warn' }
+          : worstGas
+            ? { text: 'Raised', tone: 'warn' }
+            : { text: 'Clear', tone: 'ok' };
+
+  const urgent = countUrgent(alerts);
+
+  /* One headline, chosen by what is actually worst — not by what happened
+     most recently. A months-old log line used to outrank six offline
+     devices simply because it was an alert. */
+  const home = ((): {
+    summary: string;
+    headline: string | null;
+    detail: string;
+    tone: 'ok' | 'warn' | 'crit';
+    action: { card: string; label: string };
+    /* The tile beside the headline restates the headline's own number.
+       It used to always show the alert count, which the stat strip below
+       already carries — the same "37 urgent" twice, 200px apart. */
+    tile: { label: string; value: string; small: string };
+  } => {
+    const offline = devicesStatus?.summary.offline ?? 0;
+    const topUrgent = sortAlertsByPriority(alerts).find(a => isUrgent(a));
+
+    if (!systemOnline) {
+      return {
+        summary: 'The home hub is not answering, so nothing here is live.',
+        headline: 'The hub has stopped reporting',
+        detail: 'Until it answers, readings on this page are the last ones we heard. Controls are disabled rather than sending commands into the dark.',
+        tone: 'crit',
+        action: { card: 'system-status', label: 'See the devices' },
+        tile: { label: 'Connected', value: '0', small: `of ${devicesStatus?.summary.total ?? 0}` },
+      };
+    }
+
+    if (worstGas?.status === 'danger') {
+      const where = labelForId(worstGas.sensor_id);
+      return {
+        summary: `Gas is above the safe level near the ${where.toLowerCase()}.`,
+        headline: `Gas above the safe level · ${where}`,
+        detail: `${worstGas.ppm.toFixed(0)} ppm, ${relativeTime(worstGas.last_seen)}. Ventilate the room and check the source.`,
+        tone: 'crit',
+        action: { card: 'gas', label: 'See the readings' },
+        tile: { label: 'Gas level', value: worstGas.ppm.toFixed(0), small: 'ppm' },
+      };
+    }
+
+    if (unlockedLocks.length > 0) {
+      const door = unlockedLocks[0];
+      return {
+        summary: `${unlockedLocks.length === 1 ? 'A door is' : `${unlockedLocks.length} doors are`} unlocked. Everything else looks normal.`,
+        headline: unlockedLocks.length === 1
+          ? `${deviceLabel({ device_id: door.id, name: door.name })} is unlocked`
+          : `${unlockedLocks.length} doors are unlocked`,
+        detail: `Since ${relativeTime(door.last_changed)}. You can lock up from here.`,
+        tone: 'warn',
+        action: { card: 'doors', label: 'Lock up' },
+        tile: {
+          label: 'Unlocked',
+          value: String(unlockedLocks.length),
+          small: `of ${onlineLocks.length} ${onlineLocks.length === 1 ? 'door' : 'doors'}`,
+        },
+      };
+    }
+
+    if (offline > 0) {
+      return {
+        summary: `${offline} ${offline === 1 ? 'device has' : 'devices have'} gone quiet. Readings from ${offline === 1 ? 'it' : 'them'} are not current.`,
+        headline: `${offline} ${offline === 1 ? 'device has' : 'devices have'} stopped reporting`,
+        detail: 'Their last readings are still shown, marked as not current. Check power and Wi-Fi at the board.',
+        tone: 'warn',
+        action: { card: 'system-status', label: 'See which ones' },
+        tile: {
+          label: 'Not reporting',
+          value: String(offline),
+          small: `of ${devicesStatus?.summary.total ?? 0}`,
+        },
+      };
+    }
+
+    if (topUrgent) {
+      return {
+        summary: 'Something needs a look. Everything else is normal.',
+        headline: getAlertTitle(topUrgent),
+        detail: `${labelForId(topUrgent.source)} · ${relativeTime(topUrgent.timestamp)}`,
+        tone: 'warn',
+        action: { card: 'alerts', label: 'See the alert' },
+        tile: { label: 'Needs attention', value: String(urgent), small: 'urgent' },
+      };
+    }
+
+    return {
+      summary: 'Everything is quiet. Doors locked, air clear, all devices reporting.',
+      headline: null,
+      detail: '',
+      tone: 'ok',
+      action: { card: 'alerts', label: 'What happened today' },
+      tile: { label: 'Needs attention', value: '0', small: 'all clear' },
+    };
+  })();
+
   if (loading) {
     return (
       <div className="g-waiting">
         <div className="g-waiting__inner">
           <div className="g-spinner" aria-hidden="true" />
           <h1>{greeting()}</h1>
-          <p aria-live="polite">Fetching devices, sensors and alerts.</p>
+          <p aria-live="polite">Checking doors, air and devices.</p>
         </div>
       </div>
     );
@@ -253,81 +380,74 @@ export default function DashboardPage() {
 
         <div className="g-title">
           <h1>{greeting()}</h1>
-          <p>
-            {!systemOnline
-              ? 'The backend is not reporting as online. Device cards will recover when the service responds.'
-              : allDevicesOnline
-                ? 'Everything is running normally. Updated just now.'
-                : `${devicesStatus?.summary.offline || 0} device${devicesStatus?.summary.offline === 1 ? ' needs' : 's need'} attention. Updated just now.`}
-          </p>
+          <p>{home.summary}</p>
         </div>
 
-        {(() => {
-          const topAlert = alerts.find(a => !a.read) ?? alerts[0];
-          const offlineCount = devicesStatus?.summary.offline || 0;
-          const unreadCount = alerts.filter(a => !a.read).length;
-          const urgentCount = alerts.filter(a => !a.read && a.level === 'IMPORTANT').length;
-          return (!systemOnline || !allDevicesOnline || alerts.length > 0) && (
+        {home.headline && (
           <div className="g-pane dash-hero">
             <div>
-              {/* Name the problem, then offer the fix. "Check the home status"
-                  is a label, not information, and alert.message is the system
-                  talking to itself ("hb_001: Command 'mic_stop' failed"). */}
+              {/* Whatever is actually wrong, named the way a person would
+                  say it. This used to lead with the newest alert whatever
+                  it was, so the top of the home page read "Command
+                  'mic_stop' failed · hb_001 · Mar 23" — the system talking
+                  to itself, about something that happened in March, while
+                  six devices sat offline unmentioned. Order now: the hub,
+                  then doors, then devices, then a genuinely urgent recent
+                  alert. */}
               <h2>
-                <span className={`g-dot ${systemOnline ? 'g-dot--warn' : 'g-dot--crit'}`}></span>{' '}
-                {!systemOnline
-                  ? 'The hub has stopped reporting'
-                  : topAlert
-                    ? getAlertTitle(topAlert)
-                    : `${offlineCount} device${offlineCount === 1 ? ' has' : 's have'} stopped reporting`}
+                <span className={`g-dot g-dot--${home.tone}`} />{' '}
+                {home.headline}
               </h2>
-              <p>
-                {!systemOnline
-                  ? 'Nothing on this page is live until the service responds. Device controls are disabled to avoid sending commands into the dark.'
-                  : topAlert
-                    ? `${topAlert.source} · ${relativeTime(topAlert.timestamp)}`
-                    : 'Open devices to see which ones, and when they were last heard from.'}
-              </p>
+              <p>{home.detail}</p>
               <div className="g-row g-row--wrap">
-                <button className="g-btn g-btn--primary" onClick={() => openExpandedCard(alerts.length ? 'alerts' : 'system-status')}>
-                  {topAlert ? 'See the alert' : 'Open devices'}
+                <button className="g-btn g-btn--primary" onClick={() => openExpandedCard(home.action.card)}>
+                  {home.action.label}
                 </button>
-                <button className="g-btn g-btn--ghost" onClick={() => openExpandedCard('system-status')}>Open devices</button>
+                <button className="g-btn g-btn--ghost" onClick={() => openExpandedCard('alerts')}>
+                  What happened today
+                </button>
               </div>
             </div>
-            {/* A bare "50" says nothing. Name what is being counted and
-                qualify it, the way the stat strip does. */}
-            <div className={`g-tile ${systemOnline ? 'is-warn' : 'is-crit'}`}>
-              <p className="g-label">{unreadCount ? 'Unread alerts' : 'Devices offline'}</p>
+            <div className={`g-tile ${home.tone === 'crit' ? 'is-crit' : home.tone === 'warn' ? 'is-warn' : ''}`}>
+              <p className="g-label">{home.tile.label}</p>
               <div className="g-metric-sm g-num">
-                {unreadCount || offlineCount}
-                <small>
-                  {unreadCount
-                    ? (urgentCount ? `${urgentCount} urgent` : 'none urgent')
-                    : `of ${devicesStatus?.summary.total ?? 0}`}
-                </small>
+                {home.tile.value}
+                <small>{home.tile.small}</small>
               </div>
             </div>
           </div>
-        );
-        })()}
+        )}
 
+        {/* The four questions someone actually opens this page with: are the
+            doors shut, is the air okay, how warm is it, is everything still
+            talking. It used to be Devices online / Sensors reporting /
+            Open alerts / Backend — three restatements of the header plus a
+            service health readout no resident has a use for. */}
         <div className="g-grid g-grid--4">
-          <div className="g-pane g-card">
-            <p className="g-label">Devices online</p>
-            <div className="g-metric-sm g-num">{devicesStatus?.summary.online ?? 0}<small>of {devicesStatus?.summary.total ?? 0}</small></div>
+          <div className={`g-pane g-card ${doorSummary.tone === 'warn' ? 'is-warn' : ''}`}>
+            <p className="g-label">Doors</p>
+            <div className="g-metric-sm">{doorSummary.text}</div>
           </div>
-          <div className="g-pane g-card">
-            <p className="g-label">Sensors reporting</p>
-            <div className="g-metric-sm g-num">{gasReadings.length}<small>gas readings</small></div>
+          <div className={`g-pane g-card ${airSummary.tone === 'warn' ? 'is-warn' : ''}`}>
+            <p className="g-label">Air</p>
+            <div className="g-metric-sm">{airSummary.text}</div>
           </div>
-          <div className={`g-pane g-card ${alerts.length ? 'is-warn' : ''}`}>
-            <p className="g-label">Open alerts</p>
-            <div className="g-metric-sm g-num">{alerts.length}</div>
+          <div className={`g-pane g-card ${urgent ? 'is-warn' : ''}`}>
+            <p className="g-label">Needs attention</p>
+            {/* "urgent", not "since yesterday" — the count is not scoped to
+                a day, and inventing a timeframe for a number is how the
+                three contradictory alert counts started. */}
+            <div className="g-metric-sm g-num">
+              {urgent}
+              <small>{urgent === 0 ? 'all clear' : 'urgent'}</small>
+            </div>
           </div>
-          <div className="g-pane g-card">
-            <p className="g-label">Backend</p>
-            <div className="g-metric-sm">{systemOnline ? 'Online' : 'Offline'}</div>
+          <div className={`g-pane g-card ${offlineTotal ? 'is-warn' : ''}`}>
+            <p className="g-label">Connected</p>
+            <div className="g-metric-sm g-num">
+              {devicesStatus?.summary.online ?? 0}
+              <small>of {devicesStatus?.summary.total ?? 0} devices</small>
+            </div>
           </div>
         </div>
 
@@ -383,18 +503,9 @@ export default function DashboardPage() {
             </section>
 
 
-            {user?.role === 'admin' && (
-              <section
-                className="g-pane g-card d-admin"
-                role="button"
-                tabIndex={0}
-                onKeyDown={(event) => handleCardKey(event, 'admin')}
-                onClick={() => openExpandedCard('admin')}
-              >
-                <AdminManagementCard devices={devicesStatus?.devices || []} />
-              </section>
-            )}
-            
+            {/* The Admin tile is gone from the home page. "Admins 4 · Users 1
+                · Devices 6" is a console readout, and it now has a page of
+                its own at /admin, one nav click away. */}
             <section
               className="g-pane g-card d-nfc"
               role="button"

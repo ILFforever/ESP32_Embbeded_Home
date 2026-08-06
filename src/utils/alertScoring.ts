@@ -231,3 +231,27 @@ export function getPriorityColorClass(score: number): string {
   const category = getAlertPriorityCategory(score);
   return `priority-${category}`;
 }
+
+/**
+ * The one definition of "urgent".
+ *
+ * There were two. The dashboard hero counted `level === 'IMPORTANT'` and
+ * the alerts card counted `score >= 50`, so the same screen said "none
+ * urgent" and "11 urgent" at the same time. Score is the better of the two
+ * because it already folds in level, read state, recency and tags — an
+ * IMPORTANT alert from March is not urgent, and the level alone cannot
+ * know that.
+ *
+ * Anything that shows the reader a count of things needing attention must
+ * come through here.
+ */
+export const URGENT_SCORE = 50;
+
+export function isUrgent(alert: Alert, now: Date = new Date()): boolean {
+  if (alert.read) return false;
+  return calculateAlertScore(alert, now) >= URGENT_SCORE;
+}
+
+export function countUrgent(alerts: Alert[], now: Date = new Date()): number {
+  return alerts.reduce((n, alert) => n + (isUrgent(alert, now) ? 1 : 0), 0);
+}

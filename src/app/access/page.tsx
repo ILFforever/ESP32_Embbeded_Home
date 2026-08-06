@@ -9,6 +9,7 @@ import { getAlerts, getAllDevices, getLockStatus } from '@/services/devices.serv
 import type { Alert, DevicesStatus, DoorWindow } from '@/types/dashboard';
 import { alertLevelToType } from '@/types/dashboard';
 import { alertTags, getAlertTitle } from '@/utils/alertText';
+import { deviceLabel, labelForId, roomName } from '@/utils/deviceNames';
 import { relativeTime } from '@/utils/time';
 
 /**
@@ -81,8 +82,8 @@ export default function AccessPage() {
         .filter(device => device.device_id.startsWith('dl_'))
         .map(device => ({
           id: device.device_id,
-          name: device.name || device.device_id,
-          location: 'Door',
+          name: deviceLabel(device),
+          location: roomName(device.device_id) ?? 'Door',
           type: 'door' as const,
           status: lockStates[device.device_id] || 'locked',
           last_changed: device.last_seen || new Date().toISOString(),
@@ -184,7 +185,7 @@ export default function AccessPage() {
                     <p>
                       {title}
                       <span>
-                        {relativeTime(alert.timestamp)} · {alert.source}
+                        {relativeTime(alert.timestamp)} · {labelForId(alert.source)}
                         {repeats > 1 && ` · ${repeats} times`}
                       </span>
                     </p>

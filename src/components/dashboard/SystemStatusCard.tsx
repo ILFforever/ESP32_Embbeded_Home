@@ -187,15 +187,27 @@ export function SystemStatusCard({ devicesStatus, isExpanded = false }: SystemSt
           </div>
         )}
 
+        {/* "System health · 6 attention" restated the card's own header
+             ("0 of 6 online") in a second vocabulary, and a bare 6 labelled
+             "attention" reads as a score. Say the one thing the header does
+             not: how the room sensors are doing specifically. */}
         <div className="g-tile" style={{ marginTop: 'var(--s-4)' }}>
           <div className="g-row g-row--between">
             <div>
-              <p className="g-label">System health</p>
-              <p className="g-sub">Sensors {onlineSensors} of {sensorDevices.length} online</p>
+              <p className="g-label">Room sensors</p>
+              <p className="g-sub">
+                {sensorDevices.length === 0
+                  ? 'None paired yet'
+                  : onlineSensors === 0
+                    ? 'None are reporting right now'
+                    : onlineSensors === sensorDevices.length
+                      ? 'All reporting'
+                      : `${sensorDevices.length - onlineSensors} not reporting`}
+              </p>
             </div>
-            <div className={`g-metric-sm g-num ${devicesNeedingAttention ? 'is-warn' : ''}`}>
-              {devicesNeedingAttention}
-              <small>attention</small>
+            <div className={`g-metric-sm g-num ${onlineSensors < sensorDevices.length ? 'is-warn' : ''}`}>
+              {onlineSensors}
+              <small>of {sensorDevices.length}</small>
             </div>
           </div>
         </div>

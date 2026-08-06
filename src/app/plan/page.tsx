@@ -8,6 +8,7 @@ import type { Alert, BackendDevice, DevicesStatus, GasReading } from '@/types/da
 import { alertLevelToType } from '@/types/dashboard';
 import { getAlertTitle } from '@/utils/alertText';
 import { ROOMS, OUTER_WALL, INNER_WALLS, DOOR_SWINGS, DEVICE_ROOMS, type Room, type RoomId } from '@/utils/floorPlan';
+import { deviceLabel, labelForId } from '@/utils/deviceNames';
 import { relativeTime, lastSeenLabel } from '@/utils/time';
 
 type Tone = 'ok' | 'warn' | 'off';
@@ -231,7 +232,7 @@ export default function PlanPage() {
                     <div key={d.device_id} className="g-list__row">
                       <i className={`g-dot g-dot--${d.online ? 'ok' : 'off'}`} />
                       <p>
-                        {d.name || d.device_id}
+                        {deviceLabel(d)}
                         <span>
                           {d.online ? `Reporting · ${relativeTime(d.last_seen)}` : lastSeenLabel(d.last_seen)}
                         </span>
@@ -262,7 +263,7 @@ export default function PlanPage() {
                         <i className={`g-dot g-dot--${dot}`} />
                         <p>
                           {getAlertTitle(a)}
-                          <span>{relativeTime(a.timestamp)} · {a.source}</span>
+                          <span>{relativeTime(a.timestamp)} · {labelForId(a.source)}</span>
                         </p>
                       </div>
                     );
@@ -284,7 +285,7 @@ export default function PlanPage() {
                   {unplaced.map(d => (
                     <div key={d.device_id} className="pl-dev">
                       <i className={`g-dot g-dot--${d.online ? 'ok' : 'off'}`} />
-                      <div><b>{d.name || d.device_id}</b><span>{d.device_id}</span></div>
+                      <div><b>{deviceLabel(d)}</b><span>{d.device_id}</span></div>
                     </div>
                   ))}
                 </div>
