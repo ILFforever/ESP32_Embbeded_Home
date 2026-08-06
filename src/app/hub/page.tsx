@@ -26,6 +26,7 @@ import {
 import type { BackendDevice } from '@/types/dashboard';
 import { notify, confirmDialog } from '@/components/glass/GlassRuntime';
 import { relativeTime } from '@/utils/time';
+import { useModalTransition } from '@/components/glass/useModalTransition';
 import {
   ArrowLeft,
   Mic,
@@ -262,6 +263,15 @@ export default function HubControlPage() {
     const interval = setInterval(fetchData, 5000);
     return () => clearInterval(interval);
   }, []);
+
+  /* One transition for all three sensor modals: only one is ever open,
+     and they share closeSensorModal. The latched key keeps the right one
+     rendered while it animates out. */
+  const sensorModal = useModalTransition(
+    showTemperatureModal ? 'temperature' : showHumidityModal ? 'humidity' : showAirQualityModal ? 'pm2_5' : null,
+  );
+  const restartModal = useModalTransition(showRestartModal);
+  const alertModal = useModalTransition(showAlertModal);
 
   const closeSensorModal = () => {
     setShowTemperatureModal(false);
@@ -575,7 +585,6 @@ const renderSensorCard = (
   );
 
   const renderSensorModal = (
-    open: boolean,
     title: string,
     subtitle: string,
     current: string,
@@ -584,10 +593,10 @@ const renderSensorCard = (
     chartKey: 'temperature' | 'humidity' | 'pm2_5',
     warn = false,
   ) => {
-    if (!open) return null;
+    if (!sensorModal.render || sensorModal.value !== chartKey) return null;
 
     return (
-      <div className="g-modal" role="dialog" aria-modal="true" onClick={closeSensorModal}>
+      <div className={sensorModal.className} role="dialog" aria-modal="true" onClick={closeSensorModal}>
         <div className="g-pane g-modal__card g-modal__card--wide" onClick={(event) => event.stopPropagation()}>
           <div className="g-modal__head">
             <div>
@@ -856,7 +865,6 @@ const renderSensorCard = (
       </main>
 
       {renderSensorModal(
-        showTemperatureModal,
         'Temperature · last 24 hours',
         'Living room · DHT11 · comfort range 18-25 °C',
         metricText(sensorData?.temperature, '°C'),
@@ -865,7 +873,6 @@ const renderSensorCard = (
         'temperature',
       )}
       {renderSensorModal(
-        showHumidityModal,
         'Humidity · last 24 hours',
         'Living room · DHT11 · comfort range 30-60%',
         metricText(sensorData?.humidity, '%'),
@@ -874,7 +881,6 @@ const renderSensorCard = (
         'humidity',
       )}
       {renderSensorModal(
-        showAirQualityModal,
         'Air quality · last 24 hours',
         `PM2.5 in µg/m³${sensorData?.aqi != null ? ` · AQI ${sensorData.aqi}` : ''}`,
         metricText(sensorData?.pm25, 'µg/m³'),
@@ -884,8 +890,8 @@ const renderSensorCard = (
         airTone === 'warn' || airTone === 'crit',
       )}
 
-      {showRestartModal && (
-        <div className="g-modal" role="dialog" aria-modal="true" onClick={() => setShowRestartModal(false)}>
+      {restartModal.render && (
+        <div className={restartModal.className} role="dialog" aria-modal="true" onClick={() => setShowRestartModal(false)}>
           <div className="g-pane g-modal__card" style={modalNarrowStyle} onClick={(event) => event.stopPropagation()}>
             <div className="g-modal__head">
               <div>
@@ -906,8 +912,8 @@ const renderSensorCard = (
         </div>
       )}
 
-      {showAlertModal && (
-        <div className="g-modal" role="dialog" aria-modal="true" onClick={() => setShowAlertModal(false)}>
+      {alertModal.render && (
+        <div className={alertModal.className} role="dialog" aria-modal="true" onClick={() => setShowAlertModal(false)}>
           <form className="g-pane g-modal__card" style={modalNarrowStyle} onClick={(event) => event.stopPropagation()} onSubmit={handleSendAlert}>
             <div className="g-modal__head">
               <div>

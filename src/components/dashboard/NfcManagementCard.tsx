@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { AlertCircle, CreditCard, Loader, PlusCircle, Shield, User, X } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
+import { useModalTransition } from '@/components/glass/useModalTransition';
 import {
   getUsersWithNfc,
   enableAddCardMode,
@@ -76,6 +77,9 @@ export function NfcManagementCard({ isExpanded = false }: NfcManagementCardProps
   const [loading, setLoading] = useState(false);
   const [deviceId, setDeviceId] = useState<string>('db_001');
   const [pendingRemoval, setPendingRemoval] = useState<PendingRemoval | null>(null);
+  // Latched so the card keeps its text through the closing animation.
+  const removalModal = useModalTransition(pendingRemoval);
+  const shownRemoval = removalModal.value;
 
   const fetchData = async (isPolling = false) => {
     if (!isPolling) setLoading(true);
@@ -460,13 +464,13 @@ export function NfcManagementCard({ isExpanded = false }: NfcManagementCardProps
         </div>
       )}
 
-      {pendingRemoval && (
-        <div className="g-modal" role="dialog" aria-modal="true" aria-labelledby="nfc-remove-title" onClick={() => setPendingRemoval(null)}>
+      {removalModal.render && shownRemoval && (
+        <div className={removalModal.className} role="dialog" aria-modal="true" aria-labelledby="nfc-remove-title" onClick={() => setPendingRemoval(null)}>
           <div className="g-pane g-modal__card" style={{ width: 'min(100%, 440px)' }} onClick={(event) => event.stopPropagation()}>
             <div className="g-modal__head">
               <div>
-                <h2 id="nfc-remove-title">Revoke {pendingRemoval.userName}&apos;s card?</h2>
-                <p>Card {formatCardId(pendingRemoval.cardId)} will stop unlocking doors immediately.</p>
+                <h2 id="nfc-remove-title">Revoke {shownRemoval.userName}&apos;s card?</h2>
+                <p>Card {formatCardId(shownRemoval.cardId)} will stop unlocking doors immediately.</p>
               </div>
               <button className="g-icon-btn" onClick={() => setPendingRemoval(null)} aria-label="Close">
                 <X size={15} />

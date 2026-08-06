@@ -2,6 +2,7 @@
 
 import React, { useEffect, useId, useState } from 'react';
 import { Bell, Home, Music2, Play, Square, Volume2, X } from 'lucide-react';
+import { useModalTransition } from '@/components/glass/useModalTransition';
 import { sendCommand, getAllDevices, findHubDevice } from '@/services/devices.service';
 import type { Device } from '@/types/dashboard';
 
@@ -41,6 +42,10 @@ export function MusicBroadcastCard({ isExpanded = false }: MusicBroadcastCardPro
   const [doorbellDevice, setDoorbellDevice] = useState<Device | null>(null);
   const [hubDevice, setHubDevice] = useState<Device | null>(null);
   const [notice, setNotice] = useState<{ tone: NoticeTone; title: string; message: string } | null>(null);
+  /* Latched, so the card keeps its text while it animates out — the
+     close handlers null the state immediately. */
+  const noticeModal = useModalTransition(notice);
+  const shownNotice = noticeModal.value;
 
   useEffect(() => {
     const fetchDevices = async () => {
@@ -311,20 +316,20 @@ export function MusicBroadcastCard({ isExpanded = false }: MusicBroadcastCardPro
         </div>
       )}
 
-      {notice && (
-        <div className="g-modal" role="dialog" aria-modal="true" aria-labelledby="broadcast-notice-title" onClick={() => setNotice(null)}>
+      {noticeModal.render && shownNotice && (
+        <div className={noticeModal.className} role="dialog" aria-modal="true" aria-labelledby="broadcast-notice-title" onClick={() => setNotice(null)}>
           <div className="g-pane g-modal__card" onClick={(event) => event.stopPropagation()}>
             <div className="g-modal__head">
               <div>
-                <h2 id="broadcast-notice-title">{notice.title}</h2>
-                <p>{notice.message}</p>
+                <h2 id="broadcast-notice-title">{shownNotice.title}</h2>
+                <p>{shownNotice.message}</p>
               </div>
               <button className="g-icon-btn" type="button" aria-label="Close" onClick={() => setNotice(null)}>
                 <X size={16} aria-hidden="true" />
               </button>
             </div>
             <div className="g-modal__foot">
-              <button className={`g-btn ${notice.tone === 'crit' ? 'g-btn--danger' : 'g-btn--primary'}`} type="button" onClick={() => setNotice(null)}>
+              <button className={`g-btn ${shownNotice.tone === 'crit' ? 'g-btn--danger' : 'g-btn--primary'}`} type="button" onClick={() => setNotice(null)}>
                 OK
               </button>
             </div>

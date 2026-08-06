@@ -4,6 +4,8 @@ import {
   Battery,
   Bell,
   Check,
+  CheckCheck,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Computer,
@@ -25,7 +27,7 @@ import {
 } from 'lucide-react';
 import type { Alert } from '@/types/dashboard';
 import { alertLevelToType } from '@/types/dashboard';
-import { markAlertAsRead } from '@/services/devices.service';
+import { markAlertAsRead, markMultipleAlertsAsRead } from '@/services/devices.service';
 import { URGENT_SCORE, getAlertPriorityCategory, sortAlertsByPriority, type ScoredAlert } from '@/utils/alertScoring';
 import { alertTags, getAlertTitle } from '@/utils/alertText';
 import { labelForId } from '@/utils/deviceNames';
@@ -64,6 +66,7 @@ export function AlertsCard({ alerts, isExpanded = false, onRefresh }: AlertsCard
   const [selectedFilters, setSelectedFilters] = useState<string[]>([]);
   const [showFilters, setShowFilters] = useState(false);
   const [readAlertsPage, setReadAlertsPage] = useState(1);
+  const [isMarkingAllRead, setIsMarkingAllRead] = useState(false);
   const readAlertsPerPage = 5;
 
   /* There was a category drill-down modal here. It became unreachable when
@@ -150,7 +153,10 @@ export function AlertsCard({ alerts, isExpanded = false, onRefresh }: AlertsCard
   }, [sortedAlerts, selectedFilters]);
 
   const unreadAlerts = filteredAlerts.filter(a => !a.read);
+  const unreadActionAlerts = unreadAlerts.filter(a => a.level !== 'INFO');
+  const unreadInfoAlerts = unreadAlerts.filter(a => a.level === 'INFO');
   const readAlerts = filteredAlerts.filter(a => a.read);
+  const allUnreadAlerts = sortedAlerts.filter(a => !a.read);
 
   /* Ten rows for the home page, at most three about unknown faces — a busy
      doorbell will otherwise fill the card with one repeated event and hide
@@ -161,7 +167,7 @@ export function AlertsCard({ alerts, isExpanded = false, onRefresh }: AlertsCard
     let unknownFaces = 0;
     const rows: ScoredAlert[] = [];
 
-    for (const alert of unreadAlerts) {
+    for (const alert of unreadActionAlerts) {
       const tags = alertTags(alert);
       if (tags.includes('face-detection') && tags.includes('unknown')) {
         if (unknownFaces >= 3) continue;
@@ -171,7 +177,7 @@ export function AlertsCard({ alerts, isExpanded = false, onRefresh }: AlertsCard
       if (rows.length === 10) break;
     }
     return rows;
-  }, [unreadAlerts]);
+  }, [unreadActionAlerts]);
   /* URGENT_SCORE, not a literal 50. The dashboard hero used to count
      level === 'IMPORTANT' while this counted score >= 50, so the same
      screen said "none urgent" and "11 urgent" at once. */
@@ -196,6 +202,21 @@ export function AlertsCard({ alerts, isExpanded = false, onRefresh }: AlertsCard
   const handleMarkAsRead = async (alertId: string) => {
     const success = await markAlertAsRead(alertId);
     if (success && onRefresh) onRefresh();
+  };
+
+  const handleMarkAllAsRead = async () => {
+    if (allUnreadAlerts.length === 0 || isMarkingAllRead) return;
+
+    setIsMarkingAllRead(true);
+    try {
+      const success = await markMultipleAlertsAsRead(allUnreadAlerts.map(alert => alert.id));
+      if (success) {
+        setReadAlertsPage(1);
+        await onRefresh?.();
+      }
+    } finally {
+      setIsMarkingAllRead(false);
+    }
   };
 
   const toggleFilter = (category: string) => {
@@ -299,9 +320,18 @@ export function AlertsCard({ alerts, isExpanded = false, onRefresh }: AlertsCard
                "General 15" is the system describing itself. renderAlertRow
                already emits the right markup; the compact view just was
                not using it. */
-            <div className="g-list">
-              {compactAlerts.map(alert => renderAlertRow(alert))}
-            </div>
+            <>
+              {compactAlerts.length > 0 ? (
+                <div className="g-list">
+                  {compactAlerts.map(alert => renderAlertRow(alert))}
+                </div>
+              ) : (
+                <div className="g-empty">
+                  <strong>No alerts need attention</strong>
+                  <p>{unreadInfoAlerts.length} routine update{unreadInfoAlerts.length === 1 ? '' : 's'} available.</p>
+                </div>
+              )}
+            </>
           )}
         </div>
       ) : (
@@ -309,6 +339,18 @@ export function AlertsCard({ alerts, isExpanded = false, onRefresh }: AlertsCard
           <section className="g-stack g-stack--tight">
             <div className="g-row g-row--between">
               <h4 className="g-label">Unread ({unreadAlerts.length})</h4>
+              {allUnreadAlerts.length > 0 && (
+                <button
+                  className="g-btn g-btn--ghost"
+                  type="button"
+                  onClick={handleMarkAllAsRead}
+                  disabled={isMarkingAllRead}
+                  title={`Mark all ${allUnreadAlerts.length} unread alerts as read`}
+                >
+                  <CheckCheck size={16} aria-hidden="true" />
+                  {isMarkingAllRead ? 'Marking read…' : 'Read all'}
+                </button>
+              )}
             </div>
             {unreadAlerts.length === 0 ? (
               <div className="g-empty">
@@ -316,8 +358,27 @@ export function AlertsCard({ alerts, isExpanded = false, onRefresh }: AlertsCard
                 <p>New alerts will appear here.</p>
               </div>
             ) : (
-              <div className="g-list">
-                {unreadAlerts.map(alert => renderAlertRow(alert))}
+              <div className="g-stack g-stack--tight">
+                {unreadActionAlerts.length > 0 && (
+                  <div className="g-list">
+                    {unreadActionAlerts.map(alert => renderAlertRow(alert))}
+                  </div>
+                )}
+
+                {unreadInfoAlerts.length > 0 && (
+                  <details className="g-alerts__info">
+                    <summary className="g-action">
+                      <span>
+                        Information
+                        <small>{unreadInfoAlerts.length} routine update{unreadInfoAlerts.length === 1 ? '' : 's'}</small>
+                      </span>
+                      <ChevronDown size={17} aria-hidden="true" />
+                    </summary>
+                    <div className="g-list">
+                      {unreadInfoAlerts.map(alert => renderAlertRow(alert))}
+                    </div>
+                  </details>
+                )}
               </div>
             )}
           </section>

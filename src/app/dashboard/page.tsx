@@ -4,6 +4,7 @@ import React, { useEffect, useState } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import ProtectedRoute from '@/components/auth/ProtectedRoute';
 import GlassBar from '@/components/glass/GlassBar';
+import { useModalTransition } from '@/components/glass/useModalTransition';
 import { AlertsCard } from '@/components/dashboard/AlertsCard';
 import { TemperatureCard } from '@/components/dashboard/TemperatureCard';
 import { GasReadingsCard } from '@/components/dashboard/GasReadingsCard';
@@ -31,6 +32,10 @@ export default function DashboardPage() {
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [loading, setLoading] = useState(true);
   const [expandedCard, setExpandedCard] = useState<string | null>(null);
+  /* Latched: closing clears expandedCard, and without this the dialog
+     would lose its title and body on the first frame of its exit. */
+  const cardModal = useModalTransition(expandedCard);
+  const shownCard = cardModal.value;
   const [systemOnline, setSystemOnline] = useState<boolean>(false);
   const [doorLockStates, setDoorLockStates] = useState<Record<string, 'locked' | 'unlocked'>>({});
 
@@ -302,10 +307,10 @@ export default function DashboardPage() {
 
   // Render expanded card content with more details
   const renderExpandedCard = () => {
-    if (!expandedCard) return null;
+    if (!cardModal.render || !shownCard) return null;
 
     let content;
-    switch (expandedCard) {
+    switch (shownCard) {
       case 'system-status':
         content = <SystemStatusCard devicesStatus={devicesStatus} isExpanded={true} />;
         break;
@@ -341,11 +346,11 @@ export default function DashboardPage() {
     }
 
     return (
-      <div className="g-modal" role="dialog" aria-modal="true" onClick={closeExpandedCard}>
+      <div className={cardModal.className} role="dialog" aria-modal="true" onClick={closeExpandedCard}>
         <div className="g-pane g-modal__card g-modal__card--wide" onClick={(e) => e.stopPropagation()}>
           <div className="g-modal__head">
             <div>
-              <h2>{expandedCard.replace(/-/g, ' ')}</h2>
+              <h2>{shownCard.replace(/-/g, ' ')}</h2>
               <p>Live details from Arduino888.</p>
             </div>
             <button className="g-icon-btn" onClick={closeExpandedCard} aria-label="Close">

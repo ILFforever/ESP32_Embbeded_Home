@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Lock, RefreshCw, Unlock, X } from 'lucide-react';
 import type { DoorWindow } from '@/types/dashboard';
 import { relativeTime } from '@/utils/time';
+import { useModalTransition } from '@/components/glass/useModalTransition';
 import {
   sendCommand,
   getLockStatus,
@@ -70,6 +71,16 @@ export function DoorCard({ doorsWindows, isExpanded = false }: DoorCardProps) {
   const [lockStatus, setLockStatus] = useState<DoorLockStatus | null>(null);
   const [fetchingStatus, setFetchingStatus] = useState(false);
   const [notice, setNotice] = useState<{ tone: NoticeTone; title: string; message: string } | null>(null);
+
+  /* Both dialogs are held on screen for their exit. The status modal
+     latches the lock reading too, because closeStatusModal nulls
+     selectedDoorId and lockStatus in the same breath. */
+  const statusModal = useModalTransition(
+    showStatusModal && selectedDoorId ? { doorId: selectedDoorId, status: lockStatus } : null,
+  );
+  const shownStatus = statusModal.value?.status ?? null;
+  const noticeModal = useModalTransition(notice);
+  const shownNotice = noticeModal.value;
 
   useEffect(() => {
     if (!notice && !showStatusModal) return;
@@ -325,8 +336,8 @@ export function DoorCard({ doorsWindows, isExpanded = false }: DoorCardProps) {
         </div>
       )}
 
-      {showStatusModal && selectedDoorId && (
-        <div className="g-modal" role="dialog" aria-modal="true" aria-labelledby="door-status-title" onClick={closeStatusModal}>
+      {statusModal.render && (
+        <div className={statusModal.className} role="dialog" aria-modal="true" aria-labelledby="door-status-title" onClick={closeStatusModal}>
           <div className="g-pane g-modal__card g-modal__card--wide" onClick={(event) => event.stopPropagation()}>
             <div className="g-modal__head">
               <div>
@@ -338,44 +349,44 @@ export function DoorCard({ doorsWindows, isExpanded = false }: DoorCardProps) {
               </button>
             </div>
 
-            {fetchingStatus && !lockStatus ? (
+            {fetchingStatus && !shownStatus ? (
               <div className="g-empty">
                 <RefreshCw size={32} className="spinning" aria-hidden="true" />
                 <strong>Loading lock status</strong>
                 <p>Waiting for the lock to report back.</p>
               </div>
-            ) : lockStatus ? (
+            ) : shownStatus ? (
               <div className="g-stack">
                 <div className="dash-modal-grid">
                   <div className="g-tile">
                     <p className="g-label">Lock state</p>
-                    <div className={`g-metric-sm g-num ${lockStatus.lock_state === 'locked' ? 'is-ok' : 'is-warn'}`}>
-                      {lockStatus.lock_state}
+                    <div className={`g-metric-sm g-num ${shownStatus.lock_state === 'locked' ? 'is-ok' : 'is-warn'}`}>
+                      {shownStatus.lock_state}
                     </div>
                   </div>
-                  <div className={lockStatus.online ? 'g-tile' : 'g-tile is-warn'}>
+                  <div className={shownStatus.online ? 'g-tile' : 'g-tile is-warn'}>
                     <p className="g-label">Online</p>
-                    <div className="g-metric-sm g-num">{lockStatus.online ? 'Yes' : 'No'}</div>
+                    <div className="g-metric-sm g-num">{shownStatus.online ? 'Yes' : 'No'}</div>
                   </div>
-                  <div className={lockStatus.has_pending_commands ? 'g-tile is-warn' : 'g-tile'}>
+                  <div className={shownStatus.has_pending_commands ? 'g-tile is-warn' : 'g-tile'}>
                     <p className="g-label">Pending</p>
-                    <div className="g-metric-sm g-num">{lockStatus.pending_commands.length}</div>
+                    <div className="g-metric-sm g-num">{shownStatus.pending_commands.length}</div>
                   </div>
                 </div>
 
                 <dl className="g-info">
-                  <div><dt>Device ID</dt><dd>{lockStatus.device_id}</dd></div>
-                  <div><dt>Device name</dt><dd>{lockStatus.device_name}</dd></div>
-                  <div><dt>Last action</dt><dd>{lockStatus.last_action}</dd></div>
-                  <div><dt>Last action time</dt><dd>{formatTimestamp(lockStatus.last_action_time)}</dd></div>
-                  <div><dt>Last heartbeat</dt><dd>{formatTimestamp(lockStatus.last_heartbeat)}</dd></div>
-                  <div><dt>Wi-Fi signal</dt><dd>{lockStatus.wifi_rssi !== null ? `${lockStatus.wifi_rssi} dBm` : 'N/A'}</dd></div>
-                  <div><dt>Uptime</dt><dd>{formatUptime(lockStatus.uptime_ms)}</dd></div>
+                  <div><dt>Device ID</dt><dd>{shownStatus.device_id}</dd></div>
+                  <div><dt>Device name</dt><dd>{shownStatus.device_name}</dd></div>
+                  <div><dt>Last action</dt><dd>{shownStatus.last_action}</dd></div>
+                  <div><dt>Last action time</dt><dd>{formatTimestamp(shownStatus.last_action_time)}</dd></div>
+                  <div><dt>Last heartbeat</dt><dd>{formatTimestamp(shownStatus.last_heartbeat)}</dd></div>
+                  <div><dt>Wi-Fi signal</dt><dd>{shownStatus.wifi_rssi !== null ? `${shownStatus.wifi_rssi} dBm` : 'N/A'}</dd></div>
+                  <div><dt>Uptime</dt><dd>{formatUptime(shownStatus.uptime_ms)}</dd></div>
                 </dl>
 
-                {lockStatus.has_pending_commands && lockStatus.pending_commands.length > 0 && (
+                {shownStatus.has_pending_commands && shownStatus.pending_commands.length > 0 && (
                   <div className="g-log">
-                    {lockStatus.pending_commands.map((cmd: { action?: string }, idx: number) => (
+                    {shownStatus.pending_commands.map((cmd: { action?: string }, idx: number) => (
                       <div key={`${cmd.action || 'pending'}-${idx}`}>{cmd.action || 'Unknown action'}</div>
                     ))}
                   </div>
@@ -385,7 +396,7 @@ export function DoorCard({ doorsWindows, isExpanded = false }: DoorCardProps) {
                   <button
                     className="g-btn g-btn--ghost"
                     type="button"
-                    onClick={() => fetchLockStatus(selectedDoorId)}
+                    onClick={() => statusModal.value && fetchLockStatus(statusModal.value.doorId)}
                     disabled={fetchingStatus}
                   >
                     <RefreshCw size={16} className={fetchingStatus ? 'spinning' : ''} aria-hidden="true" />
@@ -403,20 +414,20 @@ export function DoorCard({ doorsWindows, isExpanded = false }: DoorCardProps) {
         </div>
       )}
 
-      {notice && (
-        <div className="g-modal" role="dialog" aria-modal="true" aria-labelledby="door-notice-title" onClick={() => setNotice(null)}>
+      {noticeModal.render && shownNotice && (
+        <div className={noticeModal.className} role="dialog" aria-modal="true" aria-labelledby="door-notice-title" onClick={() => setNotice(null)}>
           <div className="g-pane g-modal__card" onClick={(event) => event.stopPropagation()}>
             <div className="g-modal__head">
               <div>
-                <h2 id="door-notice-title">{notice.title}</h2>
-                <p>{notice.message}</p>
+                <h2 id="door-notice-title">{shownNotice.title}</h2>
+                <p>{shownNotice.message}</p>
               </div>
               <button className="g-icon-btn" type="button" aria-label="Close" onClick={() => setNotice(null)}>
                 <X size={16} aria-hidden="true" />
               </button>
             </div>
             <div className="g-modal__foot">
-              <button className={notice.tone === 'crit' ? 'g-btn g-btn--danger' : 'g-btn g-btn--primary'} type="button" onClick={() => setNotice(null)}>
+              <button className={shownNotice.tone === 'crit' ? 'g-btn g-btn--danger' : 'g-btn g-btn--primary'} type="button" onClick={() => setNotice(null)}>
                 OK
               </button>
             </div>

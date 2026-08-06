@@ -5,6 +5,7 @@ import { BellRing, CheckCircle, Copy, Cpu, Home, Plus, Shield, Trash2, UserPlus,
 import { UserData, deleteAdmin, deleteUser, getAdmins, getUsers, registerUser } from '@/services/auth.service';
 import { deleteDevice, getDeviceStatusText, registerDevice } from '@/services/devices.service';
 import type { BackendDevice } from '@/types/dashboard';
+import { useModalTransition } from '@/components/glass/useModalTransition';
 
 interface AdminManagementCardProps {
   isExpanded?: boolean;
@@ -92,6 +93,9 @@ export function AdminManagementCard({
   const [registeredToken, setRegisteredToken] = useState<string | null>(null);
   const [tokenCopied, setTokenCopied] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
+  // Latched so the card keeps its text through the closing animation.
+  const deleteModal = useModalTransition(deleteTarget);
+  const shownTarget = deleteModal.value;
   const [actionError, setActionError] = useState<string | null>(null);
 
   React.useEffect(() => {
@@ -460,13 +464,13 @@ export function AdminManagementCard({
         )}
       </div>
 
-      {deleteTarget && (
-        <div className="g-modal" role="dialog" aria-modal="true" aria-labelledby="admin-remove-title" onClick={() => setDeleteTarget(null)}>
+      {deleteModal.render && shownTarget && (
+        <div className={deleteModal.className} role="dialog" aria-modal="true" aria-labelledby="admin-remove-title" onClick={() => setDeleteTarget(null)}>
           <div className="g-pane g-modal__card" onClick={(event) => event.stopPropagation()}>
             <div className="g-modal__head">
               <div>
-                <h2 id="admin-remove-title">Remove {deleteTarget.name}</h2>
-                <p>This removes {deleteTarget.kind === 'device' ? 'the enrolled device and its data' : 'this person from access'} immediately.</p>
+                <h2 id="admin-remove-title">Remove {shownTarget.name}</h2>
+                <p>This removes {shownTarget.kind === 'device' ? 'the enrolled device and its data' : 'this person from access'} immediately.</p>
               </div>
               <button className="g-icon-btn" onClick={() => setDeleteTarget(null)} aria-label="Close"><X size={16} /></button>
             </div>

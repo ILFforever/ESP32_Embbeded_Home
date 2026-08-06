@@ -3,6 +3,7 @@
 import { useCallback, useEffect } from 'react';
 import { usePathname } from 'next/navigation';
 import { getCurrentTheme, setTheme, toggleTheme, type GlassTheme } from './theme';
+import { MODAL_EXIT_MS } from './useModalTransition';
 
 /**
  * Shared Glass behaviour, mounted once from the root layout.
@@ -273,6 +274,33 @@ function paintSlider(s: HTMLInputElement): void {
    when the dialog needs fields or explanation; use these for the
    command-result messages that were alert()s.
 ------------------------------------------------------------------- */
+/**
+ * Hide a .g-modal after its exit animation, rather than the frame the
+ * button was pressed. `hidden` is display:none, so setting it straight
+ * away leaves nothing for the animation to play on.
+ *
+ * The timeout is the contract, not `animationend`: the veil and the card
+ * animate separately, an interrupted animation may never fire the event,
+ * and a modal that failed to hide is worse than one that hid abruptly.
+ */
+function closeWithExit(modal: HTMLElement, done?: () => void): void {
+  const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+
+  const finish = () => {
+    modal.classList.remove('is-closing');
+    modal.hidden = true;
+    done?.();
+  };
+
+  if (reduced) {
+    finish();
+    return;
+  }
+
+  modal.classList.add('is-closing');
+  window.setTimeout(finish, MODAL_EXIT_MS);
+}
+
 function dialogHost(): HTMLElement {
   let host = document.getElementById('g-dialog');
   if (!host) {
@@ -316,12 +344,20 @@ function showDialog(
     host.querySelector('p')!.textContent = message;
     host.querySelector<HTMLElement>('[data-dlg="1"]')!.textContent = ok;
 
+    let settled = false;
     const finish = (value: boolean) => {
-      host.hidden = true;
-      host.innerHTML = '';
+      // A second click while the exit plays must not resolve twice, and
+      // must not blank the card out from under its own animation.
+      if (settled) return;
+      settled = true;
+
       document.removeEventListener('keydown', onKey);
+      host.onclick = null;
+      // Resolve now; the caller should not wait on the animation.
       opener?.focus?.();
       resolve(value);
+
+      closeWithExit(host, () => { host.innerHTML = ''; });
     };
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') finish(false);
@@ -362,9 +398,10 @@ export default function GlassRuntime() {
       m.querySelector<HTMLElement>('input, button, select, textarea, [tabindex]')?.focus();
     };
     const closeModal = (m: HTMLElement | null) => {
-      if (!m) return;
-      m.hidden = true;
-      lastFocus?.focus?.();
+      if (!m || m.hidden) return;
+      // Play the exit before hiding — `hidden` is display:none, which kills
+      // any animation instantly. Same hold as useModalTransition.
+      closeWithExit(m, () => lastFocus?.focus?.());
     };
 
     window.Glass = { applyLens, setTheme, currentTheme: getCurrentTheme, openModal };

@@ -31,6 +31,7 @@ import { getCookie } from "@/utils/cookies";
 import type { FaceDatabaseInfo, Visitor } from "@/services/devices.service";
 import type { Device } from "@/types/dashboard";
 import { notify, confirmDialog } from '@/components/glass/GlassRuntime';
+import { useModalTransition } from '@/components/glass/useModalTransition';
 
 interface ActivityEvent {
   id: string;
@@ -97,6 +98,17 @@ export default function DoorbellControlPage() {
 
   // Delete last face confirmation
   const [showDeleteLastConfirm, setShowDeleteLastConfirm] = useState(false);
+
+  /* Each modal is held on screen for its exit animation. selectedVisitor
+     is latched too, because closing clears it and the card would empty
+     out halfway through fading. */
+  const wifiModal = useModalTransition(showWifiSettings);
+  const addFaceModal = useModalTransition(showAddFaceModal);
+  const renameFaceModal = useModalTransition(showRenameFaceModal);
+  const deleteLastModal = useModalTransition(showDeleteLastConfirm);
+  const settingsModal = useModalTransition(showSettings);
+  const visitorModal = useModalTransition(showVisitorDetails ? selectedVisitor : null);
+  const shownVisitor = visitorModal.value;
 
   // Stream display states
   const [streamError, setStreamError] = useState<string | null>(null);
@@ -1252,8 +1264,8 @@ export default function DoorbellControlPage() {
         </div>
       </div>
 
-      {showWifiSettings && (
-        <div className="g-modal" role="dialog" aria-modal="true" aria-labelledby="m-wifi-h" onClick={() => setShowWifiSettings(false)}>
+      {wifiModal.render && (
+        <div className={wifiModal.className} role="dialog" aria-modal="true" aria-labelledby="m-wifi-h" onClick={() => setShowWifiSettings(false)}>
           <div className="g-pane g-modal__card" onClick={(e) => e.stopPropagation()}>
             <div className="g-modal__head"><div><h2 id="m-wifi-h">Amplifier Wi-Fi settings</h2><p>Send network credentials to the audio board.</p></div><button className="g-icon-btn" type="button" onClick={() => setShowWifiSettings(false)} aria-label="Close"><Power size={15} aria-hidden="true" /></button></div>
             <div className="g-stack">
@@ -1265,8 +1277,8 @@ export default function DoorbellControlPage() {
         </div>
       )}
 
-      {showAddFaceModal && (
-        <div className="g-modal" role="dialog" aria-modal="true" aria-labelledby="m-addface-h" onClick={closeAddFaceModal}>
+      {addFaceModal.render && (
+        <div className={addFaceModal.className} role="dialog" aria-modal="true" aria-labelledby="m-addface-h" onClick={closeAddFaceModal}>
           <div className="g-pane g-modal__card" onClick={(e) => e.stopPropagation()}>
             <div className="g-modal__head"><div><h2 id="m-addface-h">Add a person</h2><p>They need to stand in front of the camera while the doorbell captures their face.</p></div><button className="g-icon-btn" type="button" onClick={closeAddFaceModal} aria-label="Close"><Power size={15} aria-hidden="true" /></button></div>
             <div className="g-field"><label htmlFor="face-name">Their name</label><input id="face-name" type="text" value={newFaceName} onChange={(e) => setNewFaceName(e.target.value)} placeholder="Mum" disabled={commandLoading === "add_face"} /><span className="g-field__hint">Shown in the activity log whenever they are recognised.</span></div>
@@ -1275,8 +1287,8 @@ export default function DoorbellControlPage() {
         </div>
       )}
 
-      {showRenameFaceModal && (
-        <div className="g-modal" role="dialog" aria-modal="true" aria-labelledby="m-rename-h" onClick={closeRenameFaceModal}>
+      {renameFaceModal.render && (
+        <div className={renameFaceModal.className} role="dialog" aria-modal="true" aria-labelledby="m-rename-h" onClick={closeRenameFaceModal}>
           <div className="g-pane g-modal__card" onClick={(e) => e.stopPropagation()}>
             <div className="g-modal__head"><div><h2 id="m-rename-h">Rename a person</h2><p>Changes the name on their stored face, not the face itself.</p></div><button className="g-icon-btn" type="button" onClick={closeRenameFaceModal} aria-label="Close"><Power size={15} aria-hidden="true" /></button></div>
             <div className="g-stack">
@@ -1288,8 +1300,8 @@ export default function DoorbellControlPage() {
         </div>
       )}
 
-      {showDeleteLastConfirm && (
-        <div className="g-modal" role="dialog" aria-modal="true" aria-labelledby="m-delete-h" onClick={() => setShowDeleteLastConfirm(false)}>
+      {deleteLastModal.render && (
+        <div className={deleteLastModal.className} role="dialog" aria-modal="true" aria-labelledby="m-delete-h" onClick={() => setShowDeleteLastConfirm(false)}>
           <div className="g-pane g-modal__card" onClick={(e) => e.stopPropagation()}>
             <div className="g-modal__head"><div><h2 id="m-delete-h">Remove the last enrolled face?</h2><p>The doorbell will stop recognising that person. You can add them again later.</p></div></div>
             <div className="g-modal__foot"><button className="g-btn g-btn--ghost" type="button" onClick={() => setShowDeleteLastConfirm(false)}>Cancel</button><button className="g-btn g-btn--danger" type="button" onClick={handleDeleteLastFace} disabled={commandLoading === "delete_last_face"}>{commandLoading === "delete_last_face" ? "Removing" : "Remove"}</button></div>
@@ -1297,8 +1309,8 @@ export default function DoorbellControlPage() {
         </div>
       )}
 
-      {showSettings && (
-        <div className="g-modal" role="dialog" aria-modal="true" aria-labelledby="m-settings-h" onClick={() => setShowSettings(false)}>
+      {settingsModal.render && (
+        <div className={settingsModal.className} role="dialog" aria-modal="true" aria-labelledby="m-settings-h" onClick={() => setShowSettings(false)}>
           <div className="g-pane g-modal__card" onClick={(e) => e.stopPropagation()}>
             <div className="g-modal__head"><div><h2 id="m-settings-h">Doorbell settings</h2><p>Only change this if the app should point at a different board.</p></div><button className="g-icon-btn" type="button" onClick={() => setShowSettings(false)} aria-label="Close"><Power size={15} aria-hidden="true" /></button></div>
             <div className="g-field g-field--mono"><label htmlFor="dev-id">Device ID</label><input id="dev-id" type="text" value={customDeviceId} onChange={(e) => setCustomDeviceId(e.target.value)} placeholder="db_001" /><span className="g-field__hint">Leave blank to use whatever the server reports.</span></div>
@@ -1307,24 +1319,24 @@ export default function DoorbellControlPage() {
         </div>
       )}
 
-      {showVisitorDetails && selectedVisitor && (
-        <div className="g-modal" role="dialog" aria-modal="true" aria-labelledby="m-visitor-h" onClick={() => setShowVisitorDetails(false)}>
+      {visitorModal.render && shownVisitor && (
+        <div className={visitorModal.className} role="dialog" aria-modal="true" aria-labelledby="m-visitor-h" onClick={() => setShowVisitorDetails(false)}>
           <div className="g-pane g-modal__card g-modal__card--wide" onClick={(e) => e.stopPropagation()}>
-            <div className="g-modal__head"><div><h2 id="m-visitor-h">{selectedVisitor.name}</h2><p>{selectedVisitor.recognized ? "Recognised visitor" : "Unknown visitor"}</p></div><button className="g-icon-btn" type="button" onClick={() => setShowVisitorDetails(false)} aria-label="Close"><Power size={15} aria-hidden="true" /></button></div>
+            <div className="g-modal__head"><div><h2 id="m-visitor-h">{shownVisitor.name}</h2><p>{shownVisitor.recognized ? "Recognised visitor" : "Unknown visitor"}</p></div><button className="g-icon-btn" type="button" onClick={() => setShowVisitorDetails(false)} aria-label="Close"><Power size={15} aria-hidden="true" /></button></div>
             <div className="g-grid g-grid--2">
-              <div className={`g-avatar ${selectedVisitor.recognized ? "g-avatar--known" : "g-avatar--unknown"}`}>
+              <div className={`g-avatar ${shownVisitor.recognized ? "g-avatar--known" : "g-avatar--unknown"}`}>
                 <div className="g-avatar__img" style={{ maxWidth: 240, width: "100%", justifySelf: "center" }}>
-                  {selectedVisitor.image ? <img src={selectedVisitor.image} alt={selectedVisitor.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <Users size={48} aria-hidden="true" />}
+                  {shownVisitor.image ? <img src={shownVisitor.image} alt={shownVisitor.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <Users size={48} aria-hidden="true" />}
                 </div>
               </div>
               <div className="g-stack">
                 <dl className="g-info">
-                  <div><dt>Status</dt><dd>{selectedVisitor.recognized ? "Recognised" : "Unknown"}</dd></div>
-                  <div><dt>Confidence</dt><dd>{selectedVisitor.confidence > 0 ? `${(selectedVisitor.confidence * 100).toFixed(1)}%` : "N/A"}</dd></div>
-                  <div><dt>Detected at</dt><dd>{selectedVisitor.detected_at ? new Date(selectedVisitor.detected_at._seconds ? selectedVisitor.detected_at._seconds * 1000 : selectedVisitor.detected_at).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" }) : "N/A"}</dd></div>
-                  <div><dt>Detection ID</dt><dd>{selectedVisitor.id}</dd></div>
+                  <div><dt>Status</dt><dd>{shownVisitor.recognized ? "Recognised" : "Unknown"}</dd></div>
+                  <div><dt>Confidence</dt><dd>{shownVisitor.confidence > 0 ? `${(shownVisitor.confidence * 100).toFixed(1)}%` : "N/A"}</dd></div>
+                  <div><dt>Detected at</dt><dd>{shownVisitor.detected_at ? new Date(shownVisitor.detected_at._seconds ? shownVisitor.detected_at._seconds * 1000 : shownVisitor.detected_at).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" }) : "N/A"}</dd></div>
+                  <div><dt>Detection ID</dt><dd>{shownVisitor.id}</dd></div>
                 </dl>
-                {selectedVisitor.confidence > 0 && <div><div className="g-meter-row"><span className="g-label">Confidence</span><b>{(selectedVisitor.confidence * 100).toFixed(0)}%</b></div><div className="g-meter"><i className={selectedVisitor.recognized ? "" : "is-warn"} style={{ width: `${selectedVisitor.confidence * 100}%` }} /></div></div>}
+                {shownVisitor.confidence > 0 && <div><div className="g-meter-row"><span className="g-label">Confidence</span><b>{(shownVisitor.confidence * 100).toFixed(0)}%</b></div><div className="g-meter"><i className={shownVisitor.recognized ? "" : "is-warn"} style={{ width: `${shownVisitor.confidence * 100}%` }} /></div></div>}
               </div>
             </div>
             <div className="g-modal__foot"><button className="g-btn g-btn--ghost" type="button" onClick={() => setShowVisitorDetails(false)}>Close</button></div>
