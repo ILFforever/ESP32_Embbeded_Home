@@ -16,7 +16,8 @@ This module provides the user interface for the smart doorbell system, displayin
 - **NFC card authentication** - PN532 reader with IRQ-based detection
 - **Face detection overlay** - Bounding box display on detected faces
 - **Button controls** - Doorbell press, call button, hold actions
-- **WiFi + HTTP interface** - Remote control via web browser
+- **WiFi backend integration** - Heartbeat, command polling, logging, NFC access checks, weather, and doorbell events
+- **MQTT notifications** - Doorbell ring publish and command notification subscription
 - **Status animations** - Smooth scrolling status messages
 - **Auto-expiring messages** - Temporary status with fallback to system state
 - **Multi-core processing** - RTOS tasks on dual cores for responsive UI
@@ -46,13 +47,35 @@ This module provides the user interface for the smart doorbell system, displayin
 
 ## Software Architecture
 
+### Active Network Model
+
+The current firmware uses outbound network connections only. The previous local
+HTTP control server is disabled to save RAM/flash, so `doorbell-control.html`
+and the old `/camera/start`, `/camera/stop`, `/snapshot`, `/status`, and
+`/face/*` endpoints are legacy/debug references unless the HTTP server
+dependency is restored.
+
+Active network paths include:
+- Backend HTTP over plain HTTP (intentional ESP32 memory tradeoff; HTTPS caused
+  no-memory failures in this firmware profile)
+- OpenWeatherMap HTTP weather fetch
+- HiveMQ MQTT broker for doorbell ring and command notifications
+- Background multipart face-image upload through `face_detection_sender`
+
+Local secrets and deployment values can be overridden through
+`include/local_config.h`; copy `include/local_config.h.example` and fill in
+local values. The fallback constants in `include/app_config.h` are placeholders
+for non-secret builds.
+
 ### Core Modules
 - `main.cpp` - Main program, UI rendering, task orchestration
 - `lcd_helper.cpp/h` - Status message management with auto-expiration
 - `uart_commands.cpp/h` - UART protocol with camera slave
 - `SPIMaster.cpp/h` - High-speed JPEG frame reception
 - `nfc_controller.cpp/h` - NFC card reading (RTOS task on Core 0)
-- `http_control.cpp/h` - Web server for remote control
+- `network_manager.cpp/h` - Queued backend network worker for non-critical HTTP jobs
+- `heartbeat.cpp/h` - Backend heartbeat, commands, status, warnings, and device events
+- `doorbell_mqtt.cpp/h` - MQTT doorbell ring and command notification path
 - `slave_state_manager.cpp/h` - Synchronization with camera module state
 
 ### State Management

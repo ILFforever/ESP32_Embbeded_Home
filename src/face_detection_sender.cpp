@@ -22,6 +22,96 @@ static FaceDetectionStats stats = {0, 0, 0, 0, 0};
 volatile bool faceDetectionUploadInProgress = false;
 
 // ============================================================================
+// Internal: Parse BACKEND_SERVER_URL into host/port and build the
+// face-detection endpoint path - fixed buffers, no heap allocation
+// ============================================================================
+static void buildFaceEndpoint(char *host, size_t hostSize, int *port, char *path, size_t pathSize)
+{
+    const char *url = BACKEND_SERVER_URL;
+    if (strncmp(url, "http://", 7) == 0)
+    {
+        url += 7;
+    }
+    else if (strncmp(url, "https://", 8) == 0)
+    {
+        url += 8;
+    }
+
+    const char *colon = strchr(url, ':');
+    const char *slash = strchr(url, '/');
+
+    size_t hostLen;
+    if (colon != nullptr)
+    {
+        hostLen = (size_t)(colon - url);
+        *port = atoi(colon + 1); // atoi stops at '/' automatically
+    }
+    else
+    {
+        hostLen = (slash != nullptr) ? (size_t)(slash - url) : strlen(url);
+        *port = 80;
+    }
+    if (hostLen >= hostSize)
+    {
+        hostLen = hostSize - 1;
+    }
+    memcpy(host, url, hostLen);
+    host[hostLen] = '\0';
+
+    // Base path from URL (if any), then append endpoint avoiding double slashes
+    size_t baseLen = 0;
+    if (slash != nullptr)
+    {
+        baseLen = strlen(slash);
+        if (baseLen >= pathSize)
+        {
+            baseLen = pathSize - 1;
+        }
+        memcpy(path, slash, baseLen);
+    }
+    path[baseLen] = '\0';
+
+    const char *apiPath = "/api/v1/devices/doorbell/face-detection";
+    if (baseLen == 0 || strcmp(path, "/") == 0)
+    {
+        snprintf(path, pathSize, "%s", apiPath);
+    }
+    else if (path[baseLen - 1] == '/')
+    {
+        snprintf(path + baseLen, pathSize - baseLen, "%s", apiPath + 1);
+    }
+    else
+    {
+        snprintf(path + baseLen, pathSize - baseLen, "%s", apiPath);
+    }
+}
+
+// ============================================================================
+// Internal: Send HTTP request headers using a fixed buffer
+// ============================================================================
+static void sendRequestHeaders(WiFiClient &client, const char *path, const char *host,
+                               const char *contentType, size_t contentLength)
+{
+    char header[512];
+    int headerLen = snprintf(header, sizeof(header),
+                             "POST %s HTTP/1.1\r\n"
+                             "Host: %s\r\n"
+                             "Content-Type: %s\r\n"
+                             "Content-Length: %u\r\n",
+                             path, host, contentType, (unsigned)contentLength);
+    if (DEVICE_API_TOKEN && strlen(DEVICE_API_TOKEN) > 0 && headerLen > 0 && headerLen < (int)sizeof(header))
+    {
+        headerLen += snprintf(header + headerLen, sizeof(header) - headerLen,
+                              "Authorization: Bearer %s\r\n", DEVICE_API_TOKEN);
+    }
+    if (headerLen > 0 && headerLen < (int)sizeof(header))
+    {
+        snprintf(header + headerLen, sizeof(header) - headerLen, "Connection: close\r\n\r\n");
+    }
+    client.print(header);
+}
+
+// ============================================================================
 // Internal: Send face detection event as JSON (fallback, no image)
 // ============================================================================
 static void sendFaceDetectionJson(FaceDetectionEvent *event)
@@ -33,35 +123,15 @@ static void sendFaceDetectionJson(FaceDetectionEvent *event)
     }
 
     // Parse backend URL
-    String serverUrl = String(BACKEND_SERVER_URL);
-    serverUrl.replace("http://", "");
-    serverUrl.replace("https://", "");
-
-    int colonIdx = serverUrl.indexOf(':');
-    int slashIdx = serverUrl.indexOf('/');
-
-    String host = (colonIdx > 0) ? serverUrl.substring(0, colonIdx) : (slashIdx > 0) ? serverUrl.substring(0, slashIdx)
-                                                                                     : serverUrl;
-    int port = (colonIdx > 0) ? serverUrl.substring(colonIdx + 1, (slashIdx > 0) ? slashIdx : serverUrl.length()).toInt() : 80;
-    String path = (slashIdx > 0) ? serverUrl.substring(slashIdx) : "";
-
-    if (path.length() == 0 || path == "/")
-    {
-        path = "/api/v1/devices/doorbell/face-detection";
-    }
-    else if (path.endsWith("/"))
-    {
-        path += "api/v1/devices/doorbell/face-detection";
-    }
-    else
-    {
-        path += "/api/v1/devices/doorbell/face-detection";
-    }
+    char host[64];
+    char path[160];
+    int port = 80;
+    buildFaceEndpoint(host, sizeof(host), &port, path, sizeof(path));
 
     WiFiClient client;
     client.setTimeout(5000);
 
-    if (!client.connect(host.c_str(), port, 5000))
+    if (!client.connect(host, port, 5000))
     {
         Serial.println("[FaceDetectionSender] (JSON) ✗ Connection failed");
         return;
@@ -78,19 +148,11 @@ static void sendFaceDetectionJson(FaceDetectionEvent *event)
     doc["timestamp"] = event->timestamp;
     doc["image_upload_failed"] = true;
 
-    String payload;
-    serializeJson(doc, payload);
+    char payload[256];
+    size_t payloadLen = serializeJson(doc, payload, sizeof(payload));
 
-    // Send HTTP headers
-    client.print("POST " + path + " HTTP/1.1\r\n");
-    client.print("Host: " + host + "\r\n");
-    client.print("Content-Type: application/json\r\n");
-    client.print("Content-Length: " + String(payload.length()) + "\r\n");
-    if (DEVICE_API_TOKEN && strlen(DEVICE_API_TOKEN) > 0)
-    {
-        client.print("Authorization: Bearer " + String(DEVICE_API_TOKEN) + "\r\n");
-    }
-    client.print("Connection: close\r\n\r\n");
+    // Send HTTP headers and body
+    sendRequestHeaders(client, path, host, "application/json", payloadLen);
     client.print(payload);
     client.flush();
 
@@ -141,37 +203,17 @@ static void sendFaceDetectionBlocking(FaceDetectionEvent *event)
     // This reduces heap fragmentation during WiFiClient operations
 
     // Parse backend URL
-    String serverUrl = String(BACKEND_SERVER_URL);
-    serverUrl.replace("http://", "");
-    serverUrl.replace("https://", "");
+    char host[64];
+    char path[160];
+    int port = 80;
+    buildFaceEndpoint(host, sizeof(host), &port, path, sizeof(path));
 
-    int colonIdx = serverUrl.indexOf(':');
-    int slashIdx = serverUrl.indexOf('/');
-
-    String host = (colonIdx > 0) ? serverUrl.substring(0, colonIdx) : (slashIdx > 0) ? serverUrl.substring(0, slashIdx)
-                                                                                     : serverUrl;
-    int port = (colonIdx > 0) ? serverUrl.substring(colonIdx + 1, (slashIdx > 0) ? slashIdx : serverUrl.length()).toInt() : 80;
-    String path = (slashIdx > 0) ? serverUrl.substring(slashIdx) : "";
-
-    if (path.length() == 0 || path == "/")
-    {
-        path = "/api/v1/devices/doorbell/face-detection";
-    }
-    else if (path.endsWith("/"))
-    {
-        path += "api/v1/devices/doorbell/face-detection";
-    }
-    else
-    {
-        path += "/api/v1/devices/doorbell/face-detection";
-    }
-
-    Serial.printf("[FaceDetectionSender] Connecting to %s:%d%s\n", host.c_str(), port, path.c_str());
+    Serial.printf("[FaceDetectionSender] Connecting to %s:%d%s\n", host, port, path);
 
     WiFiClient client;
     client.setTimeout(6000); // 5 second timeout for reads/writes
 
-    if (!client.connect(host.c_str(), port, 6000))
+    if (!client.connect(host, port, 6000))
     { // 5 second connection timeout
         Serial.println("[FaceDetectionSender] ✗ Connection failed");
         Serial.println("[FaceDetectionSender] ☛ Timed out with image, attempting fallback without image...");
@@ -186,57 +228,69 @@ static void sendFaceDetectionBlocking(FaceDetectionEvent *event)
     // Disable Nagle's algorithm for faster transmission (must be after connect)
     client.setNoDelay(true);
 
-    String boundary = "----ESP32Boundary" + String(millis());
+    char boundary[40];
+    snprintf(boundary, sizeof(boundary), "----ESP32Boundary%lu", millis());
 
-    // Build form data
-    String formData = "";
-    formData += "--" + boundary + "\r\n";
-    formData += "Content-Disposition: form-data; name=\"device_id\"\r\n\r\n";
-    formData += String(DEVICE_ID) + "\r\n";
-
-    formData += "--" + boundary + "\r\n";
-    formData += "Content-Disposition: form-data; name=\"recognized\"\r\n\r\n";
-    formData += String(event->recognized ? "true" : "false") + "\r\n";
-
-    formData += "--" + boundary + "\r\n";
-    formData += "Content-Disposition: form-data; name=\"name\"\r\n\r\n";
-    formData += String(event->name) + "\r\n";
-
-    formData += "--" + boundary + "\r\n";
-    formData += "Content-Disposition: form-data; name=\"confidence\"\r\n\r\n";
-    formData += String(event->confidence, 2) + "\r\n";
-
-    formData += "--" + boundary + "\r\n";
-    formData += "Content-Disposition: form-data; name=\"timestamp\"\r\n\r\n";
-    formData += String(event->timestamp) + "\r\n";
+    // Build form data (fixed buffer, no heap)
+    char formData[640];
+    size_t formLen = snprintf(formData, sizeof(formData),
+                              "--%s\r\n"
+                              "Content-Disposition: form-data; name=\"device_id\"\r\n\r\n"
+                              "%s\r\n"
+                              "--%s\r\n"
+                              "Content-Disposition: form-data; name=\"recognized\"\r\n\r\n"
+                              "%s\r\n"
+                              "--%s\r\n"
+                              "Content-Disposition: form-data; name=\"name\"\r\n\r\n"
+                              "%s\r\n"
+                              "--%s\r\n"
+                              "Content-Disposition: form-data; name=\"confidence\"\r\n\r\n"
+                              "%.2f\r\n"
+                              "--%s\r\n"
+                              "Content-Disposition: form-data; name=\"timestamp\"\r\n\r\n"
+                              "%lu\r\n",
+                              boundary, DEVICE_ID,
+                              boundary, event->recognized ? "true" : "false",
+                              boundary, event->name,
+                              boundary, event->confidence,
+                              boundary, event->timestamp);
 
     // Image header
-    String imageHeader = "";
+    char imageHeader[192];
+    size_t imageHeaderLen = 0;
     if (event->imageData != nullptr && event->imageSize > 0)
     {
-        imageHeader += "--" + boundary + "\r\n";
-        imageHeader += "Content-Disposition: form-data; name=\"image\"; filename=\"face.jpg\"\r\n";
-        imageHeader += "Content-Type: image/jpeg\r\n\r\n";
+        imageHeaderLen = snprintf(imageHeader, sizeof(imageHeader),
+                                  "--%s\r\n"
+                                  "Content-Disposition: form-data; name=\"image\"; filename=\"face.jpg\"\r\n"
+                                  "Content-Type: image/jpeg\r\n\r\n",
+                                  boundary);
+    }
+    else
+    {
+        imageHeader[0] = '\0';
     }
 
-    String footer = "--" + boundary + "--\r\n";
+    char footer[48];
+    size_t footerLen = snprintf(footer, sizeof(footer), "--%s--\r\n", boundary);
 
-    size_t contentLength = formData.length() + imageHeader.length() + event->imageSize + 2 + footer.length();
+    // The +2 is the CRLF written after the image bytes - only counted when an
+    // image is actually sent, otherwise the declared length overshoots by 2 and
+    // the server blocks waiting for bytes that never arrive.
+    size_t contentLength = formLen + imageHeaderLen + event->imageSize + footerLen;
+    if (event->imageData != nullptr && event->imageSize > 0)
+    {
+        contentLength += 2;
+    }
 
     // Send HTTP headers
     Serial.printf("[FaceDetectionSender] Sending headers (Content-Length: %u)\n", contentLength);
-    client.print("POST " + path + " HTTP/1.1\r\n");
-    client.print("Host: " + host + "\r\n");
-    client.print("Content-Type: multipart/form-data; boundary=" + boundary + "\r\n");
-    client.print("Content-Length: " + String(contentLength) + "\r\n");
-    if (DEVICE_API_TOKEN && strlen(DEVICE_API_TOKEN) > 0)
-    {
-        client.print("Authorization: Bearer " + String(DEVICE_API_TOKEN) + "\r\n");
-    }
-    client.print("Connection: close\r\n\r\n");
+    char multipartType[80];
+    snprintf(multipartType, sizeof(multipartType), "multipart/form-data; boundary=%s", boundary);
+    sendRequestHeaders(client, path, host, multipartType, contentLength);
 
     // Send form data
-    Serial.printf("[FaceDetectionSender] Sending form data (%u bytes)\n", formData.length());
+    Serial.printf("[FaceDetectionSender] Sending form data (%u bytes)\n", formLen);
     client.print(formData);
 
     // Send image in chunks
@@ -381,17 +435,19 @@ static void sendFaceDetectionBlocking(FaceDetectionEvent *event)
         }
     }
 
-    String responseBody = "";
+    char responseBody[512];
+    size_t responseLen = 0;
     while (client.available())
     {
         esp_task_wdt_reset(); // Feed watchdog while reading body
-        char c = client.read();
-        if (c != -1)
+        int c = client.read();
+        if (c != -1 && responseLen < sizeof(responseBody) - 1)
         {
-            responseBody += (char)c;
+            responseBody[responseLen++] = (char)c;
         }
         vTaskDelay(pdMS_TO_TICKS(1)); // Small yield to prevent CPU hogging
     }
+    responseBody[responseLen] = '\0';
 
     // Explicit cleanup to prevent socket leaks
     client.flush();
@@ -406,7 +462,7 @@ static void sendFaceDetectionBlocking(FaceDetectionEvent *event)
         Serial.printf("[FaceDetectionSender] ✓ Sent successfully in %lums (code: %d)\n", duration, httpCode);
         stats.totalSent++;
 
-        StaticJsonDocument<1024> responseDoc;
+        StaticJsonDocument<512> responseDoc;
         DeserializationError error = deserializeJson(responseDoc, responseBody);
         if (!error && responseDoc.containsKey("event_id"))
         {
@@ -417,7 +473,7 @@ static void sendFaceDetectionBlocking(FaceDetectionEvent *event)
     else
     {
         Serial.printf("[FaceDetectionSender] ✗ Failed (code: %d, duration: %lums)\n", httpCode, duration);
-        Serial.printf("[FaceDetectionSender] Response: %s\n", responseBody.c_str());
+        Serial.printf("[FaceDetectionSender] Response: %s\n", responseBody);
         Serial.println("[FaceDetectionSender] attempting fallback without image...");
         sendFaceDetectionJson(event);
         stats.totalFailed++;
@@ -514,9 +570,10 @@ bool queueFaceDetection(bool recognized, const char *name, float confidence,
 
     if (imageSize > MAX_FACE_IMAGE_SIZE)
     {
-        Serial.printf("[FaceDetectionSender] ✗ Image too large (%u bytes, max %u)\n",
+        Serial.printf("[FaceDetectionSender] ⚠ Image too large (%u bytes, max %u), queueing metadata only\n",
                       imageSize, MAX_FACE_IMAGE_SIZE);
-        return false;
+        imageData = nullptr;
+        imageSize = 0;
     }
 
     FaceDetectionEvent event;
@@ -536,24 +593,29 @@ bool queueFaceDetection(bool recognized, const char *name, float confidence,
 
         if (freeHeap < MIN_FREE_HEAP || largestBlock < imageSize)
         {
-            Serial.printf("[FaceDetectionSender] ⚠ Skipping due to low memory (free: %u, largest: %u, need: %u)\n",
+            Serial.printf("[FaceDetectionSender] ⚠ Low memory for image (free: %u, largest: %u, need: %u), queueing metadata only\n",
                           freeHeap, largestBlock, imageSize);
-            stats.totalFailed++;
-            return false;
+            event.imageData = nullptr;
+            event.imageSize = 0;
         }
-
-        event.imageData = (uint8_t *)malloc(imageSize);
-        if (event.imageData == NULL)
+        else
         {
-            Serial.printf("[FaceDetectionSender] ✗ Failed to allocate %u bytes (free heap: %u, largest block: %u)\n",
-                          imageSize, freeHeap, largestBlock);
-            stats.totalFailed++;
-            return false;
+            event.imageData = (uint8_t *)malloc(imageSize);
+            if (event.imageData == NULL)
+            {
+                Serial.printf("[FaceDetectionSender] ⚠ Failed to allocate %u bytes (free heap: %u, largest block: %u), queueing metadata only\n",
+                              imageSize, freeHeap, largestBlock);
+                event.imageData = nullptr;
+                event.imageSize = 0;
+            }
+            else
+            {
+                memcpy(event.imageData, imageData, imageSize);
+                event.imageSize = imageSize;
+                Serial.printf("[FaceDetectionSender] ✓ Allocated %u bytes (free: %u → %u)\n",
+                              imageSize, freeHeap, ESP.getFreeHeap());
+            }
         }
-        memcpy(event.imageData, imageData, imageSize);
-        event.imageSize = imageSize;
-        Serial.printf("[FaceDetectionSender] ✓ Allocated %u bytes (free: %u → %u)\n",
-                      imageSize, freeHeap, ESP.getFreeHeap());
     }
     else
     {

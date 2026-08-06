@@ -6,7 +6,9 @@ SPIMaster::SPIMaster()
     : _spi(HSPI),
       _state(SPI_IDLE),
       _frameBuffer(nullptr),
+      _bufferCapacity(0),
       _frameSize(0),
+      _lastFrameSize(0),
       _frameId(0),
       _frameTimestamp(0),
       _bytesReceived(0),
@@ -29,7 +31,80 @@ bool SPIMaster::begin()
     // Initialize SPI bus
     _spi.begin(SPI_SCK, SPI_MISO, SPI_MOSI, SPI_CS);
 
+    // Reserve the largest reusable buffer that still fits in contiguous DRAM.
+    // Anything we get here is kept for the lifetime of the program, which is
+    // what keeps the heap from fragmenting during streaming.
+    uint32_t largest = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT | MALLOC_CAP_INTERNAL);
+    Serial.printf("[SPI] Free heap: %u, largest 8-bit block: %u\n", ESP.getFreeHeap(), largest);
+
+    // Leave a little slack so we do not consume the very last usable block.
+    uint32_t target = (largest > 8192) ? (largest - 8192) : 0;
+    if (target > SPI_MAX_FRAME_SIZE)
+    {
+        target = SPI_MAX_FRAME_SIZE;
+    }
+
+    if (target >= SPI_MIN_FRAME_SIZE && _ensureCapacity(target))
+    {
+        Serial.printf("[SPI] Reusable frame buffer reserved (%u bytes)\n", _bufferCapacity);
+    }
+    else
+    {
+        Serial.printf("[SPI] ! Could not reserve a frame buffer (wanted %u bytes)\n", target);
+        Serial.println("[SPI]   Falling back to per-frame allocation - expect dropped frames");
+    }
+
     Serial.println("[SPI] Master initialized");
+    return true;
+}
+
+// Make sure _frameBuffer can hold `size` bytes. Grows on demand (never shrinks)
+// so the steady state is a single long-lived allocation.
+bool SPIMaster::_ensureCapacity(uint32_t size)
+{
+    if (size == 0 || size > SPI_MAX_FRAME_SIZE)
+    {
+        return false;
+    }
+
+    if (_frameBuffer != nullptr && _bufferCapacity >= size)
+    {
+        return true;
+    }
+
+    // Release the old (too small) buffer first so its memory can be reused;
+    // remember its size so we can restore it if the bigger request fails.
+    uint32_t previousCapacity = _bufferCapacity;
+    if (_frameBuffer != nullptr)
+    {
+        free(_frameBuffer);
+        _frameBuffer = nullptr;
+        _bufferCapacity = 0;
+    }
+
+    uint8_t *buffer = (uint8_t *)heap_caps_malloc(size, MALLOC_CAP_8BIT | MALLOC_CAP_INTERNAL);
+    if (buffer == nullptr)
+    {
+        buffer = (uint8_t *)malloc(size);
+    }
+
+    if (buffer == nullptr)
+    {
+        // Restore the previous buffer so the steady state does not degrade into
+        // a malloc/free cycle on every oversized frame.
+        if (previousCapacity > 0)
+        {
+            _frameBuffer = (uint8_t *)heap_caps_malloc(previousCapacity, MALLOC_CAP_8BIT | MALLOC_CAP_INTERNAL);
+            if (_frameBuffer != nullptr)
+            {
+                _bufferCapacity = previousCapacity;
+            }
+        }
+        return false;
+    }
+
+    _frameBuffer = buffer;
+    _bufferCapacity = size;
     return true;
 }
 
@@ -53,6 +128,7 @@ void SPIMaster::update()
                 {
                     _state = SPI_COMPLETE;
                     _framesReceived++;
+                    _lastFrameSize = _frameSize;
                     _lastTransferTime = millis();
 
                     // Serial.printf("[SPI] Frame %d complete (%u bytes)\n", _frameId, _frameSize);  // Disabled to reduce spam
@@ -74,6 +150,7 @@ void SPIMaster::update()
         {
             _state = SPI_COMPLETE;
             _framesReceived++;
+            _lastFrameSize = _frameSize;
             _lastTransferTime = millis();
         }
         break;
@@ -83,12 +160,10 @@ void SPIMaster::update()
         break;
 
     case SPI_ERROR:
-        // Reset to idle and free buffer
+        // Reset to idle. Keep the reusable buffer allocated.
         _state = SPI_IDLE;
-        if (_frameBuffer != nullptr) {
-            free(_frameBuffer);
-            _frameBuffer = nullptr;
-        }
+        _frameSize = 0;
+        _bytesReceived = 0;
         break;
     }
 }
@@ -123,7 +198,7 @@ bool SPIMaster::_receiveHeader()
     _frameSize = _parseBE32((uint8_t *)&header.frame_size);
     _frameTimestamp = _parseBE32((uint8_t *)&header.timestamp);
 
-    // Validate frame size
+    // Validate frame size against the protocol limit
     if (_frameSize == 0 || _frameSize > SPI_MAX_FRAME_SIZE)
     {
         Serial.printf("[SPI] ERROR: Invalid frame size: %u (max: %u)\n", _frameSize, SPI_MAX_FRAME_SIZE);
@@ -131,37 +206,21 @@ bool SPIMaster::_receiveHeader()
         return false;
     }
 
-    // Free old buffer immediately before allocating new one
-    if (_frameBuffer != nullptr)
+    // Reserved buffer is usually large enough; grow it only if a bigger frame
+    // shows up (or if boot-time reservation failed entirely).
+    if (!_ensureCapacity(_frameSize))
     {
-        free(_frameBuffer);
-        _frameBuffer = nullptr;
+        Serial.printf("[SPI] Alloc failed for %u bytes (largest block: %u) - dropping frame\n",
+                      _frameSize, heap_caps_get_largest_free_block(MALLOC_CAP_8BIT | MALLOC_CAP_INTERNAL));
         _framesDropped++;
-        delay(5);  // Give heap time to consolidate
-    }
-
-    // Try heap_caps_malloc first (better for finding contiguous blocks)
-    _frameBuffer = (uint8_t*)heap_caps_malloc(_frameSize, MALLOC_CAP_8BIT | MALLOC_CAP_INTERNAL);
-
-    // Fallback to regular malloc if heap_caps fails
-    if (_frameBuffer == nullptr)
-    {
-        _frameBuffer = (uint8_t*)malloc(_frameSize);
-    }
-
-    if (_frameBuffer == nullptr)
-    {
-        Serial.printf("[SPI] ✗ Alloc failed: %u bytes\n", _frameSize);
-        Serial.printf("      Free heap: %u, Largest block: %u\n",
-                     ESP.getFreeHeap(), ESP.getMaxAllocHeap());
-        Serial.printf("      DRAM: %u, 8-bit capable: %u\n",
-                     heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
-                     heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
         _state = SPI_ERROR;
         return false;
     }
 
-    delay(2);
+    // Give the slave time to queue the frame data before we start clocking it
+    // out. Without this the master reads an idle MISO line and the "JPEG"
+    // arrives as zeros/noise.
+    delay(SPI_HEADER_TO_DATA_DELAY_MS);
 
     return true;
 }
@@ -207,12 +266,7 @@ void SPIMaster::ackFrame()
 {
     if (_state == SPI_COMPLETE)
     {
-        // Free buffer and reset to idle
-        if (_frameBuffer != nullptr)
-        {
-            free(_frameBuffer);
-            _frameBuffer = nullptr;
-        }
+        // Keep the reusable buffer allocated and reset metadata for the next frame.
         _frameSize = 0;
         _bytesReceived = 0;
         _state = SPI_IDLE;
@@ -251,7 +305,9 @@ bool SPIMaster::startTask()
     BaseType_t result = xTaskCreatePinnedToCore(
         _spiTaskWrapper, // Task function
         "spi_master",    // Task name
-        8192,            // Stack size (larger for SPI operations)
+        4096,            // Stack size - measured high water use is ~750 bytes
+                         // (uxTaskGetStackHighWaterMark reported 7468 free of
+                         // 8192 under load), so 4096 keeps >3KB of headroom
         this,            // Task parameter (this pointer)
         5,               // Priority (high priority for real-time SPI)
         &_taskHandle,    // Task handle

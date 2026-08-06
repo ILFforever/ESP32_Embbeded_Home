@@ -13,9 +13,25 @@
 
 #define SPI_SPEED 20000000  // 20 MHz
 
-// Memory optimization: Reduced max frame size to prevent fragmentation
-// Typical JPEG frames are 30-60KB, so 60KB limit should be sufficient
-#define SPI_MAX_FRAME_SIZE 60000  // 60KB max per frame
+// Max frame size, which is also the size of the buffer reserved at boot.
+// Measured frames from this camera run ~6KB (5811 bytes observed), so 32KB is
+// a >5x headroom for a complex scene while returning ~28KB of contiguous DRAM
+// versus the old 60KB. If frames ever exceed this they are rejected and
+// counted - watch "dropped" in the [MEM] report before lowering it further.
+#define SPI_MAX_FRAME_SIZE 32768
+
+// Gap between reading a frame header and clocking out the first data chunk.
+// The slave needs this long to queue the JPEG into its SPI transaction; clock
+// it too early and the master reads an idle MISO line (zeros/noise) instead of
+// JPEG data. This matches the timing of the previous per-frame-malloc code,
+// which spent ~7ms here (free + delay(5) + malloc + delay(2)). Lower it to
+// trade latency for FPS only if frames still decode cleanly.
+#define SPI_HEADER_TO_DATA_DELAY_MS 7
+
+// Smallest buffer worth keeping. If we cannot reserve at least this much
+// contiguous DRAM at boot we fall back to per-frame allocation instead of
+// failing init (DRAM is tight once the sprites are allocated).
+#define SPI_MIN_FRAME_SIZE 24000
 
 // Transfer states
 enum SPITransferState {
@@ -67,14 +83,24 @@ public:
     // Statistics
     uint32_t getFramesReceived() { return _framesReceived; }
     uint32_t getFramesDropped() { return _framesDropped; }
-    
+    uint32_t getBufferCapacity() { return _bufferCapacity; }
+    bool hasReservedBuffer() { return _frameBuffer != nullptr; }
+
+    // Size of the most recently completed frame. Unlike getFrameSize() this is
+    // NOT cleared by ackFrame(), so it stays valid after the frame has been
+    // displayed. The buffer is reused, so this only describes intact data while
+    // no new frame is arriving - stop the camera before relying on it.
+    uint32_t getLastFrameSize() { return _lastFrameSize; }
+
 private:
     SPIClass _spi;
     SPITransferState _state;
 
-    // Frame data - dynamic allocation (static would overflow DRAM)
+    // Frame data - allocated once at startup to avoid per-frame heap fragmentation
     uint8_t* _frameBuffer;
+    uint32_t _bufferCapacity;
     uint32_t _frameSize;
+    uint32_t _lastFrameSize;
     uint16_t _frameId;
     uint32_t _frameTimestamp;
 
@@ -93,6 +119,7 @@ private:
     void _spiTask();
 
     // Helper functions
+    bool _ensureCapacity(uint32_t size);
     bool _receiveHeader();
     void _receiveDataChunk();
     uint16_t _parseBE16(uint8_t* data);

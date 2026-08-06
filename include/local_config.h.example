@@ -1,0 +1,20 @@
+#ifndef LOCAL_CONFIG_H
+#define LOCAL_CONFIG_H
+
+// Copy this file to include/local_config.h for local builds.
+// include/local_config.h is ignored by git.
+
+#define WIFI_SSID "your-wifi-ssid"
+#define WIFI_PASSWORD "your-wifi-password"
+
+#define BACKEND_URL "http://embedded-smarthome.fly.dev"
+#define DOORBELL_DEVICE_ID "db_001"
+#define DOORBELL_DEVICE_TYPE "doorbell"
+#define DEVICE_AUTH_TOKEN "device-token-from-registration"
+
+#define WEATHER_API_KEY "openweathermap-key"
+#define WEATHER_CITY "Bangkok"
+#define WEATHER_COUNTRY "TH"
+#define WEATHER_UNITS "metric"
+
+#endif // LOCAL_CONFIG_H

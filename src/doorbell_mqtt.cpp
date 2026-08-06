@@ -17,7 +17,7 @@ WiFiClient wifiClient;
 PubSubClient mqttClient(wifiClient);
 
 // Device ID storage
-static String doorbellDeviceId = "";
+static char doorbellDeviceId[48] = "";
 
 // ============================================================================
 // MQTT Callback - Handles incoming messages
@@ -25,17 +25,11 @@ static String doorbellDeviceId = "";
 void mqttCallback(char* topic, byte* payload, unsigned int length) {
   Serial.printf("[MQTT] Message received on topic: %s\n", topic);
 
-  // Convert payload to String
-  String message = "";
-  for (unsigned int i = 0; i < length; i++) {
-    message += (char)payload[i];
-  }
+  Serial.printf("[MQTT] Payload: %.*s\n", (int)length, (const char*)payload);
 
-  Serial.printf("[MQTT] Payload: %s\n", message.c_str());
-
-  // Parse JSON payload
+  // Parse JSON payload directly from the MQTT buffer (no String copy)
   StaticJsonDocument<512> doc;
-  DeserializationError error = deserializeJson(doc, message);
+  DeserializationError error = deserializeJson(doc, (const char*)payload, length);
 
   if (error) {
     Serial.printf("[MQTT] ✗ Failed to parse JSON: %s\n", error.c_str());
@@ -44,14 +38,14 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
 
   // Check if this is a command notification
   if (doc.containsKey("fetch_commands") && doc["fetch_commands"] == true) {
-    String device_id = doc["device_id"] | "";
-    String command_id = doc["command_id"] | "";
-    String action = doc["action"] | "";
+    const char* device_id = doc["device_id"] | "";
+    const char* command_id = doc["command_id"] | "";
+    const char* action = doc["action"] | "";
 
     Serial.println("[MQTT] ✓ Command notification received!");
-    Serial.printf("  Device: %s\n", device_id.c_str());
-    Serial.printf("  Command ID: %s\n", command_id.c_str());
-    Serial.printf("  Action: %s\n", action.c_str());
+    Serial.printf("  Device: %s\n", device_id);
+    Serial.printf("  Command ID: %s\n", command_id);
+    Serial.printf("  Action: %s\n", action);
 
     // Fetch and execute pending commands immediately
     Serial.println("[MQTT] → Fetching pending commands from server...");
@@ -63,19 +57,19 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
 // Initialize MQTT Client for Doorbell
 // ============================================================================
 void initDoorbellMQTT(const char* deviceId) {
-  doorbellDeviceId = String(deviceId);
+  snprintf(doorbellDeviceId, sizeof(doorbellDeviceId), "%s", deviceId);
 
   mqttClient.setServer(MQTT_SERVER, MQTT_PORT);
   mqttClient.setCallback(mqttCallback);  // Set callback for incoming messages
 
   Serial.println("[MQTT] Doorbell MQTT Initialized");
   Serial.printf("  Broker: %s:%d\n", MQTT_SERVER, MQTT_PORT);
-  Serial.printf("  Device ID: %s\n", doorbellDeviceId.c_str());
+  Serial.printf("  Device ID: %s\n", doorbellDeviceId);
   Serial.printf("  Publish Topic: %s\n", TOPIC_DOORBELL_RING);
 
   // Build command topic
   char commandTopic[128];
-  snprintf(commandTopic, sizeof(commandTopic), TOPIC_DEVICE_COMMAND_TEMPLATE, doorbellDeviceId.c_str());
+  snprintf(commandTopic, sizeof(commandTopic), TOPIC_DEVICE_COMMAND_TEMPLATE, doorbellDeviceId);
   Serial.printf("  Subscribe Topic: %s\n", commandTopic);
 }
 
@@ -100,15 +94,16 @@ bool connectDoorbellMQTT() {
   Serial.printf("[MQTT] Connecting to broker %s...\n", MQTT_SERVER);
 
   // Create unique client ID
-  String clientId = "doorbell_" + doorbellDeviceId;
+  char clientId[64];
+  snprintf(clientId, sizeof(clientId), "doorbell_%s", doorbellDeviceId);
 
   // Attempt to connect
-  if (mqttClient.connect(clientId.c_str())) {
+  if (mqttClient.connect(clientId)) {
     Serial.println("[MQTT] ✓ Connected!");
 
     // Subscribe to device-specific command topic
     char commandTopic[128];
-    snprintf(commandTopic, sizeof(commandTopic), TOPIC_DEVICE_COMMAND_TEMPLATE, doorbellDeviceId.c_str());
+    snprintf(commandTopic, sizeof(commandTopic), TOPIC_DEVICE_COMMAND_TEMPLATE, doorbellDeviceId);
 
     bool subscribed = mqttClient.subscribe(commandTopic);
     if (subscribed) {
@@ -143,15 +138,16 @@ void publishDoorbellRing() {
   }
 
   // Create JSON payload with device ID and timestamp
-  String payload = "{\"device_id\":\"" + doorbellDeviceId + "\",\"timestamp\":" + String(millis()) + "}";
+  char payload[96];
+  snprintf(payload, sizeof(payload), "{\"device_id\":\"%s\",\"timestamp\":%lu}", doorbellDeviceId, millis());
 
   // Publish to topic
-  bool success = mqttClient.publish(TOPIC_DOORBELL_RING, payload.c_str());
+  bool success = mqttClient.publish(TOPIC_DOORBELL_RING, payload);
 
   if (success) {
     Serial.println("[MQTT] ✓ Doorbell ring published!");
     Serial.printf("  Topic: %s\n", TOPIC_DOORBELL_RING);
-    Serial.printf("  Payload: %s\n", payload.c_str());
+    Serial.printf("  Payload: %s\n", payload);
   } else {
     Serial.println("[MQTT] ✗ Failed to publish doorbell ring");
   }

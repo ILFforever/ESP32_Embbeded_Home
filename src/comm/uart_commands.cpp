@@ -289,24 +289,30 @@ void handleUARTResponse(String line)
       // Clear face recognition timeout (face was recognized)
       face_recognition_active = false;
 
-      // Capture last frame (raw JPEG - no Base64 encoding needed!)
-      uint8_t *frameData = nullptr;
-      uint32_t frameSize = 0;
-
-      if (spiMaster.isFrameReady())
-      {
-        frameData = spiMaster.getFrameData();
-        frameSize = spiMaster.getFrameSize();
-
-        if (frameData != nullptr && frameSize > 0)
-        {
-          Serial.printf("[FaceDetection] Captured frame: %u bytes (raw JPEG)\n", frameSize);
-        }
-      }
-
-      // STEP 1: Stop camera immediately to prevent new frame allocations
+      // STEP 1: Stop camera first, so no new frame can overwrite the buffer
+      // we are about to read.
       Serial.println("[FaceDetection] Stopping camera before upload");
       sendUARTCommand("camera_control", "camera_stop");
+
+      // Let any in-flight SPI transfer finish before touching the buffer
+      delay(50);
+
+      // Capture last frame (raw JPEG - no Base64 encoding needed!).
+      // Do NOT gate this on isFrameReady(): ProcessFrame acks frames within
+      // ~5ms of arrival, so SPI_COMPLETE is almost never observable here. The
+      // reusable buffer still holds the last frame's bytes after the ack, and
+      // getLastFrameSize() survives it.
+      uint8_t *frameData = spiMaster.getFrameData();
+      uint32_t frameSize = spiMaster.getLastFrameSize();
+
+      if (frameData != nullptr && frameSize > 0)
+      {
+        Serial.printf("[FaceDetection] Captured frame: %u bytes (raw JPEG)\n", frameSize);
+      }
+      else
+      {
+        Serial.println("[FaceDetection] No frame available - sending metadata only");
+      }
 
       // STEP 2: Show "Sending to server..." screen and start timer
       updateStatusMsg("Sending to server...", false);
@@ -316,7 +322,12 @@ void handleUARTResponse(String line)
 
       // STEP 3: Queue upload (copies frame data internally)
       Serial.println("[FaceDetection] Queueing upload to backend");
-      sendFaceDetectionAsync(recognized, name, confidence, frameData, frameSize);
+      bool queued = sendFaceDetectionAsync(recognized, name, confidence, frameData, frameSize);
+      if (!queued && frameData != nullptr && frameSize > 0)
+      {
+        Serial.println("[FaceDetection] Image queue failed, retrying metadata-only result");
+        sendFaceDetectionAsync(recognized, name, confidence, nullptr, 0);
+      }
 
       // STEP 4: Free SPI buffer immediately after copying (critical for memory)
       if (spiMaster.isFrameReady())

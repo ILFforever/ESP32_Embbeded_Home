@@ -34,11 +34,14 @@ struct FaceDetectionEvent {
  * Initialize the non-blocking face detection sender
  * Creates FreeRTOS task and queue
  *
- * @param stackSize Stack size for task (default 8KB)
+ * The task uses raw WiFiClient with fixed stack buffers (no TLS, no
+ * HTTPClient), so 6KB of stack is sufficient including the JSON fallback path.
+ *
+ * @param stackSize Stack size for task (default 6KB)
  * @param priority Task priority (default 1)
  * @param coreId Core to run on (default Core 0)
  */
-void initFaceDetectionSender(uint32_t stackSize = 8192, UBaseType_t priority = 1, BaseType_t coreId = 0);
+void initFaceDetectionSender(uint32_t stackSize = 6144, UBaseType_t priority = 1, BaseType_t coreId = 0);
 
 /**
  * Queue a face detection event to be sent asynchronously

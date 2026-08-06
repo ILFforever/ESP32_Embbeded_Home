@@ -27,5 +27,8 @@ Thumbs.db
 *.swp
 *.swo
 
+# Local firmware secrets/config
+include/local_config.h
+
 # Node modules (Backend branch dependency - not needed in ESP32 branches)
 node_modules/

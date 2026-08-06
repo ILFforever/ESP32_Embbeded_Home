@@ -1,7 +1,6 @@
 #include "logger.h"
 #include "heartbeat.h"
-#include <WiFi.h>
-#include <HTTPClient.h>
+#include "network_manager.h"
 #include <time.h>
 
 // External references from heartbeat module
@@ -18,20 +17,19 @@ void initLogger()
 }
 
 // ============================================================================
-// Get ISO 8601 timestamp
+// Get ISO 8601 timestamp (written into caller-provided buffer, no heap)
 // ============================================================================
-String getISOTimestamp()
+static void getISOTimestamp(char *buffer, size_t bufferSize)
 {
   struct tm timeinfo;
   if (!getLocalTime(&timeinfo))
   {
     // Fallback to millis() if time not synced
-    return String(millis());
+    snprintf(buffer, bufferSize, "%lu", millis());
+    return;
   }
 
-  char buffer[30];
-  strftime(buffer, sizeof(buffer), "%Y-%m-%dT%H:%M:%SZ", &timeinfo);
-  return String(buffer);
+  strftime(buffer, bufferSize, "%Y-%m-%dT%H:%M:%SZ", &timeinfo);
 }
 
 // ============================================================================
@@ -54,33 +52,12 @@ const char* logLevelToString(LogLevel level)
 // ============================================================================
 void logToBackend(LogLevel level, const char* module, const char* message, JsonObject metadata)
 {
-  // Check WiFi connection
-  if (WiFi.status() != WL_CONNECTED)
-  {
-    Serial.printf("[Logger] WiFi not connected - skipping log (level: %s, module: %s)\n",
-                  logLevelToString(level), module);
-    return;
-  }
+  char timestamp[32];
+  getISOTimestamp(timestamp, sizeof(timestamp));
 
-  HTTPClient http;
-  String url = String(BACKEND_SERVER_URL) + "/api/v1/devices/" + String(DEVICE_ID) + "/log";
-
-  http.begin(url);
-  http.addHeader("Content-Type", "application/json");
-
-  // Add Authorization header with Bearer token
-  if (DEVICE_API_TOKEN && strlen(DEVICE_API_TOKEN) > 0)
-  {
-    String authHeader = String("Bearer ") + DEVICE_API_TOKEN;
-    http.addHeader("Authorization", authHeader.c_str());
-  }
-
-  http.setTimeout(5000);
-
-  // Build JSON payload
-  StaticJsonDocument<1024> doc;
+  StaticJsonDocument<512> doc;
   doc["device_id"] = DEVICE_ID;
-  doc["timestamp"] = getISOTimestamp();
+  doc["timestamp"] = timestamp;
   doc["level"] = logLevelToString(level);
   doc["message"] = message;
   doc["module"] = module;
@@ -91,31 +68,16 @@ void logToBackend(LogLevel level, const char* module, const char* message, JsonO
     doc["metadata"] = metadata;
   }
 
-  String jsonString;
-  serializeJson(doc, jsonString);
+  char jsonString[768];
+  serializeJson(doc, jsonString, sizeof(jsonString));
 
-  // Send POST request
-  int httpResponseCode = http.POST(jsonString);
-
-  if (httpResponseCode > 0)
+  char endpoint[96];
+  snprintf(endpoint, sizeof(endpoint), "/api/v1/devices/%s/log", DEVICE_ID);
+  if (!enqueueBackendPost(endpoint, jsonString, "log", true, 5000))
   {
-    if (httpResponseCode == 200 || httpResponseCode == 201)
-    {
-      Serial.printf("[Logger] ✓ %s logged (module: %s): %s\n",
-                    logLevelToString(level), module, message);
-    }
-    else
-    {
-      Serial.printf("[Logger] ✗ Failed to log (code: %d)\n", httpResponseCode);
-    }
+    Serial.printf("[Logger] Failed to queue log (level: %s, module: %s)\n",
+                  logLevelToString(level), module);
   }
-  else
-  {
-    Serial.printf("[Logger] ✗ Connection failed: %s\n",
-                  http.errorToString(httpResponseCode).c_str());
-  }
-
-  http.end();
 }
 
 // ============================================================================

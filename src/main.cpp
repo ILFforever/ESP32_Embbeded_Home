@@ -19,9 +19,12 @@
 #include "doorbell_mqtt.h"
 #include "logger.h"
 #include "face_detection_sender.h"
+#include "network_manager.h"
+#include "app_config.h"
 #include <TJpg_Decoder.h>
 #include <cstring>
 #include <esp_system.h>
+#include <esp_heap_caps.h>
 
 #define RX2 16
 #define TX2 17
@@ -37,10 +40,21 @@
 
 // Create objects
 TFT_eSPI tft = TFT_eSPI();
-TFT_eSprite videoSprite = TFT_eSprite(&tft); // Sprite for video frames
 TFT_eSprite topuiSprite = TFT_eSprite(&tft); // Sprite for UI overlay
 TFT_eSprite botuiSprite = TFT_eSprite(&tft); // Sprite for UI overlay
-TFT_eSprite miduiSprite = TFT_eSprite(&tft); // Sprite for UI overlay
+
+// UI sprite colour depth. 8-bit (RGB332) halves the DRAM cost of the two UI
+// sprites (21,600 -> 10,800 bytes) at the price of colour banding on the
+// smooth-drawn status dot. Set back to 16 if the banding is not acceptable.
+#define UI_SPRITE_COLOR_DEPTH 8
+
+// Mirror the camera feed horizontally (selfie view). Costs one in-place row
+// reversal per decoded block - no extra memory, negligible time.
+#define VIDEO_MIRROR 1
+
+// Face detection box
+#define FACE_BOX_COLOR TFT_BLUE
+#define FACE_BOX_THICKNESS 2
 
 // Mutex for TFT/sprite access (thread safety)
 SemaphoreHandle_t tftMutex = NULL;
@@ -56,6 +70,10 @@ unsigned long status_msg_last_update = 0; // Timestamp of last status message up
 unsigned long upload_screen_start_time = 0;
 unsigned long welcome_screen_start_time = 0;
 bool show_upload_screen = false;
+// Set by anything that draws into the video band other than the clock screen
+// (video frames, upload screen). The clock screen does a full clear when it
+// sees this, so leftovers cannot show through its per-field redraws.
+volatile bool videoBandDirty = true;
 bool show_welcome_screen = false;
 char welcome_message[64] = "";
 
@@ -164,6 +182,7 @@ void updateWeather();
 void wifiWatchdogTask();
 void sendServerHeartbeatTask();
 void drawWifiSymbol(int x, int y, int strength);
+void reportHeapTask();
 void onCardDetected(NFCCardData card);
 void checkTimers();
 bool tft_jpg_render_callback(int16_t x, int16_t y, uint16_t w, uint16_t h, uint16_t *bitmap);
@@ -187,6 +206,7 @@ Task taskCheckSlaveSync(1000, TASK_FOREVER, &checkSlaveSyncTask);             //
 Task taskUpdateWeather(1800000, TASK_FOREVER, &updateWeather);                // Update weather every 30 minutes (1800000ms)
 Task taskSendServerHeartbeat(60000, TASK_FOREVER, &sendServerHeartbeatTask);  // Send heartbeat to server every 60s
 Task taskProcessDoorbellMQTT(100, TASK_FOREVER, &processDoorbellMQTT);        // Process MQTT connection every 100ms
+Task taskReportHeap(10000, TASK_FOREVER, &reportHeapTask);                    // Report heap/stack/SPI stats every 10s
 
 void setup()
 {
@@ -248,22 +268,25 @@ void setup()
     // Continue anyway - may recover later
   }
 
-  // Initialize sprites
-  Serial.println("Creating video sprite...");
-  videoSprite.setColorDepth(16); // 16-bit color for video
-  videoSprite.createSprite(tft.width(), VIDEO_HEIGHT);
+  // Initialize sprites. The video area has no sprite - JPEG blocks are decoded
+  // straight to the panel, which saves 96KB of DRAM.
+  Serial.println("Creating UI sprites...");
+  topuiSprite.setColorDepth(UI_SPRITE_COLOR_DEPTH);
+  if (topuiSprite.createSprite(tft.width(), VIDEO_Y_OFFSET + 5) == nullptr)
+  {
+    Serial.println("[ERROR] Failed to allocate top UI sprite");
+  }
 
-  Serial.println("Creating UI sprite...");
-  topuiSprite.setColorDepth(16); // 16-bit for UI overlay
-  topuiSprite.createSprite(tft.width(), VIDEO_Y_OFFSET + 5);
-
-  miduiSprite.setColorDepth(16);
-  miduiSprite.createSprite(tft.width(), tft.height() - 93);
-
-  botuiSprite.setColorDepth(16);
-  botuiSprite.createSprite(tft.width(), VIDEO_Y_OFFSET + 5);
+  botuiSprite.setColorDepth(UI_SPRITE_COLOR_DEPTH);
+  if (botuiSprite.createSprite(tft.width(), VIDEO_Y_OFFSET + 5) == nullptr)
+  {
+    Serial.println("[ERROR] Failed to allocate bottom UI sprite");
+  }
 
   Serial.println("Sprites initialized successfully");
+  Serial.printf("[MEM] After sprites - free: %u, largest 8-bit block: %u\n",
+                ESP.getFreeHeap(),
+                heap_caps_get_largest_free_block(MALLOC_CAP_8BIT | MALLOC_CAP_INTERNAL));
 
   // GPIO 34 and 35 are ADC1 channels - will use analogRead()
 
@@ -279,18 +302,16 @@ void setup()
 
   if (!spiMaster.begin())
   {
-    Serial.println("[ERROR] SPI initialization failed");
-    while (1)
-      delay(100);
+    // Non-fatal: the rest of the system (NFC, WiFi, MQTT, UI) still works
+    // without video, so never halt the boot here.
+    Serial.println("[ERROR] SPI initialization failed - continuing without video");
   }
   Serial.println("SPI initialization started");
 
   // Start SPI task on Core 1 for dedicated frame reception
   if (!spiMaster.startTask())
   {
-    Serial.println("[ERROR] Failed to start SPI task on Core 1");
-    while (1)
-      delay(100);
+    Serial.println("[ERROR] Failed to start SPI task on Core 1 - continuing without video");
   }
   // Start NFC on Core 0
   if (initNFC())
@@ -301,12 +322,12 @@ void setup()
 
   // Initialize WiFi (needed for backend communication, weather, heartbeat, MQTT)
   Serial.println("\n=== WiFi Setup ===");
-  Serial.printf("Connecting to %s...\n", "ILFforever2");
+  Serial.printf("Connecting to %s...\n", WIFI_SSID);
   WiFi.mode(WIFI_STA);
   WiFi.setAutoReconnect(true);
   WiFi.setAutoConnect(true);
   WiFi.setSleep(false); // Disable WiFi sleep for better stability
-  WiFi.begin("ILFforever2", "19283746");
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
 
   int wifi_timeout = 20; // 20 second timeout
   while (WiFi.status() != WL_CONNECTED && wifi_timeout > 0)
@@ -346,10 +367,10 @@ void setup()
   // Initialize heartbeat module
   // TODO: Update device_id and token after registering via POST /api/v1/devices/register
   initHeartbeat(
-      "http://embedded-smarthome.fly.dev",                               // HTTP (not HTTPS) - ESP32 memory optimization
-      "db_001",                                                          // Device ID (must match registration)
-      "doorbell",                                                        // Device type
-      "d8ac2f1ee97b4a8b3f299696773e807e735284c47cfc30aadef1287e10a53b6d" // API token (from registration response)
+      BACKEND_URL,          // HTTP (not HTTPS) - ESP32 memory optimization
+      DOORBELL_DEVICE_ID,   // Device ID (must match registration)
+      DOORBELL_DEVICE_TYPE, // Device type
+      DEVICE_AUTH_TOKEN     // API token (from registration response)
   );
   Serial.println("[MAIN] Heartbeat module initialized");
 
@@ -357,19 +378,34 @@ void setup()
   initLogger();
   Serial.println("[MAIN] Logger module initialized");
 
-  // Initialize face detection sender (async/non-blocking)
-  initFaceDetectionSender(8192, 1, 0); // 8KB stack, priority 1, Core 0
+  // Initialize shared network worker after backend config is available
+  initNetworkManager(8192, 1, 0);
+  Serial.println("[MAIN] Network manager initialized");
+
+  // Initialize face detection sender (async/non-blocking).
+  // Measured peak use during an upload is ~4.3KB. 6144 was tried and left only
+  // 1836 bytes free, which is too thin for a task doing network I/O - a longer
+  // server response or the JSON fallback path could overflow it. With ~100KB
+  // of contiguous DRAM spare there is no reason to run it tight.
+  initFaceDetectionSender(8192, 1, 0);
   Serial.println("[MAIN] Face detection sender initialized (async)");
 
   // Initialize MQTT client (WiFi already initialized by heartbeat module)
-  initDoorbellMQTT("db_001"); // Same device ID as heartbeat
+  initDoorbellMQTT(DOORBELL_DEVICE_ID); // Same device ID as heartbeat
   connectDoorbellMQTT();
   Serial.println("[MAIN] MQTT client initialized - will publish doorbell rings");
 
   // Configure TJpg_Decoder
   TJpgDec.setCallback(tft_jpg_render_callback); // Set the callback
   TJpgDec.setJpgScale(1);                       // Full resolution
-  TJpgDec.setSwapBytes(true);
+  // Exactly ONE byte swap must happen between the decoder and the panel.
+  // tft.setSwapBytes(true) (in the LCD init above) already swaps inside
+  // pushImage, so the decoder must not swap as well - two swaps cancel out and
+  // every pixel reaches the panel byte-reversed (right shapes, wrong colours).
+  // This used to be true because the callback pushed into videoSprite, which
+  // has its own _swapBytes flag defaulting to false. Drawing direct to the
+  // panel does not.
+  TJpgDec.setSwapBytes(false);
 
   last_pong_time = millis();
   last_amp_pong_time = millis();
@@ -392,6 +428,7 @@ void setup()
   myscheduler.addTask(taskSendServerHeartbeat);
   myscheduler.addTask(taskCheckTimers);
   myscheduler.addTask(taskProcessDoorbellMQTT);
+  myscheduler.addTask(taskReportHeap);
   taskCheckUART.enable();
   taskCheckUART2.enable();
   taskSendPing.enable();
@@ -409,6 +446,7 @@ void setup()
   taskSendServerHeartbeat.enable();
   taskCheckTimers.enable();
   taskProcessDoorbellMQTT.enable();
+  taskReportHeap.enable();
 
   last_pong_time = millis();
   last_amp_pong_time = millis();
@@ -431,6 +469,11 @@ void setup()
   updateStatusMsg("Getting ready...", true, "Standing By");
   sendUART2Command("play", "connect_success"); // Play error sound
 
+  Serial.printf("[MEM] Boot complete - free: %u, largest 8-bit block: %u, min free ever: %u\n",
+                ESP.getFreeHeap(),
+                heap_caps_get_largest_free_block(MALLOC_CAP_8BIT | MALLOC_CAP_INTERNAL),
+                ESP.getMinFreeHeap());
+
   uiNeedsUpdate = true;
 }
 
@@ -439,26 +482,120 @@ void loop()
   myscheduler.execute();
 }
 
-// TJpg_Decoder callback: draw a decoded block to videoSprite
+// Face box in screen coordinates, recomputed once per frame by ProcessFrame and
+// consumed by the decode callback below.
+static int16_t bboxScreenX = 0, bboxScreenY = 0, bboxScreenW = 0, bboxScreenH = 0;
+static bool bboxActive = false;
+
+// Paint the face box outline into a decoded block before it is pushed.
+// Compositing here (rather than drawing over the panel afterwards) is what
+// stops the box flashing: without a framebuffer, a box drawn after the push is
+// erased by the next frame's decode and only redrawn milliseconds later, so it
+// is missing for a large part of every frame period.
+static void overlayFaceBox(int16_t dstX, int16_t dstY, uint16_t stride,
+                           int16_t w, int16_t h, uint16_t *bitmap)
+{
+  const int16_t bx0 = bboxScreenX;
+  const int16_t by0 = bboxScreenY;
+  const int16_t bx1 = bboxScreenX + bboxScreenW - 1;
+  const int16_t by1 = bboxScreenY + bboxScreenH - 1;
+
+  // Reject blocks that cannot touch the box
+  if (dstX > bx1 || dstX + w - 1 < bx0 || dstY > by1 || dstY + h - 1 < by0)
+    return;
+
+  // pushImage byte-swaps on the way out (tft.setSwapBytes(true)), so store the
+  // colour pre-swapped for it to arrive correct.
+  const uint16_t colour = (uint16_t)((FACE_BOX_COLOR >> 8) | (FACE_BOX_COLOR << 8));
+
+  for (int16_t row = 0; row < h; row++)
+  {
+    const int16_t sy = dstY + row;
+    if (sy < by0 || sy > by1)
+      continue;
+
+    const bool edgeRow = (sy - by0 < FACE_BOX_THICKNESS) || (by1 - sy < FACE_BOX_THICKNESS);
+    uint16_t *p = bitmap + (size_t)row * stride;
+
+    for (int16_t col = 0; col < w; col++)
+    {
+      const int16_t sx = dstX + col;
+      if (sx < bx0 || sx > bx1)
+        continue;
+
+      const bool edgeCol = (sx - bx0 < FACE_BOX_THICKNESS) || (bx1 - sx < FACE_BOX_THICKNESS);
+      if (edgeRow || edgeCol)
+        p[col] = colour;
+    }
+  }
+}
+
+// TJpg_Decoder callback: draw a decoded block straight to the panel.
+// Coordinates arrive already offset by the drawJpg() origin, so they are
+// absolute screen coordinates. No full-frame buffer is involved.
 bool tft_jpg_render_callback(int16_t x, int16_t y, uint16_t w, uint16_t h, uint16_t *bitmap)
 {
-  // Clip vertically to video sprite bounds
-  int drawHeight = h;
-  if (y + h > VIDEO_HEIGHT)
-    drawHeight = VIDEO_HEIGHT - y;
+  const int16_t bandBottom = VIDEO_Y + VIDEO_H;
+  const int16_t bandRight = VIDEO_X + VIDEO_W;
 
-  // Clip horizontally
-  int drawWidth = w;
-  if (x + w > videoSprite.width())
-    drawWidth = videoSprite.width() - x;
+  // Blocks arrive top-to-bottom, so once we are past the bottom of the band
+  // nothing visible remains. Returning false aborts the decode and makes
+  // drawJpg() report JDR_INTR (1) - the caller treats that as success.
+  if (y >= bandBottom)
+    return false;
 
-  // Draw to video sprite instead of TFT directly
-  if (drawHeight > 0 && drawWidth > 0)
+  // Right of the band: skip this block but keep decoding
+  if (x >= bandRight)
+    return true;
+
+  int16_t drawHeight = h;
+  if (y + drawHeight > bandBottom)
+    drawHeight = bandBottom - y;
+
+  int16_t drawWidth = w;
+  if (x + drawWidth > bandRight)
+    drawWidth = bandRight - x;
+
+  int16_t dstX = x;
+
+#if VIDEO_MIRROR
+  // Reverse the visible pixels of each row in place. Source pixel i sits at
+  // screen x+i, which mirrors to bandRight-1-(x+i-VIDEO_X), so the block lands
+  // at the destination below with its rows reversed.
+  for (int16_t row = 0; row < drawHeight; row++)
   {
-    videoSprite.pushImage(x, y, drawWidth, drawHeight, bitmap);
+    uint16_t *p = bitmap + (size_t)row * w;
+    for (int16_t a = 0, b = drawWidth - 1; a < b; a++, b--)
+    {
+      const uint16_t t = p[a];
+      p[a] = p[b];
+      p[b] = t;
+    }
+  }
+  dstX = VIDEO_X + VIDEO_W - (x - VIDEO_X) - drawWidth;
+#endif
+
+  if (bboxActive)
+  {
+    overlayFaceBox(dstX, y, w, drawWidth, drawHeight, bitmap);
   }
 
-  return true; // always continue decoding
+  if (drawWidth == w)
+  {
+    // Full-width block: rows are contiguous, push in one go
+    tft.pushImage(dstX, y, drawWidth, drawHeight, bitmap);
+  }
+  else
+  {
+    // Horizontally clipped: the source stride is still w, so pushing a
+    // narrower rectangle in one call would shear the block. Push row by row.
+    for (int16_t row = 0; row < drawHeight; row++)
+    {
+      tft.pushImage(dstX, y + row, drawWidth, 1, bitmap + (size_t)row * w);
+    }
+  }
+
+  return true; // continue decoding
 }
 
 // Task: Process SPI frames and display on LCD
@@ -513,7 +650,15 @@ void ProcessFrame()
   // Validate JPEG SOI (Start of Image: 0xFFD8)
   if (frame[0] != 0xFF || frame[1] != 0xD8)
   {
-    Serial.printf("[FRAME] Bad header: 0x%02X%02X\n", frame[0], frame[1]);
+    // Dump the leading bytes: all-zero means the slave had not queued its data
+    // yet (raise SPI_HEADER_TO_DATA_DELAY_MS); an 0xFFD8 further in means the
+    // stream is byte-misaligned instead.
+    Serial.printf("[FRAME] Bad header, first 8 bytes:");
+    for (int i = 0; i < 8 && i < (int)frameSize; i++)
+    {
+      Serial.printf(" %02X", frame[i]);
+    }
+    Serial.println();
     spiMaster.ackFrame();
     xSemaphoreGive(tftMutex);
     return;
@@ -529,28 +674,9 @@ void ProcessFrame()
     return;
   }
 
-  // Decode JPEG to video sprite (via callback) - decode directly without clearing
-  uint16_t result = TJpgDec.drawJpg(0, 0, frame, frameSize);
-
-  if (result != 0)
-  { // JDR_OK = 0 means success!
-    Serial.printf("[ERROR] JPEG decode failed: %d\n", result);
-    // Only clear on decode failure to prevent artifacts
-    videoSprite.fillSprite(TFT_BLACK);
-  }
-
-  // Keep it here for now
-  // if (currentFPS > 0)
-  // {
-  //   int16_t textY = VIDEO_HEIGHT - 20;
-  //   videoSprite.fillRect(40, textY - 2, 80, 12, TFT_BLACK);
-  //   videoSprite.setTextColor(TFT_GREEN, TFT_BLACK);
-  //   videoSprite.setCursor(40, textY);
-  //   videoSprite.setTextSize(1);
-  //   videoSprite.printf("FPS: %.1f", currentFPS);
-  // }
-
-  // Draw face detection bounding box if available
+  // Work out the face box before decoding - the callback composites it into
+  // the blocks as they are pushed.
+  bboxActive = false;
   if (hasFaceDetection)
   {
     // Check if detection has timed out
@@ -560,25 +686,43 @@ void ProcessFrame()
     }
     else
     {
-      // Scale bounding box from camera resolution to display (tft.width() x VIDEO_HEIGHT)
+      // Scale bounding box from camera resolution to the video band
       // Camera appears to be wider, adjust X scale
       // Reduced scale by 0.7 to fix oversized bounding box
-      float scaleX = ((float)videoSprite.width() / 280.0) * 0.9;
-      float scaleY = ((float)VIDEO_HEIGHT / 240.0) * 0.9;
+      float scaleX = ((float)VIDEO_W / 280.0) * 0.9;
+      float scaleY = ((float)VIDEO_H / 240.0) * 0.9;
 
-      int scaled_x = (int)(face_bbox_x * scaleX);
-      int scaled_y = (int)(face_bbox_y * scaleY);
-      int scaled_w = (int)(face_bbox_w * scaleX);
-      int scaled_h = (int)(face_bbox_h * scaleY);
+      bboxScreenX = VIDEO_X + (int16_t)(face_bbox_x * scaleX);
+      bboxScreenY = VIDEO_Y + (int16_t)(face_bbox_y * scaleY);
+      bboxScreenW = (int16_t)(face_bbox_w * scaleX);
+      bboxScreenH = (int16_t)(face_bbox_h * scaleY);
 
-      // Draw thicker rectangle (2px thick)
-      videoSprite.drawRect(scaled_x, scaled_y, scaled_w, scaled_h, TFT_RED);
-      videoSprite.drawRect(scaled_x + 1, scaled_y + 1, scaled_w - 2, scaled_h - 2, TFT_RED);
+#if VIDEO_MIRROR
+      // Mirror the box too, so it keeps tracking the face in the mirrored image
+      bboxScreenX = VIDEO_X + VIDEO_W - (bboxScreenX - VIDEO_X) - bboxScreenW;
+#endif
+
+      bboxActive = (bboxScreenW > 0 && bboxScreenH > 0);
     }
   }
 
-  // Composite: Push video sprite to screen
-  videoSprite.pushSprite(0, VIDEO_Y_OFFSET + 25);
+  // Decode JPEG straight to the panel at the video origin (via callback).
+  // Every pixel of the band is overwritten, so no clear is needed first.
+  uint16_t result = TJpgDec.drawJpg(VIDEO_X, VIDEO_Y, frame, frameSize);
+
+  // JDR_OK (0) = decoded fully. JDR_INTR (1) = our callback stopped the decode
+  // once it passed the bottom of the video band, which is the normal path
+  // whenever the camera frame is taller than VIDEO_H. Both are success.
+  if (result != 0 && result != 1)
+  {
+    Serial.printf("[ERROR] JPEG decode failed: %d\n", result);
+    // Only clear on decode failure to prevent artifacts
+    tft.fillRect(VIDEO_X, VIDEO_Y, VIDEO_W, VIDEO_H, TFT_BLACK);
+  }
+
+  // Video content is now on screen - the clock screen must clear before it
+  // redraws, or the last frame shows through around its text.
+  videoBandDirty = true;
 
   // Draw UI overlay (optimized - only when needed or during animation)
   // Note: drawUIOverlay() will acquire/release mutex internally
@@ -654,22 +798,33 @@ void drawUIOverlay()
   }
   else
   {
-    // Camera OFF - show clock screen (only redraw when status changes or time updates)
+    // Camera OFF - show clock screen (only redraw when status changes or time updates).
+    // Drawn straight to the panel: text is drawn with an opaque background and
+    // padding so each field overwrites its own previous value. Only a state
+    // change clears the whole band, which keeps the per-second tick flicker-free.
     static int lastClockUpdate = -1;
     if (lastClockUpdate != (int)(now / 1000) || lastDrawnStatus != slave_status)
     {
       lastClockUpdate = (int)(now / 1000);
-      lastDrawnStatus = slave_status;
 
-      videoSprite.fillSprite(TFT_BLACK);
+      // Full clear when arriving from any other content (video frames, upload
+      // screen) or on a state change. Otherwise the per-field padded redraws
+      // below are enough, which is what keeps the per-second tick flicker-free.
+      if (videoBandDirty || lastDrawnStatus != slave_status)
+      {
+        tft.fillRect(VIDEO_X, VIDEO_Y, VIDEO_W, VIDEO_H, TFT_BLACK);
+        lastDrawnStatus = slave_status;
+        videoBandDirty = false;
+      }
+
+      tft.setTextColor(TFT_WHITE, TFT_BLACK);
+      tft.setTextDatum(TL_DATUM);
 
       struct tm timeinfo;
       if (getLocalTime(&timeinfo))
       {
         // Greeting
-        videoSprite.setTextFont(4);
-        videoSprite.setTextDatum(TL_DATUM);
-        videoSprite.setTextColor(TFT_WHITE, TFT_BLACK);
+        tft.setTextFont(4);
 
         const char *greeting;
         if (timeinfo.tm_hour >= 5 && timeinfo.tm_hour < 12)
@@ -681,38 +836,42 @@ void drawUIOverlay()
         else
           greeting = "Good night";
 
-        videoSprite.drawString(greeting, 10, 20);
+        tft.setTextPadding(VIDEO_W - 10);
+        tft.drawString(greeting, VIDEO_X + 10, VIDEO_Y + 20);
       }
       else
       {
-        videoSprite.setTextColor(TFT_WHITE, TFT_BLACK);
-        videoSprite.setTextSize(2);
-        videoSprite.setTextDatum(TL_DATUM);
-        videoSprite.drawString("Camera OFF", videoSprite.width() / 2, 10);
+        tft.setTextFont(4);
+        tft.setTextPadding(VIDEO_W - 10);
+        tft.drawString("Camera OFF", VIDEO_X + 10, VIDEO_Y + 20);
       }
 
       // Large time
-      videoSprite.setTextFont(6);
-      videoSprite.setTextDatum(TL_DATUM);
-      videoSprite.drawString(cachedTimeStr, 10, 45);
+      tft.setTextFont(6);
+      tft.setTextPadding(VIDEO_W - 10);
+      tft.drawString(cachedTimeStr, VIDEO_X + 10, VIDEO_Y + 45);
 
       // Date
-      videoSprite.setTextFont(4);
-      videoSprite.drawString(cachedDateStr, 20, 85);
+      tft.setTextFont(4);
+      tft.setTextPadding(VIDEO_W - 20);
+      tft.drawString(cachedDateStr, VIDEO_X + 20, VIDEO_Y + 85);
 
       // Weather display
       WeatherData weather = getWeatherData();
+      tft.setTextPadding(VIDEO_W - 10);
       if (weather.isValid)
       {
-        String weatherStr = weather.description + " " + String((int)weather.temperature) + "C";
-        videoSprite.drawString(weatherStr, 10, 125);
+        char weatherStr[48];
+        snprintf(weatherStr, sizeof(weatherStr), "%s %dC",
+                 weather.description.c_str(), (int)weather.temperature);
+        tft.drawString(weatherStr, VIDEO_X + 10, VIDEO_Y + 125);
       }
       else
       {
-        videoSprite.drawString(weather.description, 10, 125); // Show error/loading message
+        tft.drawString(weather.description, VIDEO_X + 10, VIDEO_Y + 125); // Error/loading message
       }
 
-      videoSprite.pushSprite(0, VIDEO_Y_OFFSET + 25);
+      tft.setTextPadding(0);
     }
   }
 
@@ -1235,6 +1394,7 @@ void onCardDetected(NFCCardData card)
     http.begin(backendUrl);
     http.addHeader("Content-Type", "application/json");
     http.addHeader("Authorization", "Bearer " + String(DEVICE_API_TOKEN));
+    http.setTimeout(5000);
 
     String cardUidHex = uidToString(card.uid, card.uidLength);
 
@@ -1285,6 +1445,7 @@ void onCardDetected(NFCCardData card)
     http.begin(backendUrl);
     http.addHeader("Content-Type", "application/json");
     http.addHeader("Authorization", "Bearer " + String(DEVICE_API_TOKEN));
+    http.setTimeout(5000);
 
     String httpRequestData = "{\"device_id\": \"" + String(DEVICE_ID) + "\", \"card_id\": \"" + cardUidHex + "\"}";
 
@@ -1530,9 +1691,6 @@ void updateButtonState(ButtonState &btn, int pin, const char *buttonName)
             //sendUARTCommand("stream_control", "mic_start", 0);
             //sendUARTCommand("mic_gain", "gain", 6);
 
-            //
-            l=delay(100);
-
             sendUARTCommand("stream_control", "camera_start", 0);
             delay(100);
 
@@ -1642,4 +1800,48 @@ void updateWeather()
 void sendServerHeartbeatTask()
 {
   sendHeartbeat();
+}
+
+// Periodic memory report.
+// "free" counts all internal RAM including 32-bit-only IRAM, which cannot back
+// a byte buffer - so it can look healthy while a large malloc still fails.
+// "largest8" is the number that actually decides whether a big allocation or a
+// task stack will succeed. "stack free" is the low-water mark in bytes: the
+// closest that task has ever come to overflowing, so it is the only safe basis
+// for shrinking a stack size.
+void reportHeapTask()
+{
+  Serial.printf("[MEM] free=%u largest8=%u free8=%u minEver=%u\n",
+                ESP.getFreeHeap(),
+                heap_caps_get_largest_free_block(MALLOC_CAP_8BIT | MALLOC_CAP_INTERNAL),
+                heap_caps_get_free_size(MALLOC_CAP_8BIT | MALLOC_CAP_INTERNAL),
+                ESP.getMinFreeHeap());
+
+  Serial.printf("[MEM] spi buffer=%u frames rx=%lu dropped=%lu\n",
+                spiMaster.getBufferCapacity(),
+                (unsigned long)spiMaster.getFramesReceived(),
+                (unsigned long)spiMaster.getFramesDropped());
+
+  // Names must be the truncated form FreeRTOS actually stored: it copies at
+  // most configMAX_TASK_NAME_LEN-1 (15) chars, and xTaskGetHandle asserts if
+  // asked for anything longer. "FaceDetectionSender" is stored as
+  // "FaceDetectionSe".
+  static const char *taskNames[] = {"spi_master", "NetworkManager",
+                                    "FaceDetectionSe", "NFC_Reader", "loopTask"};
+  Serial.print("[MEM] stack free:");
+  for (size_t i = 0; i < sizeof(taskNames) / sizeof(taskNames[0]); i++)
+  {
+    TaskHandle_t handle = xTaskGetHandle(taskNames[i]);
+    if (handle != NULL)
+    {
+      // ESP-IDF returns the high water mark in bytes already (not words)
+      Serial.printf(" %s=%u", taskNames[i],
+                    (unsigned)uxTaskGetStackHighWaterMark(handle));
+    }
+    else
+    {
+      Serial.printf(" %s=absent", taskNames[i]);
+    }
+  }
+  Serial.println();
 }

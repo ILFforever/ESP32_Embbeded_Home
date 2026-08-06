@@ -14,8 +14,10 @@ Part of Chulalongkorn's 2110356 Embedded System class project simulating a smart
 ## Hardware Architecture
 
 ### Main Components
-- **ESP32 DOIT DevKit V1** - Main controller
-- **ST7789 TFT Display** (240x240) - Visual interface
+- **ESP32 DOIT DevKit V1** - Main controller (no PSRAM - DRAM is the binding constraint)
+- **ST7789 TFT Display** (240x320) - Visual interface. TFT_eSPI comes from the
+  project-local `lib/TFT_eSPI/`, not lib_deps; `User_Setup.h` sets no
+  TFT_WIDTH/TFT_HEIGHT, so the ST7789 driver defaults (240x320) apply.
 - **PN532 NFC Reader** - Card authentication via I2C + IRQ
 - **Slave ESP32** - Connected via UART and SPI (handles camera and face recognition)
 
@@ -127,10 +129,21 @@ include/
 
 **Frame Flow:**
 1. Receive header (12 bytes, big-endian)
-2. Allocate buffer for frame_size
-3. Stream JPEG data in chunks
+2. Wait `SPI_HEADER_TO_DATA_DELAY_MS` for the slave to queue its data
+3. Stream JPEG data in chunks into the buffer reserved at boot
 4. Signal completion
 5. Main app decodes and displays
+
+**Timing:** the header->data delay is a real handshake, not padding. The slave
+needs time to load the JPEG into its SPI transaction; clock it too early and
+the master reads an idle MISO line, so the "JPEG" arrives as zeros/noise and
+fails the SOI check. If `[FRAME] Bad header` shows all zeros, raise the delay;
+if it shows `FF D8` a few bytes in, that is byte misalignment instead.
+
+**Buffer:** one buffer is reserved at boot (`begin()`) and reused, sized to the
+largest free block minus slack, capped at `SPI_MAX_FRAME_SIZE`. It grows on
+demand and restores its previous size if a grow fails. Allocation failure is
+never fatal - `setup()` must not halt on it.
 
 #### 4. NFC Controller (`nfc_controller.cpp/h`)
 **Purpose:** Background NFC card reading
@@ -188,10 +201,23 @@ struct NFCCardData {
 ```
 
 **Sprite System:**
-- 4 separate sprites for independent updates
-- Only redraws changed sections (optimization)
-- Video sprite updates on new frames
+- 2 UI sprites (top/bottom bars) at 8bpp, `UI_SPRITE_COLOR_DEPTH` in main.cpp
+- **The video area has no sprite.** A 240x200x16bpp framebuffer costs 96KB of
+  DRAM this board does not have. JPEG blocks decode straight to the panel via
+  `TJpgDec.drawJpg(VIDEO_X, VIDEO_Y, ...)`; the standby clock, upload and
+  welcome screens also draw directly, using opaque text + `setTextPadding()`
+  so per-second redraws overwrite only their own field and do not flicker.
+- Video region geometry lives in `include/lcd_helper.h` (`VIDEO_X/Y/W/H`)
 - UI sprites update on `uiNeedsUpdate` flag
+
+**DRAM budget (the main constraint):**
+Usable contiguous DRAM is ~180KB. Before this was addressed, sprites (139,200 B)
+plus a 60KB SPI frame buffer exceeded it, and WiFi still needs ~50KB after.
+Symptoms of overcommitting: `createSprite` silently returning nullptr,
+`xTaskCreatePinnedToCore` failing, or large `heap_caps_malloc` failing while
+`ESP.getFreeHeap()` still looks healthy (that free heap is largely 32-bit-only
+IRAM and small holes - always check `heap_caps_get_largest_free_block`).
+Boot logs `[MEM]` lines after sprite creation and at end of setup.
 
 **Tasks (TaskScheduler):**
 - `taskCheckUART` (20ms) - Poll UART buffer from camera module
@@ -216,7 +242,9 @@ struct NFCCardData {
 ## Libraries Used
 
 - **TaskScheduler** (4.0.0) - Cooperative multitasking
-- **ArduinoJson** (7.4.2) - JSON parsing for UART protocol
+- **ArduinoJson** (6.21.6) - JSON parsing for UART protocol. This is the **v6**
+  API (`StaticJsonDocument`, `createNestedObject`, `containsKey`), pinned
+  `^6.21.5` in platformio.ini. Do not write v7 API code.
 - **TFT_eSPI** (2.5.43) - Display driver
 - **TJpg_Decoder** (1.1.0) - Hardware-accelerated JPEG decoding
 - **Adafruit PN532** (1.3.4) - NFC reader library

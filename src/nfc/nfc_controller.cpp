@@ -150,7 +150,13 @@ bool initNFC() {
   BaseType_t result = xTaskCreatePinnedToCore(
     nfcTask,
     "NFC_Reader",
-    4096,           // Stack size
+    // The card callback (onCardDetected) runs on THIS stack and does a full
+    // blocking HTTPClient POST plus several Strings - it cannot be moved to the
+    // NetworkManager queue because it needs the response synchronously to set
+    // cardScanStatus (access granted/denied). Idle high water was only ~1.6KB
+    // used of 4096, but that never measured a scan in flight, so 4096 was too
+    // close for comfort. Watch NFC_Reader in the [MEM] report during a scan.
+    6144,           // Stack size
     NULL,
     3,              // Priority
     &nfcTaskHandle,

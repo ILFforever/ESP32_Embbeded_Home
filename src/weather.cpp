@@ -1,14 +1,15 @@
 #include "weather.h"
+#include "app_config.h"
 #include <WiFi.h>
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
 
 // OpenWeatherMap API Configuration
 // Sign up for free at: https://openweathermap.org/api
-const char* WEATHER_API_KEY = "7f6867d2ea4893ecc7e5765e68a818b4";  // CHANGE THIS!
-const char* WEATHER_CITY = "Bangkok";               // CHANGE THIS to your city
-const char* WEATHER_COUNTRY = "TH";                 // CHANGE THIS to your country code
-const char* WEATHER_UNITS = "metric";               // metric = Celsius, imperial = Fahrenheit
+const char* WEATHER_API_KEY_VALUE = WEATHER_API_KEY;
+const char* WEATHER_CITY_VALUE = WEATHER_CITY;
+const char* WEATHER_COUNTRY_VALUE = WEATHER_COUNTRY;
+const char* WEATHER_UNITS_VALUE = WEATHER_UNITS;
 
 // API endpoint
 const char* WEATHER_API_URL = "http://api.openweathermap.org/data/2.5/weather";
@@ -40,7 +41,7 @@ void fetchWeatherTask() {
     }
 
     // Check if API key is configured
-    if (String(WEATHER_API_KEY) == "YOUR_API_KEY_HERE") {
+    if (strcmp(WEATHER_API_KEY_VALUE, "YOUR_API_KEY_HERE") == 0) {
         if (Serial) Serial.println("[WEATHER] API key not configured");
         currentWeather.description = "No API Key";
         currentWeather.isValid = false;
@@ -49,15 +50,15 @@ void fetchWeatherTask() {
 
     HTTPClient http;
 
-    // Build URL with parameters
-    String url = String(WEATHER_API_URL) +
-                 "?q=" + String(WEATHER_CITY) + "," + String(WEATHER_COUNTRY) +
-                 "&appid=" + String(WEATHER_API_KEY) +
-                 "&units=" + String(WEATHER_UNITS);
+    // Build URL with parameters (fixed buffer, no heap)
+    char url[256];
+    snprintf(url, sizeof(url), "%s?q=%s,%s&appid=%s&units=%s",
+             WEATHER_API_URL, WEATHER_CITY_VALUE, WEATHER_COUNTRY_VALUE,
+             WEATHER_API_KEY_VALUE, WEATHER_UNITS_VALUE);
 
     if (Serial) {
         Serial.println("[WEATHER] Fetching weather data...");
-        Serial.printf("[WEATHER] Request URL: %s\n", url.c_str());
+        Serial.printf("[WEATHER] Request URL: %s\n", url);
     }
 
     http.begin(url);
@@ -68,9 +69,17 @@ void fetchWeatherTask() {
     if (httpCode == HTTP_CODE_OK) {
         String payload = http.getString();
 
-        // Parse JSON response (OpenWeatherMap responses are ~800-1000 bytes)
-        StaticJsonDocument<1536> doc;
-        DeserializationError error = deserializeJson(doc, payload);
+        // Parse JSON response with a filter so only the four fields we use are
+        // kept - the rest of the ~1KB OpenWeatherMap response is discarded
+        StaticJsonDocument<192> filter;
+        filter["main"]["temp"] = true;
+        filter["main"]["humidity"] = true;
+        filter["weather"][0]["main"] = true;
+        filter["weather"][0]["icon"] = true;
+
+        StaticJsonDocument<256> doc;
+        DeserializationError error = deserializeJson(doc, payload,
+                                                     DeserializationOption::Filter(filter));
 
         if (!error) {
             // Extract weather data

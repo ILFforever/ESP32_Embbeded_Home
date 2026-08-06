@@ -9,13 +9,13 @@ extern const char* BACKEND_SERVER_URL;
 extern const char* DEVICE_ID;
 extern const char* DEVICE_TYPE;
 extern const char* DEVICE_API_TOKEN;
-extern String receivedSessionId;
 
 // Initialize heartbeat module
 void initHeartbeat(const char* serverUrl, const char* deviceId, const char* deviceType, const char* apiToken);
 
 // Send heartbeat to backend server
 void sendHeartbeat();
+void sendHeartbeatImmediate();
 
 // Send warning to backend (for 30s disconnect events)
 void sendDisconnectWarning(const char* module_name, bool isDisconnected);
@@ -27,10 +27,6 @@ void sendDoorbellRing();
 // ALSO acts as heartbeat - resets TTL timer
 void sendDoorbellStatus(bool camera_active, bool mic_active);
 
-// Send face detection event to backend (saves to Firebase, publishes to Hub via MQTT)
-// BLOCKING VERSION - Use sendFaceDetectionAsync() instead for non-blocking operation
-void sendFaceDetection(bool recognized, const char* name, float confidence, const uint8_t* imageData = nullptr, size_t imageSize = 0);
-
 // Send face detection event asynchronously (NON-BLOCKING)
 // Queues the event to be sent by a background task
 // Returns true if queued successfully, false if queue is full
@@ -39,9 +35,6 @@ bool sendFaceDetectionAsync(bool recognized, const char* name, float confidence,
 // Send face database result to backend (face_count, face_list, face_check)
 void sendFaceDatabaseResult(const char* type, int count = -1, JsonArray faces = JsonArray(), const char* status = nullptr, const char* message = nullptr);
 
-// Send NFC scan data to the backend
-void sendNfcScan(String cardId, bool isAdding);
-
 // Get last heartbeat status
 bool getLastHeartbeatSuccess();
 unsigned long getLastHeartbeatTime();
@@ -49,6 +42,7 @@ unsigned long getLastHeartbeatTime();
 // Ping-Pong Command Queue (NEW)
 // These functions are called automatically by sendHeartbeat() when server indicates pending commands
 void fetchAndExecuteCommands();
+void fetchAndExecuteCommandsImmediate();
 bool executeCommand(String action, JsonObject params);
 void acknowledgeCommand(String commandId, bool success, String action);
 
