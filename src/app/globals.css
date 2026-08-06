@@ -980,10 +980,57 @@ select {
 
 /* Dashboard shell layout ported from the approved dashboard mockup. These
    selectors are page composition, not reusable component primitives. */
-.dash-hero { display: grid; grid-template-columns: 1fr auto; gap: var(--s-6); align-items: center; padding: 22px; }
+/* The hero was `1fr auto`: a 52ch paragraph pinned left, a 232px tile
+   pinned right, and roughly 650px of empty glass between them at full
+   width. The tile also restated the headline's own number — "6 devices
+   have stopped reporting" beside a tile reading "6 of 6" — so the widest
+   pane on the page spent all that width saying one thing twice.
+
+   Two equal columns, with the right one carrying a list instead of a
+   number, spends the width on what the headline cannot hold: which
+   devices, and when each was last heard. */
+.dash-hero { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--s-6); align-items: center; padding: 22px; }
 .dash-hero h2 { margin: 0 0 6px; font-size: 21px; font-weight: 600; letter-spacing: -.018em; }
-.dash-hero p { margin: 0 0 var(--s-4); color: var(--ink-2); font-size: 14px; max-width: 52ch; }
-.dash-hero .g-tile { min-width: 232px; }
+/* Classed, not `.dash-hero p`. That descendant rule also caught the
+   tile's own .g-label and overrode it to 14px ink-2 on specificity. */
+.dash-hero__lede { margin: 0 0 var(--s-4); color: var(--ink-2); font-size: 14px; max-width: 60ch; }
+/* Nothing to put beside the copy — a rare state, but a half-empty grid
+   is exactly the problem this rewrite exists to remove. */
+.dash-hero--solo { grid-template-columns: minmax(0, 1fr); }
+
+/* Tone on the surface, not only on a 9px dot. A wash off the leading
+   edge and a rail down the left are read before a word of the pane is
+   parsed. The dot stays: colour is never the only signal. box-shadow
+   restates --lift and --spec because it replaces .g-pane's, not adds. */
+.dash-hero.is-warn {
+  background: linear-gradient(101deg, var(--warn-bg) 0%, transparent 44%), var(--glass);
+  box-shadow: var(--lift), var(--spec), inset 3px 0 0 var(--warn);
+}
+.dash-hero.is-crit {
+  background: linear-gradient(101deg, var(--crit-bg) 0%, transparent 44%), var(--glass);
+  border-color: var(--crit-edge);
+  box-shadow: var(--lift), var(--spec), inset 3px 0 0 var(--crit);
+}
+
+.dash-hero__aside { padding: 15px 18px 13px; }
+.dash-hero__aside .g-label { margin: 0 0 2px; }
+.dash-hero__aside ul { list-style: none; margin: 0; padding: 0; }
+/* Name left, when right, across the full column — the width that used to
+   be empty is what makes this readable as a list rather than a stack. */
+.dash-hero__ev {
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: var(--s-4); padding: 10px 0; border-bottom: 1px solid var(--hairline);
+}
+.dash-hero__ev:last-child { border-bottom: 0; padding-bottom: 2px; }
+.dash-hero__ev b {
+  font-weight: 500; font-size: 13.5px; color: var(--ink);
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.dash-hero__ev span {
+  color: var(--ink-3); font-size: 12.5px; white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.dash-hero__more { margin: 9px 0 0; font-size: 12.5px; color: var(--ink-3); }
 
 /* Admin left the home page for /admin, so the third row is two cards and
    the activity feed takes the freed height — "what happened today" is the
@@ -1015,18 +1062,24 @@ select {
 .dash-modal-actions { display: flex; gap: var(--s-2); flex-wrap: wrap; }
 
 /* Drill-down page compositions ported from doorbell.html and hub.html. */
-.doorbell-grid {
+/* Two columns for the whole page, not three stacked grids.
+   Live view is a fixed-height media box — about 360px of content — but it
+   used to share a row with a 20-tile visitor list, and both stretched to
+   the taller one: measured 1327px tall with 967px of it empty.
+   Everything now stacks in column one and the visitor rail owns column
+   two, where it sticks as you scroll past it. */
+.doorbell-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1.35fr) minmax(280px, .65fr);
+  grid-template-columns: minmax(0, 1.35fr) minmax(300px, .65fr);
   gap: var(--s-4);
+  align-items: start;
 }
-.doorbell-secondary {
-  display: grid;
-  grid-template-columns: minmax(240px, .9fr) minmax(280px, 1fr) minmax(300px, 1.1fr);
-  gap: var(--s-4);
-  margin-top: var(--s-4);
-}
-.doorbell-maintenance { margin-top: var(--s-4); }
+/* Wide things left — the video, the enrolled-faces chips, the stream
+   controls. Narrow lists right. Both columns are plain stacks; the rail
+   was briefly sticky and it read as the page coming apart while you
+   scrolled, so it scrolls with everything else. */
+.doorbell-main,
+.doorbell-rail { display: grid; gap: var(--s-4); align-content: start; min-width: 0; }
 
 .hub-sensors {
   display: grid;
@@ -1048,10 +1101,18 @@ select {
 .hub-a-activity { grid-area: activity; }
 
 @media (max-width: 1100px) {
-  .doorbell-grid,
-  .doorbell-secondary {
-    grid-template-columns: 1fr;
-  }
+  /* One column. The two wrappers stop being boxes so their cards become
+     grid items directly and can be ordered by what matters on a phone,
+     rather than by which column they happened to sit in — otherwise
+     "Who's been by" lands below the maintenance commands. */
+  .doorbell-layout { grid-template-columns: 1fr; }
+  .doorbell-main, .doorbell-rail { display: contents; }
+  .doorbell-main > *, .doorbell-rail > * { order: 6; }
+  .doorbell-live { order: 1; }
+  .doorbell-visitors { order: 2; }
+  .doorbell-people { order: 3; }
+  .doorbell-activity { order: 4; }
+  .doorbell-audio { order: 5; }
   .hub-sensors { grid-template-columns: 1fr; }
   .hub-grid {
     grid-template-columns: 1fr;
@@ -1064,7 +1125,7 @@ select {
      answered "is anything wrong"; what is left to scroll for is what
      happened. */
   .dash-bento { grid-template-columns: 1fr; grid-template-areas: "alerts" "climate" "air" "doors" "devices" "cast" "nfc"; }
-  .dash-hero { grid-template-columns: 1fr; }
+  .dash-hero { grid-template-columns: minmax(0, 1fr); }
   .dash-modal-grid, .dash-modal-grid--2 { grid-template-columns: 1fr; }
 }
 

@@ -198,6 +198,8 @@ export default function DashboardPage() {
             : { text: 'Clear', tone: 'ok' };
 
   const urgent = countUrgent(alerts);
+  const offlineDevices = devicesStatus?.devices.filter(d => !d.online) ?? [];
+  const byPriority = sortAlertsByPriority(alerts);
 
   /* One headline, chosen by what is actually worst — not by what happened
      most recently. A months-old log line used to outrank six offline
@@ -208,13 +210,33 @@ export default function DashboardPage() {
     detail: string;
     tone: 'ok' | 'warn' | 'crit';
     action: { card: string; label: string };
-    /* The tile beside the headline restates the headline's own number.
-       It used to always show the alert count, which the stat strip below
-       already carries — the same "37 urgent" twice, 200px apart. */
-    tile: { label: string; value: string; small: string };
+    /* Evidence, not a restatement. This was a tile showing one number,
+       and that number was always one the headline had already said —
+       "6 devices have stopped reporting" beside "NOT REPORTING 6 of 6".
+       Each branch now supplies the specifics the sentence cannot carry,
+       so looking right is worth doing. Null when a branch genuinely has
+       nothing to add; the pane goes single-column rather than render a
+       half-empty grid. */
+    aside: { label: string; items: { text: string; sub: string }[]; more: number } | null;
   } => {
     const offline = devicesStatus?.summary.offline ?? 0;
-    const topUrgent = sortAlertsByPriority(alerts).find(a => isUrgent(a));
+    const total = devicesStatus?.summary.total ?? 0;
+    const topUrgent = byPriority.find(a => isUrgent(a));
+
+    /* Which devices are quiet and since when. Shared by the hub-down and
+       devices-offline branches — with the hub down nothing is current, so
+       fall back to the whole list if none are flagged offline yet. */
+    const quiet = (offlineDevices.length ? offlineDevices : (devicesStatus?.devices ?? [])).slice(0, 3);
+    const quietAside = (count: number) => quiet.length
+      ? {
+          label: 'Last heard',
+          items: quiet.map(d => ({
+            text: deviceLabel(d),
+            sub: d.last_seen ? relativeTime(d.last_seen) : 'no record',
+          })),
+          more: Math.max(0, count - quiet.length),
+        }
+      : null;
 
     if (!systemOnline) {
       return {
@@ -223,7 +245,7 @@ export default function DashboardPage() {
         detail: 'Until it answers, readings on this page are the last ones we heard. Controls are disabled rather than sending commands into the dark.',
         tone: 'crit',
         action: { card: 'system-status', label: 'See the devices' },
-        tile: { label: 'Connected', value: '0', small: `of ${devicesStatus?.summary.total ?? 0}` },
+        aside: quietAside(total),
       };
     }
 
@@ -235,7 +257,17 @@ export default function DashboardPage() {
         detail: `${worstGas.ppm.toFixed(0)} ppm, ${relativeTime(worstGas.last_seen)}. Ventilate the room and check the source.`,
         tone: 'crit',
         action: { card: 'gas', label: 'See the readings' },
-        tile: { label: 'Gas level', value: worstGas.ppm.toFixed(0), small: 'ppm' },
+        /* The headline names one room. What it cannot say is whether the
+           rest of the house is clean — which is the difference between a
+           local source and something spreading. */
+        aside: {
+          label: 'Every sensor now',
+          items: [...liveGas]
+            .sort((a, b) => b.ppm - a.ppm)
+            .slice(0, 3)
+            .map(g => ({ text: labelForId(g.sensor_id), sub: `${g.ppm.toFixed(0)} ppm` })),
+          more: Math.max(0, liveGas.length - 3),
+        },
       };
     }
 
@@ -249,10 +281,13 @@ export default function DashboardPage() {
         detail: `Since ${relativeTime(door.last_changed)}. You can lock up from here.`,
         tone: 'warn',
         action: { card: 'doors', label: 'Lock up' },
-        tile: {
-          label: 'Unlocked',
-          value: String(unlockedLocks.length),
-          small: `of ${onlineLocks.length} ${onlineLocks.length === 1 ? 'door' : 'doors'}`,
+        aside: {
+          label: 'Unlocked since',
+          items: unlockedLocks.slice(0, 3).map(d => ({
+            text: d.name,
+            sub: relativeTime(d.last_changed),
+          })),
+          more: Math.max(0, unlockedLocks.length - 3),
         },
       };
     }
@@ -262,13 +297,13 @@ export default function DashboardPage() {
         summary: `${offline} ${offline === 1 ? 'device has' : 'devices have'} gone quiet. Readings from ${offline === 1 ? 'it' : 'them'} are not current.`,
         headline: `${offline} ${offline === 1 ? 'device has' : 'devices have'} stopped reporting`,
         detail: 'Their last readings are still shown, marked as not current. Check power and Wi-Fi at the board.',
-        tone: 'warn',
+        /* Every device dark is not the same event as some of them. It
+           used to render amber either way, because only an unreachable
+           hub could reach 'crit' — but a hub that answers while nothing
+           behind it does is the identical situation for the resident. */
+        tone: offline === total ? 'crit' : 'warn',
         action: { card: 'system-status', label: 'See which ones' },
-        tile: {
-          label: 'Not reporting',
-          value: String(offline),
-          small: `of ${devicesStatus?.summary.total ?? 0}`,
-        },
+        aside: quietAside(offline),
       };
     }
 
@@ -279,7 +314,20 @@ export default function DashboardPage() {
         detail: `${labelForId(topUrgent.source)} · ${relativeTime(topUrgent.timestamp)}`,
         tone: 'warn',
         action: { card: 'alerts', label: 'See the alert' },
-        tile: { label: 'Needs attention', value: String(urgent), small: 'urgent' },
+        /* What else came in around it — one alert alone means something
+           different from one alert at the top of a run of them. Not
+           filtered to urgent: with a single urgent alert that list is
+           empty, and an empty column is what we are getting rid of. */
+        aside: byPriority.length > 1
+          ? {
+              label: 'Also recent',
+              items: byPriority.slice(1, 4).map(a => ({
+                text: getAlertTitle(a),
+                sub: relativeTime(a.timestamp),
+              })),
+              more: Math.max(0, byPriority.length - 4),
+            }
+          : null,
       };
     }
 
@@ -288,8 +336,10 @@ export default function DashboardPage() {
       headline: null,
       detail: '',
       tone: 'ok',
+      /* headline is null here, so the hero does not render at all — this
+         branch only supplies the summary line under the greeting. */
       action: { card: 'alerts', label: 'What happened today' },
-      tile: { label: 'Needs attention', value: '0', small: 'all clear' },
+      aside: null,
     };
   })();
 
@@ -378,7 +428,9 @@ export default function DashboardPage() {
         </div>
 
         {home.headline && (
-          <div className="g-pane dash-hero">
+          <div
+            className={`g-pane dash-hero ${home.tone === 'crit' ? 'is-crit' : home.tone === 'warn' ? 'is-warn' : ''} ${home.aside ? '' : 'dash-hero--solo'}`}
+          >
             <div>
               {/* Whatever is actually wrong, named the way a person would
                   say it. This used to lead with the newest alert whatever
@@ -392,23 +444,32 @@ export default function DashboardPage() {
                 <span className={`g-dot g-dot--${home.tone}`} />{' '}
                 {home.headline}
               </h2>
-              <p>{home.detail}</p>
+              <p className="dash-hero__lede">{home.detail}</p>
+              {/* One button. The second was hardcoded "What happened
+                  today" on every state, and it opened the activity card
+                  that is already on screen a few hundred pixels below. */}
               <div className="g-row g-row--wrap">
                 <button className="g-btn g-btn--primary" onClick={() => openExpandedCard(home.action.card)}>
                   {home.action.label}
                 </button>
-                <button className="g-btn g-btn--ghost" onClick={() => openExpandedCard('alerts')}>
-                  What happened today
-                </button>
               </div>
             </div>
-            <div className={`g-tile ${home.tone === 'crit' ? 'is-crit' : home.tone === 'warn' ? 'is-warn' : ''}`}>
-              <p className="g-label">{home.tile.label}</p>
-              <div className="g-metric-sm g-num">
-                {home.tile.value}
-                <small>{home.tile.small}</small>
+            {home.aside && (
+              <div className="g-tile dash-hero__aside">
+                <p className="g-label">{home.aside.label}</p>
+                <ul>
+                  {home.aside.items.map((item, i) => (
+                    <li key={`${item.text}-${i}`} className="dash-hero__ev">
+                      <b>{item.text}</b>
+                      <span>{item.sub}</span>
+                    </li>
+                  ))}
+                </ul>
+                {home.aside.more > 0 && (
+                  <p className="dash-hero__more">and {home.aside.more} more</p>
+                )}
               </div>
-            </div>
+            )}
           </div>
         )}
 

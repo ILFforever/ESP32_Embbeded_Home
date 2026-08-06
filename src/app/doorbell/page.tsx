@@ -45,6 +45,38 @@ interface ActivityEvent {
   data: any;
 }
 
+/* Nine tiles is three full rows of the 112px avatar grid. */
+const VISITOR_PREVIEW = 9;
+
+/**
+ * Plain-language names for the firmware's command verbs.
+ *
+ * The activity feed printed the wire format — "Command: amp_play",
+ * "Command: camera_restart" — which is the board talking to itself. Ground
+ * rule 9. Unknown verbs still fall through to the raw action rather than
+ * being swallowed, so a new firmware command shows up rather than vanishing.
+ */
+const COMMAND_COPY: Record<string, string> = {
+  amp_play: 'Started playing audio',
+  amp_stop: 'Stopped the audio',
+  amp_volume: 'Changed the volume',
+  camera_restart: 'Restarted the camera',
+  camera_start: 'Started the camera',
+  camera_stop: 'Stopped the camera',
+  mic_start: 'Opened the microphone',
+  mic_stop: 'Closed the microphone',
+  add_face: 'Started enrolling a face',
+  rename_face: 'Renamed a face',
+  delete_last_face: 'Removed the last face',
+  sync_database: 'Synced the face database',
+  restart: 'Restarted the doorbell',
+};
+
+function commandCopy(action?: string): string {
+  if (!action) return 'Ran a command';
+  return COMMAND_COPY[action] ?? `Ran ${action.replace(/_/g, ' ')}`;
+}
+
 export default function DoorbellControlPage() {
   const router = useRouter();
   const { user } = useAuth();
@@ -98,6 +130,10 @@ export default function DoorbellControlPage() {
 
   // Delete last face confirmation
   const [showDeleteLastConfirm, setShowDeleteLastConfirm] = useState(false);
+  /* The rail showed every detection at once — a contact sheet nobody
+     reads, and tall enough to set the height of the whole page. Nine is
+     three rows: enough to answer "has anyone been by?" at a glance. */
+  const [showAllVisitors, setShowAllVisitors] = useState(false);
 
   /* Each modal is held on screen for its exit animation. selectedVisitor
      is latched too, because closing clears it and the card would empty
@@ -920,13 +956,14 @@ export default function DoorbellControlPage() {
       const name = event.data?.name || "Unknown";
       const confidence = event.data?.confidence * 100 || 0;
       if (recognized && name !== "Unknown") {
-        return `Face recognized: ${name} (CFD : ${confidence.toFixed(0)}%)`;
+        // "CFD" is the firmware's abbreviation, not a word.
+        return `${name} was recognised · ${confidence.toFixed(0)}% match`;
       }
-      return "Unknown face detected";
+      return "Someone the camera did not recognise";
     }
     if (event.type === "command") {
-      const action = event.data?.action || "unknown";
-      return `Command: ${action}`;
+      // "Command: amp_play" is the wire format. Name what happened.
+      return commandCopy(event.data?.action);
     }
     if (event.type === "heartbeat") {
       const uptime = event.data?.uptime_ms
@@ -951,6 +988,27 @@ export default function DoorbellControlPage() {
     }
     return "Activity detected";
   };
+
+  /* Runs of the same event collapse into one row with a count. The board
+     re-sends a command until it is acked, so an offline doorbell filled
+     the whole feed with four identical "Started playing audio" lines and
+     pushed the face detections out of view. */
+  const collapsedActivity = React.useMemo(() => {
+    const rows: { event: ActivityEvent; description: string; repeats: number }[] = [];
+    for (const event of recentActivity) {
+      const description = getActivityDescription(event);
+      const last = rows[rows.length - 1];
+      if (last && last.description === description) {
+        last.repeats += 1;
+        continue;
+      }
+      rows.push({ event, description, repeats: 1 });
+      if (rows.length === 6) break;
+    }
+    return rows;
+    // getActivityDescription is a stable local helper.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [recentActivity]);
 
   const getActivityStatus = (event: ActivityEvent) => {
     if (event.type === "face_detection") {
@@ -1044,223 +1102,246 @@ export default function DoorbellControlPage() {
 
         <div className="g-title">
           <h1>Front door</h1>
-          <p>{loading ? "Checking the doorbell connection." : `Camera and microphone controls for ${effectiveDeviceId || "the doorbell"}. ${visitorCount} visitors loaded.`}</p>
+          {/* "20 visitors loaded" is the fetch describing itself, and the
+              device id is a row key. Say what the page is for. */}
+          <p>
+            {loading
+              ? "Checking the doorbell connection."
+              : isDeviceOffline()
+                ? "The doorbell is not reporting, so the camera and microphone cannot be reached."
+                : "Watch the door, talk to whoever is there, and manage the faces it knows."}
+          </p>
         </div>
 
-        <div className="doorbell-grid">
-          <section className="g-pane g-card doorbell-live">
-            <header>
-              <h2>Live view</h2>
-              <div className="g-row g-row--wrap" style={{ gap: "var(--s-2)" }}>
-                <button className="g-btn g-btn--ghost" type="button" onClick={handleCameraToggle} disabled={commandLoading === "camera" || isDeviceOffline()}>
-                  <Camera size={16} aria-hidden="true" />
-                  {commandLoading === "camera" ? "Working" : cameraActive ? "Stop stream" : "Start stream"}
-                </button>
-                <button className="g-btn g-btn--ghost" type="button" onClick={handleMicToggle} disabled={!micActive || isDeviceOffline()}>
-                  <Mic size={16} aria-hidden="true" />
-                  {!micActive ? "Mic auto" : audioMuted ? "Unmute" : "Mute"}
-                </button>
-              </div>
-            </header>
-
-            <div className="g-media" style={{ minHeight: 320 }}>
-              {(cameraActive || streamConnecting) && (
-                <span className="g-media__badge"><span className="g-dot g-dot--ok" /> {streamConnecting ? "CONNECTING" : "LIVE"}</span>
-              )}
-              {streamConnecting ? (
-                <div className="g-media__empty">
-                  <Camera size={40} aria-hidden="true" />
-                  <p style={{ margin: 0 }}>Connecting to camera stream<br /><span className="g-dim">Waiting for the ESP32 stream.</span></p>
-                </div>
-              ) : effectiveDeviceId && cameraActive ? (
-                <img
-                  src={`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000"}/api/v1/stream/camera/${effectiveDeviceId}`}
-                  alt="Live camera feed"
-                  style={{ width: "100%", height: "100%", minHeight: 320, objectFit: "contain", display: "block" }}
-                  onError={() => setStreamError("Failed to load camera stream. Make sure the camera is streaming.")}
-                  onLoad={() => setStreamError(null)}
-                />
-              ) : (
-                <div className="g-media__empty">
-                  <Camera size={40} aria-hidden="true" />
-                  <p style={{ margin: 0 }}>{!effectiveDeviceId ? "No device paired" : "Camera is not active"}<br /><span className="g-dim">Start the camera to view the live stream.</span></p>
-                </div>
-              )}
-            </div>
-
-            {streamError && <div className="g-error" style={{ marginTop: "var(--s-4)" }}>{streamError}</div>}
-            {effectiveDeviceId && (cameraActive || micActive) && (
-              <p className="g-sub" style={{ textAlign: "center" }}>Streaming from <span className="g-mono">{effectiveDeviceId}</span></p>
-            )}
-
-            {effectiveDeviceId && micActive && (
-              <div className="g-tile" style={{ marginTop: "var(--s-4)", display: "flex", alignItems: "center", gap: "var(--s-3)" }}>
-                <Mic size={20} aria-hidden="true" style={{ color: "var(--accent)", flex: "none" }} />
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: "14px", fontWeight: 600 }}>Audio stream {audioMuted ? "muted" : "playing"}</div>
-                  <div className="g-sub" style={{ margin: "2px 0 0", fontSize: "12px" }}>PCM · 16 kHz · mono</div>
-                </div>
-                <span className={`g-chip ${audioMuted ? "g-chip--warn" : "g-chip--ok"}`}>{audioMuted ? "Muted" : "Connected"}</span>
-              </div>
-            )}
-
-            {effectiveDeviceId && micActive && !audioMuted && (
-              <div className="g-log" style={{ marginTop: "var(--s-4)" }}>
-                <div><strong>Raw PCM audio processor</strong></div>
-                <div>Status: {audioDebugInfo}</div>
-                <div>Stream URL: https://embedded-smarthome.fly.dev/api/v1/stream/audio/db_001</div>
-                <div>Format: PCM s16le, 16 kHz, mono</div>
-              </div>
-            )}
-          </section>
-
-          <section className="g-pane g-card doorbell-visitors">
-            <header><h2>Who's been by</h2><span className="g-label">Latest {visitorCount || 0}</span></header>
-            {latestVisitors.length > 0 ? (
-              <div className="g-avatars">
-                {latestVisitors.map((visitor) => (
-                  <button
-                    key={visitor.id}
-                    type="button"
-                    className={`g-avatar ${visitor.recognized ? "g-avatar--known" : "g-avatar--unknown"}`}
-                    onClick={() => handleVisitorClick(visitor)}
-                    style={{ border: 0, background: "transparent", color: "inherit", padding: 0, cursor: "pointer" }}
-                  >
-                    <span className="g-avatar__img">
-                      {visitor.image ? (
-                        <img src={visitor.image} alt={visitor.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
-                      ) : (
-                        <Users size={30} aria-hidden="true" />
-                      )}
-                    </span>
-                    <b>{visitor.name}</b>
-                    <span>{visitor.confidence > 0 ? `${(visitor.confidence * 100).toFixed(0)}%` : formatVisitorTime(visitor)}</span>
+        <div className="doorbell-layout">
+          <div className="doorbell-main">
+            <section className="g-pane g-card doorbell-live">
+              <header>
+                <h2>Live view</h2>
+                <div className="g-row g-row--wrap" style={{ gap: "var(--s-2)" }}>
+                  <button className="g-btn g-btn--ghost" type="button" onClick={handleCameraToggle} disabled={commandLoading === "camera" || isDeviceOffline()}>
+                    <Camera size={16} aria-hidden="true" />
+                    {commandLoading === "camera" ? "Working" : cameraActive ? "Stop stream" : "Start stream"}
                   </button>
-                ))}
-              </div>
-            ) : (
-              <div className="g-empty"><Users size={32} aria-hidden="true" /><strong>No visitors yet</strong><p>The latest face detections will appear here.</p></div>
-            )}
-            <p className="g-sub">{knownVisitors} recognised. Unknown visitors stay amber until named.</p>
-          </section>
-        </div>
+                  <button className="g-btn g-btn--ghost" type="button" onClick={handleMicToggle} disabled={!micActive || isDeviceOffline()}>
+                    <Mic size={16} aria-hidden="true" />
+                    {!micActive ? "Mic auto" : audioMuted ? "Unmute" : "Mute"}
+                  </button>
+                </div>
+              </header>
 
-        <div className="doorbell-secondary">
-          <section className="g-pane g-card doorbell-people">
-            <header><h2>Recognised people</h2><span className={`g-chip ${dbHealthOk ? "g-chip--ok" : "g-chip--warn"}`}>{dbHealthOk ? "Database healthy" : dbStatusLabel}</span></header>
-            <div className="g-grid g-grid--2" style={{ marginBottom: "var(--s-4)" }}>
-              <div className="g-tile"><p className="g-label">People enrolled</p><div className="g-metric-sm g-num" style={{ marginTop: 6 }}>{faceDatabaseInfo?.count ?? 0}</div></div>
-              <div className="g-tile"><p className="g-label">Device id</p><div className="g-mono" style={{ marginTop: 8, fontSize: "14px" }}>{effectiveDeviceId || "N/A"}</div></div>
-            </div>
-            <p className="g-label" style={{ marginBottom: 8 }}>Enrolled</p>
-            {faceDatabaseInfo?.faces?.length ? (
-              <div className="g-row g-row--wrap" style={{ gap: 6, marginBottom: "var(--s-5)" }}>
-                {faceDatabaseInfo.faces.map((face) => <span key={face.id} className="g-chip">{face.id} · {face.name}</span>)}
+              <div className="g-media" style={{ minHeight: 320 }}>
+                {(cameraActive || streamConnecting) && (
+                  <span className="g-media__badge"><span className="g-dot g-dot--ok" /> {streamConnecting ? "CONNECTING" : "LIVE"}</span>
+                )}
+                {streamConnecting ? (
+                  <div className="g-media__empty">
+                    <Camera size={40} aria-hidden="true" />
+                    <p style={{ margin: 0 }}>Connecting to camera stream<br /><span className="g-dim">Waiting for the ESP32 stream.</span></p>
+                  </div>
+                ) : effectiveDeviceId && cameraActive ? (
+                  <img
+                    src={`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000"}/api/v1/stream/camera/${effectiveDeviceId}`}
+                    alt="Live camera feed"
+                    style={{ width: "100%", height: "100%", minHeight: 320, objectFit: "contain", display: "block" }}
+                    onError={() => setStreamError("Failed to load camera stream. Make sure the camera is streaming.")}
+                    onLoad={() => setStreamError(null)}
+                  />
+                ) : (
+                  <div className="g-media__empty">
+                    <Camera size={40} aria-hidden="true" />
+                    <p style={{ margin: 0 }}>{!effectiveDeviceId ? "No device paired" : "Camera is not active"}<br /><span className="g-dim">Start the camera to view the live stream.</span></p>
+                  </div>
+                )}
               </div>
-            ) : (
-              <p className="g-sub" style={{ marginBottom: "var(--s-5)" }}>No enrolled faces reported by the device.</p>
-            )}
-            <div className="g-row g-row--wrap" style={{ gap: "var(--s-2)" }}>
-              <button className="g-btn g-btn--ghost" type="button" onClick={handleFaceRecognitionToggle}>{faceRecognition ? "Set idle" : "Trigger recognition"}</button>
-              <button className="g-btn g-btn--ghost" type="button" onClick={handleSyncDatabase} disabled={commandLoading === "sync_database"}><Database size={16} aria-hidden="true" />{commandLoading === "sync_database" ? "Syncing" : "Sync now"}</button>
-              {user?.role === "admin" && <button className="g-btn g-btn--primary" type="button" onClick={handleAddFace} disabled={commandLoading === "add_face"}><UserPlus size={16} aria-hidden="true" />Add a person</button>}
-              {user?.role === "admin" && <button className="g-btn g-btn--ghost" type="button" onClick={() => setShowRenameFaceModal(true)} disabled={commandLoading === "rename_face"}>Rename</button>}
-              {user?.role === "admin" && <button className="g-btn g-btn--danger" type="button" onClick={() => setShowDeleteLastConfirm(true)} disabled={commandLoading === "delete_last_face"}>Remove last</button>}
-            </div>
-            <p className="g-sub" style={{ fontSize: "12px" }}>Adding and removing people is admin-only.</p>
-          </section>
 
-          <section className="g-pane g-card doorbell-audio">
-            <header><h2>Chime and audio</h2><span className="g-chip">Volume {ampVolume}/21</span></header>
-            <div className="g-stack">
-              <div className="g-field g-field--mono">
-                <label htmlFor="db-url">Stream URL</label>
-                <div className="g-input-group">
-                  <input id="db-url" type="text" value={ampUrl} onChange={(e) => setAmpUrl(e.target.value)} placeholder="Enter stream URL" />
-                  <select aria-label="Preset station" value="" onChange={(e) => setAmpUrl(e.target.value)}>
-                    <option value="">Choose</option>
-                    <option value="https://stream.live.vc.bbcmedia.co.uk/bbc_world_service_east_asia">BBC World Service</option>
-                    <option value="https://play.streamafrica.net/japancitypop">Japan City Pop</option>
-                    <option value="http://stream.radioparadise.com/aac-128">Radio Paradise</option>
-                  </select>
+              {streamError && <div className="g-error" style={{ marginTop: "var(--s-4)" }}>{streamError}</div>}
+              {effectiveDeviceId && (cameraActive || micActive) && (
+                <p className="g-sub" style={{ textAlign: "center" }}>Streaming from <span className="g-mono">{effectiveDeviceId}</span></p>
+              )}
+
+              {effectiveDeviceId && micActive && (
+                <div className="g-tile" style={{ marginTop: "var(--s-4)", display: "flex", alignItems: "center", gap: "var(--s-3)" }}>
+                  <Mic size={20} aria-hidden="true" style={{ color: "var(--accent)", flex: "none" }} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: "14px", fontWeight: 600 }}>Audio stream {audioMuted ? "muted" : "playing"}</div>
+                    <div className="g-sub" style={{ margin: "2px 0 0", fontSize: "12px" }}>PCM · 16 kHz · mono</div>
+                  </div>
+                  <span className={`g-chip ${audioMuted ? "g-chip--warn" : "g-chip--ok"}`}>{audioMuted ? "Muted" : "Connected"}</span>
+                </div>
+              )}
+
+              {effectiveDeviceId && micActive && !audioMuted && (
+                <div className="g-log" style={{ marginTop: "var(--s-4)" }}>
+                  <div><strong>Raw PCM audio processor</strong></div>
+                  <div>Status: {audioDebugInfo}</div>
+                  <div>Stream URL: https://embedded-smarthome.fly.dev/api/v1/stream/audio/db_001</div>
+                  <div>Format: PCM s16le, 16 kHz, mono</div>
+                </div>
+              )}
+            </section>
+
+            <section className="g-pane g-card doorbell-people">
+              <header><h2>Recognised people</h2><span className={`g-chip ${dbHealthOk ? "g-chip--ok" : "g-chip--warn"}`}>{dbHealthOk ? "Database healthy" : dbStatusLabel}</span></header>
+              <div className="g-grid g-grid--2" style={{ marginBottom: "var(--s-4)" }}>
+                <div className="g-tile"><p className="g-label">People enrolled</p><div className="g-metric-sm g-num" style={{ marginTop: 6 }}>{faceDatabaseInfo?.count ?? 0}</div></div>
+                <div className="g-tile"><p className="g-label">Device id</p><div className="g-mono" style={{ marginTop: 8, fontSize: "14px" }}>{effectiveDeviceId || "N/A"}</div></div>
+              </div>
+              <p className="g-label" style={{ marginBottom: 8 }}>Enrolled</p>
+              {faceDatabaseInfo?.faces?.length ? (
+                <div className="g-row g-row--wrap" style={{ gap: 6, marginBottom: "var(--s-5)" }}>
+                  {faceDatabaseInfo.faces.map((face) => <span key={face.id} className="g-chip">{face.id} · {face.name}</span>)}
+                </div>
+              ) : (
+                <p className="g-sub" style={{ marginBottom: "var(--s-5)" }}>No enrolled faces reported by the device.</p>
+              )}
+              <div className="g-row g-row--wrap" style={{ gap: "var(--s-2)" }}>
+                <button className="g-btn g-btn--ghost" type="button" onClick={handleFaceRecognitionToggle}>{faceRecognition ? "Set idle" : "Trigger recognition"}</button>
+                <button className="g-btn g-btn--ghost" type="button" onClick={handleSyncDatabase} disabled={commandLoading === "sync_database"}><Database size={16} aria-hidden="true" />{commandLoading === "sync_database" ? "Syncing" : "Sync now"}</button>
+                {user?.role === "admin" && <button className="g-btn g-btn--primary" type="button" onClick={handleAddFace} disabled={commandLoading === "add_face"}><UserPlus size={16} aria-hidden="true" />Add a person</button>}
+                {user?.role === "admin" && <button className="g-btn g-btn--ghost" type="button" onClick={() => setShowRenameFaceModal(true)} disabled={commandLoading === "rename_face"}>Rename</button>}
+                {user?.role === "admin" && <button className="g-btn g-btn--danger" type="button" onClick={() => setShowDeleteLastConfirm(true)} disabled={commandLoading === "delete_last_face"}>Remove last</button>}
+              </div>
+              <p className="g-sub" style={{ fontSize: "12px" }}>Adding and removing people is admin-only.</p>
+            </section>
+
+            <section className="g-pane g-card doorbell-audio">
+              <header><h2>Chime and audio</h2><span className="g-chip">Volume {ampVolume}/21</span></header>
+              <div className="g-stack">
+                <div className="g-field g-field--mono">
+                  <label htmlFor="db-url">Stream URL</label>
+                  <div className="g-input-group">
+                    <input id="db-url" type="text" value={ampUrl} onChange={(e) => setAmpUrl(e.target.value)} placeholder="Enter stream URL" />
+                    <select aria-label="Preset station" value="" onChange={(e) => setAmpUrl(e.target.value)}>
+                      <option value="">Choose</option>
+                      <option value="https://stream.live.vc.bbcmedia.co.uk/bbc_world_service_east_asia">BBC World Service</option>
+                      <option value="https://play.streamafrica.net/japancitypop">Japan City Pop</option>
+                      <option value="http://stream.radioparadise.com/aac-128">Radio Paradise</option>
+                    </select>
+                  </div>
+                </div>
+                <div className="g-field">
+                  <label htmlFor="db-vol">Volume · <output>{ampVolume}</output> of 21</label>
+                  <input
+                    id="db-vol"
+                    className="g-slider"
+                    type="range"
+                    min="0"
+                    max="21"
+                    value={ampVolume}
+                    onChange={(e) => handleVolumeChange(parseInt(e.target.value))}
+                    onMouseUp={(e) => handleVolumeSend(parseInt((e.target as HTMLInputElement).value))}
+                    onTouchEnd={(e) => handleVolumeSend(parseInt((e.target as HTMLInputElement).value))}
+                    style={{ backgroundImage: `linear-gradient(to right, var(--accent) 0 ${(ampVolume / 21) * 100}%, var(--sunken) ${(ampVolume / 21) * 100}% 100%)` }}
+                  />
+                </div>
+                <div className="g-row" style={{ gap: "var(--s-2)" }}>
+                  <button className="g-btn g-btn--primary" type="button" onClick={handlePlayAmplifier} disabled={commandLoading === "amp_play"} style={{ flex: 1 }}>{commandLoading === "amp_play" ? "Sending" : "Play"}</button>
+                  <button className="g-btn g-btn--ghost" type="button" onClick={handleStopAmplifier} disabled={commandLoading === "amp_stop"} style={{ flex: 1 }}>{commandLoading === "amp_stop" ? "Stopping" : "Stop"}</button>
+                  <button className="g-btn g-btn--ghost" type="button" onClick={handleRestartAmplifier} disabled={commandLoading === "amp_restart"} style={{ flex: 1 }}>Restart</button>
                 </div>
               </div>
-              <div className="g-field">
-                <label htmlFor="db-vol">Volume · <output>{ampVolume}</output> of 21</label>
-                <input
-                  id="db-vol"
-                  className="g-slider"
-                  type="range"
-                  min="0"
-                  max="21"
-                  value={ampVolume}
-                  onChange={(e) => handleVolumeChange(parseInt(e.target.value))}
-                  onMouseUp={(e) => handleVolumeSend(parseInt((e.target as HTMLInputElement).value))}
-                  onTouchEnd={(e) => handleVolumeSend(parseInt((e.target as HTMLInputElement).value))}
-                  style={{ backgroundImage: `linear-gradient(to right, var(--accent) 0 ${(ampVolume / 21) * 100}%, var(--sunken) ${(ampVolume / 21) * 100}% 100%)` }}
-                />
-              </div>
-              <div className="g-row" style={{ gap: "var(--s-2)" }}>
-                <button className="g-btn g-btn--primary" type="button" onClick={handlePlayAmplifier} disabled={commandLoading === "amp_play"} style={{ flex: 1 }}>{commandLoading === "amp_play" ? "Sending" : "Play"}</button>
-                <button className="g-btn g-btn--ghost" type="button" onClick={handleStopAmplifier} disabled={commandLoading === "amp_stop"} style={{ flex: 1 }}>{commandLoading === "amp_stop" ? "Stopping" : "Stop"}</button>
-                <button className="g-btn g-btn--ghost" type="button" onClick={handleRestartAmplifier} disabled={commandLoading === "amp_restart"} style={{ flex: 1 }}>Restart</button>
-              </div>
-            </div>
-          </section>
+            </section>
 
-          <section className="g-pane g-card doorbell-activity">
-            <header><h2>Recent activity</h2><span className="g-label">last 10</span></header>
-            {recentActivity.length > 0 ? (
-              <div className="g-list">
-                {recentActivity.slice(0, 6).map((event, index) => (
-                  <div key={event.id || index} className="g-list__row">
-                    <i className={`g-dot ${getActivityStatusClass(event) === "status-danger" ? "g-dot--crit" : getActivityStatusClass(event) === "status-warning" ? "g-dot--warn" : "g-dot--ok"}`} />
-                    <p>{getActivityDescription(event)}<span>{formatActivityTime(event.timestamp)}</span></p>
-                    <span className={`g-chip ${getActivityStatusClass(event) === "status-danger" ? "g-chip--crit" : getActivityStatusClass(event) === "status-warning" ? "g-chip--warn" : "g-chip--ok"}`}>{getActivityStatus(event)}</span>
-                  </div>
-                ))}
+            <section className="g-pane g-card">
+              <header><h2>Submodule command</h2><span className="g-label">Maintenance</span></header>
+              <div className="g-grid g-grid--2">
+                <button className="g-action" type="button" onClick={handleCameraRestart} disabled={commandLoading === "camera_restart"}>
+                  <Camera size={18} aria-hidden="true" /> {commandLoading === "camera_restart" ? "Restarting camera" : "Restart camera"}
+                  <small>Use this when the live stream stops responding.</small>
+                </button>
+                <button className="g-action" type="button" onClick={handleRestartAmplifier} disabled={commandLoading === "amp_restart"}>
+                  <Volume2 size={18} aria-hidden="true" /> {commandLoading === "amp_restart" ? "Restarting amplifier" : "Restart amplifier"}
+                  <small>Restarts only the audio board.</small>
+                </button>
+                <button className="g-action" type="button" onClick={() => setShowWifiSettings(true)} disabled={commandLoading === "amp_wifi"}>
+                  <Settings size={18} aria-hidden="true" /> Amplifier Wi-Fi
+                  <small>Send SSID and password to the amplifier.</small>
+                </button>
+                <button className="g-action" type="button" onClick={handleSystemRestart} disabled={commandLoading === "system_restart"}>
+                  <Power size={18} aria-hidden="true" /> {commandLoading === "system_restart" ? "Restarting system" : "Restart doorbell"}
+                  <small>The device will be offline for about 30 seconds.</small>
+                </button>
               </div>
-            ) : (
-              <div className="g-empty"><Database size={32} aria-hidden="true" /><strong>No recent activity</strong><p>Doorbell events will appear here after the first heartbeat.</p></div>
-            )}
-          </section>
-        </div>
+            </section>
+          </div>
 
-        <div className="g-grid g-grid--2 doorbell-maintenance">
-          <section className="g-pane g-card">
-            <header><h2>Submodule command</h2><span className="g-label">Maintenance</span></header>
-            <div className="g-grid g-grid--2">
-              <button className="g-action" type="button" onClick={handleCameraRestart} disabled={commandLoading === "camera_restart"}>
-                <Camera size={18} aria-hidden="true" /> {commandLoading === "camera_restart" ? "Restarting camera" : "Restart camera"}
-                <small>Use this when the live stream stops responding.</small>
-              </button>
-              <button className="g-action" type="button" onClick={handleRestartAmplifier} disabled={commandLoading === "amp_restart"}>
-                <Volume2 size={18} aria-hidden="true" /> {commandLoading === "amp_restart" ? "Restarting amplifier" : "Restart amplifier"}
-                <small>Restarts only the audio board.</small>
-              </button>
-              <button className="g-action" type="button" onClick={() => setShowWifiSettings(true)} disabled={commandLoading === "amp_wifi"}>
-                <Settings size={18} aria-hidden="true" /> Amplifier Wi-Fi
-                <small>Send SSID and password to the amplifier.</small>
-              </button>
-              <button className="g-action" type="button" onClick={handleSystemRestart} disabled={commandLoading === "system_restart"}>
-                <Power size={18} aria-hidden="true" /> {commandLoading === "system_restart" ? "Restarting system" : "Restart doorbell"}
-                <small>The device will be offline for about 30 seconds.</small>
-              </button>
-            </div>
-          </section>
+          <div className="doorbell-rail">
+            <section className="g-pane g-card doorbell-visitors">
+              <header>
+                <h2>Who&apos;s been by</h2>
+                {latestVisitors.length > VISITOR_PREVIEW ? (
+                  <button className="g-btn g-btn--ghost" type="button" onClick={() => setShowAllVisitors(v => !v)}>
+                    {showAllVisitors ? 'Show fewer' : `All ${latestVisitors.length}`}
+                  </button>
+                ) : (
+                  <span className="g-label">{latestVisitors.length} recent</span>
+                )}
+              </header>
+              {latestVisitors.length > 0 ? (
+                <div className="g-avatars">
+                  {(showAllVisitors ? latestVisitors : latestVisitors.slice(0, VISITOR_PREVIEW)).map((visitor) => (
+                    <button
+                      key={visitor.id}
+                      type="button"
+                      className={`g-avatar ${visitor.recognized ? "g-avatar--known" : "g-avatar--unknown"}`}
+                      onClick={() => handleVisitorClick(visitor)}
+                      style={{ border: 0, background: "transparent", color: "inherit", padding: 0, cursor: "pointer" }}
+                    >
+                      <span className="g-avatar__img">
+                        {visitor.image ? (
+                          <img src={visitor.image} alt={visitor.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
+                        ) : (
+                          <Users size={30} aria-hidden="true" />
+                        )}
+                      </span>
+                      <b>{visitor.name}</b>
+                      <span>{formatVisitorTime(visitor)}</span>
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <div className="g-empty"><Users size={32} aria-hidden="true" /><strong>No visitors yet</strong><p>The latest face detections will appear here.</p></div>
+              )}
+              <p className="g-sub">{knownVisitors} recognised. Unknown visitors stay amber until named.</p>
+            </section>
 
-          <section className="g-pane g-card">
-            <header><h2>Device information</h2><button className="g-btn g-btn--ghost" type="button" onClick={() => setShowSettings(true)}>Pair device</button></header>
-            <dl className="g-info">
-              <div><dt>Device ID</dt><dd>{doorbellDevice?.device_id || "N/A"}</dd></div>
-              <div><dt>Status</dt><dd>{getStatusText()}</dd></div>
-              <div><dt>IP address</dt><dd>{isDeviceOffline() ? "-" : doorbellDevice?.ip_address || "N/A"}</dd></div>
-              <div><dt>Last seen</dt><dd>{doorbellDevice?.last_seen ? new Date(doorbellDevice.last_seen).toLocaleString() : "Never"}</dd></div>
-              <div><dt>Wi-Fi signal</dt><dd>{isDeviceOffline() ? "-" : doorbellDevice?.wifi_rssi ? `${doorbellDevice.wifi_rssi} dBm` : "N/A"}</dd></div>
-              <div><dt>Free heap</dt><dd>{isDeviceOffline() ? "-" : doorbellDevice?.free_heap ? `${(doorbellDevice.free_heap / 1024).toFixed(1)} KB` : "N/A"}</dd></div>
-              <div><dt>Uptime</dt><dd>{isDeviceOffline() ? "-" : doorbellDevice?.uptime_ms ? `${Math.floor(doorbellDevice.uptime_ms / 3600000)}h ${Math.floor((doorbellDevice.uptime_ms % 3600000) / 60000)}m` : "N/A"}</dd></div>
-            </dl>
-          </section>
+            <section className="g-pane g-card doorbell-activity">
+              <header><h2>Recent activity</h2><span className="g-label">last 10</span></header>
+              {recentActivity.length > 0 ? (
+                <div className="g-list">
+                  {collapsedActivity.map(({ event, description, repeats }, index) => (
+                    <div key={event.id || index} className="g-list__row">
+                      <i className={`g-dot ${getActivityStatusClass(event) === "status-danger" ? "g-dot--crit" : getActivityStatusClass(event) === "status-warning" ? "g-dot--warn" : "g-dot--ok"}`} />
+                      <p>
+                        {description}
+                        <span>
+                          {formatActivityTime(event.timestamp)}
+                          {repeats > 1 && ` · ${repeats} times`}
+                        </span>
+                      </p>
+                      <span className={`g-chip ${getActivityStatusClass(event) === "status-danger" ? "g-chip--crit" : getActivityStatusClass(event) === "status-warning" ? "g-chip--warn" : "g-chip--ok"}`}>{getActivityStatus(event)}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="g-empty"><Database size={32} aria-hidden="true" /><strong>No recent activity</strong><p>Doorbell events will appear here after the first heartbeat.</p></div>
+              )}
+            </section>
+
+              <section className="g-pane g-card">
+                <header><h2>Device information</h2><button className="g-btn g-btn--ghost" type="button" onClick={() => setShowSettings(true)}>Pair device</button></header>
+                <dl className="g-info">
+                  <div><dt>Device ID</dt><dd>{doorbellDevice?.device_id || "N/A"}</dd></div>
+                  <div><dt>Status</dt><dd>{getStatusText()}</dd></div>
+                  <div><dt>IP address</dt><dd>{isDeviceOffline() ? "-" : doorbellDevice?.ip_address || "N/A"}</dd></div>
+                  <div><dt>Last seen</dt><dd>{doorbellDevice?.last_seen ? new Date(doorbellDevice.last_seen).toLocaleString() : "Never"}</dd></div>
+                  <div><dt>Wi-Fi signal</dt><dd>{isDeviceOffline() ? "-" : doorbellDevice?.wifi_rssi ? `${doorbellDevice.wifi_rssi} dBm` : "N/A"}</dd></div>
+                  <div><dt>Free heap</dt><dd>{isDeviceOffline() ? "-" : doorbellDevice?.free_heap ? `${(doorbellDevice.free_heap / 1024).toFixed(1)} KB` : "N/A"}</dd></div>
+                  <div><dt>Uptime</dt><dd>{isDeviceOffline() ? "-" : doorbellDevice?.uptime_ms ? `${Math.floor(doorbellDevice.uptime_ms / 3600000)}h ${Math.floor((doorbellDevice.uptime_ms % 3600000) / 60000)}m` : "N/A"}</dd></div>
+                </dl>
+              </section>
+          </div>
         </div>
       </div>
 
