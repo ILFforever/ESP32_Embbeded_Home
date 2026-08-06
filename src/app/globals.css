@@ -454,6 +454,24 @@ body {
   font-size: .36em; font-weight: 400; vertical-align: top;
   color: var(--ink-3); margin-left: 4px; letter-spacing: 0;
 }
+/* A status word where sibling tiles carry a number. 32px is a size for
+   digits — "Not reporting" set at it is a headline sitting in a slot meant
+   to be read at a glance, and next to a 32px "37" it looked like a
+   different component. Same block height so the strip still lines up; the
+   dot carries the tone, because a whole line of orange text for "not
+   reporting" shouts louder than the situation warrants. */
+.g-metric-word {
+  display: flex; align-items: center; gap: 9px; min-height: 32px;
+  font-size: 20px; font-weight: 600; letter-spacing: -.015em; line-height: 1.2;
+}
+.g-metric-word i {
+  width: 9px; height: 9px; border-radius: 50%; flex: none;
+  background: var(--ok);
+}
+.g-metric-word.is-warn i { background: var(--warn); }
+.g-metric-word.is-crit i { background: var(--crit); }
+.g-metric-word.is-off  i { background: var(--ink-3); }
+
 .is-ok   .g-metric-lg, .is-ok   .g-metric-md, .is-ok   .g-metric-sm { color: var(--ok); }
 .is-warn .g-metric-lg, .is-warn .g-metric-md, .is-warn .g-metric-sm { color: var(--warn); }
 .is-crit .g-metric-lg, .is-crit .g-metric-md, .is-crit .g-metric-sm { color: var(--crit); }
@@ -467,15 +485,29 @@ body {
    content sliding through the gap above it and past its open
    corners. That is fixed by the scroll edge below, not by docking
    the bar — see .g-page::before. */
+/* Grid, not flex. With flex the nav was centred by `margin: 0 auto`, which
+   splits the *leftover* space evenly — so it sat centred between the brand
+   and the buttons, not in the middle of the bar. Two 1fr side tracks put
+   it on the bar's real axis whatever the sides weigh. */
 .g-bar {
-  display: flex; align-items: center; gap: var(--s-4);
-  padding: 9px 10px 9px 20px;
+  display: grid; align-items: center; gap: var(--s-4);
+  grid-template-columns: 1fr auto 1fr;
+  grid-template-areas: "brand nav actions";
+  /* Symmetric padding, or the 1fr tracks centre the nav on the content box
+     and it lands 3px off the bar's own centre. The brand gets its inset
+     from its own padding instead. */
+  padding: 9px 14px;
   border-radius: var(--r-chip);
   position: sticky;
   top: 12px;
   z-index: 20;
 }
-.g-bar__brand { font-size: 15px; font-weight: 600; letter-spacing: -.01em; }
+.g-bar__brand {
+  grid-area: brand; justify-self: start; padding-left: 6px;
+  font-size: 15px; font-weight: 600; letter-spacing: -.01em;
+}
+.g-bar .g-seg { grid-area: nav; margin: 0; }
+.g-bar__actions { grid-area: actions; display: flex; align-items: center; gap: var(--s-2); justify-self: end; }
 
 .g-seg {
   display: flex; gap: 2px; margin: 0 auto;
@@ -508,9 +540,8 @@ body {
 
 
 /* Sign out is a session-ending action used rarely — it should not carry
-   the same weight as navigation. Icon + label on desktop, icon only on
-   a phone, where the toolbar is sticky and every row costs real estate. */
-.g-bar__signout { gap: 7px; padding: 9px 14px; }
+   the same weight as navigation. It sits as a plain icon beside the theme
+   toggle; the name lives in aria-label and the tooltip. */
 
 .g-back {
   display: inline-flex; align-items: center; gap: 7px;
@@ -1165,18 +1196,18 @@ select {
   /* The toolbar is sticky, so every pixel of it is permanently gone from
      a 844px-tall screen. Tighten it and let the nav scroll rather than
      wrap onto a third row. */
-  /* Two rows, not three. Ordering matters: the nav is full width, so it
-     only drops to its own line if it comes after the brand and actions in
-     flex order. Previously brand / nav / actions each took a row. */
-  .g-bar { flex-wrap: wrap; gap: var(--s-2); padding: 8px 10px; border-radius: var(--r-pane); }
-  .g-bar__brand { font-size: 14px; order: 1; flex: 1; }
-  .g-bar .g-pill { order: 2; padding: 5px 10px; font-size: 11.5px; }
-  .g-bar .g-theme, .g-bar__signout { order: 3; }
-  .g-bar .g-seg { order: 4; width: 100%; margin: 0; }
-
-  /* Icon only — the label is redundant next to a door-out arrow. */
-  .g-bar__signout { padding: 0; width: 44px; justify-content: center; }
-  .g-bar__signout span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  /* Two rows: brand and buttons share the first, the nav takes the second
+     full width. Grid areas rather than flex `order`, so the layout reads
+     the same as the markup. */
+  .g-bar {
+    gap: var(--s-2); padding: 8px 12px; border-radius: var(--r-pane);
+    grid-template-columns: 1fr auto;
+    grid-template-areas:
+      "brand actions"
+      "nav   nav";
+  }
+  .g-bar__brand { font-size: 14px; }
+  .g-bar .g-seg { width: 100%; }
   .g-page::before { height: 128px; }
   .g-seg { margin: 0; width: 100%; overflow-x: auto; }
   /* A card header holding a segmented control had nowhere to put it: the

@@ -128,6 +128,15 @@ export function SystemStatusCard({ devicesStatus, isExpanded = false }: SystemSt
   const onlineSensors = sensorDevices.filter((device) => device.online).length;
   const devicesNeedingAttention = allDevices.filter((device) => !device.online || (getBatteryPercent(device) ?? 100) <= 20).length;
 
+  /** The freshest last_seen we hold across every board. */
+  const lastHeardFrom = allDevices.length
+    ? relativeTime(
+        allDevices
+          .map((device) => (device.last_seen ? new Date(device.last_seen).getTime() : 0))
+          .reduce((a, b) => Math.max(a, b), 0) || null,
+      )
+    : 'never';
+
   useEffect(() => {
     if (!selectedSensor) return;
     const onKeyDown = (event: KeyboardEvent) => {
@@ -240,9 +249,13 @@ export function SystemStatusCard({ devicesStatus, isExpanded = false }: SystemSt
           <p className="g-label">Sensors online</p>
           <div className="g-metric-sm g-num">{onlineSensors}<small>of {sensorDevices.length}</small></div>
         </div>
-        <div className={`g-tile ${devicesNeedingAttention ? 'is-warn' : ''}`}>
-          <p className="g-label">Last sync</p>
-          <div className="g-metric-sm">{devicesStatus ? new Date().toLocaleTimeString() : 'N/A'}</div>
+        {/* This read `new Date()` — the clock, not a sync. It showed the
+            current time whether or not anything had reported, so it said
+            "Last sync 19:47" while every board had been silent since March.
+            The real answer is the freshest last_seen we hold. */}
+        <div className="g-tile">
+          <p className="g-label">Last heard from</p>
+          <div className="g-metric-word">{lastHeardFrom}</div>
         </div>
       </div>
 

@@ -119,8 +119,6 @@ export default function AccessPage() {
     return collapsed.slice(0, 8);
   }, [alerts]);
 
-  const unlockedCount = doorsWindows.filter(d => d.status !== 'locked').length;
-
   // The gate wraps the loading branch too — see the note on /admin.
   if (loading) {
     return (
@@ -139,15 +137,7 @@ export default function AccessPage() {
   return (
     <ProtectedRoute>
       <main className="g-page">
-        <GlassBar
-          current="access"
-          pillTone={unlockedCount ? 'warn' : 'ok'}
-          pill={
-            unlockedCount
-              ? `${unlockedCount} ${unlockedCount === 1 ? 'door' : 'doors'} unlocked`
-              : 'All doors locked'
-          }
-        />
+        <GlassBar current="access" />
 
         <div className="g-title">
           <h1>Access &amp; cards</h1>

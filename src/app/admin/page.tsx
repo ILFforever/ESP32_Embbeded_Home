@@ -81,11 +81,7 @@ export default function AdminPage() {
   return (
     <ProtectedRoute requireAdmin>
       <main className="g-page">
-        <GlassBar
-          current="admin"
-          pillTone={offline ? 'warn' : 'ok'}
-          pill={offline ? `${offline} offline` : `${devices.length} enrolled`}
-        />
+        <GlassBar current="admin" />
 
         <div className="g-title">
           <h1>Devices &amp; admin</h1>
@@ -109,7 +105,8 @@ export default function AdminPage() {
           </div>
           <div className="g-pane g-card">
             <p className="g-label">Last heard from</p>
-            <div className="g-metric-sm">{lastSeen}</div>
+            {/* A date is a word, not a metric — see .g-metric-word. */}
+            <div className="g-metric-word">{lastSeen}</div>
           </div>
         </div>
 

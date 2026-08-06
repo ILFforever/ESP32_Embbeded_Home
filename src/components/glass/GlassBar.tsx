@@ -14,9 +14,10 @@ import { getCurrentTheme, type GlassTheme } from '@/components/glass/theme';
  * existing copies had already drifted (Access and Admin were buttons on
  * one page and links on the other).
  *
- * DOM order is load-bearing: the mobile rules in globals.css reorder these
- * children with `order:` (brand 1, pill 2, controls 3, nav 4) to get the
- * two-row layout. Keep brand, nav, theme, sign out, pill in this sequence.
+ * Three parts, laid out on a grid so the nav sits in the true centre of
+ * the bar rather than in the centre of whatever space the brand and the
+ * buttons leave over. Grid areas also give the phone layout its two rows
+ * without reordering flex children.
  *
  * This is the only element carrying the liquid-glass lens (ground rule 2):
  * it is the one thing that moves over the page content.
@@ -26,9 +27,6 @@ export type BarSection = 'home' | 'plan' | 'access' | 'admin';
 
 interface GlassBarProps {
   current: BarSection;
-  /** Right-hand status pill text, e.g. "All systems normal". */
-  pill: string;
-  pillTone?: 'ok' | 'warn' | 'crit';
 }
 
 const NAV: { id: BarSection; label: string; href: string; adminOnly?: boolean }[] = [
@@ -38,7 +36,7 @@ const NAV: { id: BarSection; label: string; href: string; adminOnly?: boolean }[
   { id: 'admin', label: 'Admin', href: '/admin', adminOnly: true },
 ];
 
-export default function GlassBar({ current, pill, pillTone = 'ok' }: GlassBarProps) {
+export default function GlassBar({ current }: GlassBarProps) {
   const router = useRouter();
   const { logout, user } = useAuth();
   const [theme, setTheme] = useState<GlassTheme>('light');
@@ -81,36 +79,38 @@ export default function GlassBar({ current, pill, pillTone = 'ok' }: GlassBarPro
         ))}
       </nav>
 
-      <button
-        type="button"
-        className="g-icon-btn g-theme"
-        aria-label="Switch between light and dark"
-        title="Switch theme"
-        aria-pressed={theme === 'dark'}
-      >
-        <svg className="g-theme__moon" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
-          <path d="M21 13.3A8.5 8.5 0 1 1 10.7 3a6.7 6.7 0 0 0 10.3 10.3Z" />
-        </svg>
-        <svg className="g-theme__sun" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
-          <circle cx="12" cy="12" r="4" />
-          <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" />
-        </svg>
-      </button>
+      <div className="g-bar__actions">
+        <button
+          type="button"
+          className="g-icon-btn g-theme"
+          aria-label="Switch between light and dark"
+          title="Switch theme"
+          aria-pressed={theme === 'dark'}
+        >
+          <svg className="g-theme__moon" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+            <path d="M21 13.3A8.5 8.5 0 1 1 10.7 3a6.7 6.7 0 0 0 10.3 10.3Z" />
+          </svg>
+          <svg className="g-theme__sun" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+            <circle cx="12" cy="12" r="4" />
+            <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" />
+          </svg>
+        </button>
 
-      <button
-        className="g-btn g-btn--ghost g-bar__signout"
-        onClick={() => { logout(); router.push('/login'); }}
-      >
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-          <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9" />
-        </svg>
-        <span>Sign out</span>
-      </button>
-
-      <span className={`g-pill is-${pillTone}`}>
-        <i />
-        {pill}
-      </span>
+        {/* Icon only, at every width. The label was the widest thing on the
+            right and it named an action people take once a session. The
+            aria-label and the tooltip still say it in words. */}
+        <button
+          type="button"
+          className="g-icon-btn g-bar__signout"
+          onClick={() => { logout(); router.push('/login'); }}
+          aria-label="Sign out"
+          title="Sign out"
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9" />
+          </svg>
+        </button>
+      </div>
     </div>
   );
 }

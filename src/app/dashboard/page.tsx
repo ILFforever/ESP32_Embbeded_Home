@@ -32,7 +32,6 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [expandedCard, setExpandedCard] = useState<string | null>(null);
   const [systemOnline, setSystemOnline] = useState<boolean>(false);
-  const [allDevicesOnline, setAllDevicesOnline] = useState<boolean>(false);
   const [doorLockStates, setDoorLockStates] = useState<Record<string, 'locked' | 'unlocked'>>({});
 
 
@@ -70,11 +69,9 @@ export default function DashboardPage() {
       try {
         devices = await getAllDevices();
         setDevicesStatus(devices);
-        setAllDevicesOnline(devices.summary.offline === 0 && devices.summary.total > 0);
       } catch (error) {
         console.error('Error loading devices:', error);
         setSystemOnline(false);
-        setAllDevicesOnline(false);
       } finally {
         // Paint now. Everything below refines what is already on screen.
         setLoading(false);
@@ -368,15 +365,7 @@ export default function DashboardPage() {
   return (
     <ProtectedRoute>
       <main className="g-page">
-        <GlassBar
-          current="home"
-          pillTone={systemOnline && allDevicesOnline ? 'ok' : 'warn'}
-          pill={
-            systemOnline && allDevicesOnline
-              ? 'All systems normal'
-              : `${offlineTotal} ${offlineTotal === 1 ? 'needs' : 'need'} attention`
-          }
-        />
+        <GlassBar current="home" />
 
         <div className="g-title">
           <h1>{greeting()}</h1>
@@ -424,13 +413,13 @@ export default function DashboardPage() {
             Open alerts / Backend — three restatements of the header plus a
             service health readout no resident has a use for. */}
         <div className="g-grid g-grid--4">
-          <div className={`g-pane g-card ${doorSummary.tone === 'warn' ? 'is-warn' : ''}`}>
+          <div className="g-pane g-card">
             <p className="g-label">Doors</p>
-            <div className="g-metric-sm">{doorSummary.text}</div>
+            <div className={`g-metric-word is-${doorSummary.tone}`}><i />{doorSummary.text}</div>
           </div>
-          <div className={`g-pane g-card ${airSummary.tone === 'warn' ? 'is-warn' : ''}`}>
+          <div className="g-pane g-card">
             <p className="g-label">Air</p>
-            <div className="g-metric-sm">{airSummary.text}</div>
+            <div className={`g-metric-word is-${airSummary.tone}`}><i />{airSummary.text}</div>
           </div>
           <div className={`g-pane g-card ${urgent ? 'is-warn' : ''}`}>
             <p className="g-label">Needs attention</p>

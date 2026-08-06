@@ -105,7 +105,6 @@ export default function PlanPage() {
   const activeReading = readings[selected];
 
   const onlineCount = devicesStatus?.summary.online ?? 0;
-  const totalCount = devicesStatus?.summary.total ?? 0;
 
   const tagFor = (room: Room) => {
     const r = readings[room.id];
@@ -139,11 +138,7 @@ export default function PlanPage() {
   return (
     <ProtectedRoute>
       <div className="g-page">
-        <GlassBar
-          current="plan"
-          pillTone={onlineCount === totalCount && totalCount > 0 ? 'ok' : 'warn'}
-          pill={`${onlineCount} of ${totalCount} online`}
-        />
+        <GlassBar current="plan" />
 
         <div className="g-title">
           <h1>Ground floor</h1>
