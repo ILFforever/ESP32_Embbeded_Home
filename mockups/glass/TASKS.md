@@ -114,6 +114,20 @@ Doorbell and Hub are drill-downs reached from a device, so they use the
 page links in the same control; it looks like navigation and behaves like a
 scroll.
 
+All four are real routes: `/dashboard`, `/plan`, `/access`, `/admin`. Access and
+Admin were dashboard modals for a while and the nav pointed back at
+`/dashboard?card=…` — a nav item that returns you to the page you are on is a
+dead link with extra steps. The toolbar itself lives in one place,
+`src/components/glass/GlassBar.tsx`; do not hand-roll another copy.
+
+The theme button in that toolbar deliberately has **no** React `onClick`.
+`GlassRuntime` owns the toggle through a document-level listener, which also
+serves the plain buttons on `/login`, `/hub` and `/doorbell`. A React handler
+there fires *in addition* to the runtime's and cancels it out: the App Router
+hydrates the whole document, so both listeners sit on `document`, and
+`stopPropagation` does not stop other listeners on the same node. `GlassBar`
+mirrors the result via the `glass:themechange` event.
+
 ### 11. Light source is fixed
 Up and to the left, same for every pane on every page. Nothing tracks the
 pointer. Cards do not lift, scale, or move on hover — only real controls respond,
@@ -246,7 +260,7 @@ Convert each to the Glass components. Compact and expanded variants both.
 | ☐ Climate | `TemperatureCard.tsx` | S |
 | ☐ Air quality | `GasReadingsCard.tsx` | S |
 | ☐ Recent activity | `AlertsCard.tsx` | M |
-| ☐ Doors | `DoorCard.tsx` + `DoorsWindowsCard.tsx` | S |
+| ☐ Doors | `DoorCard.tsx` | S |
 | ☐ Broadcast | `MusicBroadcastCard.tsx` | S |
 | ☐ Devices | `SystemStatusCard.tsx` | M |
 | ☐ Admin | `AdminManagementCard.tsx` | L |

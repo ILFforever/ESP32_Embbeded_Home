@@ -1,9 +1,9 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import ProtectedRoute from '@/components/auth/ProtectedRoute';
+import GlassBar from '@/components/glass/GlassBar';
 import { AlertsCard } from '@/components/dashboard/AlertsCard';
 import { TemperatureCard } from '@/components/dashboard/TemperatureCard';
 import { GasReadingsCard } from '@/components/dashboard/GasReadingsCard';
@@ -18,19 +18,16 @@ import {
   getGasReadingsForDashboard,
   getLockStatus
 } from '@/services/devices.service';
-import type { DevicesStatus, GasReading, Alert, DoorWindow } from '@/types/dashboard';
-import { getCurrentTheme, toggleTheme as toggleGlassTheme, type GlassTheme } from '@/components/glass/theme';
+import type { DevicesStatus, GasReading, Alert } from '@/types/dashboard';
 import { getAlertTitle } from '@/utils/alertText';
 import { greeting, relativeTime } from '@/utils/time';
 
 export default function DashboardPage() {
-  const router = useRouter();
-  const { logout, user } = useAuth();
+  const { user } = useAuth();
   const [devicesStatus, setDevicesStatus] = useState<DevicesStatus | null>(null);
   const [gasReadings, setGasReadings] = useState<GasReading[]>([]);
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [loading, setLoading] = useState(true);
-  const [theme, setThemeState] = useState<GlassTheme>('light');
   const [expandedCard, setExpandedCard] = useState<string | null>(null);
   const [systemOnline, setSystemOnline] = useState<boolean>(false);
   const [allDevicesOnline, setAllDevicesOnline] = useState<boolean>(false);
@@ -116,13 +113,10 @@ export default function DashboardPage() {
     return () => clearInterval(interval);
   }, []);
 
-  useEffect(() => {
-    setThemeState(getCurrentTheme());
-  }, []);
-
-  /* Access and Admin live in expanded cards on this page, so other pages
-     link here with ?card=. Without this the nav would have to point at
-     /dashboard and drop you somewhere you did not ask for. */
+  /* ?card=alerts opens that card's expanded view on load, so a card can be
+     linked to directly. Access and Admin used to arrive this way because
+     they had no route of their own; they now live at /access and /admin,
+     but the deep link still works for every card on this page. */
   useEffect(() => {
     const card = new URLSearchParams(window.location.search).get('card');
     if (card) setExpandedCard(card);
@@ -140,16 +134,6 @@ export default function DashboardPage() {
     document.addEventListener('keydown', onKeyDown);
     return () => document.removeEventListener('keydown', onKeyDown);
   }, [expandedCard]);
-
-  const toggleTheme = () => {
-    const next = toggleGlassTheme();
-    setThemeState(next);
-  };
-
-  const handleLogout = () => {
-    logout();
-    router.push('/login');
-  };
 
   const openExpandedCard = (cardId: string) => {
     setExpandedCard(cardId);
@@ -257,41 +241,15 @@ export default function DashboardPage() {
   return (
     <ProtectedRoute>
       <main className="g-page">
-        <div className="g-pane g-bar">
-          <span className="g-bar__brand">Arduino888</span>
-          {/* Every item goes somewhere real. Plan was never migrated out of
-              the mockups, and Access/Admin both pointed back at /dashboard —
-              three of four links were dead. Access and Admin open the
-              expanded cards that actually hold that content. */}
-          <nav className="g-seg" data-choice aria-label="Sections">
-            <a href="/dashboard" aria-current="page">Home</a>
-            <a href="/plan">Plan</a>
-            <button type="button" onClick={() => openExpandedCard('doors')}>Access</button>
-            {user?.role === 'admin' && (
-              <button type="button" onClick={() => openExpandedCard('admin')}>Admin</button>
-            )}
-          </nav>
-          <button className="g-icon-btn g-theme" onClick={toggleTheme} aria-label="Toggle theme" aria-pressed={theme === 'dark'}>
-            <svg className="g-theme__moon" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
-              <path d="M21 13.3A8.5 8.5 0 1 1 10.7 3a6.7 6.7 0 0 0 10.3 10.3Z" />
-            </svg>
-            <svg className="g-theme__sun" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
-              <circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" />
-            </svg>
-          </button>
-          <button className="g-btn g-btn--ghost g-bar__signout" onClick={handleLogout}>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9" />
-            </svg>
-            <span>Sign out</span>
-          </button>
-          <span className={`g-pill ${systemOnline && allDevicesOnline ? 'is-ok' : 'is-warn'}`}>
-            <i></i>
-            {systemOnline && allDevicesOnline
+        <GlassBar
+          current="home"
+          pillTone={systemOnline && allDevicesOnline ? 'ok' : 'warn'}
+          pill={
+            systemOnline && allDevicesOnline
               ? 'All systems normal'
-              : `${offlineTotal} ${offlineTotal === 1 ? 'needs' : 'need'} attention`}
-          </span>
-        </div>
+              : `${offlineTotal} ${offlineTotal === 1 ? 'needs' : 'need'} attention`
+          }
+        />
 
         <div className="g-title">
           <h1>{greeting()}</h1>

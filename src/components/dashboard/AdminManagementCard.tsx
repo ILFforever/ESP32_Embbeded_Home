@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { BellRing, CheckCircle, Copy, Cpu, Home, Plus, Shield, Trash2, User, UserPlus, Users, X } from 'lucide-react';
+import { BellRing, CheckCircle, Copy, Cpu, Home, Plus, Shield, Trash2, UserPlus, Users, X } from 'lucide-react';
 import { UserData, deleteAdmin, deleteUser, getAdmins, getUsers, registerUser } from '@/services/auth.service';
 import { deleteDevice, getDeviceStatusText, registerDevice } from '@/services/devices.service';
 import type { BackendDevice } from '@/types/dashboard';
@@ -9,6 +9,18 @@ import type { BackendDevice } from '@/types/dashboard';
 interface AdminManagementCardProps {
   isExpanded?: boolean;
   devices?: BackendDevice[];
+  /**
+   * Drop the card's own "Admin" heading. The /admin page carries the same
+   * words in its page title, and two identical headings stacked on top of
+   * each other read as a rendering bug.
+   */
+  hideHeader?: boolean;
+  /**
+   * Give People and Devices a pane each, the way admin.html has them.
+   * Off inside the dashboard modal: a pane nested in the modal's own pane
+   * is a border and a blur the design system does not use there.
+   */
+  sectioned?: boolean;
 }
 
 interface AddUserFormData {
@@ -59,7 +71,14 @@ function StatusChip({ online, lastSeen, type }: { online: boolean; lastSeen?: st
   return <span className={`g-chip ${tone}`}>{label}</span>;
 }
 
-export function AdminManagementCard({ isExpanded = false, devices = [] }: AdminManagementCardProps) {
+export function AdminManagementCard({
+  isExpanded = false,
+  devices = [],
+  hideHeader = false,
+  sectioned = false,
+}: AdminManagementCardProps) {
+  const sectionClass = sectioned ? 'g-pane g-card g-stack' : 'g-stack';
+
   const [admins, setAdmins] = React.useState<UserData[]>([]);
   const [users, setUsers] = React.useState<UserData[]>([]);
   const [loading, setLoading] = React.useState(false);
@@ -337,13 +356,15 @@ export function AdminManagementCard({ isExpanded = false, devices = [] }: AdminM
   return (
     <>
       <div className="g-stack">
-        <header>
-          <div className="g-row g-row--between">
-            <h2>Admin</h2>
-            <Shield size={18} aria-hidden="true" />
-          </div>
-          <p className="g-sub">People, access roles, and enrolled boards.</p>
-        </header>
+        {!hideHeader && (
+          <header>
+            <div className="g-row g-row--between">
+              <h2>Admin</h2>
+              <Shield size={18} aria-hidden="true" />
+            </div>
+            <p className="g-sub">People, access roles, and enrolled boards.</p>
+          </header>
+        )}
 
         {!isExpanded ? (
           <div className="g-grid g-grid--3 g-grid--stats">
@@ -356,20 +377,25 @@ export function AdminManagementCard({ isExpanded = false, devices = [] }: AdminM
             {loading && <div className="g-empty"><strong>Loading people</strong><p>Fetching admin and user records.</p></div>}
             {error && <div className="g-chip g-chip--crit" role="alert">{error}</div>}
 
-            <div className="g-row g-row--wrap">
-              <button className="g-btn g-btn--primary" onClick={() => openUserForm('admin')}><UserPlus size={16} /> Add admin</button>
-              <button className="g-btn g-btn--ghost" onClick={() => openUserForm('user')}><UserPlus size={16} /> Add user</button>
-              <button className="g-btn g-btn--ghost" onClick={() => setShowAddDeviceForm(true)}><Plus size={16} /> Register device</button>
-            </div>
-
-            {showAddUserForm && renderUserForm()}
-            {showAddDeviceForm && renderDeviceForm()}
-
-            <section className="g-stack">
-              <div className="g-row g-row--between">
-                <h3>People</h3>
-                <span className="g-chip">{peopleRows.length} total</span>
+            {/* Each action sits in the header of the thing it changes, the
+                way admin.html has it. A shared row above both tables meant
+                "Register device" was three buttons away from the device
+                table and adjacent to the people one. */}
+            <section className={sectionClass}>
+              {/* --wrap: on a phone the title and its two buttons do not fit
+                  on one line, and without it they interleave instead of
+                  stacking. */}
+              <div className="g-row g-row--between g-row--wrap">
+                <div className="g-row">
+                  <h3>People</h3>
+                  <span className="g-chip">{peopleRows.length} total</span>
+                </div>
+                <div className="g-row g-row--wrap">
+                  <button className="g-btn g-btn--primary" onClick={() => openUserForm('admin')}><UserPlus size={16} /> Add admin</button>
+                  <button className="g-btn g-btn--ghost" onClick={() => openUserForm('user')}><UserPlus size={16} /> Add user</button>
+                </div>
               </div>
+              {showAddUserForm && renderUserForm()}
               {peopleRows.length === 0 && !loading ? (
                 <div className="g-empty"><Users size={22} /><strong>No people found</strong><p>Add an admin or user to grant access.</p></div>
               ) : (
@@ -396,11 +422,15 @@ export function AdminManagementCard({ isExpanded = false, devices = [] }: AdminM
               )}
             </section>
 
-            <section className="g-stack">
-              <div className="g-row g-row--between">
-                <h3>Devices</h3>
-                <span className="g-chip">{devices.length} enrolled</span>
+            <section className={sectionClass}>
+              <div className="g-row g-row--between g-row--wrap">
+                <div className="g-row">
+                  <h3>Devices</h3>
+                  <span className="g-chip">{devices.length} enrolled</span>
+                </div>
+                <button className="g-btn g-btn--primary" onClick={() => setShowAddDeviceForm(true)}><Plus size={16} /> Register device</button>
               </div>
+              {showAddDeviceForm && renderDeviceForm()}
               {devices.length === 0 && !loading ? (
                 <div className="g-empty"><Cpu size={22} /><strong>No devices found</strong><p>Register a board to issue an API token.</p></div>
               ) : (

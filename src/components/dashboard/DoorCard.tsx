@@ -305,7 +305,11 @@ export function DoorCard({ doorsWindows, isExpanded = false }: DoorCardProps) {
             </button>
           </div>
 
-          <div className="g-grid g-grid--2">
+          {/* auto-fit rather than a fixed 2. With one lock enrolled a hard
+              two-column grid left half the row empty, and a full-width
+              stretch put the name and the battery ring 900px apart. The
+              tiles flow and stop growing at 460px. */}
+          <div className="g-grid g-grid--tiles">
             {doors.map(door => <DoorStatusTile key={door.id} door={door} />)}
           </div>
         </div>

@@ -1,16 +1,14 @@
 'use client';
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { useRouter } from 'next/navigation';
 import ProtectedRoute from '@/components/auth/ProtectedRoute';
-import { useAuth } from '@/context/AuthContext';
+import GlassBar from '@/components/glass/GlassBar';
 import { getAlerts, getAllDevices, getGasReadingsForDashboard, getLockStatus } from '@/services/devices.service';
 import type { Alert, BackendDevice, DevicesStatus, GasReading } from '@/types/dashboard';
 import { alertLevelToType } from '@/types/dashboard';
 import { getAlertTitle } from '@/utils/alertText';
 import { ROOMS, OUTER_WALL, INNER_WALLS, DOOR_SWINGS, DEVICE_ROOMS, type Room, type RoomId } from '@/utils/floorPlan';
 import { relativeTime, lastSeenLabel } from '@/utils/time';
-import { getCurrentTheme, toggleTheme as toggleGlassTheme, type GlassTheme } from '@/components/glass/theme';
 
 type Tone = 'ok' | 'warn' | 'off';
 
@@ -22,17 +20,12 @@ interface RoomReading {
 }
 
 export default function PlanPage() {
-  const router = useRouter();
-  const { logout, user } = useAuth();
   const [devicesStatus, setDevicesStatus] = useState<DevicesStatus | null>(null);
   const [gasReadings, setGasReadings] = useState<GasReading[]>([]);
   const [lockStates, setLockStates] = useState<Record<string, 'locked' | 'unlocked'>>({});
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [selected, setSelected] = useState<RoomId>('living');
   const [loading, setLoading] = useState(true);
-  const [theme, setThemeState] = useState<GlassTheme>('light');
-
-  useEffect(() => setThemeState(getCurrentTheme()), []);
 
   useEffect(() => {
     const load = async () => {
@@ -145,38 +138,11 @@ export default function PlanPage() {
   return (
     <ProtectedRoute>
       <div className="g-page">
-        <div className="g-pane g-bar">
-          <span className="g-bar__brand">Arduino888</span>
-          <nav className="g-seg" data-choice aria-label="Sections">
-            <a href="/dashboard">Home</a>
-            <a href="/plan" aria-current="page">Plan</a>
-            <a href="/dashboard?card=doors">Access</a>
-            {user?.role === 'admin' && <a href="/dashboard?card=admin">Admin</a>}
-          </nav>
-          <button
-            className="g-icon-btn g-theme"
-            onClick={() => setThemeState(toggleGlassTheme())}
-            aria-label="Toggle theme"
-            aria-pressed={theme === 'dark'}
-          >
-            <svg className="g-theme__moon" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
-              <path d="M21 13.3A8.5 8.5 0 1 1 10.7 3a6.7 6.7 0 0 0 10.3 10.3Z" />
-            </svg>
-            <svg className="g-theme__sun" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
-              <circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" />
-            </svg>
-          </button>
-          <button className="g-btn g-btn--ghost g-bar__signout" onClick={() => { logout(); router.push('/login'); }}>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9" />
-            </svg>
-            <span>Sign out</span>
-          </button>
-          <span className={`g-pill ${onlineCount === totalCount && totalCount > 0 ? 'is-ok' : 'is-warn'}`}>
-            <i />
-            {onlineCount} of {totalCount} online
-          </span>
-        </div>
+        <GlassBar
+          current="plan"
+          pillTone={onlineCount === totalCount && totalCount > 0 ? 'ok' : 'warn'}
+          pill={`${onlineCount} of ${totalCount} online`}
+        />
 
         <div className="g-title">
           <h1>Ground floor</h1>

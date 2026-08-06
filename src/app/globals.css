@@ -1121,6 +1121,11 @@ select {
 .g-grid--3 { grid-template-columns: repeat(3, 1fr); }
 .g-grid--4 { grid-template-columns: repeat(4, 1fr); }
 .g-grid--auto { grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
+/* Like --auto, but tracks stop growing at 460px. For tiles whose contents
+   sit at opposite edges (a name and a battery ring): stretched across a
+   full page width those two ends stop reading as one object. Use when the
+   item count is data-driven and often 1. */
+.g-grid--tiles { grid-template-columns: repeat(auto-fit, minmax(280px, 460px)); }
 
 .g-row { display: flex; align-items: center; gap: var(--s-3); }
 .g-row--between { justify-content: space-between; }
@@ -1168,6 +1173,12 @@ select {
   .g-bar__signout span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
   .g-page::before { height: 128px; }
   .g-seg { margin: 0; width: 100%; overflow-x: auto; }
+  /* A card header holding a segmented control had nowhere to put it: the
+     header does not wrap, so .g-seg's width:100% just squeezed the title
+     and broke "My cards" over two lines. Let the header wrap and the seg
+     takes its own row. Headers that are only a title and a label still fit
+     on one line, so nothing else moves. */
+  .g-card > header { flex-wrap: wrap; }
   .g-input-group input { padding-right: 13px; }
   .g-input-group select { position: static; transform: none; width: 100%; margin-top: 8px; }
 }

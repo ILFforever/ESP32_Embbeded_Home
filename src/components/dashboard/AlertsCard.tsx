@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   AlertCircle,
   Battery,
@@ -62,22 +62,15 @@ const priorityChipClass = (score: number) => {
 export function AlertsCard({ alerts, isExpanded = false, onRefresh }: AlertsCardProps) {
   const [selectedFilters, setSelectedFilters] = useState<string[]>([]);
   const [showFilters, setShowFilters] = useState(false);
-  const [popupCategory, setPopupCategory] = useState<string | null>(null);
   const [readAlertsPage, setReadAlertsPage] = useState(1);
   const readAlertsPerPage = 5;
 
-  useEffect(() => {
-    if (!popupCategory) return;
-
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setPopupCategory(null);
-    };
-
-    document.addEventListener('keydown', closeOnEscape);
-    return () => document.removeEventListener('keydown', closeOnEscape);
-  }, [popupCategory]);
-
-  
+  /* There was a category drill-down modal here. It became unreachable when
+     the compact view swapped its category-counter grid for the plain event
+     list: the counters were the only thing that opened it, so the state,
+     the Escape handler and ~30 lines of dialog markup were all live code
+     nothing could reach. The expanded view's filter chips already narrow
+     to one category, which is what the drill-down did. */
 
   const getAlertCategory = (alert: Alert): string => {
     const tags = alertTags(alert);
@@ -163,7 +156,6 @@ export function AlertsCard({ alerts, isExpanded = false, onRefresh }: AlertsCard
   const unreadAlerts = filteredAlerts.filter(a => !a.read);
   const readAlerts = filteredAlerts.filter(a => a.read);
   const highPriorityCount = sortedAlerts.filter(a => !a.read && a.score >= 50).length;
-  const popupAlerts = popupCategory ? sortedAlerts.filter(alert => getAlertCategory(alert) === popupCategory) : [];
 
   const availableCategories = useMemo(() => {
     const categories = new Set<string>();
@@ -176,29 +168,6 @@ export function AlertsCard({ alerts, isExpanded = false, onRefresh }: AlertsCard
     }
     return sorted;
   }, [sortedAlerts]);
-
-  const alertCategories = useMemo(() => {
-    const categories: Record<string, Alert[]> = {};
-
-    unreadAlerts.forEach(alert => {
-      const category = getAlertCategory(alert);
-      categories[category] = categories[category] || [];
-      categories[category].push(alert);
-    });
-
-    const sorted = Object.entries(categories)
-      .map(([name, categoryAlerts]) => ({ name, alerts: categoryAlerts, count: categoryAlerts.length }))
-      .filter(category => category.count > 0)
-      .sort((a, b) => b.count - a.count);
-
-    const generalIndex = sorted.findIndex(cat => cat.name === 'General');
-    if (generalIndex > -1) {
-      const [general] = sorted.splice(generalIndex, 1);
-      sorted.unshift(general);
-    }
-
-    return sorted;
-  }, [unreadAlerts]);
 
   const totalReadPages = Math.ceil(readAlerts.length / readAlertsPerPage);
   const startIndex = (readAlertsPage - 1) * readAlertsPerPage;
@@ -249,157 +218,121 @@ export function AlertsCard({ alerts, isExpanded = false, onRefresh }: AlertsCard
   );
 
   return (
-    <>
-      <div className="g-pane g-card">
-        <header>
-          <div className="g-row">
-            <Shield size={20} aria-hidden="true" />
-            <h3>Recent activity</h3>
-            {highPriorityCount > 0 && (
-              <span className="g-chip g-chip--crit">{highPriorityCount} urgent</span>
-            )}
-          </div>
-          {isExpanded && (
-            <button
-              className="g-icon-btn"
-              onClick={() => setShowFilters(!showFilters)}
-              title="Filter alerts by category"
-              aria-label="Filter alerts by category"
-              aria-pressed={showFilters}
-            >
-              <Filter size={17} aria-hidden="true" />
-            </button>
+    <div className="g-pane g-card">
+      <header>
+        <div className="g-row">
+          <Shield size={20} aria-hidden="true" />
+          <h3>Recent activity</h3>
+          {highPriorityCount > 0 && (
+            <span className="g-chip g-chip--crit">{highPriorityCount} urgent</span>
           )}
-        </header>
-
-        {isExpanded && showFilters && (
-          <div className="g-tile">
-            <div className="g-row g-row--between g-row--wrap">
-              <p className="g-label">Filter by category</p>
-              {selectedFilters.length > 0 && (
-                <button className="g-btn g-btn--ghost" onClick={() => setSelectedFilters([])}>
-                  <X size={15} aria-hidden="true" />
-                  Clear
-                </button>
-              )}
-            </div>
-            <div className="g-row g-row--wrap" style={{ marginTop: 'var(--s-3)' }}>
-              {availableCategories.map(category => (
-                <button
-                  key={category}
-                  className={`g-action${selectedFilters.includes(category) ? ' is-ok' : ''}`}
-                  onClick={() => toggleFilter(category)}
-                  aria-pressed={selectedFilters.includes(category)}
-                >
-                  <span className="g-row">{getCategoryIcon(category)} {category}</span>
-                </button>
-              ))}
-            </div>
-          </div>
+        </div>
+        {isExpanded && (
+          <button
+            className="g-icon-btn"
+            onClick={() => setShowFilters(!showFilters)}
+            title="Filter alerts by category"
+            aria-label="Filter alerts by category"
+            aria-pressed={showFilters}
+          >
+            <Filter size={17} aria-hidden="true" />
+          </button>
         )}
+      </header>
 
-        {!isExpanded ? (
-          <div className="g-stack">
-            {unreadAlerts.length === 0 ? (
-              <div className="g-empty">
-                <strong>No active alerts</strong>
-                <p>Everything is quiet right now.</p>
-              </div>
-            ) : (
-              /* The event list from the mockup. Category counters told you
-                 how many things happened but never what any of them were —
-                 "General 15" is the system describing itself. renderAlertRow
-                 already emits the right markup; the compact view just was
-                 not using it. */
-              <div className="g-list">
-                {sortAlertsByPriority(unreadAlerts).slice(0, 6).map(alert => renderAlertRow(alert))}
-              </div>
-            )}
-          </div>
-        ) : (
-          <div className="g-stack">
-            <section className="g-stack g-stack--tight">
-              <div className="g-row g-row--between">
-                <h4 className="g-label">Unread ({unreadAlerts.length})</h4>
-              </div>
-              {unreadAlerts.length === 0 ? (
-                <div className="g-empty">
-                  <strong>No unread alerts</strong>
-                  <p>New alerts will appear here.</p>
-                </div>
-              ) : (
-                <div className="g-list">
-                  {unreadAlerts.map(alert => renderAlertRow(alert))}
-                </div>
-              )}
-            </section>
-
-            {readAlerts.length > 0 && (
-              <section className="g-stack g-stack--tight">
-                <h4 className="g-label">Read ({readAlerts.length})</h4>
-                <div className="g-list">
-                  {paginatedReadAlerts.map(alert => renderAlertRow(alert, true))}
-                </div>
-                {totalReadPages > 1 && (
-                  <div className="g-row g-row--between g-row--wrap">
-                    <button
-                      className="g-btn g-btn--ghost"
-                      onClick={() => setReadAlertsPage(prev => Math.max(1, prev - 1))}
-                      disabled={readAlertsPage === 1}
-                    >
-                      <ChevronLeft size={16} aria-hidden="true" />
-                      Previous
-                    </button>
-                    <span className="g-sub">Page {readAlertsPage} of {totalReadPages}</span>
-                    <button
-                      className="g-btn g-btn--ghost"
-                      onClick={() => setReadAlertsPage(prev => Math.min(totalReadPages, prev + 1))}
-                      disabled={readAlertsPage === totalReadPages}
-                    >
-                      Next
-                      <ChevronRight size={16} aria-hidden="true" />
-                    </button>
-                  </div>
-                )}
-              </section>
-            )}
-          </div>
-        )}
-      </div>
-
-      {popupCategory && (
-        <div
-          className="g-modal"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="alerts-category-title"
-          onClick={(event) => {
-            if (event.target === event.currentTarget) setPopupCategory(null);
-          }}
-        >
-          <div className="g-pane g-modal__card g-modal__card--wide">
-            <div className="g-modal__head">
-              <div>
-                <h2 id="alerts-category-title">{popupCategory}</h2>
-                <p>{popupAlerts.length} alert{popupAlerts.length === 1 ? '' : 's'} in this category.</p>
-              </div>
-              <button className="g-icon-btn" onClick={() => setPopupCategory(null)} aria-label="Close">
-                <X size={16} aria-hidden="true" />
+      {isExpanded && showFilters && (
+        <div className="g-tile">
+          <div className="g-row g-row--between g-row--wrap">
+            <p className="g-label">Filter by category</p>
+            {selectedFilters.length > 0 && (
+              <button className="g-btn g-btn--ghost" onClick={() => setSelectedFilters([])}>
+                <X size={15} aria-hidden="true" />
+                Clear
               </button>
-            </div>
-            {popupAlerts.length > 0 ? (
-              <div className="g-list">
-                {popupAlerts.map(alert => renderAlertRow(alert as ScoredAlert, Boolean(alert.read)))}
-              </div>
-            ) : (
-              <div className="g-empty">
-                <strong>No matching alerts</strong>
-                <p>This category has cleared.</p>
-              </div>
             )}
+          </div>
+          <div className="g-row g-row--wrap" style={{ marginTop: 'var(--s-3)' }}>
+            {availableCategories.map(category => (
+              <button
+                key={category}
+                className={`g-action${selectedFilters.includes(category) ? ' is-ok' : ''}`}
+                onClick={() => toggleFilter(category)}
+                aria-pressed={selectedFilters.includes(category)}
+              >
+                <span className="g-row">{getCategoryIcon(category)} {category}</span>
+              </button>
+            ))}
           </div>
         </div>
       )}
-    </>
+
+      {!isExpanded ? (
+        <div className="g-stack">
+          {unreadAlerts.length === 0 ? (
+            <div className="g-empty">
+              <strong>No active alerts</strong>
+              <p>Everything is quiet right now.</p>
+            </div>
+          ) : (
+            /* The event list from the mockup. Category counters told you
+               how many things happened but never what any of them were —
+               "General 15" is the system describing itself. renderAlertRow
+               already emits the right markup; the compact view just was
+               not using it. */
+            <div className="g-list">
+              {sortAlertsByPriority(unreadAlerts).slice(0, 6).map(alert => renderAlertRow(alert))}
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="g-stack">
+          <section className="g-stack g-stack--tight">
+            <div className="g-row g-row--between">
+              <h4 className="g-label">Unread ({unreadAlerts.length})</h4>
+            </div>
+            {unreadAlerts.length === 0 ? (
+              <div className="g-empty">
+                <strong>No unread alerts</strong>
+                <p>New alerts will appear here.</p>
+              </div>
+            ) : (
+              <div className="g-list">
+                {unreadAlerts.map(alert => renderAlertRow(alert))}
+              </div>
+            )}
+          </section>
+
+          {readAlerts.length > 0 && (
+            <section className="g-stack g-stack--tight">
+              <h4 className="g-label">Read ({readAlerts.length})</h4>
+              <div className="g-list">
+                {paginatedReadAlerts.map(alert => renderAlertRow(alert, true))}
+              </div>
+              {totalReadPages > 1 && (
+                <div className="g-row g-row--between g-row--wrap">
+                  <button
+                    className="g-btn g-btn--ghost"
+                    onClick={() => setReadAlertsPage(prev => Math.max(1, prev - 1))}
+                    disabled={readAlertsPage === 1}
+                  >
+                    <ChevronLeft size={16} aria-hidden="true" />
+                    Previous
+                  </button>
+                  <span className="g-sub">Page {readAlertsPage} of {totalReadPages}</span>
+                  <button
+                    className="g-btn g-btn--ghost"
+                    onClick={() => setReadAlertsPage(prev => Math.min(totalReadPages, prev + 1))}
+                    disabled={readAlertsPage === totalReadPages}
+                  >
+                    Next
+                    <ChevronRight size={16} aria-hidden="true" />
+                  </button>
+                </div>
+              )}
+            </section>
+          )}
+        </div>
+      )}
+    </div>
   );
 }

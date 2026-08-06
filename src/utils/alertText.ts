@@ -49,7 +49,13 @@ export function getAlertTitle(alert: Alert): string {
   // so the title does not repeat the source shown beside it.
   const message = (alert.message || '').trim();
   if (message) {
-    const stripped = message.replace(new RegExp(`^${alert.source}\s*:\s*`, 'i'), '').trim();
+    // Escape the source: device ids are tame today but this is user data,
+    // and `\s` in a template literal is just "s" — the original pattern
+    // matched "hb_001s*:s*" and so never stripped anything.
+    const source = (alert.source || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const stripped = source
+      ? message.replace(new RegExp(`^${source}\\s*:\\s*`, 'i'), '').trim()
+      : message;
     return stripped || message;
   }
   return alert.source || 'Alert';
