@@ -68,7 +68,7 @@ export default function GlassBar({ current }: GlassBarProps) {
   }, []);
 
   return (
-    <div className="g-pane g-bar">
+    <div className="g-pane g-bar g-bar--nav">
       <span className="g-bar__brand">Arduino888</span>
 
       <nav className="g-seg" data-choice aria-label="Sections">
