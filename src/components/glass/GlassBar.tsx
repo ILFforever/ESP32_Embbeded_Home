@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import Link from 'next/link';
+import { usePathname, useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import { getCurrentTheme, type GlassTheme } from '@/components/glass/theme';
 
@@ -23,22 +24,35 @@ import { getCurrentTheme, type GlassTheme } from '@/components/glass/theme';
  * it is the one thing that moves over the page content.
  */
 
-export type BarSection = 'home' | 'plan' | 'access' | 'admin';
-
-interface GlassBarProps {
-  current: BarSection;
-}
+export type BarSection = 'home' | 'devices' | 'plan' | 'access' | 'admin';
 
 const NAV: { id: BarSection; label: string; href: string; adminOnly?: boolean }[] = [
   { id: 'home', label: 'Home', href: '/dashboard' },
+  { id: 'devices', label: 'Devices', href: '/devices' },
   { id: 'plan', label: 'Plan', href: '/plan' },
   { id: 'access', label: 'Access', href: '/access' },
   { id: 'admin', label: 'Admin', href: '/admin', adminOnly: true },
 ];
 
-export default function GlassBar({ current }: GlassBarProps) {
+/* Which nav item is lit, from the URL rather than a prop. Seven pages each
+   passed their own `current`, and the loading skeletons — which render the
+   bar too — had no sensible value to pass at all. /hub and /doorbell are
+   drill-downs of Devices, so they light Devices. */
+function sectionFor(pathname: string | null): BarSection | null {
+  if (!pathname) return null;
+  if (pathname.startsWith('/dashboard')) return 'home';
+  if (pathname.startsWith('/devices') || pathname.startsWith('/hub') || pathname.startsWith('/doorbell')) return 'devices';
+  if (pathname.startsWith('/plan')) return 'plan';
+  if (pathname.startsWith('/access')) return 'access';
+  if (pathname.startsWith('/admin')) return 'admin';
+  return null;
+}
+
+export default function GlassBar() {
   const router = useRouter();
+  const pathname = usePathname();
   const { logout, user } = useAuth();
+  const current = sectionFor(pathname);
   const [theme, setTheme] = useState<GlassTheme>('light');
 
   /* GlassRuntime owns the toggle: it has a document-level click handler for
@@ -71,11 +85,16 @@ export default function GlassBar({ current }: GlassBarProps) {
     <div className="g-pane g-bar g-bar--nav">
       <span className="g-bar__brand">Arduino888</span>
 
+      {/* Link, not <a href>. A plain anchor is a full document navigation: the
+          whole app is torn down and rebuilt on every nav click, so the bar —
+          which is static chrome and should never move — blanked out along with
+          everything else, and the auth check re-ran and put a skeleton up
+          before the next page appeared. */}
       <nav className="g-seg" data-choice aria-label="Sections">
         {NAV.filter(item => !item.adminOnly || user?.role === 'admin').map(item => (
-          <a key={item.id} href={item.href} aria-current={current === item.id ? 'page' : undefined}>
+          <Link key={item.id} href={item.href} aria-current={current === item.id ? 'page' : undefined}>
             {item.label}
-          </a>
+          </Link>
         ))}
       </nav>
 

@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="Arduino888">
+  <!--
+    Site icon. Next's app-directory file convention picks this up and emits the
+    <link rel="icon"> itself — there is nothing to register in layout.tsx.
+
+    Drawn for 16px first. A favicon is read at the size of a word, so this is a
+    solid tile and two shapes: anything finer turns to mud in the tab strip.
+
+    The tile is the accent token (#58718F), the one interface accent, at its
+    light-theme value. It does not follow the app theme: the icon sits on the
+    chrome, not on the page, and a self-contained tile stays legible against a
+    light or dark tab strip alike. White on this blue measures about 5:1.
+
+    The house says smart home; the knocked-out circle is the same status-dot
+    language the dashboard uses everywhere, and doubles as a window so the mark
+    is not a bare generic house.
+  -->
+  <rect width="32" height="32" rx="7" fill="#58718F"/>
+  <path d="M16 5.4 4.2 15.1h3.1v11.5h17.4V15.1h3.1z" fill="#fff"/>
+  <circle cx="16" cy="20.9" r="3.1" fill="#58718F"/>
+</svg>

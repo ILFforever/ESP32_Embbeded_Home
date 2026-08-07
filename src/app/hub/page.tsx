@@ -1,8 +1,9 @@
 'use client';
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { useRouter } from 'next/navigation';
 import ProtectedRoute from '@/components/auth/ProtectedRoute';
+import GlassBar from '@/components/glass/GlassBar';
+import DeviceSubnav from '@/components/glass/DeviceSubnav';
 import {
   CartesianGrid,
   Line,
@@ -27,19 +28,17 @@ import type { BackendDevice } from '@/types/dashboard';
 import { notify, confirmDialog } from '@/components/glass/GlassRuntime';
 import { relativeTime } from '@/utils/time';
 import { ModalPortal } from '@/components/glass/ModalPortal';
+import StationPresetPicker, { DEFAULT_STATION_URL } from '@/components/glass/StationPresetPicker';
 import { useModalTransition } from '@/components/glass/useModalTransition';
 import { ContentSkeleton } from '@/components/glass/Skeleton';
 import {
-  ArrowLeft,
   Mic,
-  Moon,
   Play,
   Power,
   RefreshCw,
   RotateCw,
   Send,
   Square,
-  Sun,
   X,
 } from 'lucide-react';
 
@@ -195,7 +194,6 @@ const historyValue = (reading: any, dataKey: 'temperature' | 'humidity' | 'pm2_5
 };
 
 export default function HubControlPage() {
-  const router = useRouter();
   const [hubDevice, setHubDevice] = useState<BackendDevice | null>(null);
   const [sensorData, setSensorData] = useState<any | null>(null);
   const [ampStreaming, setAmpStreaming] = useState<any | null>(null);
@@ -214,7 +212,9 @@ export default function HubControlPage() {
   const [alertDuration, setAlertDuration] = useState(10);
   const [sendingAlert, setSendingAlert] = useState(false);
 
-  const [streamUrl, setStreamUrl] = useState('');
+  // Seeded from the shared preset list so Play works without typing a URL,
+  // and so the picker opens on a station rather than reading 'Choose station'.
+  const [streamUrl, setStreamUrl] = useState<string>(DEFAULT_STATION_URL);
   const [volume, setVolume] = useState(10);
   // True while the user is dragging the volume slider, so the poll leaves it alone
   const volumeHeldRef = useRef(false);
@@ -492,25 +492,6 @@ export default function HubControlPage() {
         ? 'Amplifier is not responding to the hub'
         : 'Nothing playing');
 
-  const renderToolbar = () => (
-    <div className="g-pane g-bar">
-      <button className="g-back" type="button" onClick={() => router.push('/dashboard')}>
-        <ArrowLeft size={16} strokeWidth={1.8} />
-        Home
-      </button>
-      <span className="g-bar__brand">Hub</span>
-      <div className="g-spacer" />
-      <button className="g-theme" type="button" aria-label="Switch between light and dark" title="Switch theme">
-        <Moon className="g-theme__moon" size={16} strokeWidth={1.7} />
-        <Sun className="g-theme__sun" size={16} strokeWidth={1.7} />
-      </button>
-      <span className={`g-pill ${onlineTone === 'ok' ? '' : 'is-off'}`}>
-        <i />
-        {statusText}
-      </span>
-    </div>
-  );
-
   const renderEmpty = (title: string, copy: string) => (
     <div className="g-empty">
       <strong>{title}</strong>
@@ -684,14 +665,23 @@ const renderSensorCard = (
   return (
     <ProtectedRoute>
       <main className="g-page">
-        {renderToolbar()}
+        <GlassBar />
 
-        <div className="g-title">
-          <h1>Hub display</h1>
-          <p>
-            Living room · reading three sensors
-            {sensorData?.timestamp ? ` · last update ${formatTimestamp(sensorData.timestamp)}` : ''}
-          </p>
+        <div className="device-page-heading">
+          <div className="g-title">
+            <h1>Hub display</h1>
+            <p>
+              Living room · reading three sensors
+              {sensorData?.timestamp ? ` · last update ${formatTimestamp(sensorData.timestamp)}` : ''}
+            </p>
+          </div>
+          <div className="device-page-heading__controls">
+            <DeviceSubnav current="hub" />
+            <span className={`g-pill ${onlineTone === 'ok' ? '' : 'is-off'}`}>
+              <i />
+              {statusText}
+            </span>
+          </div>
         </div>
 
         {loading ? (
@@ -775,7 +765,11 @@ const renderSensorCard = (
                 <div className="g-stack">
                   <div className="g-field g-field--mono">
                     <label htmlFor="stream-url">Stream URL</label>
-                    <div className="g-input-group">
+                    {/* Was a native <select> with three stations hardcoded here:
+                        it rendered as an unthemed OS dropdown and drifted out of
+                        step with the picker on the dashboard. Same component,
+                        one station list. */}
+                    <div className="g-input-group g-input-group--picker">
                       <input
                         id="stream-url"
                         type="text"
@@ -784,17 +778,12 @@ const renderSensorCard = (
                         placeholder="Stream URL"
                         disabled={!hubDevice?.online}
                       />
-                      <select
-                        aria-label="Preset station"
-                        value=""
-                        onChange={(event) => setStreamUrl(event.target.value)}
+                      <StationPresetPicker
+                        value={streamUrl}
+                        onChange={setStreamUrl}
+                        ariaLabel="Preset station"
                         disabled={!hubDevice?.online}
-                      >
-                        <option value="">Preset</option>
-                        <option value="https://stream.live.vc.bbcmedia.co.uk/bbc_world_service_east_asia">BBC World Service</option>
-                        <option value="https://play.streamafrica.net/japancitypop">Japan City Pop</option>
-                        <option value="http://stream.radioparadise.com/aac-128">Radio Paradise</option>
-                      </select>
+                      />
                     </div>
                   </div>
 

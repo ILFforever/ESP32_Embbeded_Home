@@ -4,7 +4,7 @@ import React, { useEffect, useId, useState } from 'react';
 import { Bell, Home, Music2, Play, Square, Volume2, X } from 'lucide-react';
 import { ModalPortal } from '@/components/glass/ModalPortal';
 import { useModalTransition } from '@/components/glass/useModalTransition';
-import StationPresetPicker, { STATION_PRESETS } from '@/components/glass/StationPresetPicker';
+import StationPresetPicker, { DEFAULT_STATION_URL, STATION_PRESETS } from '@/components/glass/StationPresetPicker';
 import {
   sendCommand,
   getAllDevices,
@@ -74,7 +74,11 @@ function targetIcon(target: BroadcastTarget) {
 
 export function MusicBroadcastCard({ isExpanded = false }: MusicBroadcastCardProps) {
   const volumeId = useId();
-  const [streamUrl, setStreamUrl] = useState('http://stream.radioparadise.com/aac-320');
+  /* Seeded from the preset list rather than a literal. The old default was
+     the aac-320 variant, which is not a preset value — so the picker opened
+     reading "Choose station" even though a URL was loaded, and the now-playing
+     line could not name the station it had just started. */
+  const [streamUrl, setStreamUrl] = useState<string>(DEFAULT_STATION_URL);
   const [volume, setVolume] = useState(10);
   const [target, setTarget] = useState<BroadcastTarget | null>(null);
   const [loading, setLoading] = useState(false);

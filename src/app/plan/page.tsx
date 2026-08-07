@@ -131,7 +131,7 @@ export default function PlanPage() {
   return (
     <ProtectedRoute>
       <div className="g-page">
-        <GlassBar current="plan" />
+        <GlassBar />
 
         <div className="g-title">
           <h1>Ground floor</h1>

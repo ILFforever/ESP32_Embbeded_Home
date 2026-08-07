@@ -3,8 +3,20 @@ import { AuthProvider } from '@/context/AuthContext';
 import GlassRuntime from '@/components/glass/GlassRuntime';
 import './globals.css';
 
+/* Every page used to inherit this one title, so eight open tabs all read
+   "Arduino888 Smart Home" and you had to click through them to find the one
+   you wanted. Each section now sets its own `title` and this template frames
+   it — "Doorbell · Arduino888". The brand goes last because a tab strip
+   truncates from the right, so the distinguishing word survives.
+
+   `default` is for routes that set no title of their own: the redirect at /
+   and the 404. Pages are client components and cannot export metadata, so the
+   section titles live in a small server layout beside each one. */
 export const metadata: Metadata = {
-  title: 'Arduino888 Smart Home',
+  title: {
+    default: 'Arduino888 Smart Home',
+    template: '%s · Arduino888',
+  },
   description: 'Smart Home Control System',
 };
 

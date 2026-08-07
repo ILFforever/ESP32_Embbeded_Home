@@ -447,7 +447,7 @@ export default function DashboardPage() {
   return (
     <ProtectedRoute>
       <main className="g-page">
-        <GlassBar current="home" />
+        <GlassBar />
 
         <div className="g-title">
           <h1>{greeting()}</h1>

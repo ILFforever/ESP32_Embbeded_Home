@@ -76,7 +76,7 @@ export default function AdminPage() {
   return (
     <ProtectedRoute requireAdmin>
       <main className="g-page">
-        <GlassBar current="admin" />
+        <GlassBar />
 
         <div className="g-title">
           <h1>Devices &amp; admin</h1>

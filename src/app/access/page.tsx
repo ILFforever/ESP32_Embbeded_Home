@@ -132,22 +132,19 @@ export default function AccessPage() {
   return (
     <ProtectedRoute>
       <main className="g-page">
-        <GlassBar current="access" />
+        <GlassBar />
 
         <div className="g-title">
           <h1>Access &amp; cards</h1>
           <p>Lock doors, check battery state, and enrol or revoke NFC cards from the reader.</p>
         </div>
 
-        <section className="g-pane g-card">
-          <DoorCard doorsWindows={doorsWindows} isExpanded />
-        </section>
+        <div className="access-top-grid">
+          <section className="g-pane g-card access-doors">
+            <DoorCard doorsWindows={doorsWindows} isExpanded pageLayout />
+          </section>
 
-        <section className="g-pane g-card">
-          <NfcManagementCard isExpanded />
-        </section>
-
-        <section className="g-pane g-card">
+          <section className="g-pane g-card access-entries">
           <header>
             <h2>Recent entries</h2>
             {/* Count the events, not the rows — collapsing runs must not
@@ -179,6 +176,11 @@ export default function AccessPage() {
               })}
             </div>
           )}
+          </section>
+        </div>
+
+        <section className="g-pane g-card access-nfc">
+          <NfcManagementCard isExpanded pageLayout />
         </section>
       </main>
     </ProtectedRoute>

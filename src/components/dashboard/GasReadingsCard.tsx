@@ -25,6 +25,15 @@ interface GasReadingsCardProps {
 
 const chartMargins = { top: 18, right: 22, left: 6, bottom: 18 };
 
+/* One definition for every view in this card. The collapsed list already
+   suppressed the number for a sensor that has stopped reporting; the expanded
+   views did not, so the same sensor that read "No reading · last seen 3h ago"
+   in the card read "0 ppm" under a green "safe" chip once you opened it. On a
+   gas sensor that is the worst possible failure mode: silence rendered as an
+   all-clear. `status` is not safe to fall back on — it is computed from the
+   last persisted ppm, so it stays "safe" forever after the sensor dies. */
+const isStale = (reading: GasReading) => reading.online === false;
+
 export function GasReadingsCard({ gasReadings, isExpanded = false, hideHeader = false, onRefresh }: GasReadingsCardProps) {
   const [selectedSensor, setSelectedSensor] = useState<string | null>(null);
   const [refetching, setRefetching] = useState(false);
@@ -76,6 +85,8 @@ export function GasReadingsCard({ gasReadings, isExpanded = false, hideHeader = 
   const readingAverage = selectedReading
     ? selectedReading.history.reduce((sum, h) => sum + h.value, 0) / Math.max(selectedReading.history.length, 1)
     : 0;
+
+  const selectedStale = selectedReading ? isStale(selectedReading) : false;
 
   return (
     <div className={hideHeader ? 'g-stack' : 'g-pane g-card'}>
@@ -173,19 +184,51 @@ export function GasReadingsCard({ gasReadings, isExpanded = false, hideHeader = 
           {selectedReading ? (
             <>
               <div className="g-grid g-grid--3">
-                <div className={`g-tile ${getStatusTokenClass(selectedReading.status)}`}>
+                <div className={`g-tile ${selectedStale ? '' : getStatusTokenClass(selectedReading.status)}`}>
                   <p className="g-label">Now</p>
-                  <div className="g-metric-sm g-num">{selectedReading.ppm.toFixed(0)}<small>ppm</small></div>
+                  {selectedStale ? (
+                    <div className="g-metric-word is-off"><i />No reading</div>
+                  ) : (
+                    <div className="g-metric-sm g-num">{selectedReading.ppm.toFixed(0)}<small>ppm</small></div>
+                  )}
                 </div>
                 <div className="g-tile">
                   <p className="g-label">24h average</p>
-                  <div className="g-metric-sm g-num">{readingAverage.toFixed(0)}<small>ppm</small></div>
+                  {/* An empty history averages to 0, which is the same lie as a
+                      stale 0 ppm. No samples means no average. */}
+                  {selectedReading.history.length ? (
+                    <div className="g-metric-sm g-num">{readingAverage.toFixed(0)}<small>ppm</small></div>
+                  ) : (
+                    <div className="g-metric-word is-off"><i />No samples</div>
+                  )}
                 </div>
                 <div className="g-tile">
                   <p className="g-label">Status</p>
-                  <span className={getChipClass(selectedReading.status)}>{selectedReading.status}</span>
+                  <span className={selectedStale ? 'g-chip' : getChipClass(selectedReading.status)}>
+                    {selectedStale ? 'Not reporting' : selectedReading.status}
+                  </span>
+                  {selectedStale && <p className="g-sub">{lastSeenLabel(selectedReading.last_seen)}</p>}
                 </div>
               </div>
+              {/* The line is real history either way, so it stays — but with a
+                  dead sensor it ends at last contact and flatlines nowhere near
+                  "now", which reads as a calm recent trace unless it is said. */}
+              {selectedStale && selectedReading.history.length > 0 && (
+                <p className="g-sub">
+                  This sensor has stopped reporting. The trace ends at its last
+                  contact, {relativeTime(selectedReading.last_seen)} — nothing after that is measured.
+                </p>
+              )}
+              {selectedReading.history.length === 0 ? (
+                <div className="g-empty">
+                  <strong>No history to plot</strong>
+                  <p>
+                    {selectedStale
+                      ? `${selectedReading.location} has not sent a reading in the past day.`
+                      : `${selectedReading.location} has not sent enough readings yet.`}
+                  </p>
+                </div>
+              ) : (
               <div className={selectedReading.status === 'safe' ? 'g-chart' : 'g-chart g-chart--warn'} role="img" aria-label={`${selectedReading.location} gas history over 24 hours`}>
                 <ResponsiveContainer width="100%" height={360}>
                   <LineChart
@@ -214,22 +257,38 @@ export function GasReadingsCard({ gasReadings, isExpanded = false, hideHeader = 
                   </LineChart>
                 </ResponsiveContainer>
               </div>
+              )}
             </>
           ) : (
             <div className="g-grid g-grid--3">
-              {gasReadings.map(reading => (
-                <div key={reading.sensor_id} className={`g-tile ${getStatusTokenClass(reading.status)}`}>
-                  <div className="g-row g-row--between">
-                    <p className="g-label">{reading.location}</p>
-                    <span className={getChipClass(reading.status)}>{reading.status}</span>
+              {gasReadings.map(reading => {
+                const stale = isStale(reading);
+                return (
+                  <div key={reading.sensor_id} className={`g-tile ${stale ? '' : getStatusTokenClass(reading.status)}`}>
+                    <div className="g-row g-row--between">
+                      <p className="g-label">{reading.location}</p>
+                      <span className={stale ? 'g-chip' : getChipClass(reading.status)}>
+                        {stale ? 'Not reporting' : reading.status}
+                      </span>
+                    </div>
+                    {stale ? (
+                      /* A word, not a greyed number: "0 ppm" dimmed still reads
+                         as zero at a glance, and zero is an all-clear. */
+                      <div className="g-metric-word is-off"><i />No reading</div>
+                    ) : (
+                      <div className="g-metric-sm g-num">{reading.ppm.toFixed(0)}<small>ppm</small></div>
+                    )}
+                    <p className="g-sub">
+                      ID {reading.sensor_id}
+                      {/* The raw count is as stale as the ppm — showing it next
+                          to "Not reporting" invites reading it as current. */}
+                      {stale
+                        ? ` · ${lastSeenLabel(reading.last_seen).toLowerCase()}`
+                        : reading.gas_level !== undefined ? ` · raw ${reading.gas_level.toFixed(0)}` : ''}
+                    </p>
                   </div>
-                  <div className="g-metric-sm g-num">{reading.ppm.toFixed(0)}<small>ppm</small></div>
-                  <p className="g-sub">
-                    ID {reading.sensor_id}
-                    {reading.gas_level !== undefined ? ` · raw ${reading.gas_level.toFixed(0)}` : ''}
-                  </p>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>

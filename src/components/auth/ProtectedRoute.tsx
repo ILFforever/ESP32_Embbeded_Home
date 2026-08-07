@@ -1,4 +1,5 @@
 import React, {useEffect} from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import { PageSkeleton } from '@/components/glass/Skeleton';
@@ -27,9 +28,11 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
     return <PageSkeleton label="Checking your sign-in." />;
   }
 
-  // Redirecting to /login. Say so rather than flashing a blank page.
+  /* Redirecting to /login. Say so rather than flashing a blank page — and
+     without the toolbar, which is the one loading state where offering the
+     nav and a sign-out button would be wrong. */
   if (!isAuthenticated) {
-    return <PageSkeleton label="Taking you to sign in." />;
+    return <PageSkeleton label="Taking you to sign in." chrome={false} />;
   }
 
   if (requireAdmin && user?.role !== 'admin') {
@@ -41,7 +44,7 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
             This page is for admins. Ask someone with an admin account to make the
             change, or to give you admin access.
           </p>
-          <a className="g-btn g-btn--primary" href="/dashboard">Back to the dashboard</a>
+          <Link className="g-btn g-btn--primary" href="/dashboard">Back to the dashboard</Link>
         </div>
       </div>
     );

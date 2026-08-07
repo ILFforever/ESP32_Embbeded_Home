@@ -24,6 +24,8 @@ interface NfcManagementCardProps {
   /* Set by the dashboard modal, which names the card itself. /access keeps
      the header — there the card is one section among several. */
   hideHeader?: boolean;
+  /** Use the flatter composition on the dedicated Access page. */
+  pageLayout?: boolean;
 }
 
 type PendingRemoval = {
@@ -67,7 +69,7 @@ function StatusMessage({
   );
 }
 
-export function NfcManagementCard({ isExpanded = false, hideHeader = false }: NfcManagementCardProps) {
+export function NfcManagementCard({ isExpanded = false, hideHeader = false, pageLayout = false }: NfcManagementCardProps) {
   const { user: loggedInUser, refreshUser } = useAuth();
   const [isAdminView, setIsAdminView] = useState(false);
 
@@ -275,7 +277,7 @@ export function NfcManagementCard({ isExpanded = false, hideHeader = false }: Nf
       {userError && <StatusMessage kind="error">{userError}</StatusMessage>}
       {userSuccess && !isAddingOwnCard && <StatusMessage kind="success" onDismiss={() => setUserSuccess(null)}>{userSuccess}</StatusMessage>}
 
-      <div className="g-row g-row--between g-row--wrap">
+      <div className={`g-row g-row--between g-row--wrap ${pageLayout ? 'access-nfc-toolbar' : ''}`}>
         {renderDevicePicker()}
         {isAddingOwnCard ? (
           <button className="g-btn g-btn--ghost" onClick={handleCancelAddOwnCardMode} disabled={loading}>
@@ -294,7 +296,7 @@ export function NfcManagementCard({ isExpanded = false, hideHeader = false }: Nf
         </StatusMessage>
       )}
 
-      <section className="g-tile">
+      <section className={pageLayout ? 'access-nfc-cards' : 'g-tile'}>
         <div className="g-row g-row--between">
           <h3>Your cards</h3>
           <span className="g-chip">{ownCardCount} {ownCardCount === 1 ? 'card' : 'cards'}</span>
@@ -332,7 +334,7 @@ export function NfcManagementCard({ isExpanded = false, hideHeader = false }: Nf
       {userError && <StatusMessage kind="error">{userError}</StatusMessage>}
       {userSuccess && <StatusMessage kind="success" onDismiss={() => setUserSuccess(null)}>{userSuccess}</StatusMessage>}
 
-      <div className="g-row g-row--between g-row--wrap">
+      <div className={`g-row g-row--between g-row--wrap ${pageLayout ? 'access-nfc-toolbar' : ''}`}>
         {renderDevicePicker()}
         {addingUser && (
           <StatusMessage kind="wait">
@@ -427,7 +429,7 @@ export function NfcManagementCard({ isExpanded = false, hideHeader = false }: Nf
           <div className="g-row">{viewSwitch}</div>
         )
       ) : (
-        <header>
+        <header className={pageLayout ? 'access-section-head' : undefined}>
           <div>
             <h2>NFC cards</h2>
             {isExpanded && <p className="g-sub">Cards are checked at the reader before a lock command is sent.</p>}
@@ -462,22 +464,30 @@ export function NfcManagementCard({ isExpanded = false, hideHeader = false }: Nf
           )}
         </div>
       ) : (
-        <div className="g-stack">
-          <div className="dash-modal-grid">
-            <div className="g-tile">
-              <p className="g-label">My cards</p>
-              <div className="g-metric-sm g-num">{ownCardCount}</div>
+        <div className={`g-stack ${pageLayout ? 'access-nfc-body' : ''}`}>
+          {pageLayout ? (
+            <div className="access-nfc-summary" aria-label="Card summary">
+              <div><strong>{ownCardCount}</strong><span>My cards</span></div>
+              <div><strong>{totalCards}</strong><span>Total cards</span></div>
+              <div><strong>{users.length}</strong><span>People</span></div>
             </div>
-            <div className="g-tile">
-              <p className="g-label">Total cards</p>
-              <div className="g-metric-sm g-num">{totalCards}</div>
+          ) : (
+            <div className="dash-modal-grid">
+              <div className="g-tile">
+                <p className="g-label">My cards</p>
+                <div className="g-metric-sm g-num">{ownCardCount}</div>
+              </div>
+              <div className="g-tile">
+                <p className="g-label">Total cards</p>
+                <div className="g-metric-sm g-num">{totalCards}</div>
+              </div>
+              <div className="g-tile">
+                <p className="g-label">People</p>
+                <div className="g-metric-sm g-num">{users.length}</div>
+              </div>
             </div>
-            <div className="g-tile">
-              <p className="g-label">People</p>
-              <div className="g-metric-sm g-num">{users.length}</div>
-            </div>
-          </div>
-          {loading && <ContentSkeleton label="Loading card holders and reader state." rows={3} tiles={3} />}
+          )}
+          {loading && <ContentSkeleton label="Loading card holders and reader state." rows={3} tiles={pageLayout ? 0 : 3} />}
           {isAdminView ? renderAdminView() : renderUserView()}
         </div>
       )}

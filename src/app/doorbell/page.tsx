@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
-import { useRouter } from "next/navigation";
 import {
   Camera,
   Mic,
@@ -11,13 +10,14 @@ import {
   Users,
   Settings,
   Database,
-  ArrowLeft,
   Play,
   Square,
   UserPlus,
   X,
 } from "lucide-react";
 import ProtectedRoute from "@/components/auth/ProtectedRoute";
+import GlassBar from '@/components/glass/GlassBar';
+import DeviceSubnav from '@/components/glass/DeviceSubnav';
 import { useAuth } from "@/context/AuthContext";
 import {
   getAllDevices,
@@ -36,7 +36,7 @@ import type { Device } from "@/types/dashboard";
 import { notify, confirmDialog } from '@/components/glass/GlassRuntime';
 import { ModalPortal } from '@/components/glass/ModalPortal';
 import { useModalTransition } from '@/components/glass/useModalTransition';
-import StationPresetPicker from '@/components/glass/StationPresetPicker';
+import StationPresetPicker, { DEFAULT_STATION_URL } from '@/components/glass/StationPresetPicker';
 import { PageSkeleton } from '@/components/glass/Skeleton';
 import { DoorbellAvStream } from "@/services/doorbell-stream.service";
 
@@ -85,7 +85,6 @@ function commandCopy(action?: string): string {
 }
 
 export default function DoorbellControlPage() {
-  const router = useRouter();
   const { user } = useAuth();
   const [doorbellDevice, setDoorbellDevice] = useState<Device | null>(null);
   const [loading, setLoading] = useState(true);
@@ -95,9 +94,9 @@ export default function DoorbellControlPage() {
   const [cameraActive, setCameraActive] = useState(false);
   const [micActive, setMicActive] = useState(false);
   const [faceRecognition, setFaceRecognition] = useState(false);
-  const [ampUrl, setAmpUrl] = useState(
-    "http://stream.radioparadise.com/aac-320"
-  );
+  // aac-320 is not a preset value, so the picker read "Choose station" on load.
+  // Same fix as the hub and the broadcast card — one shared default.
+  const [ampUrl, setAmpUrl] = useState<string>(DEFAULT_STATION_URL);
   const [ampVolume, setAmpVolume] = useState(10);
   const [wifiSsid, setWifiSsid] = useState("");
   const [wifiPassword, setWifiPassword] = useState("");
@@ -1014,31 +1013,21 @@ export default function DoorbellControlPage() {
           </defs>
         </svg>
 
-        <div className="g-pane g-bar">
-          <button className="g-back" type="button" onClick={() => router.push("/dashboard")} title="Back to dashboard">
-            <ArrowLeft size={16} aria-hidden="true" />
-            Home
-          </button>
-          <span className="g-bar__brand">Doorbell</span>
-          <div className="g-spacer" />
-          <button className="g-theme" type="button" aria-label="Switch between light and dark" title="Switch theme">
-            <svg className="g-theme__moon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z" /></svg>
-            <svg className="g-theme__sun" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M19.1 4.9l-1.4 1.4M6.3 17.7l-1.4 1.4" /></svg>
-          </button>
-          <span className={`g-pill${statusTone}`}><i /> {getStatusText()}</span>
-        </div>
+        <GlassBar />
 
-        <div className="g-title">
-          <h1>Front door</h1>
-          {/* "20 visitors loaded" is the fetch describing itself, and the
-              device id is a row key. Say what the page is for. */}
-          <p>
-            {loading
-              ? "Checking the doorbell connection."
-              : isDeviceOffline()
+        <div className="device-page-heading">
+          <div className="g-title">
+            <h1>Front door</h1>
+            <p>
+              {isDeviceOffline()
                 ? "The doorbell is not reporting, so the camera and microphone cannot be reached."
                 : "Watch the door, talk to whoever is there, and manage the faces it knows."}
-          </p>
+            </p>
+          </div>
+          <div className="device-page-heading__controls">
+            <DeviceSubnav current="doorbell" />
+            <span className={`g-pill${statusTone}`}><i /> {getStatusText()}</span>
+          </div>
         </div>
 
         <div className="doorbell-layout">

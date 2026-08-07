@@ -20,6 +20,8 @@ interface DoorCardProps {
   /* Set by the dashboard modal, which names the card itself. /access keeps
      the header — there the card is one section among several. */
   hideHeader?: boolean;
+  /** Use the wider, flatter composition on the dedicated Access page. */
+  pageLayout?: boolean;
 }
 
 type NoticeTone = 'warn' | 'crit';
@@ -72,7 +74,7 @@ function statusChipClass(tone: string) {
   return 'g-chip';
 }
 
-export function DoorCard({ doorsWindows, isExpanded = false, hideHeader = false }: DoorCardProps) {
+export function DoorCard({ doorsWindows, isExpanded = false, hideHeader = false, pageLayout = false }: DoorCardProps) {
   const [loadingStates, setLoadingStates] = useState<Record<string, boolean>>({});
   const [loadingAll, setLoadingAll] = useState<null | 'lock' | 'unlock'>(null);
   const [showStatusModal, setShowStatusModal] = useState(false);
@@ -230,6 +232,7 @@ export function DoorCard({ doorsWindows, isExpanded = false, hideHeader = false 
 
   const doors = doorsWindows.filter(item => item.type === 'door');
   const unlockedCount = doors.filter(door => door.status !== 'locked').length;
+  const onlineCount = doors.filter(door => door.online).length;
 
   const DoorStatusTile = ({ door }: { door: DoorWindow }) => {
     const tone = statusTone(door.status);
@@ -237,11 +240,16 @@ export function DoorCard({ doorsWindows, isExpanded = false, hideHeader = false 
     const nextAction = door.status === 'locked' ? 'unlock' : 'lock';
 
     return (
-      <div className={`g-tile ${tone === 'warn' ? 'is-warn' : tone === 'crit' ? 'is-crit' : ''}`}>
-        <div className="g-row g-row--between">
+      <div className={`${pageLayout ? 'access-door-row' : 'g-tile'} ${tone === 'warn' ? 'is-warn' : tone === 'crit' ? 'is-crit' : ''}`}>
+        <div className="g-row g-row--between door-tile__identity">
           <div className="g-row">
             <span className={`g-dot g-dot--${online ? tone : 'off'}`} />
             <strong>{door.name}</strong>
+            {pageLayout && (
+              <span className={statusChipClass(online ? tone : 'idle')}>
+                {online ? statusCopy(door.status) : 'Offline'}
+              </span>
+            )}
           </div>
           <svg className="g-ring" viewBox="0 0 24 24" role="img" aria-label={batteryLabel(door.name, door.battery, online)}>
             <circle className="g-ring__track" cx="12" cy="12" r="9" />
@@ -256,17 +264,17 @@ export function DoorCard({ doorsWindows, isExpanded = false, hideHeader = false 
           </svg>
         </div>
 
-        <div className="g-row g-row--between" style={{ marginTop: 'var(--s-3)' }}>
-          <span className={statusChipClass(online ? tone : 'idle')}>{online ? statusCopy(door.status) : 'Offline'}</span>
+        <div className="g-row g-row--between door-tile__state">
+          {!pageLayout && <span className={statusChipClass(online ? tone : 'idle')}>{online ? statusCopy(door.status) : 'Offline'}</span>}
           {/* "0%" for a lock that never reported a battery read as flat. */}
           <span className={online && door.battery != null ? 'g-num' : 'g-dim'}>
-            {batteryText(door.battery, online)}
+            {pageLayout ? `Battery ${batteryText(door.battery, online).toLowerCase()}` : batteryText(door.battery, online)}
           </span>
         </div>
 
-        <p className="g-sub">{door.location} · changed {formatTimestamp(door.last_changed)}</p>
+        <p className="g-sub door-tile__meta">{door.location} · changed {formatTimestamp(door.last_changed)}</p>
 
-        <div className="g-row g-row--wrap" style={{ marginTop: 'var(--s-4)' }}>
+        <div className="g-row g-row--wrap door-tile__actions">
           <button
             className={nextAction === 'lock' ? 'g-btn g-btn--primary' : 'g-btn g-btn--ghost'}
             type="button"
@@ -353,33 +361,57 @@ export function DoorCard({ doorsWindows, isExpanded = false, hideHeader = false 
         )
       ) : (
         <div className="g-stack">
-          <div className="dash-modal-grid dash-modal-grid--2">
-            <div className="g-tile">
-              <p className="g-label">Doors</p>
-              <div className="g-metric-sm g-num">{doors.length}</div>
+          {pageLayout ? (
+            <div className={`access-door-overview ${unlockedCount ? 'is-warn' : ''}`}>
+              <div className="access-door-overview__copy">
+                <span className={`g-dot g-dot--${unlockedCount ? 'warn' : onlineCount ? 'ok' : 'off'}`} aria-hidden="true" />
+                <div>
+                  <strong>{doors.length === 0 ? 'No locks are paired' : unlockedCount ? `${unlockedCount} ${unlockedCount === 1 ? 'door needs' : 'doors need'} securing` : 'Everything is secured'}</strong>
+                  <p>{doors.length ? `${onlineCount} of ${doors.length} ${doors.length === 1 ? 'lock is' : 'locks are'} reporting.` : 'Paired door locks will appear here.'}</p>
+                </div>
+              </div>
+              <div className="g-row g-row--wrap access-door-overview__actions">
+                <button className={unlockedCount ? 'g-btn g-btn--primary' : 'g-btn g-btn--ghost'} type="button" onClick={handleLockAll} disabled={loadingAll !== null || unlockedCount === 0}>
+                  <Lock size={16} aria-hidden="true" />
+                  {loadingAll === 'lock' ? 'Locking all' : 'Lock all'}
+                </button>
+                <button className="g-btn g-btn--ghost" type="button" onClick={handleUnlockAll} disabled={loadingAll !== null || doors.length === 0}>
+                  <Unlock size={16} aria-hidden="true" />
+                  {loadingAll === 'unlock' ? 'Unlocking all' : 'Unlock all'}
+                </button>
+              </div>
             </div>
-            <div className={unlockedCount ? 'g-tile is-warn' : 'g-tile'}>
-              <p className="g-label">Unlocked or open</p>
-              <div className="g-metric-sm g-num">{unlockedCount}</div>
-            </div>
-          </div>
+          ) : (
+            <>
+              <div className="dash-modal-grid dash-modal-grid--2">
+                <div className="g-tile">
+                  <p className="g-label">Doors</p>
+                  <div className="g-metric-sm g-num">{doors.length}</div>
+                </div>
+                <div className={unlockedCount ? 'g-tile is-warn' : 'g-tile'}>
+                  <p className="g-label">Unlocked or open</p>
+                  <div className="g-metric-sm g-num">{unlockedCount}</div>
+                </div>
+              </div>
 
-          <div className="g-row g-row--wrap">
-            <button className="g-btn g-btn--primary" type="button" onClick={handleLockAll} disabled={loadingAll !== null}>
-              <Lock size={16} aria-hidden="true" />
-              {loadingAll === 'lock' ? 'Locking all' : 'Lock all'}
-            </button>
-            <button className="g-btn g-btn--ghost" type="button" onClick={handleUnlockAll} disabled={loadingAll !== null}>
-              <Unlock size={16} aria-hidden="true" />
-              {loadingAll === 'unlock' ? 'Unlocking all' : 'Unlock all'}
-            </button>
-          </div>
+              <div className="g-row g-row--wrap">
+                <button className="g-btn g-btn--primary" type="button" onClick={handleLockAll} disabled={loadingAll !== null}>
+                  <Lock size={16} aria-hidden="true" />
+                  {loadingAll === 'lock' ? 'Locking all' : 'Lock all'}
+                </button>
+                <button className="g-btn g-btn--ghost" type="button" onClick={handleUnlockAll} disabled={loadingAll !== null}>
+                  <Unlock size={16} aria-hidden="true" />
+                  {loadingAll === 'unlock' ? 'Unlocking all' : 'Unlock all'}
+                </button>
+              </div>
+            </>
+          )}
 
           {/* auto-fit rather than a fixed 2. With one lock enrolled a hard
               two-column grid left half the row empty, and a full-width
               stretch put the name and the battery ring 900px apart. The
               tiles flow and stop growing at 460px. */}
-          <div className="g-grid g-grid--tiles">
+          <div className={pageLayout ? 'access-door-list' : 'g-grid g-grid--tiles'}>
             {doors.map(door => <DoorStatusTile key={door.id} door={door} />)}
           </div>
         </div>

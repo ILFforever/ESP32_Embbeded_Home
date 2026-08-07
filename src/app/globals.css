@@ -797,6 +797,12 @@ select {
   border-radius: 8px; background: var(--field-focus);
 }
 .g-input-group input { padding-right: 150px; }
+/* The overlay above works because a native select is one compact control that
+   can sit inside the field. The station picker is a full trigger with its own
+   border and a 44px hit target, so it goes beside the field instead. Same
+   split the broadcast card uses, and it collapses on narrow screens below. */
+.g-input-group--picker { display: grid; grid-template-columns: minmax(0, 1fr) 180px; gap: var(--s-2); }
+.g-input-group--picker input { padding-right: 12px; }
 
 /* The visible track is 5px, but the element is 24px tall so it is
    actually grabbable. Painting the track as a centred background-image
@@ -1249,12 +1255,30 @@ select {
 .g-preset__trigger span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .g-preset__trigger svg { flex: none; transition: transform .18s var(--ease); }
 .g-preset__trigger[aria-expanded="true"] svg { transform: rotate(180deg); }
+/* Width, max-height and the column count are set inline from
+   StationPresetPicker: the panel is fixed-position, so its box has to be known
+   before it can be placed, and the same numbers decide whether it opens above
+   or below the trigger. Declaring them here as well would let the two drift.
+
+   `align-items: start` matters — without it the four columns stretch to the
+   tallest and their group labels stop lining up along the top edge. */
 .g-preset__menu {
   position: fixed; z-index: 80;
-  display: flex; flex-direction: column; gap: 2px; padding: 6px;
-  max-height: calc(100vh - 16px); overflow-y: auto; overscroll-behavior: contain;
+  display: grid; align-items: start; gap: 10px; padding: 6px;
+  overflow-y: auto; overscroll-behavior: contain;
   border: 1px solid var(--glass-edge); border-radius: var(--r-field);
   background: var(--glass-solid); box-shadow: var(--lift);
+}
+/* One column per group. Fifteen stations in a single running list was taller
+   than the screen; four labelled columns fit in one glance, and the label is
+   what makes a column scannable rather than just narrow. */
+.g-preset__group { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.g-preset__group-label {
+  margin: 0 0 2px; padding: 4px 10px 5px;
+  border-bottom: 1px solid var(--hairline);
+  font-size: 10.5px; font-weight: 600; letter-spacing: .075em;
+  text-transform: uppercase; color: var(--ink-3);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .g-preset__option {
   appearance: none; width: 100%; min-height: 38px;
@@ -1265,6 +1289,16 @@ select {
 }
 .g-preset__option:hover,
 .g-preset__option:focus-visible { background: var(--raised-hi); outline: none; }
+/* Name over genre. Fifteen station names on their own is a list you have to
+   already know your way around; the second line says what actually comes out
+   of the speaker. Both lines clip rather than wrap so every row stays the
+   same height and the menu's height estimate holds. */
+.g-preset__option > span {
+  display: flex; flex-direction: column; gap: 1px; min-width: 0;
+}
+.g-preset__option > span,
+.g-preset__option > span small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.g-preset__option > span small { font-size: 11px; color: var(--ink-3); }
 .g-preset__option[aria-checked="true"] {
   background: color-mix(in srgb, var(--accent) 13%, transparent); color: var(--accent);
 }
@@ -1280,7 +1314,167 @@ select {
 }
 .broadcast-actions .g-btn--primary svg { transform: translateX(1px); }
 
+/* Access is an operational page, not a metrics dashboard. Put lock state
+   beside recent entry history, then give card enrolment the full width it
+   needs. The page variants stay flat instead of nesting tiles in panes. */
+.access-top-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.65fr) minmax(280px, .65fr);
+  gap: var(--s-4);
+  align-items: stretch;
+}
+.access-entries .g-list { max-height: 360px; overflow-y: auto; padding-right: 3px; }
+.access-door-overview {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-5);
+  padding: var(--s-4) 0;
+  border-top: 1px solid var(--hairline);
+  border-bottom: 1px solid var(--hairline);
+}
+.access-door-overview__copy { display: flex; align-items: center; gap: var(--s-3); min-width: 0; }
+.access-door-overview__copy strong { display: block; font-size: 17px; font-weight: 600; letter-spacing: -.015em; }
+.access-door-overview__copy p { margin: 2px 0 0; color: var(--ink-2); font-size: 12.5px; }
+.access-door-overview__actions { flex: none; justify-content: flex-end; }
+.access-door-list { display: flex; flex-direction: column; }
+.access-door-row {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) auto;
+  grid-template-areas:
+    "identity actions"
+    "meta     actions"
+    "state    actions";
+  align-items: center;
+  gap: 5px var(--s-5);
+  min-width: 0;
+  padding: var(--s-4) 0;
+  border-bottom: 1px solid var(--hairline);
+}
+.access-door-row:last-child { border-bottom: 0; padding-bottom: 0; }
+.door-tile__state { margin-top: var(--s-3); }
+.door-tile__actions { margin-top: var(--s-4); }
+.access-door-row .door-tile__identity { grid-area: identity; min-width: 0; }
+.access-door-row .door-tile__state { grid-area: state; }
+.access-door-row .door-tile__meta { grid-area: meta; margin: 0; }
+.access-door-row .door-tile__actions { grid-area: actions; }
+.access-door-row .door-tile__state,
+.access-door-row .door-tile__actions { margin-top: 0; }
+.access-door-row .door-tile__state { justify-content: flex-start; color: var(--ink-3); font-size: 12px; }
+.access-door-row .door-tile__identity > .g-ring { display: none; }
+
+.access-nfc-summary {
+  display: flex;
+  align-items: stretch;
+  border-top: 1px solid var(--hairline);
+  border-bottom: 1px solid var(--hairline);
+}
+.access-nfc-summary > div {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
+  padding: 13px var(--s-4);
+}
+.access-nfc-summary > div:first-child { padding-left: 0; }
+.access-nfc-summary > div + div { border-left: 1px solid var(--hairline); }
+.access-nfc-summary strong { font-size: 24px; font-weight: 400; font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
+.access-nfc-summary span { color: var(--ink-3); font-size: 11px; font-weight: 600; letter-spacing: .045em; text-transform: uppercase; }
+.access-section-head { align-items: flex-start !important; }
+.access-section-head .g-seg { flex: none; margin: 0 0 0 auto; }
+.access-section-head .g-seg button { display: inline-flex; align-items: center; gap: 6px; }
+.access-nfc-toolbar { align-items: flex-end; }
+.access-nfc-cards { padding-top: var(--s-4); border-top: 1px solid var(--hairline); }
+.access-nfc-cards h3 { margin: 0; }
+.access-nfc-cards .g-list { margin-top: var(--s-2); }
+.access-nfc-cards .g-list__row { padding-top: 10px; }
+
 /* Drill-down page compositions ported from doorbell.html and hub.html. */
+.device-spotlights {
+  display: grid;
+  grid-template-columns: minmax(0, 1.08fr) minmax(0, .92fr);
+  gap: var(--s-4);
+}
+.device-spotlight {
+  min-width: 0;
+  min-height: 330px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-5);
+  padding: clamp(20px, 2.2vw, 30px);
+  color: var(--ink);
+  text-decoration: none;
+  transition: border-color .18s var(--ease), background-color .18s var(--ease);
+}
+.device-spotlight:hover { border-color: color-mix(in srgb, var(--accent) 54%, var(--glass-edge)); }
+.device-spotlight:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.device-spotlight__head,
+.device-page-heading,
+.device-page-heading__controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-4);
+}
+.device-spotlight__head .g-label { margin: 0; }
+.device-spotlight__intro { max-width: 58ch; }
+.device-spotlight__intro h2 {
+  margin: 0;
+  font-size: clamp(22px, 2vw, 29px);
+  font-weight: 600;
+  letter-spacing: -.025em;
+  transition: color .18s var(--ease);
+}
+.device-spotlight:hover .device-spotlight__intro h2 { color: var(--accent); }
+.device-spotlight__intro p { margin: 6px 0 0; color: var(--ink-2); font-size: 14px; }
+.device-spotlight__facts,
+.device-spotlight__readings {
+  display: grid;
+  gap: var(--s-3);
+}
+.device-spotlight__facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.device-spotlight__facts > div,
+.device-spotlight__readings > div {
+  min-width: 0;
+  padding: 13px 14px;
+  border-top: 1px solid var(--hairline);
+}
+.device-spotlight__facts span,
+.device-spotlight__readings span {
+  display: block;
+  color: var(--ink-3);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .055em;
+  text-transform: uppercase;
+}
+.device-spotlight__facts strong,
+.device-spotlight__readings strong {
+  display: block;
+  margin-top: 4px;
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 600;
+}
+.device-spotlight__facts small { display: block; margin-top: 2px; color: var(--ink-3); font-size: 11.5px; }
+.device-spotlight__readings { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.device-spotlight__readings > div { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 2px 8px; }
+.device-spotlight__readings > div > svg { grid-row: 1 / 3; color: var(--ink-3); }
+.device-spotlight__readings strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.device-spotlight__now { display: flex; align-items: center; gap: 9px; color: var(--ink-2); font-size: 13px; }
+.device-spotlight__now svg { color: var(--accent); }
+.device-spotlight__action { align-self: flex-start; margin-top: auto; }
+.device-spotlight--doorbell .device-spotlight__action { background: var(--accent); color: var(--on-accent); }
+.devices-inventory { gap: var(--s-5); }
+.devices-inventory > header { align-items: flex-start; }
+.devices-inventory > header h2 { margin-bottom: 3px; }
+
+.device-page-heading { align-items: flex-end; }
+.device-page-heading .g-title { flex: 1; min-width: 0; }
+.device-page-heading__controls { flex: none; }
+.device-subnav { width: auto; margin: 0; }
+
 /* Two columns for the whole page, not three stacked grids.
    Live view is a fixed-height media box — about 360px of content — but it
    used to share a row with a 20-tile visitor list, and both stretched to
@@ -1347,6 +1541,10 @@ select {
 .hub-a-activity { grid-area: activity; }
 
 @media (max-width: 1100px) {
+  .access-top-grid { grid-template-columns: 1fr; }
+  .access-entries .g-list { max-height: none; }
+  .device-spotlights { grid-template-columns: 1fr; }
+  .device-spotlight { min-height: 0; }
   /* One column. The two wrappers stop being boxes so their cards become
      grid items directly and can be ordered by what matters on a phone,
      rather than by which column they happened to sit in — otherwise
@@ -1373,6 +1571,23 @@ select {
   .dash-bento { grid-template-columns: 1fr; grid-template-areas: "alerts" "climate" "air" "doors" "devices" "cast" "nfc"; }
   .dash-hero { grid-template-columns: minmax(0, 1fr); }
   .dash-modal-grid, .dash-modal-grid--2 { grid-template-columns: 1fr; }
+  .access-door-overview { align-items: flex-start; flex-direction: column; }
+  .access-door-overview__actions { width: 100%; justify-content: flex-start; }
+  .access-door-row {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "identity"
+      "meta"
+      "state"
+      "actions";
+    gap: 5px var(--s-3);
+  }
+  .access-door-row .door-tile__actions { margin-top: var(--s-3); }
+  .access-nfc-summary > div { align-items: flex-start; flex-direction: column; gap: 1px; padding-inline: var(--s-3); }
+  .access-section-head .g-seg { width: auto; }
+  .access-nfc-toolbar { align-items: stretch; }
+  .access-nfc-toolbar .g-field,
+  .access-nfc-toolbar .g-btn { width: 100%; }
 }
 
 /* ---------- 9b. WAITING STATES ---------------------------
@@ -1685,8 +1900,14 @@ select {
       "nav   nav";
   }
   .g-bar--nav .g-seg { width: 100%; }
+  .g-bar--nav .g-seg a { flex: 0 0 auto; padding-inline: 13px; }
   .g-page::before { height: 128px; }
-  .g-seg { margin: 0; width: 100%; overflow-x: auto; }
+  .g-seg { margin: 0; width: 100%; overflow-x: auto; scrollbar-width: none; }
+  .g-seg::-webkit-scrollbar { display: none; }
+  .device-page-heading { align-items: flex-start; flex-direction: column; }
+  .device-page-heading__controls { width: 100%; }
+  .device-page-heading__controls .device-subnav { width: auto; }
+  .device-spotlight__facts { grid-template-columns: 1fr; }
   /* A card header holding a segmented control had nowhere to put it: the
      header does not wrap, so .g-seg's width:100% just squeezed the title
      and broke "My cards" over two lines. Let the header wrap and the seg
@@ -1699,6 +1920,7 @@ select {
   .broadcast-targets { padding-right: 0; }
   .broadcast-volume { padding-left: 0; border-left: 0; border-top: 1px solid var(--hairline); }
   .broadcast-source__fields { grid-template-columns: 1fr; }
+  .g-input-group--picker { grid-template-columns: 1fr; }
   .broadcast-source__head { align-items: flex-start; flex-direction: column; gap: 2px; }
   .broadcast-actions { align-items: flex-start; flex-direction: column; }
   .doorbell-audio__source { grid-template-columns: 1fr; }
