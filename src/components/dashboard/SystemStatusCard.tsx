@@ -6,6 +6,7 @@ import { Cpu, Droplet, Radio, Thermometer, Wind, Zap } from 'lucide-react';
 import type { DevicesStatus, Device } from '@/types/dashboard';
 import { relativeTime } from '@/utils/time';
 import { batteryLabel, batteryText } from '@/utils/battery';
+import { ModalPortal } from '@/components/glass/ModalPortal';
 import { useModalTransition } from '@/components/glass/useModalTransition';
 import {
   getDeviceStatusClass as getStatusClass,
@@ -326,52 +327,54 @@ export function SystemStatusCard({ devicesStatus, isExpanded = false }: SystemSt
       )}
 
       {sensorModal.render && shownSensor && (
-        <div className={sensorModal.className} role="dialog" aria-modal="true" aria-labelledby="sensor-details-title" onClick={() => setSelectedSensor(null)}>
-          <div className="g-pane g-modal__card" onClick={(event) => event.stopPropagation()}>
-            <div className="g-modal__head">
-              <div>
-                <h2 id="sensor-details-title">{shownSensor.name || 'Sensor details'}</h2>
-                <p>{shownSensor.device_id || 'N/A'} · {shownSensor.online ? 'online' : 'offline'}</p>
+        <ModalPortal>
+          <div className={sensorModal.className} role="dialog" aria-modal="true" aria-labelledby="sensor-details-title" onClick={() => setSelectedSensor(null)}>
+            <div className="g-pane g-modal__card" onClick={(event) => event.stopPropagation()}>
+              <div className="g-modal__head">
+                <div>
+                  <h2 id="sensor-details-title">{shownSensor.name || 'Sensor details'}</h2>
+                  <p>{shownSensor.device_id || 'N/A'} · {shownSensor.online ? 'online' : 'offline'}</p>
+                </div>
+                <button className="g-icon-btn" onClick={() => setSelectedSensor(null)} aria-label="Close">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                    <path d="M18 6 6 18M6 6l12 12" />
+                  </svg>
+                </button>
               </div>
-              <button className="g-icon-btn" onClick={() => setSelectedSensor(null)} aria-label="Close">
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                  <path d="M18 6 6 18M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
 
-            <dl className="g-info">
-              <div><dt>Connection</dt><dd>{shownSensor.online ? 'Online' : 'Offline'}</dd></div>
-              <div><dt>Device type</dt><dd>{shownSensor.sensor_data?.device_type || shownSensor.type || '-'}</dd></div>
-              <div><dt>Last updated</dt><dd>{formatTimestamp(shownSensor.last_seen)}</dd></div>
-              <div><dt>Battery</dt><dd>{shownSensor.online && getBatteryPercent(shownSensor) !== undefined ? `${getBatteryPercent(shownSensor)}%` : '-'}</dd></div>
-              <div><dt>Voltage</dt><dd>{shownSensor.online && shownSensor.sensor_data?.battery_voltage ? `${shownSensor.sensor_data.battery_voltage.toFixed(2)}V` : '-'}</dd></div>
-              <div><dt>Boot count</dt><dd>{shownSensor.online ? shownSensor.sensor_data?.boot_count ?? '-' : '-'}</dd></div>
-              <div><dt>Forwarded by</dt><dd>{shownSensor.online ? shownSensor.sensor_data?.forwarded_by || '-' : '-'}</dd></div>
-              <div><dt>Alert state</dt><dd>{shownSensor.online ? shownSensor.sensor_data?.alert ? 'Active' : 'Normal' : '-'}</dd></div>
-              <div><dt>Sample count</dt><dd>{shownSensor.online ? shownSensor.sensor_data?.sample_count ?? '-' : '-'}</dd></div>
-            </dl>
+              <dl className="g-info">
+                <div><dt>Connection</dt><dd>{shownSensor.online ? 'Online' : 'Offline'}</dd></div>
+                <div><dt>Device type</dt><dd>{shownSensor.sensor_data?.device_type || shownSensor.type || '-'}</dd></div>
+                <div><dt>Last updated</dt><dd>{formatTimestamp(shownSensor.last_seen)}</dd></div>
+                <div><dt>Battery</dt><dd>{shownSensor.online && getBatteryPercent(shownSensor) !== undefined ? `${getBatteryPercent(shownSensor)}%` : '-'}</dd></div>
+                <div><dt>Voltage</dt><dd>{shownSensor.online && shownSensor.sensor_data?.battery_voltage ? `${shownSensor.sensor_data.battery_voltage.toFixed(2)}V` : '-'}</dd></div>
+                <div><dt>Boot count</dt><dd>{shownSensor.online ? shownSensor.sensor_data?.boot_count ?? '-' : '-'}</dd></div>
+                <div><dt>Forwarded by</dt><dd>{shownSensor.online ? shownSensor.sensor_data?.forwarded_by || '-' : '-'}</dd></div>
+                <div><dt>Alert state</dt><dd>{shownSensor.online ? shownSensor.sensor_data?.alert ? 'Active' : 'Normal' : '-'}</dd></div>
+                <div><dt>Sample count</dt><dd>{shownSensor.online ? shownSensor.sensor_data?.sample_count ?? '-' : '-'}</dd></div>
+              </dl>
 
-            <div className="g-grid g-grid--2" style={{ marginTop: 'var(--s-5)' }}>
-              {shownSensor.sensor_data?.temperature !== undefined && (
-                <div className="g-tile"><p className="g-label"><Thermometer size={14} /> Temperature</p><div className="g-metric-sm g-num">{shownSensor.online ? shownSensor.sensor_data.temperature.toFixed(1) : '-'}<small>&deg;C</small></div></div>
-              )}
-              {shownSensor.sensor_data?.humidity !== undefined && (
-                <div className="g-tile"><p className="g-label"><Droplet size={14} /> Humidity</p><div className="g-metric-sm g-num">{shownSensor.online ? shownSensor.sensor_data.humidity.toFixed(1) : '-'}<small>%</small></div></div>
-              )}
-              {shownSensor.sensor_data?.gas_level !== undefined && (
-                <div className="g-tile"><p className="g-label"><Wind size={14} /> Gas</p><div className="g-metric-sm g-num">{shownSensor.online ? shownSensor.sensor_data.gas_level : '-'}<small>ppm</small></div></div>
-              )}
-              {shownSensor.sensor_data?.light_lux !== undefined && (
-                <div className="g-tile"><p className="g-label"><Zap size={14} /> Light</p><div className="g-metric-sm g-num">{shownSensor.online ? shownSensor.sensor_data.light_lux.toFixed(0) : '-'}<small>lux</small></div></div>
-              )}
-            </div>
+              <div className="g-grid g-grid--2" style={{ marginTop: 'var(--s-5)' }}>
+                {shownSensor.sensor_data?.temperature !== undefined && (
+                  <div className="g-tile"><p className="g-label"><Thermometer size={14} /> Temperature</p><div className="g-metric-sm g-num">{shownSensor.online ? shownSensor.sensor_data.temperature.toFixed(1) : '-'}<small>&deg;C</small></div></div>
+                )}
+                {shownSensor.sensor_data?.humidity !== undefined && (
+                  <div className="g-tile"><p className="g-label"><Droplet size={14} /> Humidity</p><div className="g-metric-sm g-num">{shownSensor.online ? shownSensor.sensor_data.humidity.toFixed(1) : '-'}<small>%</small></div></div>
+                )}
+                {shownSensor.sensor_data?.gas_level !== undefined && (
+                  <div className="g-tile"><p className="g-label"><Wind size={14} /> Gas</p><div className="g-metric-sm g-num">{shownSensor.online ? shownSensor.sensor_data.gas_level : '-'}<small>ppm</small></div></div>
+                )}
+                {shownSensor.sensor_data?.light_lux !== undefined && (
+                  <div className="g-tile"><p className="g-label"><Zap size={14} /> Light</p><div className="g-metric-sm g-num">{shownSensor.online ? shownSensor.sensor_data.light_lux.toFixed(0) : '-'}<small>lux</small></div></div>
+                )}
+              </div>
 
-            <div className="g-modal__foot">
-              <button className="g-btn g-btn--primary" onClick={() => setSelectedSensor(null)}>Done</button>
+              <div className="g-modal__foot">
+                <button className="g-btn g-btn--primary" onClick={() => setSelectedSensor(null)}>Done</button>
+              </div>
             </div>
           </div>
-        </div>
+        </ModalPortal>
       )}
     </div>
   );

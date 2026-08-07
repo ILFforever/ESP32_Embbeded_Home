@@ -2,6 +2,7 @@
 
 import React, { useEffect, useId, useState } from 'react';
 import { Bell, Home, Music2, Play, Square, Volume2, X } from 'lucide-react';
+import { ModalPortal } from '@/components/glass/ModalPortal';
 import { useModalTransition } from '@/components/glass/useModalTransition';
 import StationPresetPicker, { STATION_PRESETS } from '@/components/glass/StationPresetPicker';
 import {
@@ -440,24 +441,26 @@ export function MusicBroadcastCard({ isExpanded = false }: MusicBroadcastCardPro
       )}
 
       {noticeModal.render && shownNotice && (
-        <div className={noticeModal.className} role="dialog" aria-modal="true" aria-labelledby="broadcast-notice-title" onClick={() => setNotice(null)}>
-          <div className="g-pane g-modal__card" onClick={(event) => event.stopPropagation()}>
-            <div className="g-modal__head">
-              <div>
-                <h2 id="broadcast-notice-title">{shownNotice.title}</h2>
-                <p>{shownNotice.message}</p>
+        <ModalPortal>
+          <div className={noticeModal.className} role="dialog" aria-modal="true" aria-labelledby="broadcast-notice-title" onClick={() => setNotice(null)}>
+            <div className="g-pane g-modal__card" onClick={(event) => event.stopPropagation()}>
+              <div className="g-modal__head">
+                <div>
+                  <h2 id="broadcast-notice-title">{shownNotice.title}</h2>
+                  <p>{shownNotice.message}</p>
+                </div>
+                <button className="g-icon-btn" type="button" aria-label="Close" onClick={() => setNotice(null)}>
+                  <X size={16} aria-hidden="true" />
+                </button>
               </div>
-              <button className="g-icon-btn" type="button" aria-label="Close" onClick={() => setNotice(null)}>
-                <X size={16} aria-hidden="true" />
-              </button>
-            </div>
-            <div className="g-modal__foot">
-              <button className={`g-btn ${shownNotice.tone === 'crit' ? 'g-btn--danger' : 'g-btn--primary'}`} type="button" onClick={() => setNotice(null)}>
-                OK
-              </button>
+              <div className="g-modal__foot">
+                <button className={`g-btn ${shownNotice.tone === 'crit' ? 'g-btn--danger' : 'g-btn--primary'}`} type="button" onClick={() => setNotice(null)}>
+                  OK
+                </button>
+              </div>
             </div>
           </div>
-        </div>
+        </ModalPortal>
       )}
     </>
   );

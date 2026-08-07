@@ -5,6 +5,7 @@ import { useAuth } from '@/context/AuthContext';
 import ProtectedRoute from '@/components/auth/ProtectedRoute';
 import GlassBar from '@/components/glass/GlassBar';
 import { PageSkeleton } from '@/components/glass/Skeleton';
+import { ModalPortal } from '@/components/glass/ModalPortal';
 import { useModalTransition } from '@/components/glass/useModalTransition';
 import { AlertsCard } from '@/components/dashboard/AlertsCard';
 import { TemperatureCard } from '@/components/dashboard/TemperatureCard';
@@ -417,25 +418,27 @@ export default function DashboardPage() {
     const modalHeadingId = `dashboard-${shownCard}-title`;
 
     return (
-      <div className={cardModal.className} role="dialog" aria-modal="true" aria-labelledby={modalHeadingId} onClick={closeExpandedCard}>
-        <div className={`g-pane g-modal__card g-modal__card--wide ${shownCard === 'music' ? 'g-modal__card--broadcast' : ''}`} onClick={(e) => e.stopPropagation()}>
-          <div className="g-modal__head">
-            <div>
-              <h2 id={modalHeadingId}>{modalHeading.title}</h2>
-              <p>{modalHeading.detail}</p>
+      <ModalPortal>
+        <div className={cardModal.className} role="dialog" aria-modal="true" aria-labelledby={modalHeadingId} onClick={closeExpandedCard}>
+          <div className={`g-pane g-modal__card g-modal__card--wide ${shownCard === 'music' ? 'g-modal__card--broadcast' : ''}`} onClick={(e) => e.stopPropagation()}>
+            <div className="g-modal__head">
+              <div>
+                <h2 id={modalHeadingId}>{modalHeading.title}</h2>
+                <p>{modalHeading.detail}</p>
+              </div>
+              <button className="g-icon-btn" onClick={closeExpandedCard} aria-label="Close">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                  <path d="M18 6 6 18M6 6l12 12" />
+                </svg>
+              </button>
             </div>
-            <button className="g-icon-btn" onClick={closeExpandedCard} aria-label="Close">
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                <path d="M18 6 6 18M6 6l12 12" />
-              </svg>
-            </button>
+            {/* The card itself no longer scrolls — this does. The title and
+                the close button used to slide away with the content, so a
+                long list scrolled its own heading off the top. */}
+            <div className="g-modal__body">{content}</div>
           </div>
-          {/* The card itself no longer scrolls — this does. The title and
-              the close button used to slide away with the content, so a
-              long list scrolled its own heading off the top. */}
-          <div className="g-modal__body">{content}</div>
         </div>
-      </div>
+      </ModalPortal>
     );
   };
 

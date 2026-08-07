@@ -34,6 +34,7 @@ import { getCookie } from "@/utils/cookies";
 import type { FaceDatabaseInfo, Visitor } from "@/services/devices.service";
 import type { Device } from "@/types/dashboard";
 import { notify, confirmDialog } from '@/components/glass/GlassRuntime';
+import { ModalPortal } from '@/components/glass/ModalPortal';
 import { useModalTransition } from '@/components/glass/useModalTransition';
 import StationPresetPicker from '@/components/glass/StationPresetPicker';
 import { PageSkeleton } from '@/components/glass/Skeleton';
@@ -415,6 +416,7 @@ export default function DoorbellControlPage() {
     try {
       if (cameraActive) {
         // Stopping camera - also deactivate mic and clean up audio
+        await sendCommand(deviceId, 'mic_stop');
         await sendCommand(deviceId, 'camera_stop');
         setCameraActive(false);
         setMicActive(false);
@@ -437,9 +439,12 @@ export default function DoorbellControlPage() {
         }
         void streamAudioContext.resume();
 
-        // Starting camera - need to wait for stream to be ready
-        console.log("[Camera] Sending camera_start command (backend will also start mic)...");
+        // Camera and microphone are independent device commands. Send both in
+        // order so the firmware starts its audio capture/ADPCM task as well as
+        // the JPEG producer.
+        console.log("[Camera] Sending camera_start and mic_start commands...");
         await sendCommand(deviceId, 'camera_start');
+        await sendCommand(deviceId, 'mic_start');
 
         // Show connecting state
         setStreamConnecting(true);
@@ -454,9 +459,9 @@ export default function DoorbellControlPage() {
           console.log("[Camera] ✓ Stream endpoint is ready, activating camera display");
           setCameraActive(true);
 
-          // Activate mic (backend already started it) and initialize audio context
+          // Both device commands were queued successfully; enable local playback.
           setMicActive(true);
-          console.log("[Mic] ✓ Mic activated (via camera_start), audio will start streaming");
+          console.log("[Mic] ✓ mic_start queued, audio will start streaming");
           setAudioDebugInfo("Starting audio stream...");
 
         } else {
@@ -1284,82 +1289,94 @@ export default function DoorbellControlPage() {
       </div>
 
       {wifiModal.render && (
-        <div className={wifiModal.className} role="dialog" aria-modal="true" aria-labelledby="m-wifi-h" onClick={() => setShowWifiSettings(false)}>
-          <div className="g-pane g-modal__card" onClick={(e) => e.stopPropagation()}>
-            <div className="g-modal__head"><div><h2 id="m-wifi-h">Amplifier Wi-Fi settings</h2><p>Send network credentials to the audio board.</p></div><button className="g-icon-btn" type="button" onClick={() => setShowWifiSettings(false)} aria-label="Close"><X size={15} strokeWidth={2} aria-hidden="true" /></button></div>
-            <div className="g-stack">
-              <div className="g-field"><label htmlFor="wifi-ssid">Wi-Fi SSID</label><input id="wifi-ssid" type="text" value={wifiSsid} onChange={(e) => setWifiSsid(e.target.value)} /></div>
-              <div className="g-field"><label htmlFor="wifi-password">Wi-Fi password</label><input id="wifi-password" type="password" value={wifiPassword} onChange={(e) => setWifiPassword(e.target.value)} /></div>
+        <ModalPortal>
+          <div className={wifiModal.className} role="dialog" aria-modal="true" aria-labelledby="m-wifi-h" onClick={() => setShowWifiSettings(false)}>
+            <div className="g-pane g-modal__card" onClick={(e) => e.stopPropagation()}>
+              <div className="g-modal__head"><div><h2 id="m-wifi-h">Amplifier Wi-Fi settings</h2><p>Send network credentials to the audio board.</p></div><button className="g-icon-btn" type="button" onClick={() => setShowWifiSettings(false)} aria-label="Close"><X size={15} strokeWidth={2} aria-hidden="true" /></button></div>
+              <div className="g-stack">
+                <div className="g-field"><label htmlFor="wifi-ssid">Wi-Fi SSID</label><input id="wifi-ssid" type="text" value={wifiSsid} onChange={(e) => setWifiSsid(e.target.value)} /></div>
+                <div className="g-field"><label htmlFor="wifi-password">Wi-Fi password</label><input id="wifi-password" type="password" value={wifiPassword} onChange={(e) => setWifiPassword(e.target.value)} /></div>
+              </div>
+              <div className="g-modal__foot"><button className="g-btn g-btn--ghost" type="button" onClick={() => setShowWifiSettings(false)}>Cancel</button><button className="g-btn g-btn--primary" type="button" onClick={handleSetAmplifierWifi} disabled={commandLoading === "amp_wifi"}>{commandLoading === "amp_wifi" ? "Saving" : "Save"}</button></div>
             </div>
-            <div className="g-modal__foot"><button className="g-btn g-btn--ghost" type="button" onClick={() => setShowWifiSettings(false)}>Cancel</button><button className="g-btn g-btn--primary" type="button" onClick={handleSetAmplifierWifi} disabled={commandLoading === "amp_wifi"}>{commandLoading === "amp_wifi" ? "Saving" : "Save"}</button></div>
           </div>
-        </div>
+        </ModalPortal>
       )}
 
       {addFaceModal.render && (
-        <div className={addFaceModal.className} role="dialog" aria-modal="true" aria-labelledby="m-addface-h" onClick={closeAddFaceModal}>
-          <div className="g-pane g-modal__card" onClick={(e) => e.stopPropagation()}>
-            <div className="g-modal__head"><div><h2 id="m-addface-h">Add a person</h2><p>They need to stand in front of the camera while the doorbell captures their face.</p></div><button className="g-icon-btn" type="button" onClick={closeAddFaceModal} aria-label="Close"><X size={15} strokeWidth={2} aria-hidden="true" /></button></div>
-            <div className="g-field"><label htmlFor="face-name">Their name</label><input id="face-name" type="text" value={newFaceName} onChange={(e) => setNewFaceName(e.target.value)} placeholder="Mum" disabled={commandLoading === "add_face"} /><span className="g-field__hint">Shown in the activity log whenever they are recognised.</span></div>
-            <div className="g-modal__foot"><button className="g-btn g-btn--ghost" type="button" onClick={closeAddFaceModal} disabled={commandLoading === "add_face"}>Cancel</button><button className="g-btn g-btn--primary" type="button" onClick={handleSubmitAddFace} disabled={commandLoading === "add_face"}>{commandLoading === "add_face" ? "Processing" : "Start capture"}</button></div>
+        <ModalPortal>
+          <div className={addFaceModal.className} role="dialog" aria-modal="true" aria-labelledby="m-addface-h" onClick={closeAddFaceModal}>
+            <div className="g-pane g-modal__card" onClick={(e) => e.stopPropagation()}>
+              <div className="g-modal__head"><div><h2 id="m-addface-h">Add a person</h2><p>They need to stand in front of the camera while the doorbell captures their face.</p></div><button className="g-icon-btn" type="button" onClick={closeAddFaceModal} aria-label="Close"><X size={15} strokeWidth={2} aria-hidden="true" /></button></div>
+              <div className="g-field"><label htmlFor="face-name">Their name</label><input id="face-name" type="text" value={newFaceName} onChange={(e) => setNewFaceName(e.target.value)} placeholder="Mum" disabled={commandLoading === "add_face"} /><span className="g-field__hint">Shown in the activity log whenever they are recognised.</span></div>
+              <div className="g-modal__foot"><button className="g-btn g-btn--ghost" type="button" onClick={closeAddFaceModal} disabled={commandLoading === "add_face"}>Cancel</button><button className="g-btn g-btn--primary" type="button" onClick={handleSubmitAddFace} disabled={commandLoading === "add_face"}>{commandLoading === "add_face" ? "Processing" : "Start capture"}</button></div>
+            </div>
           </div>
-        </div>
+        </ModalPortal>
       )}
 
       {renameFaceModal.render && (
-        <div className={renameFaceModal.className} role="dialog" aria-modal="true" aria-labelledby="m-rename-h" onClick={closeRenameFaceModal}>
-          <div className="g-pane g-modal__card" onClick={(e) => e.stopPropagation()}>
-            <div className="g-modal__head"><div><h2 id="m-rename-h">Rename a person</h2><p>Changes the name on their stored face, not the face itself.</p></div><button className="g-icon-btn" type="button" onClick={closeRenameFaceModal} aria-label="Close"><X size={15} strokeWidth={2} aria-hidden="true" /></button></div>
-            <div className="g-stack">
-              <div className="g-field"><label htmlFor="rename-face-id">Face ID</label><input id="rename-face-id" type="number" min="1" value={renameFaceId} onChange={(e) => setRenameFaceId(parseInt(e.target.value) || 1)} disabled={commandLoading === "rename_face"} /></div>
-              <div className="g-field"><label htmlFor="rename-face-name">New name</label><input id="rename-face-name" type="text" value={renameNewName} onChange={(e) => setRenameNewName(e.target.value)} placeholder="Natthapat" disabled={commandLoading === "rename_face"} /></div>
+        <ModalPortal>
+          <div className={renameFaceModal.className} role="dialog" aria-modal="true" aria-labelledby="m-rename-h" onClick={closeRenameFaceModal}>
+            <div className="g-pane g-modal__card" onClick={(e) => e.stopPropagation()}>
+              <div className="g-modal__head"><div><h2 id="m-rename-h">Rename a person</h2><p>Changes the name on their stored face, not the face itself.</p></div><button className="g-icon-btn" type="button" onClick={closeRenameFaceModal} aria-label="Close"><X size={15} strokeWidth={2} aria-hidden="true" /></button></div>
+              <div className="g-stack">
+                <div className="g-field"><label htmlFor="rename-face-id">Face ID</label><input id="rename-face-id" type="number" min="1" value={renameFaceId} onChange={(e) => setRenameFaceId(parseInt(e.target.value) || 1)} disabled={commandLoading === "rename_face"} /></div>
+                <div className="g-field"><label htmlFor="rename-face-name">New name</label><input id="rename-face-name" type="text" value={renameNewName} onChange={(e) => setRenameNewName(e.target.value)} placeholder="Natthapat" disabled={commandLoading === "rename_face"} /></div>
+              </div>
+              <div className="g-modal__foot"><button className="g-btn g-btn--ghost" type="button" onClick={closeRenameFaceModal} disabled={commandLoading === "rename_face"}>Cancel</button><button className="g-btn g-btn--primary" type="button" onClick={handleRenameFaceSubmit} disabled={commandLoading === "rename_face"}>{commandLoading === "rename_face" ? "Renaming" : "Rename"}</button></div>
             </div>
-            <div className="g-modal__foot"><button className="g-btn g-btn--ghost" type="button" onClick={closeRenameFaceModal} disabled={commandLoading === "rename_face"}>Cancel</button><button className="g-btn g-btn--primary" type="button" onClick={handleRenameFaceSubmit} disabled={commandLoading === "rename_face"}>{commandLoading === "rename_face" ? "Renaming" : "Rename"}</button></div>
           </div>
-        </div>
+        </ModalPortal>
       )}
 
       {deleteLastModal.render && (
-        <div className={deleteLastModal.className} role="dialog" aria-modal="true" aria-labelledby="m-delete-h" onClick={() => setShowDeleteLastConfirm(false)}>
-          <div className="g-pane g-modal__card" onClick={(e) => e.stopPropagation()}>
-            <div className="g-modal__head"><div><h2 id="m-delete-h">Remove the last enrolled face?</h2><p>The doorbell will stop recognising that person. You can add them again later.</p></div></div>
-            <div className="g-modal__foot"><button className="g-btn g-btn--ghost" type="button" onClick={() => setShowDeleteLastConfirm(false)}>Cancel</button><button className="g-btn g-btn--danger" type="button" onClick={handleDeleteLastFace} disabled={commandLoading === "delete_last_face"}>{commandLoading === "delete_last_face" ? "Removing" : "Remove"}</button></div>
+        <ModalPortal>
+          <div className={deleteLastModal.className} role="dialog" aria-modal="true" aria-labelledby="m-delete-h" onClick={() => setShowDeleteLastConfirm(false)}>
+            <div className="g-pane g-modal__card" onClick={(e) => e.stopPropagation()}>
+              <div className="g-modal__head"><div><h2 id="m-delete-h">Remove the last enrolled face?</h2><p>The doorbell will stop recognising that person. You can add them again later.</p></div></div>
+              <div className="g-modal__foot"><button className="g-btn g-btn--ghost" type="button" onClick={() => setShowDeleteLastConfirm(false)}>Cancel</button><button className="g-btn g-btn--danger" type="button" onClick={handleDeleteLastFace} disabled={commandLoading === "delete_last_face"}>{commandLoading === "delete_last_face" ? "Removing" : "Remove"}</button></div>
+            </div>
           </div>
-        </div>
+        </ModalPortal>
       )}
 
       {settingsModal.render && (
-        <div className={settingsModal.className} role="dialog" aria-modal="true" aria-labelledby="m-settings-h" onClick={() => setShowSettings(false)}>
-          <div className="g-pane g-modal__card" onClick={(e) => e.stopPropagation()}>
-            <div className="g-modal__head"><div><h2 id="m-settings-h">Doorbell settings</h2><p>Only change this if the app should point at a different board.</p></div><button className="g-icon-btn" type="button" onClick={() => setShowSettings(false)} aria-label="Close"><X size={15} strokeWidth={2} aria-hidden="true" /></button></div>
-            <div className="g-field g-field--mono"><label htmlFor="dev-id">Device ID</label><input id="dev-id" type="text" value={customDeviceId} onChange={(e) => setCustomDeviceId(e.target.value)} placeholder="db_001" /><span className="g-field__hint">Leave blank to use whatever the server reports.</span></div>
-            <div className="g-modal__foot"><button className="g-btn g-btn--ghost" type="button" onClick={handleClearSettings}>Use server default</button><button className="g-btn g-btn--primary" type="button" onClick={handleSaveSettings}>Save</button></div>
+        <ModalPortal>
+          <div className={settingsModal.className} role="dialog" aria-modal="true" aria-labelledby="m-settings-h" onClick={() => setShowSettings(false)}>
+            <div className="g-pane g-modal__card" onClick={(e) => e.stopPropagation()}>
+              <div className="g-modal__head"><div><h2 id="m-settings-h">Doorbell settings</h2><p>Only change this if the app should point at a different board.</p></div><button className="g-icon-btn" type="button" onClick={() => setShowSettings(false)} aria-label="Close"><X size={15} strokeWidth={2} aria-hidden="true" /></button></div>
+              <div className="g-field g-field--mono"><label htmlFor="dev-id">Device ID</label><input id="dev-id" type="text" value={customDeviceId} onChange={(e) => setCustomDeviceId(e.target.value)} placeholder="db_001" /><span className="g-field__hint">Leave blank to use whatever the server reports.</span></div>
+              <div className="g-modal__foot"><button className="g-btn g-btn--ghost" type="button" onClick={handleClearSettings}>Use server default</button><button className="g-btn g-btn--primary" type="button" onClick={handleSaveSettings}>Save</button></div>
+            </div>
           </div>
-        </div>
+        </ModalPortal>
       )}
 
       {visitorModal.render && shownVisitor && (
-        <div className={visitorModal.className} role="dialog" aria-modal="true" aria-labelledby="m-visitor-h" onClick={() => setShowVisitorDetails(false)}>
-          <div className="g-pane g-modal__card g-modal__card--wide" onClick={(e) => e.stopPropagation()}>
-            <div className="g-modal__head"><div><h2 id="m-visitor-h">{shownVisitor.name}</h2><p>{shownVisitor.recognized ? "Recognised visitor" : "Unknown visitor"}</p></div><button className="g-icon-btn" type="button" onClick={() => setShowVisitorDetails(false)} aria-label="Close"><X size={15} strokeWidth={2} aria-hidden="true" /></button></div>
-            <div className="g-grid g-grid--2">
-              <div className={`g-avatar ${shownVisitor.recognized ? "g-avatar--known" : "g-avatar--unknown"}`}>
-                <div className="g-avatar__img" style={{ maxWidth: 240, width: "100%", justifySelf: "center" }}>
-                  {shownVisitor.image ? <img className="doorbell-color-corrected" src={shownVisitor.image} alt={shownVisitor.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <Users size={48} aria-hidden="true" />}
+        <ModalPortal>
+          <div className={visitorModal.className} role="dialog" aria-modal="true" aria-labelledby="m-visitor-h" onClick={() => setShowVisitorDetails(false)}>
+            <div className="g-pane g-modal__card g-modal__card--wide" onClick={(e) => e.stopPropagation()}>
+              <div className="g-modal__head"><div><h2 id="m-visitor-h">{shownVisitor.name}</h2><p>{shownVisitor.recognized ? "Recognised visitor" : "Unknown visitor"}</p></div><button className="g-icon-btn" type="button" onClick={() => setShowVisitorDetails(false)} aria-label="Close"><X size={15} strokeWidth={2} aria-hidden="true" /></button></div>
+              <div className="g-grid g-grid--2">
+                <div className={`g-avatar ${shownVisitor.recognized ? "g-avatar--known" : "g-avatar--unknown"}`}>
+                  <div className="g-avatar__img" style={{ maxWidth: 240, width: "100%", justifySelf: "center" }}>
+                    {shownVisitor.image ? <img className="doorbell-color-corrected" src={shownVisitor.image} alt={shownVisitor.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <Users size={48} aria-hidden="true" />}
+                  </div>
                 </div>
-              </div>
-              <div className="g-stack">
-                <dl className="g-info">
-                  <div><dt>Status</dt><dd>{shownVisitor.recognized ? "Recognised" : "Unknown"}</dd></div>
-                  <div><dt>Confidence</dt><dd>{shownVisitor.confidence > 0 ? `${(shownVisitor.confidence * 100).toFixed(1)}%` : "N/A"}</dd></div>
-                  <div><dt>Detected at</dt><dd>{shownVisitor.detected_at ? new Date(shownVisitor.detected_at._seconds ? shownVisitor.detected_at._seconds * 1000 : shownVisitor.detected_at).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" }) : "N/A"}</dd></div>
-                  <div><dt>Detection ID</dt><dd>{shownVisitor.id}</dd></div>
-                </dl>
-                {shownVisitor.confidence > 0 && <div><div className="g-meter-row"><span className="g-label">Confidence</span><b>{(shownVisitor.confidence * 100).toFixed(0)}%</b></div><div className="g-meter"><i className={shownVisitor.recognized ? "" : "is-warn"} style={{ width: `${shownVisitor.confidence * 100}%` }} /></div></div>}
+                <div className="g-stack">
+                  <dl className="g-info">
+                    <div><dt>Status</dt><dd>{shownVisitor.recognized ? "Recognised" : "Unknown"}</dd></div>
+                    <div><dt>Confidence</dt><dd>{shownVisitor.confidence > 0 ? `${(shownVisitor.confidence * 100).toFixed(1)}%` : "N/A"}</dd></div>
+                    <div><dt>Detected at</dt><dd>{shownVisitor.detected_at ? new Date(shownVisitor.detected_at._seconds ? shownVisitor.detected_at._seconds * 1000 : shownVisitor.detected_at).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" }) : "N/A"}</dd></div>
+                    <div><dt>Detection ID</dt><dd>{shownVisitor.id}</dd></div>
+                  </dl>
+                  {shownVisitor.confidence > 0 && <div><div className="g-meter-row"><span className="g-label">Confidence</span><b>{(shownVisitor.confidence * 100).toFixed(0)}%</b></div><div className="g-meter"><i className={shownVisitor.recognized ? "" : "is-warn"} style={{ width: `${shownVisitor.confidence * 100}%` }} /></div></div>}
+                </div>
               </div>
             </div>
           </div>
-        </div>
+        </ModalPortal>
       )}
     </ProtectedRoute>
   );

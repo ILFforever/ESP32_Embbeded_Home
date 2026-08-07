@@ -5,6 +5,7 @@ import { BellRing, CheckCircle, Copy, Cpu, Home, Plus, Shield, Trash2, UserPlus,
 import { UserData, deleteAdmin, deleteUser, getAdmins, getUsers, registerUser } from '@/services/auth.service';
 import { deleteDevice, getDeviceStatusText, registerDevice } from '@/services/devices.service';
 import type { BackendDevice } from '@/types/dashboard';
+import { ModalPortal } from '@/components/glass/ModalPortal';
 import { useModalTransition } from '@/components/glass/useModalTransition';
 import { ContentSkeleton } from '@/components/glass/Skeleton';
 
@@ -466,22 +467,24 @@ export function AdminManagementCard({
       </div>
 
       {deleteModal.render && shownTarget && (
-        <div className={deleteModal.className} role="dialog" aria-modal="true" aria-labelledby="admin-remove-title" onClick={() => setDeleteTarget(null)}>
-          <div className="g-pane g-modal__card" onClick={(event) => event.stopPropagation()}>
-            <div className="g-modal__head">
-              <div>
-                <h2 id="admin-remove-title">Remove {shownTarget.name}</h2>
-                <p>This removes {shownTarget.kind === 'device' ? 'the enrolled device and its data' : 'this person from access'} immediately.</p>
+        <ModalPortal>
+          <div className={deleteModal.className} role="dialog" aria-modal="true" aria-labelledby="admin-remove-title" onClick={() => setDeleteTarget(null)}>
+            <div className="g-pane g-modal__card" onClick={(event) => event.stopPropagation()}>
+              <div className="g-modal__head">
+                <div>
+                  <h2 id="admin-remove-title">Remove {shownTarget.name}</h2>
+                  <p>This removes {shownTarget.kind === 'device' ? 'the enrolled device and its data' : 'this person from access'} immediately.</p>
+                </div>
+                <button className="g-icon-btn" onClick={() => setDeleteTarget(null)} aria-label="Close"><X size={16} /></button>
               </div>
-              <button className="g-icon-btn" onClick={() => setDeleteTarget(null)} aria-label="Close"><X size={16} /></button>
-            </div>
-            {actionError && <div className="g-chip g-chip--crit" role="alert">{actionError}</div>}
-            <div className="g-modal__foot">
-              <button className="g-btn g-btn--ghost" onClick={() => setDeleteTarget(null)}>Cancel</button>
-              <button className="g-btn g-btn--danger" onClick={confirmDelete}>Remove</button>
+              {actionError && <div className="g-chip g-chip--crit" role="alert">{actionError}</div>}
+              <div className="g-modal__foot">
+                <button className="g-btn g-btn--ghost" onClick={() => setDeleteTarget(null)}>Cancel</button>
+                <button className="g-btn g-btn--danger" onClick={confirmDelete}>Remove</button>
+              </div>
             </div>
           </div>
-        </div>
+        </ModalPortal>
       )}
     </>
   );

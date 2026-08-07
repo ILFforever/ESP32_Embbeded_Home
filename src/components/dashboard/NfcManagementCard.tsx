@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { AlertCircle, CreditCard, PlusCircle, Shield, User, X } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
+import { ModalPortal } from '@/components/glass/ModalPortal';
 import { useModalTransition } from '@/components/glass/useModalTransition';
 import { ContentSkeleton } from '@/components/glass/Skeleton';
 import {
@@ -482,25 +483,27 @@ export function NfcManagementCard({ isExpanded = false, hideHeader = false }: Nf
       )}
 
       {removalModal.render && shownRemoval && (
-        <div className={removalModal.className} role="dialog" aria-modal="true" aria-labelledby="nfc-remove-title" onClick={() => setPendingRemoval(null)}>
-          <div className="g-pane g-modal__card" style={{ width: 'min(100%, 440px)' }} onClick={(event) => event.stopPropagation()}>
-            <div className="g-modal__head">
-              <div>
-                <h2 id="nfc-remove-title">Revoke {shownRemoval.userName}&apos;s card?</h2>
-                <p>Card {formatCardId(shownRemoval.cardId)} will stop unlocking doors immediately.</p>
+        <ModalPortal>
+          <div className={removalModal.className} role="dialog" aria-modal="true" aria-labelledby="nfc-remove-title" onClick={() => setPendingRemoval(null)}>
+            <div className="g-pane g-modal__card" style={{ width: 'min(100%, 440px)' }} onClick={(event) => event.stopPropagation()}>
+              <div className="g-modal__head">
+                <div>
+                  <h2 id="nfc-remove-title">Revoke {shownRemoval.userName}&apos;s card?</h2>
+                  <p>Card {formatCardId(shownRemoval.cardId)} will stop unlocking doors immediately.</p>
+                </div>
+                <button className="g-icon-btn" onClick={() => setPendingRemoval(null)} aria-label="Close">
+                  <X size={15} />
+                </button>
               </div>
-              <button className="g-icon-btn" onClick={() => setPendingRemoval(null)} aria-label="Close">
-                <X size={15} />
-              </button>
-            </div>
-            <div className="g-modal__foot">
-              <button className="g-btn g-btn--ghost" onClick={() => setPendingRemoval(null)} disabled={loading}>Keep card</button>
-              <button className="g-btn g-btn--danger" onClick={handleConfirmRemoval} disabled={loading}>
-                Revoke card
-              </button>
+              <div className="g-modal__foot">
+                <button className="g-btn g-btn--ghost" onClick={() => setPendingRemoval(null)} disabled={loading}>Keep card</button>
+                <button className="g-btn g-btn--danger" onClick={handleConfirmRemoval} disabled={loading}>
+                  Revoke card
+                </button>
+              </div>
             </div>
           </div>
-        </div>
+        </ModalPortal>
       )}
     </>
   );

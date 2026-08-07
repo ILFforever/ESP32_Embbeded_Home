@@ -26,6 +26,7 @@ import {
 import type { BackendDevice } from '@/types/dashboard';
 import { notify, confirmDialog } from '@/components/glass/GlassRuntime';
 import { relativeTime } from '@/utils/time';
+import { ModalPortal } from '@/components/glass/ModalPortal';
 import { useModalTransition } from '@/components/glass/useModalTransition';
 import { ContentSkeleton } from '@/components/glass/Skeleton';
 import {
@@ -640,34 +641,36 @@ const renderSensorCard = (
     if (!sensorModal.render || sensorModal.value !== chartKey) return null;
 
     return (
-      <div className={sensorModal.className} role="dialog" aria-modal="true" onClick={closeSensorModal}>
-        <div className="g-pane g-modal__card g-modal__card--wide" onClick={(event) => event.stopPropagation()}>
-          <div className="g-modal__head">
-            <div>
-              <h2>{title}</h2>
-              <p>{subtitle}</p>
+      <ModalPortal>
+        <div className={sensorModal.className} role="dialog" aria-modal="true" onClick={closeSensorModal}>
+          <div className="g-pane g-modal__card g-modal__card--wide" onClick={(event) => event.stopPropagation()}>
+            <div className="g-modal__head">
+              <div>
+                <h2>{title}</h2>
+                <p>{subtitle}</p>
+              </div>
+              <button className="g-icon-btn" type="button" onClick={closeSensorModal} aria-label="Close">
+                <X size={15} strokeWidth={2} />
+              </button>
             </div>
-            <button className="g-icon-btn" type="button" onClick={closeSensorModal} aria-label="Close">
-              <X size={15} strokeWidth={2} />
-            </button>
+            <div className="g-grid g-grid--3" style={{ marginBottom: 'var(--s-5)' }}>
+              <div className={`g-tile ${warn ? 'is-warn' : ''}`}>
+                <p className="g-label">Now</p>
+                <div className="g-metric-sm g-num">{current}</div>
+              </div>
+              <div className="g-tile">
+                <p className="g-label">24h average</p>
+                <div className="g-metric-sm g-num">{avg}</div>
+              </div>
+              <div className="g-tile">
+                <p className="g-label">Range</p>
+                <div className="g-metric-sm g-num">{rangeText}</div>
+              </div>
+            </div>
+            {renderChart(chartKey, `${title} chart over the last 24 hours`, warn)}
           </div>
-          <div className="g-grid g-grid--3" style={{ marginBottom: 'var(--s-5)' }}>
-            <div className={`g-tile ${warn ? 'is-warn' : ''}`}>
-              <p className="g-label">Now</p>
-              <div className="g-metric-sm g-num">{current}</div>
-            </div>
-            <div className="g-tile">
-              <p className="g-label">24h average</p>
-              <div className="g-metric-sm g-num">{avg}</div>
-            </div>
-            <div className="g-tile">
-              <p className="g-label">Range</p>
-              <div className="g-metric-sm g-num">{rangeText}</div>
-            </div>
-          </div>
-          {renderChart(chartKey, `${title} chart over the last 24 hours`, warn)}
         </div>
-      </div>
+      </ModalPortal>
     );
   };
 
@@ -940,92 +943,96 @@ const renderSensorCard = (
       )}
 
       {restartModal.render && (
-        <div className={restartModal.className} role="dialog" aria-modal="true" onClick={() => setShowRestartModal(false)}>
-          <div className="g-pane g-modal__card" style={modalNarrowStyle} onClick={(event) => event.stopPropagation()}>
-            <div className="g-modal__head">
-              <div>
-                <h2>Restart the hub?</h2>
-                <p>It will be offline briefly. Sensor readings and the activity list are kept.</p>
+        <ModalPortal>
+          <div className={restartModal.className} role="dialog" aria-modal="true" onClick={() => setShowRestartModal(false)}>
+            <div className="g-pane g-modal__card" style={modalNarrowStyle} onClick={(event) => event.stopPropagation()}>
+              <div className="g-modal__head">
+                <div>
+                  <h2>Restart the hub?</h2>
+                  <p>It will be offline briefly. Sensor readings and the activity list are kept.</p>
+                </div>
+              </div>
+              <div className="g-modal__foot">
+                <button className="g-btn g-btn--ghost" type="button" onClick={() => setShowRestartModal(false)}>
+                  Cancel
+                </button>
+                <button className="g-btn g-btn--danger" type="button" onClick={handleRestart} disabled={restarting || !hubDevice?.online}>
+                  {restarting ? <RefreshCw size={16} /> : <Power size={16} />}
+                  {restarting ? 'Restarting' : 'Restart'}
+                </button>
               </div>
             </div>
-            <div className="g-modal__foot">
-              <button className="g-btn g-btn--ghost" type="button" onClick={() => setShowRestartModal(false)}>
-                Cancel
-              </button>
-              <button className="g-btn g-btn--danger" type="button" onClick={handleRestart} disabled={restarting || !hubDevice?.online}>
-                {restarting ? <RefreshCw size={16} /> : <Power size={16} />}
-                {restarting ? 'Restarting' : 'Restart'}
-              </button>
-            </div>
           </div>
-        </div>
+        </ModalPortal>
       )}
 
       {alertModal.render && (
-        <div className={alertModal.className} role="dialog" aria-modal="true" onClick={() => setShowAlertModal(false)}>
-          <form className="g-pane g-modal__card" style={modalNarrowStyle} onClick={(event) => event.stopPropagation()} onSubmit={handleSendAlert}>
-            <div className="g-modal__head">
-              <div>
-                <h2>Send a message</h2>
-                <p>Shows on the hub display for the duration you choose.</p>
-              </div>
-              <button className="g-icon-btn" type="button" onClick={() => setShowAlertModal(false)} aria-label="Close">
-                <X size={15} strokeWidth={2} />
-              </button>
-            </div>
-            <div className="g-stack">
-              <div className="g-field">
-                <label htmlFor="hub-message">Message</label>
-                <input
-                  id="hub-message"
-                  type="text"
-                  value={alertMessage}
-                  onChange={(event) => setAlertMessage(event.target.value)}
-                  placeholder="Dinner is ready"
-                  maxLength={64}
-                />
-                <span className="g-field__hint">Up to 64 characters. The display fits two lines.</span>
-              </div>
-              <div className="g-grid g-grid--2">
-                <div className="g-field">
-                  <label htmlFor="hub-message-level">Importance</label>
-                  <select
-                    id="hub-message-level"
-                    value={alertLevel}
-                    onChange={(event) => setAlertLevel(event.target.value as typeof alertLevel)}
-                  >
-                    <option value="info">Normal</option>
-                    <option value="warning">Warning</option>
-                    <option value="error">Urgent</option>
-                    <option value="critical">Critical</option>
-                  </select>
+        <ModalPortal>
+          <div className={alertModal.className} role="dialog" aria-modal="true" onClick={() => setShowAlertModal(false)}>
+            <form className="g-pane g-modal__card" style={modalNarrowStyle} onClick={(event) => event.stopPropagation()} onSubmit={handleSendAlert}>
+              <div className="g-modal__head">
+                <div>
+                  <h2>Send a message</h2>
+                  <p>Shows on the hub display for the duration you choose.</p>
                 </div>
+                <button className="g-icon-btn" type="button" onClick={() => setShowAlertModal(false)} aria-label="Close">
+                  <X size={15} strokeWidth={2} />
+                </button>
+              </div>
+              <div className="g-stack">
                 <div className="g-field">
-                  <label htmlFor="hub-message-duration">Show for · {alertDuration}s</label>
+                  <label htmlFor="hub-message">Message</label>
                   <input
-                    id="hub-message-duration"
-                    className="g-slider"
-                    type="range"
-                    min={5}
-                    max={60}
-                    value={alertDuration}
-                    onChange={(event) => setAlertDuration(Number(event.target.value))}
-                    style={{ backgroundImage: sliderPaint(alertDuration - 5, 55) }}
+                    id="hub-message"
+                    type="text"
+                    value={alertMessage}
+                    onChange={(event) => setAlertMessage(event.target.value)}
+                    placeholder="Dinner is ready"
+                    maxLength={64}
                   />
+                  <span className="g-field__hint">Up to 64 characters. The display fits two lines.</span>
+                </div>
+                <div className="g-grid g-grid--2">
+                  <div className="g-field">
+                    <label htmlFor="hub-message-level">Importance</label>
+                    <select
+                      id="hub-message-level"
+                      value={alertLevel}
+                      onChange={(event) => setAlertLevel(event.target.value as typeof alertLevel)}
+                    >
+                      <option value="info">Normal</option>
+                      <option value="warning">Warning</option>
+                      <option value="error">Urgent</option>
+                      <option value="critical">Critical</option>
+                    </select>
+                  </div>
+                  <div className="g-field">
+                    <label htmlFor="hub-message-duration">Show for · {alertDuration}s</label>
+                    <input
+                      id="hub-message-duration"
+                      className="g-slider"
+                      type="range"
+                      min={5}
+                      max={60}
+                      value={alertDuration}
+                      onChange={(event) => setAlertDuration(Number(event.target.value))}
+                      style={{ backgroundImage: sliderPaint(alertDuration - 5, 55) }}
+                    />
+                  </div>
                 </div>
               </div>
-            </div>
-            <div className="g-modal__foot">
-              <button className="g-btn g-btn--ghost" type="button" onClick={() => setShowAlertModal(false)}>
-                Cancel
-              </button>
-              <button className="g-btn g-btn--primary" type="submit" disabled={sendingAlert || !alertMessage.trim()}>
-                <Send size={16} />
-                {sendingAlert ? 'Sending' : 'Send'}
-              </button>
-            </div>
-          </form>
-        </div>
+              <div className="g-modal__foot">
+                <button className="g-btn g-btn--ghost" type="button" onClick={() => setShowAlertModal(false)}>
+                  Cancel
+                </button>
+                <button className="g-btn g-btn--primary" type="submit" disabled={sendingAlert || !alertMessage.trim()}>
+                  <Send size={16} />
+                  {sendingAlert ? 'Sending' : 'Send'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </ModalPortal>
       )}
     </ProtectedRoute>
   );

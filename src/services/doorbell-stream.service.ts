@@ -96,6 +96,8 @@ export class DoorbellAvStream {
   private readonly options: DoorbellAvStreamOptions;
   private socket: WebSocket | null = null;
   private audioContext: AudioContext | null = null;
+  private audioInput: GainNode | null = null;
+  private audioFilters: AudioNode[] = [];
   private muted = false;
   private stopped = true;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -133,11 +135,53 @@ export class DoorbellAvStream {
     }
     this.activeSources.clear();
     this.nextAudioStartTime = 0;
+    this.disconnectAudioGraph();
   }
 
   setAudioContext(audioContext: AudioContext | null) {
+    if (this.audioContext === audioContext && this.audioInput) return;
+    this.disconnectAudioGraph();
     this.audioContext = audioContext;
     this.nextAudioStartTime = 0;
+
+    if (!audioContext) return;
+
+    const input = audioContext.createGain();
+    const highPass = audioContext.createBiquadFilter();
+    const lowPass = audioContext.createBiquadFilter();
+    const compressor = audioContext.createDynamicsCompressor();
+
+    highPass.type = "highpass";
+    highPass.frequency.value = 90;
+    highPass.Q.value = 0.707;
+    lowPass.type = "lowpass";
+    lowPass.frequency.value = 6500;
+    lowPass.Q.value = 0.707;
+    compressor.threshold.value = -18;
+    compressor.knee.value = 18;
+    compressor.ratio.value = 3;
+    compressor.attack.value = 0.005;
+    compressor.release.value = 0.2;
+
+    input.connect(highPass);
+    highPass.connect(lowPass);
+    lowPass.connect(compressor);
+    compressor.connect(audioContext.destination);
+
+    this.audioInput = input;
+    this.audioFilters = [input, highPass, lowPass, compressor];
+  }
+
+  private disconnectAudioGraph() {
+    for (const node of this.audioFilters) {
+      try {
+        node.disconnect();
+      } catch {
+        // The graph may already have been disconnected during teardown.
+      }
+    }
+    this.audioFilters = [];
+    this.audioInput = null;
   }
 
   setMuted(muted: boolean) {
@@ -224,14 +268,15 @@ export class DoorbellAvStream {
 
   private scheduleAudio(samples: Float32Array) {
     const context = this.audioContext;
-    if (this.muted || !context || context.state !== "running") return;
+    const audioInput = this.audioInput;
+    if (this.muted || !context || !audioInput || context.state !== "running") return;
 
     const audioBuffer = context.createBuffer(1, samples.length, 16000);
     audioBuffer.getChannelData(0).set(samples);
 
     const source = context.createBufferSource();
     source.buffer = audioBuffer;
-    source.connect(context.destination);
+    source.connect(audioInput);
 
     const now = context.currentTime;
     // Recover quickly after a suspended tab or network stall instead of playing
@@ -249,4 +294,3 @@ export class DoorbellAvStream {
     };
   }
 }
-

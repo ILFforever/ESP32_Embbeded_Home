@@ -3,6 +3,7 @@ import { Lock, RefreshCw, Unlock, X } from 'lucide-react';
 import type { DoorWindow } from '@/types/dashboard';
 import { relativeTime } from '@/utils/time';
 import { batteryLabel, batteryText } from '@/utils/battery';
+import { ModalPortal } from '@/components/glass/ModalPortal';
 import { useModalTransition } from '@/components/glass/useModalTransition';
 import { ContentSkeleton } from '@/components/glass/Skeleton';
 import {
@@ -385,124 +386,130 @@ export function DoorCard({ doorsWindows, isExpanded = false, hideHeader = false 
       )}
 
       {statusModal.render && (
-        <div className={statusModal.className} role="dialog" aria-modal="true" aria-labelledby="door-status-title" onClick={closeStatusModal}>
-          <div className="g-pane g-modal__card g-modal__card--wide" onClick={(event) => event.stopPropagation()}>
-            <div className="g-modal__head">
-              <div>
-                <h2 id="door-status-title">Door lock status</h2>
-                <p>Live lock state, heartbeat, and pending commands for the selected door.</p>
+        <ModalPortal>
+          <div className={statusModal.className} role="dialog" aria-modal="true" aria-labelledby="door-status-title" onClick={closeStatusModal}>
+            <div className="g-pane g-modal__card g-modal__card--wide" onClick={(event) => event.stopPropagation()}>
+              <div className="g-modal__head">
+                <div>
+                  <h2 id="door-status-title">Door lock status</h2>
+                  <p>Live lock state, heartbeat, and pending commands for the selected door.</p>
+                </div>
+                <button className="g-icon-btn" type="button" aria-label="Close" onClick={closeStatusModal}>
+                  <X size={16} aria-hidden="true" />
+                </button>
               </div>
-              <button className="g-icon-btn" type="button" aria-label="Close" onClick={closeStatusModal}>
-                <X size={16} aria-hidden="true" />
-              </button>
-            </div>
 
-            {fetchingStatus && !shownStatus ? (
-              <ContentSkeleton label="Loading lock status." rows={2} tiles={3} />
-            ) : shownStatus ? (
-              <div className="g-stack">
-                <div className="dash-modal-grid">
-                  <div className="g-tile">
-                    <p className="g-label">Lock state</p>
-                    <div className={`g-metric-sm g-num ${shownStatus.lock_state === 'locked' ? 'is-ok' : 'is-warn'}`}>
-                      {shownStatus.lock_state}
+              {fetchingStatus && !shownStatus ? (
+                <ContentSkeleton label="Loading lock status." rows={2} tiles={3} />
+              ) : shownStatus ? (
+                <div className="g-stack">
+                  <div className="dash-modal-grid">
+                    <div className="g-tile">
+                      <p className="g-label">Lock state</p>
+                      <div className={`g-metric-sm g-num ${shownStatus.lock_state === 'locked' ? 'is-ok' : 'is-warn'}`}>
+                        {shownStatus.lock_state}
+                      </div>
+                    </div>
+                    <div className={shownStatus.online ? 'g-tile' : 'g-tile is-warn'}>
+                      <p className="g-label">Online</p>
+                      <div className="g-metric-sm g-num">{shownStatus.online ? 'Yes' : 'No'}</div>
+                    </div>
+                    <div className={shownStatus.has_pending_commands ? 'g-tile is-warn' : 'g-tile'}>
+                      <p className="g-label">Pending</p>
+                      <div className="g-metric-sm g-num">{shownStatus.pending_commands.length}</div>
                     </div>
                   </div>
-                  <div className={shownStatus.online ? 'g-tile' : 'g-tile is-warn'}>
-                    <p className="g-label">Online</p>
-                    <div className="g-metric-sm g-num">{shownStatus.online ? 'Yes' : 'No'}</div>
-                  </div>
-                  <div className={shownStatus.has_pending_commands ? 'g-tile is-warn' : 'g-tile'}>
-                    <p className="g-label">Pending</p>
-                    <div className="g-metric-sm g-num">{shownStatus.pending_commands.length}</div>
+
+                  <dl className="g-info">
+                    <div><dt>Device ID</dt><dd>{shownStatus.device_id}</dd></div>
+                    <div><dt>Device name</dt><dd>{shownStatus.device_name}</dd></div>
+                    <div><dt>Last action</dt><dd>{shownStatus.last_action}</dd></div>
+                    <div><dt>Last action time</dt><dd>{formatTimestamp(shownStatus.last_action_time)}</dd></div>
+                    <div><dt>Last heartbeat</dt><dd>{formatTimestamp(shownStatus.last_heartbeat)}</dd></div>
+                    <div><dt>Wi-Fi signal</dt><dd>{shownStatus.wifi_rssi !== null ? `${shownStatus.wifi_rssi} dBm` : 'N/A'}</dd></div>
+                    <div><dt>Uptime</dt><dd>{formatUptime(shownStatus.uptime_ms)}</dd></div>
+                  </dl>
+
+                  {shownStatus.has_pending_commands && shownStatus.pending_commands.length > 0 && (
+                    <div className="g-log">
+                      {shownStatus.pending_commands.map((cmd: { action?: string }, idx: number) => (
+                        <div key={`${cmd.action || 'pending'}-${idx}`}>{cmd.action || 'Unknown action'}</div>
+                      ))}
+                    </div>
+                  )}
+
+                  <div className="g-modal__foot">
+                    <button
+                      className="g-btn g-btn--ghost"
+                      type="button"
+                      onClick={() => statusModal.value && fetchLockStatus(statusModal.value.doorId)}
+                      disabled={fetchingStatus}
+                      aria-busy={fetchingStatus}
+                    >
+                      <RefreshCw size={16} aria-hidden="true" />
+                      Refresh
+                    </button>
                   </div>
                 </div>
-
-                <dl className="g-info">
-                  <div><dt>Device ID</dt><dd>{shownStatus.device_id}</dd></div>
-                  <div><dt>Device name</dt><dd>{shownStatus.device_name}</dd></div>
-                  <div><dt>Last action</dt><dd>{shownStatus.last_action}</dd></div>
-                  <div><dt>Last action time</dt><dd>{formatTimestamp(shownStatus.last_action_time)}</dd></div>
-                  <div><dt>Last heartbeat</dt><dd>{formatTimestamp(shownStatus.last_heartbeat)}</dd></div>
-                  <div><dt>Wi-Fi signal</dt><dd>{shownStatus.wifi_rssi !== null ? `${shownStatus.wifi_rssi} dBm` : 'N/A'}</dd></div>
-                  <div><dt>Uptime</dt><dd>{formatUptime(shownStatus.uptime_ms)}</dd></div>
-                </dl>
-
-                {shownStatus.has_pending_commands && shownStatus.pending_commands.length > 0 && (
-                  <div className="g-log">
-                    {shownStatus.pending_commands.map((cmd: { action?: string }, idx: number) => (
-                      <div key={`${cmd.action || 'pending'}-${idx}`}>{cmd.action || 'Unknown action'}</div>
-                    ))}
-                  </div>
-                )}
-
-                <div className="g-modal__foot">
-                  <button
-                    className="g-btn g-btn--ghost"
-                    type="button"
-                    onClick={() => statusModal.value && fetchLockStatus(statusModal.value.doorId)}
-                    disabled={fetchingStatus}
-                    aria-busy={fetchingStatus}
-                  >
-                    <RefreshCw size={16} aria-hidden="true" />
-                    Refresh
-                  </button>
+              ) : (
+                <div className="g-empty">
+                  <strong>Status did not load</strong>
+                  <p>Check that the lock is online, then refresh status again.</p>
                 </div>
-              </div>
-            ) : (
-              <div className="g-empty">
-                <strong>Status did not load</strong>
-                <p>Check that the lock is online, then refresh status again.</p>
-              </div>
-            )}
+              )}
+            </div>
           </div>
-        </div>
+        </ModalPortal>
       )}
 
       {unlockModal.render && shownUnlock && (
-        <div className={unlockModal.className} role="dialog" aria-modal="true" aria-labelledby="door-unlock-title" onClick={() => setPendingUnlock(null)}>
-          <div className="g-pane g-modal__card" onClick={(event) => event.stopPropagation()}>
-            <div className="g-modal__head">
-              <div>
-                <h2 id="door-unlock-title">Unlock the {shownUnlock.name.toLowerCase()}?</h2>
-                <p>It stays unlocked until you lock it again or someone locks it at the door.</p>
+        <ModalPortal>
+          <div className={unlockModal.className} role="dialog" aria-modal="true" aria-labelledby="door-unlock-title" onClick={() => setPendingUnlock(null)}>
+            <div className="g-pane g-modal__card" onClick={(event) => event.stopPropagation()}>
+              <div className="g-modal__head">
+                <div>
+                  <h2 id="door-unlock-title">Unlock the {shownUnlock.name.toLowerCase()}?</h2>
+                  <p>It stays unlocked until you lock it again or someone locks it at the door.</p>
+                </div>
+                <button className="g-icon-btn" type="button" aria-label="Close" onClick={() => setPendingUnlock(null)}>
+                  <X size={16} aria-hidden="true" />
+                </button>
               </div>
-              <button className="g-icon-btn" type="button" aria-label="Close" onClick={() => setPendingUnlock(null)}>
-                <X size={16} aria-hidden="true" />
-              </button>
-            </div>
-            <div className="g-modal__foot">
-              <button className="g-btn g-btn--ghost" type="button" onClick={() => setPendingUnlock(null)}>
-                Keep it locked
-              </button>
-              <button className="g-btn g-btn--danger" type="button" onClick={confirmUnlock}>
-                <Unlock size={16} aria-hidden="true" />
-                Unlock
-              </button>
+              <div className="g-modal__foot">
+                <button className="g-btn g-btn--ghost" type="button" onClick={() => setPendingUnlock(null)}>
+                  Keep it locked
+                </button>
+                <button className="g-btn g-btn--danger" type="button" onClick={confirmUnlock}>
+                  <Unlock size={16} aria-hidden="true" />
+                  Unlock
+                </button>
+              </div>
             </div>
           </div>
-        </div>
+        </ModalPortal>
       )}
 
       {noticeModal.render && shownNotice && (
-        <div className={noticeModal.className} role="dialog" aria-modal="true" aria-labelledby="door-notice-title" onClick={() => setNotice(null)}>
-          <div className="g-pane g-modal__card" onClick={(event) => event.stopPropagation()}>
-            <div className="g-modal__head">
-              <div>
-                <h2 id="door-notice-title">{shownNotice.title}</h2>
-                <p>{shownNotice.message}</p>
+        <ModalPortal>
+          <div className={noticeModal.className} role="dialog" aria-modal="true" aria-labelledby="door-notice-title" onClick={() => setNotice(null)}>
+            <div className="g-pane g-modal__card" onClick={(event) => event.stopPropagation()}>
+              <div className="g-modal__head">
+                <div>
+                  <h2 id="door-notice-title">{shownNotice.title}</h2>
+                  <p>{shownNotice.message}</p>
+                </div>
+                <button className="g-icon-btn" type="button" aria-label="Close" onClick={() => setNotice(null)}>
+                  <X size={16} aria-hidden="true" />
+                </button>
               </div>
-              <button className="g-icon-btn" type="button" aria-label="Close" onClick={() => setNotice(null)}>
-                <X size={16} aria-hidden="true" />
-              </button>
-            </div>
-            <div className="g-modal__foot">
-              <button className={shownNotice.tone === 'crit' ? 'g-btn g-btn--danger' : 'g-btn g-btn--primary'} type="button" onClick={() => setNotice(null)}>
-                OK
-              </button>
+              <div className="g-modal__foot">
+                <button className={shownNotice.tone === 'crit' ? 'g-btn g-btn--danger' : 'g-btn g-btn--primary'} type="button" onClick={() => setNotice(null)}>
+                  OK
+                </button>
+              </div>
             </div>
           </div>
-        </div>
+        </ModalPortal>
       )}
     </>
   );
