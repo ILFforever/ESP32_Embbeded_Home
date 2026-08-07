@@ -19,6 +19,52 @@ function generateDeviceToken() {
 const WRITE_INTERVAL_MS = 1 * 60 * 1000; // Write every 1 minute
 const SENSOR_DELTA_THRESHOLD = 5; // Write if sensor changes by 5%
 const OFFLINE_THRESHOLD_MS = 2 * 60 * 1000; // 2 minutes = offline
+const COMMAND_STALE_AFTER_MS = 5 * 60 * 1000;
+const COMMAND_FETCH_BATCH_SIZE = 5;
+
+function timestampToMillis(timestamp) {
+  if (!timestamp) return null;
+  if (typeof timestamp.toMillis === 'function') return timestamp.toMillis();
+  if (typeof timestamp.toDate === 'function') return timestamp.toDate().getTime();
+  if (typeof timestamp._seconds === 'number') return timestamp._seconds * 1000;
+  if (timestamp instanceof Date) return timestamp.getTime();
+  return null;
+}
+
+async function expireStaleCommands(deviceRef) {
+  const pendingSnapshot = await deviceRef
+    .collection('commands')
+    .where('status', '==', 'pending')
+    .orderBy('created_at', 'asc')
+    .get();
+
+  const nowMs = Date.now();
+  const freshDocs = [];
+  const staleUpdates = [];
+
+  for (const doc of pendingSnapshot.docs) {
+    const createdAtMs = timestampToMillis(doc.data().created_at);
+    if (createdAtMs !== null && nowMs - createdAtMs > COMMAND_STALE_AFTER_MS) {
+      const ageSeconds = Math.floor((nowMs - createdAtMs) / 1000);
+      staleUpdates.push(doc.ref.update({
+        status: 'stale',
+        expired_at: admin.firestore.FieldValue.serverTimestamp(),
+        error: `Command expired after ${ageSeconds} seconds`
+      }));
+    } else {
+      freshDocs.push(doc);
+    }
+  }
+
+  if (staleUpdates.length > 0) {
+    await Promise.all(staleUpdates);
+  }
+
+  return {
+    freshDocs,
+    staleCount: staleUpdates.length
+  };
+}
 
 // TTL Settings (Firestore auto-deletion)
 const STATUS_TTL_SECONDS = 180; // 3 minutes - document auto-deletes if no heartbeat
@@ -293,16 +339,16 @@ const handleHeartbeat = async (req, res) => {
       //console.log(`[Heartbeat] ${device_id} - Throttled (no Firebase write)`);
     }
 
-    // Check for pending commands (lightweight query)
+    // Expire old commands on the backend before notifying the device. The
+    // ESP32 should only ever fetch and execute fresh, bounded work.
     let hasPendingCommands = false;
     try {
-      const pendingCommandsSnapshot = await deviceRef
-        .collection('commands')
-        .where('status', '==', 'pending')
-        .limit(1)
-        .get();
+      const { freshDocs, staleCount } = await expireStaleCommands(deviceRef);
+      hasPendingCommands = freshDocs.length > 0;
 
-      hasPendingCommands = !pendingCommandsSnapshot.empty;
+      if (staleCount > 0) {
+        console.log(`[Heartbeat] ${device_id} - Marked ${staleCount} command(s) stale`);
+      }
 
       if (hasPendingCommands) {
         console.log(`[Heartbeat] ${device_id} - Has pending commands, notifying device`);
@@ -652,6 +698,10 @@ const getDeviceHistory = async (req, res) => {
     const { limit = 20 } = req.query;
     const db = getFirestore();
     const deviceRef = db.collection('devices').doc(device_id);
+
+    // Ensure history never exposes expired commands as pending, even when the
+    // physical device is offline and cannot send a heartbeat.
+    await expireStaleCommands(deviceRef);
 
     // Fetch data from multiple sources in parallel
     const [liveStatusDoc, faceDetectionsSnapshot, commandsSnapshot, deviceLogsSnapshot] = await Promise.all([
@@ -1361,28 +1411,22 @@ const fetchPendingCommands = async (req, res) => {
     const db = getFirestore();
     const deviceRef = db.collection('devices').doc(device_id);
 
-    // Get all pending commands
-    const pendingCommandsSnapshot = await deviceRef
-      .collection('commands')
-      .where('status', '==', 'pending')
-      .orderBy('created_at', 'asc')
-      .get();
+    const { freshDocs, staleCount } = await expireStaleCommands(deviceRef);
+    const commandDocs = freshDocs.slice(0, COMMAND_FETCH_BATCH_SIZE);
 
-    const commands = [];
-    pendingCommandsSnapshot.forEach(doc => {
-      commands.push({
+    const commands = commandDocs.map(doc => ({
         id: doc.id,
         action: doc.data().action,
-        params: doc.data().params || {},
-        created_at: doc.data().created_at
-      });
-    });
+        params: doc.data().params || {}
+    }));
+    const hasMore = freshDocs.length > commandDocs.length;
 
-    console.log(`[FetchCommands] ${device_id} - Returning ${commands.length} pending command(s)`);
+    console.log(`[FetchCommands] ${device_id} - Marked ${staleCount} stale, returning ${commands.length} fresh command(s)`);
 
     res.json({
       status: 'ok',
       count: commands.length,
+      has_more: hasMore,
       commands
     });
 
