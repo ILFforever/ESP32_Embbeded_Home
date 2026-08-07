@@ -36,6 +36,11 @@ import { relativeTime } from '@/utils/time';
 interface AlertsCardProps {
   alerts: Alert[];
   isExpanded?: boolean;
+  /* See TemperatureCard: inside the modal the surrounding card supplies the
+     pane and the title, so the header only repeats them. What the modal head
+     cannot carry — the urgent count and the way into the categories — moves
+     into a control row instead of disappearing with it. */
+  hideHeader?: boolean;
   onRefresh?: () => void;
   onExpand?: () => void;
 }
@@ -62,7 +67,7 @@ const priorityChipClass = (score: number) => {
 };
 
 
-export function AlertsCard({ alerts, isExpanded = false, onRefresh }: AlertsCardProps) {
+export function AlertsCard({ alerts, isExpanded = false, hideHeader = false, onRefresh }: AlertsCardProps) {
   const [selectedFilters, setSelectedFilters] = useState<string[]>([]);
   const [showFilters, setShowFilters] = useState(false);
   const [readAlertsPage, setReadAlertsPage] = useState(1);
@@ -259,27 +264,48 @@ export function AlertsCard({ alerts, isExpanded = false, onRefresh }: AlertsCard
   );
 
   return (
-    <div className="g-pane g-card">
-      <header>
-        <div className="g-row">
-          <Shield size={20} aria-hidden="true" />
-          <h3>Recent activity</h3>
-          {highPriorityCount > 0 && (
-            <span className="g-chip g-chip--crit">{highPriorityCount} urgent</span>
+    <div className={hideHeader ? 'g-stack' : 'g-pane g-card'}>
+      {!hideHeader ? (
+        <header>
+          <div className="g-row">
+            <Shield size={20} aria-hidden="true" />
+            <h3>Recent activity</h3>
+            {highPriorityCount > 0 && (
+              <span className="g-chip g-chip--crit">{highPriorityCount} urgent</span>
+            )}
+          </div>
+          {isExpanded && (
+            <button
+              className="g-icon-btn"
+              onClick={() => setShowFilters(!showFilters)}
+              title="Filter alerts by category"
+              aria-label="Filter alerts by category"
+              aria-pressed={showFilters}
+            >
+              <Filter size={17} aria-hidden="true" />
+            </button>
           )}
-        </div>
-        {isExpanded && (
+        </header>
+      ) : (
+        /* Labelled, not icon-only: in the modal there is room to say what
+           the button does, and the compact card's icon vocabulary is what
+           made two refresh controls easy to miss in the first place. */
+        <div className="g-row g-row--between">
+          {highPriorityCount > 0 ? (
+            <span className="g-chip g-chip--crit">{highPriorityCount} urgent</span>
+          ) : (
+            <span className="g-label">Nothing urgent</span>
+          )}
           <button
-            className="g-icon-btn"
+            className="g-btn g-btn--ghost"
             onClick={() => setShowFilters(!showFilters)}
-            title="Filter alerts by category"
-            aria-label="Filter alerts by category"
             aria-pressed={showFilters}
           >
-            <Filter size={17} aria-hidden="true" />
+            <Filter size={16} aria-hidden="true" />
+            Filter
           </button>
-        )}
-      </header>
+        </div>
+      )}
 
       {isExpanded && showFilters && (
         <div className="g-tile">

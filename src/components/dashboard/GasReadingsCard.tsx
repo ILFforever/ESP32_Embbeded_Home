@@ -16,12 +16,16 @@ import { lastSeenLabel, relativeTime } from '@/utils/time';
 interface GasReadingsCardProps {
   gasReadings: GasReading[];
   isExpanded?: boolean;
+  /* See TemperatureCard: the modal draws the pane and the title, so the
+     header here would repeat both — and its refresh icon would sit a few
+     pixels from the labelled Refresh beside the sensor tabs. */
+  hideHeader?: boolean;
   onRefresh?: () => void;
 }
 
 const chartMargins = { top: 18, right: 22, left: 6, bottom: 18 };
 
-export function GasReadingsCard({ gasReadings, isExpanded = false, onRefresh }: GasReadingsCardProps) {
+export function GasReadingsCard({ gasReadings, isExpanded = false, hideHeader = false, onRefresh }: GasReadingsCardProps) {
   const [selectedSensor, setSelectedSensor] = useState<string | null>(null);
   const [refetching, setRefetching] = useState(false);
 
@@ -74,21 +78,23 @@ export function GasReadingsCard({ gasReadings, isExpanded = false, onRefresh }: 
     : 0;
 
   return (
-    <div className="g-pane g-card">
-      <header>
-        <div className="g-row">
-          <Wind size={20} aria-hidden="true" />
-          <h3>Air quality</h3>
-        </div>
-        <button
-          className="g-icon-btn"
-          onClick={(e) => { e.stopPropagation(); handleRefresh(); }}
-          disabled={refetching}
-          aria-label="Refresh gas readings"
-        >
-          <RefreshCw size={17} className={refetching ? 'spinning' : ''} aria-hidden="true" />
-        </button>
-      </header>
+    <div className={hideHeader ? 'g-stack' : 'g-pane g-card'}>
+      {!hideHeader && (
+        <header>
+          <div className="g-row">
+            <Wind size={20} aria-hidden="true" />
+            <h3>Air quality</h3>
+          </div>
+          <button
+            className="g-icon-btn"
+            onClick={(e) => { e.stopPropagation(); handleRefresh(); }}
+            disabled={refetching}
+            aria-label="Refresh gas readings"
+          >
+            <RefreshCw size={17} className={refetching ? 'spinning' : ''} aria-hidden="true" />
+          </button>
+        </header>
+      )}
 
       {!isExpanded ? (
         <div className="g-stack">

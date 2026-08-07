@@ -19,6 +19,9 @@ import {
 
 interface NfcManagementCardProps {
   isExpanded?: boolean;
+  /* Set by the dashboard modal, which names the card itself. /access keeps
+     the header — there the card is one section among several. */
+  hideHeader?: boolean;
 }
 
 type PendingRemoval = {
@@ -62,7 +65,7 @@ function StatusMessage({
   );
 }
 
-export function NfcManagementCard({ isExpanded = false }: NfcManagementCardProps) {
+export function NfcManagementCard({ isExpanded = false, hideHeader = false }: NfcManagementCardProps) {
   const { user: loggedInUser, refreshUser } = useAuth();
   const [isAdminView, setIsAdminView] = useState(false);
 
@@ -401,26 +404,39 @@ export function NfcManagementCard({ isExpanded = false }: NfcManagementCardProps
     </div>
   );
 
+  const viewSwitch = (
+    <div className="g-seg" data-choice aria-label="NFC management view">
+      <button aria-current={!isAdminView ? 'true' : undefined} onClick={() => setIsAdminView(false)}>
+        <User size={15} /> My cards
+      </button>
+      <button aria-current={isAdminView ? 'true' : undefined} onClick={() => setIsAdminView(true)}>
+        <Shield size={15} /> Admin
+      </button>
+    </div>
+  );
+
   return (
     <>
-      <header>
-        <div>
-          <h2>NFC cards</h2>
-          {isExpanded && <p className="g-sub">Cards are checked at the reader before a lock command is sent.</p>}
-        </div>
-        {isExpanded && loggedInUser?.role === 'admin' ? (
-          <div className="g-seg" data-choice aria-label="NFC management view">
-            <button aria-current={!isAdminView ? 'true' : undefined} onClick={() => setIsAdminView(false)}>
-              <User size={15} /> My cards
-            </button>
-            <button aria-current={isAdminView ? 'true' : undefined} onClick={() => setIsAdminView(true)}>
-              <Shield size={15} /> Admin
-            </button>
+      {hideHeader ? (
+        /* The modal head already says "NFC cards" and why they matter, and
+           the tiles below already count them. Only the view switch has
+           nowhere else to live. */
+        isExpanded && loggedInUser?.role === 'admin' && (
+          <div className="g-row">{viewSwitch}</div>
+        )
+      ) : (
+        <header>
+          <div>
+            <h2>NFC cards</h2>
+            {isExpanded && <p className="g-sub">Cards are checked at the reader before a lock command is sent.</p>}
           </div>
-        ) : (
-          <span className="g-label">{isExpanded ? `${totalCards} total` : `${ownCardCount} mine`}</span>
-        )}
-      </header>
+          {isExpanded && loggedInUser?.role === 'admin' ? (
+            viewSwitch
+          ) : (
+            <span className="g-label">{isExpanded ? `${totalCards} total` : `${ownCardCount} mine`}</span>
+          )}
+        </header>
+      )}
 
       {!isExpanded ? (
         <div className="g-list">

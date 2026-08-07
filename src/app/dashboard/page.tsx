@@ -25,6 +25,24 @@ import { countUrgent, isUrgent, sortAlertsByPriority } from '@/utils/alertScorin
 import { deviceLabel, labelForId, roomName } from '@/utils/deviceNames';
 import { greeting, relativeTime } from '@/utils/time';
 
+/* The modal used to title itself from the card id — "temperature",
+   lowercase, over a card that then called itself "Climate" — and to explain
+   every one of them with the same line, "Live details from Arduino888."
+   Two titles for one thing, and a subtitle that named the service rather
+   than saying what the panel is for. The heading is the card's name once,
+   and the line under it says what you can do here. Cards opened this way
+   are passed hideHeader so they do not repeat it. */
+const CARD_HEADINGS: Record<string, { title: string; detail: string }> = {
+  'system-status': { title: 'Devices', detail: 'Everything paired with the home, and when each one last reported.' },
+  alerts: { title: 'Recent activity', detail: 'What the house has reported, most urgent first.' },
+  temperature: { title: 'Climate', detail: 'Temperature and humidity in each room, over the past day.' },
+  gas: { title: 'Air quality', detail: 'Gas readings from each sensor, over the past day.' },
+  doors: { title: 'Doors', detail: 'Lock or unlock each door, and see battery and signal.' },
+  admin: { title: 'Admin', detail: 'People, access roles, and enrolled boards.' },
+  nfc: { title: 'NFC cards', detail: 'Cards are checked at the reader before a lock command is sent.' },
+  music: { title: 'Broadcast', detail: 'Play an internet radio stream through your available speakers.' },
+};
+
 export default function DashboardPage() {
   const { user } = useAuth();
   const [devicesStatus, setDevicesStatus] = useState<DevicesStatus | null>(null);
@@ -365,27 +383,27 @@ export default function DashboardPage() {
         content = <SystemStatusCard devicesStatus={devicesStatus} isExpanded={true} />;
         break;
       case 'alerts':
-        content = <AlertsCard alerts={alerts} isExpanded={true} onRefresh={fetchAlerts} />;
+        content = <AlertsCard alerts={alerts} isExpanded={true} hideHeader onRefresh={fetchAlerts} />;
         break;
       case 'temperature':
-        content = <TemperatureCard isExpanded={true} />;
+        content = <TemperatureCard isExpanded={true} hideHeader />;
         break;
       case 'gas':
-        content = <GasReadingsCard gasReadings={gasReadings} isExpanded={true} onRefresh={fetchGasReadings} />;
+        content = <GasReadingsCard gasReadings={gasReadings} isExpanded={true} hideHeader onRefresh={fetchGasReadings} />;
         break;
       case 'doors':
-        content = <DoorCard doorsWindows={doorsWindows} isExpanded={true} />;
+        content = <DoorCard doorsWindows={doorsWindows} isExpanded={true} hideHeader />;
         break;
       case 'admin':
         // Only admins can view admin management
         if (user?.role === 'admin') {
-          content = <AdminManagementCard devices={devicesStatus?.devices || []} isExpanded={true} />;
+          content = <AdminManagementCard devices={devicesStatus?.devices || []} isExpanded={true} hideHeader />;
         } else {
           content = null;
         }
         break;
       case 'nfc':
-        content = <NfcManagementCard isExpanded={true} />;
+        content = <NfcManagementCard isExpanded={true} hideHeader />;
         break;
       case 'music':
         content = <MusicBroadcastCard isExpanded={true} />;
@@ -395,15 +413,10 @@ export default function DashboardPage() {
         content = null;
     }
 
-    const modalHeading = shownCard === 'music'
-      ? {
-          title: 'Broadcast',
-          detail: 'Play an internet radio stream through your available speakers.',
-        }
-      : {
-          title: shownCard.replace(/-/g, ' '),
-          detail: 'Live details from Arduino888.',
-        };
+    const modalHeading = CARD_HEADINGS[shownCard] ?? {
+      title: shownCard.replace(/-/g, ' '),
+      detail: 'Live details from Arduino888.',
+    };
     const modalHeadingId = `dashboard-${shownCard}-title`;
 
     return (
@@ -489,16 +502,40 @@ export default function DashboardPage() {
             talking. It used to be Devices online / Sensors reporting /
             Open alerts / Backend — three restatements of the header plus a
             service health readout no resident has a use for. */}
+        {/* Each tile opens the card that can act on it — the same view the
+            matching bento card opens, so the page has one behaviour rather
+            than two. */}
         <div className="g-grid g-grid--4">
-          <div className="g-pane g-card">
+          <div
+            className="g-pane g-card g-card--action"
+            role="button"
+            tabIndex={0}
+            aria-label={`Doors: ${doorSummary.text}. Open the door locks.`}
+            onKeyDown={(event) => handleCardKey(event, 'doors')}
+            onClick={() => openExpandedCard('doors')}
+          >
             <p className="g-label">Doors</p>
             <div className={`g-metric-word is-${doorSummary.tone}`}><i />{doorSummary.text}</div>
           </div>
-          <div className="g-pane g-card">
+          <div
+            className="g-pane g-card g-card--action"
+            role="button"
+            tabIndex={0}
+            aria-label={`Air: ${airSummary.text}. Open the air quality readings.`}
+            onKeyDown={(event) => handleCardKey(event, 'gas')}
+            onClick={() => openExpandedCard('gas')}
+          >
             <p className="g-label">Air</p>
             <div className={`g-metric-word is-${airSummary.tone}`}><i />{airSummary.text}</div>
           </div>
-          <div className={`g-pane g-card ${urgent ? 'is-warn' : ''}`}>
+          <div
+            className={`g-pane g-card g-card--action ${urgent ? 'is-warn' : ''}`}
+            role="button"
+            tabIndex={0}
+            aria-label={`${urgent} urgent. Open recent activity.`}
+            onKeyDown={(event) => handleCardKey(event, 'alerts')}
+            onClick={() => openExpandedCard('alerts')}
+          >
             <p className="g-label">Needs attention</p>
             {/* "urgent", not "since yesterday" — the count is not scoped to
                 a day, and inventing a timeframe for a number is how the
@@ -508,7 +545,14 @@ export default function DashboardPage() {
               <small>{urgent === 0 ? 'all clear' : 'urgent'}</small>
             </div>
           </div>
-          <div className={`g-pane g-card ${offlineTotal ? 'is-warn' : ''}`}>
+          <div
+            className={`g-pane g-card g-card--action ${offlineTotal ? 'is-warn' : ''}`}
+            role="button"
+            tabIndex={0}
+            aria-label={`${devicesStatus?.summary.online ?? 0} of ${devicesStatus?.summary.total ?? 0} devices connected. Open the device list.`}
+            onKeyDown={(event) => handleCardKey(event, 'system-status')}
+            onClick={() => openExpandedCard('system-status')}
+          >
             <p className="g-label">Connected</p>
             <div className="g-metric-sm g-num">
               {devicesStatus?.summary.online ?? 0}

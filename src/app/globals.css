@@ -415,6 +415,15 @@ body {
 }
 
 .g-card { padding: 18px 20px 20px; display: flex; flex-direction: column; }
+
+/* A whole card that acts as one control. The stat strip looked identical
+   to the bento cards below it, which do open — so four tiles that each
+   answer a question and each have somewhere to go read as a dead spot
+   rather than a deliberate difference.
+   Tint on hover, no lift: ground rule 11 keeps motion off panes. */
+.g-card--action { cursor: pointer; }
+.g-card--action:hover .g-label { color: var(--accent); }
+.g-card--action:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 .g-card > header {
   display: flex; align-items: center; justify-content: space-between;
   gap: var(--s-3); margin-bottom: var(--s-4);

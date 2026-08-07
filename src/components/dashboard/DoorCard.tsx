@@ -14,6 +14,9 @@ import {
 interface DoorCardProps {
   doorsWindows: DoorWindow[];
   isExpanded?: boolean;
+  /* Set by the dashboard modal, which names the card itself. /access keeps
+     the header — there the card is one section among several. */
+  hideHeader?: boolean;
 }
 
 type NoticeTone = 'warn' | 'crit';
@@ -63,7 +66,7 @@ function statusChipClass(tone: string) {
   return 'g-chip';
 }
 
-export function DoorCard({ doorsWindows, isExpanded = false }: DoorCardProps) {
+export function DoorCard({ doorsWindows, isExpanded = false, hideHeader = false }: DoorCardProps) {
   const [loadingStates, setLoadingStates] = useState<Record<string, boolean>>({});
   const [loadingAll, setLoadingAll] = useState<null | 'lock' | 'unlock'>(null);
   const [showStatusModal, setShowStatusModal] = useState(false);
@@ -250,12 +253,14 @@ export function DoorCard({ doorsWindows, isExpanded = false }: DoorCardProps) {
 
   return (
     <>
-      <header>
-        <h2>Doors</h2>
-        <span className={`g-label ${unlockedCount ? 'is-warn' : ''}`}>
-          {doors.length} {doors.length === 1 ? 'lock' : 'locks'}
-        </span>
-      </header>
+      {!hideHeader && (
+        <header>
+          <h2>Doors</h2>
+          <span className={`g-label ${unlockedCount ? 'is-warn' : ''}`}>
+            {doors.length} {doors.length === 1 ? 'lock' : 'locks'}
+          </span>
+        </header>
+      )}
 
       {!isExpanded ? (
         doors.length ? (

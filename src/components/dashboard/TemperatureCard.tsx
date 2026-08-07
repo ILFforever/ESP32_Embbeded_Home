@@ -24,6 +24,11 @@ import {
 
 interface TemperatureCardProps {
   isExpanded?: boolean;
+  /* Set when the surrounding surface — the dashboard modal — already draws
+     the pane and names the card. Without it the modal stacked two titles
+     ("temperature" over "Climate") and two refresh controls: the icon on
+     this header and the labelled one beside the room tabs. */
+  hideHeader?: boolean;
   refreshInterval?: number;
 }
 
@@ -35,7 +40,7 @@ function readingTimestampToIso(timestamp: TemperatureData['history'][number]['ti
   return Number.isNaN(date.getTime()) ? new Date().toISOString() : date.toISOString();
 }
 
-export function TemperatureCard({ isExpanded = false }: TemperatureCardProps) {
+export function TemperatureCard({ isExpanded = false, hideHeader = false }: TemperatureCardProps) {
   const [selectedRoom, setSelectedRoom] = useState<string | null>(null);
   const [temperatureData, setTemperatureData] = useState<TemperatureData[]>([]);
   const [loading, setLoading] = useState(true);
@@ -152,21 +157,23 @@ export function TemperatureCard({ isExpanded = false }: TemperatureCardProps) {
     : 0;
 
   return (
-    <div className="g-pane g-card">
-      <header>
-        <div className="g-row">
-          <Thermometer size={20} aria-hidden="true" />
-          <h3>Climate</h3>
-        </div>
-        <button
-          className="g-icon-btn"
-          onClick={(e) => { e.stopPropagation(); fetchTemperatureData(); }}
-          disabled={refetching}
-          aria-label="Refresh temperature data"
-        >
-          <RefreshCw size={17} className={refetching ? 'spinning' : ''} aria-hidden="true" />
-        </button>
-      </header>
+    <div className={hideHeader ? 'g-stack' : 'g-pane g-card'}>
+      {!hideHeader && (
+        <header>
+          <div className="g-row">
+            <Thermometer size={20} aria-hidden="true" />
+            <h3>Climate</h3>
+          </div>
+          <button
+            className="g-icon-btn"
+            onClick={(e) => { e.stopPropagation(); fetchTemperatureData(); }}
+            disabled={refetching}
+            aria-label="Refresh temperature data"
+          >
+            <RefreshCw size={17} className={refetching ? 'spinning' : ''} aria-hidden="true" />
+          </button>
+        </header>
+      )}
 
       {loading ? (
         <div className="g-empty">
