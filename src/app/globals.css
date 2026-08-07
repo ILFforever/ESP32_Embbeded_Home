@@ -612,6 +612,18 @@ body {
 .g-action:hover { border-color: var(--accent); color: var(--accent); }
 .g-action small { display: block; color: var(--ink-3); font-size: 11px; margin-top: 2px; }
 
+/* An action with a leading icon and two lines of copy.
+   .g-action is a block, so a bare inline <svg> sits on the baseline of a
+   12.5px line box: an 18px icon then overflows that box and rides above
+   its own label, and the description below starts under the icon instead
+   of under the words it belongs to. Give the icon a column of its own.
+   Every other .g-action in the app already had a local override doing
+   this (.broadcast-target, the alerts summary); this is that, shared. */
+.g-action--icon { display: flex; align-items: flex-start; gap: 10px; }
+.g-action--icon > svg { flex: none; margin-top: 1px; }
+.g-action__copy { min-width: 0; }
+.g-action__copy strong { display: block; font-size: 12.5px; font-weight: 600; }
+
 /* iOS-spec toggle: 51x31 with a 27px knob. */
 .g-switch {
   width: 51px; height: 31px; flex: none; border-radius: var(--r-chip);

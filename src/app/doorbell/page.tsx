@@ -1283,21 +1283,33 @@ export default function DoorbellControlPage() {
             <section className="g-pane g-card">
               <header><h2>Submodule command</h2><span className="g-label">Maintenance</span></header>
               <div className="g-grid g-grid--2">
-                <button className="g-action" type="button" onClick={handleCameraRestart} disabled={commandLoading === "camera_restart"}>
-                  <Camera size={18} aria-hidden="true" /> {commandLoading === "camera_restart" ? "Restarting camera" : "Restart camera"}
-                  <small>Use this when the live stream stops responding.</small>
+                <button className="g-action g-action--icon" type="button" onClick={handleCameraRestart} disabled={commandLoading === "camera_restart"}>
+                  <Camera size={18} aria-hidden="true" />
+                  <span className="g-action__copy">
+                    <strong>{commandLoading === "camera_restart" ? "Restarting camera" : "Restart camera"}</strong>
+                    <small>Use this when the live stream stops responding.</small>
+                  </span>
                 </button>
-                <button className="g-action" type="button" onClick={handleRestartAmplifier} disabled={commandLoading === "amp_restart"}>
-                  <Volume2 size={18} aria-hidden="true" /> {commandLoading === "amp_restart" ? "Restarting amplifier" : "Restart amplifier"}
-                  <small>Restarts only the audio board.</small>
+                <button className="g-action g-action--icon" type="button" onClick={handleRestartAmplifier} disabled={commandLoading === "amp_restart"}>
+                  <Volume2 size={18} aria-hidden="true" />
+                  <span className="g-action__copy">
+                    <strong>{commandLoading === "amp_restart" ? "Restarting amplifier" : "Restart amplifier"}</strong>
+                    <small>Restarts only the audio board.</small>
+                  </span>
                 </button>
-                <button className="g-action" type="button" onClick={() => setShowWifiSettings(true)} disabled={commandLoading === "amp_wifi"}>
-                  <Settings size={18} aria-hidden="true" /> Amplifier Wi-Fi
-                  <small>Send SSID and password to the amplifier.</small>
+                <button className="g-action g-action--icon" type="button" onClick={() => setShowWifiSettings(true)} disabled={commandLoading === "amp_wifi"}>
+                  <Settings size={18} aria-hidden="true" />
+                  <span className="g-action__copy">
+                    <strong>Amplifier Wi-Fi</strong>
+                    <small>Send SSID and password to the amplifier.</small>
+                  </span>
                 </button>
-                <button className="g-action" type="button" onClick={handleSystemRestart} disabled={commandLoading === "system_restart"}>
-                  <Power size={18} aria-hidden="true" /> {commandLoading === "system_restart" ? "Restarting system" : "Restart doorbell"}
-                  <small>The device will be offline for about 30 seconds.</small>
+                <button className="g-action g-action--icon" type="button" onClick={handleSystemRestart} disabled={commandLoading === "system_restart"}>
+                  <Power size={18} aria-hidden="true" />
+                  <span className="g-action__copy">
+                    <strong>{commandLoading === "system_restart" ? "Restarting system" : "Restart doorbell"}</strong>
+                    <small>The device will be offline for about 30 seconds.</small>
+                  </span>
                 </button>
               </div>
             </section>

@@ -166,6 +166,10 @@ export default function DashboardPage() {
   };
 
   const handleCardKey = (event: React.KeyboardEvent<HTMLElement>, cardId: string) => {
+    /* Only when the section itself has focus. A key pressed on a control
+       inside it — the door switch, a device button — belongs to that
+       control, and used to open this modal on top of whatever it did. */
+    if (event.target !== event.currentTarget) return;
     if (event.key === 'Enter' || event.key === ' ') {
       event.preventDefault();
       openExpandedCard(cardId);

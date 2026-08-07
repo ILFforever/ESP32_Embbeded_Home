@@ -74,6 +74,9 @@ export function DoorCard({ doorsWindows, isExpanded = false, hideHeader = false 
   const [lockStatus, setLockStatus] = useState<DoorLockStatus | null>(null);
   const [fetchingStatus, setFetchingStatus] = useState(false);
   const [notice, setNotice] = useState<{ tone: NoticeTone; title: string; message: string } | null>(null);
+  /* Locking up is one tap. Unlocking asks first — this card sits on the
+     home page, where a stray tap should not open the front door. */
+  const [pendingUnlock, setPendingUnlock] = useState<DoorWindow | null>(null);
 
   /* Both dialogs are held on screen for their exit. The status modal
      latches the lock reading too, because closeStatusModal nulls
@@ -84,19 +87,22 @@ export function DoorCard({ doorsWindows, isExpanded = false, hideHeader = false 
   const shownStatus = statusModal.value?.status ?? null;
   const noticeModal = useModalTransition(notice);
   const shownNotice = noticeModal.value;
+  const unlockModal = useModalTransition(pendingUnlock);
+  const shownUnlock = unlockModal.value;
 
   useEffect(() => {
-    if (!notice && !showStatusModal) return;
+    if (!notice && !showStatusModal && !pendingUnlock) return;
 
     const handleEscape = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return;
+      if (pendingUnlock) setPendingUnlock(null);
       if (notice) setNotice(null);
       if (showStatusModal) closeStatusModal();
     };
 
     document.addEventListener('keydown', handleEscape);
     return () => document.removeEventListener('keydown', handleEscape);
-  }, [notice, showStatusModal]);
+  }, [notice, showStatusModal, pendingUnlock]);
 
   const showNotice = (tone: NoticeTone, title: string, message: string) => {
     setNotice({ tone, title, message });
@@ -146,6 +152,25 @@ export function DoorCard({ doorsWindows, isExpanded = false, hideHeader = false 
     } finally {
       setLoadingStates(prev => ({ ...prev, [doorId]: false }));
     }
+  };
+
+  /* The switch on the compact card. It was a status light shaped like a
+     control: tabIndex -1, an onClick that only called preventDefault, and
+     the click going on to the section behind it — so every tap opened the
+     modal instead of moving the lock. */
+  const toggleLock = (door: DoorWindow) => {
+    if (door.status === 'locked') {
+      setPendingUnlock(door);
+      return;
+    }
+    handleLockAction(door.id, 'lock');
+  };
+
+  const confirmUnlock = () => {
+    if (!shownUnlock) return;
+    const door = shownUnlock;
+    setPendingUnlock(null);
+    handleLockAction(door.id, 'unlock');
   };
 
   const handleLockAll = async () => {
@@ -274,6 +299,10 @@ export function DoorCard({ doorsWindows, isExpanded = false, hideHeader = false 
                  been silent since March, while the stat strip above it
                  said "Not reporting". */
               const online = door.online ?? false;
+              /* The status has not flipped yet while the command is in
+                 flight, so the action under way is the one it is not in. */
+              const busy = loadingStates[door.id] ?? false;
+              const action = door.status === 'locked' ? 'unlock' : 'lock';
 
               return (
                 <div key={door.id} className="g-row g-row--between">
@@ -283,19 +312,25 @@ export function DoorCard({ doorsWindows, isExpanded = false, hideHeader = false 
                       <strong>{door.name}</strong>
                     </div>
                     <p className="g-sub">
-                      {online
-                        ? `${statusCopy(door.status)} since ${formatTimestamp(door.last_changed)}`
-                        : `Not reporting · last ${statusCopy(door.status).toLowerCase()} ${formatTimestamp(door.last_changed)}`}
+                      {busy
+                        ? `${action === 'lock' ? 'Locking' : 'Unlocking'}…`
+                        : online
+                          ? `${statusCopy(door.status)} since ${formatTimestamp(door.last_changed)}`
+                          : `Not reporting · last ${statusCopy(door.status).toLowerCase()} ${formatTimestamp(door.last_changed)}`}
                     </p>
                   </div>
                   <button
                     className="g-switch"
                     type="button"
-                    disabled={!online}
+                    disabled={!online || busy}
                     aria-pressed={door.status === 'locked'}
-                    aria-label={`${door.name} lock state`}
-                    tabIndex={-1}
-                    onClick={(event) => event.preventDefault()}
+                    aria-busy={busy}
+                    aria-label={online ? `${statusCopy(action)} ${door.name}` : `${door.name} is not reporting`}
+                    /* The card behind this is itself a button that opens the
+                       Doors modal. Without this the lock would move and the
+                       modal would open on the same tap. */
+                    onClick={(event) => { event.stopPropagation(); toggleLock(door); }}
+                    onKeyDown={(event) => event.stopPropagation()}
                   />
                 </div>
               );
@@ -415,6 +450,31 @@ export function DoorCard({ doorsWindows, isExpanded = false, hideHeader = false 
                 <p>Check that the lock is online, then refresh status again.</p>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {unlockModal.render && shownUnlock && (
+        <div className={unlockModal.className} role="dialog" aria-modal="true" aria-labelledby="door-unlock-title" onClick={() => setPendingUnlock(null)}>
+          <div className="g-pane g-modal__card" onClick={(event) => event.stopPropagation()}>
+            <div className="g-modal__head">
+              <div>
+                <h2 id="door-unlock-title">Unlock the {shownUnlock.name.toLowerCase()}?</h2>
+                <p>It stays unlocked until you lock it again or someone locks it at the door.</p>
+              </div>
+              <button className="g-icon-btn" type="button" aria-label="Close" onClick={() => setPendingUnlock(null)}>
+                <X size={16} aria-hidden="true" />
+              </button>
+            </div>
+            <div className="g-modal__foot">
+              <button className="g-btn g-btn--ghost" type="button" onClick={() => setPendingUnlock(null)}>
+                Keep it locked
+              </button>
+              <button className="g-btn g-btn--danger" type="button" onClick={confirmUnlock}>
+                <Unlock size={16} aria-hidden="true" />
+                Unlock
+              </button>
+            </div>
           </div>
         </div>
       )}
