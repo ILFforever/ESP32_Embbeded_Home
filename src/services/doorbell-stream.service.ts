@@ -2,6 +2,8 @@ const TYPE_CAMERA_JPEG = 0x01;
 const TYPE_AUDIO_PCM = 0x02;
 const TYPE_AUDIO_IMA_ADPCM = 0x03;
 const ADPCM_HEADER_SIZE = 13;
+const AUDIO_START_BUFFER_SECONDS = 0.18;
+const AUDIO_MAX_BUFFER_SECONDS = 0.75;
 
 const STEP_TABLE = [
   7, 8, 9, 10, 11, 12, 13, 14, 16, 17, 19, 21, 23, 25, 28, 31,
@@ -149,27 +151,34 @@ export class DoorbellAvStream {
     const input = audioContext.createGain();
     const highPass = audioContext.createBiquadFilter();
     const lowPass = audioContext.createBiquadFilter();
-    const compressor = audioContext.createDynamicsCompressor();
+    const presence = audioContext.createBiquadFilter();
+    const limiter = audioContext.createDynamicsCompressor();
 
+    input.gain.value = 1.25;
     highPass.type = "highpass";
-    highPass.frequency.value = 90;
+    highPass.frequency.value = 160;
     highPass.Q.value = 0.707;
     lowPass.type = "lowpass";
-    lowPass.frequency.value = 6500;
+    lowPass.frequency.value = 4000;
     lowPass.Q.value = 0.707;
-    compressor.threshold.value = -18;
-    compressor.knee.value = 18;
-    compressor.ratio.value = 3;
-    compressor.attack.value = 0.005;
-    compressor.release.value = 0.2;
+    presence.type = "peaking";
+    presence.frequency.value = 2200;
+    presence.Q.value = 0.8;
+    presence.gain.value = 3;
+    limiter.threshold.value = -5;
+    limiter.knee.value = 2;
+    limiter.ratio.value = 12;
+    limiter.attack.value = 0.002;
+    limiter.release.value = 0.12;
 
     input.connect(highPass);
     highPass.connect(lowPass);
-    lowPass.connect(compressor);
-    compressor.connect(audioContext.destination);
+    lowPass.connect(presence);
+    presence.connect(limiter);
+    limiter.connect(audioContext.destination);
 
     this.audioInput = input;
-    this.audioFilters = [input, highPass, lowPass, compressor];
+    this.audioFilters = [input, highPass, lowPass, presence, limiter];
   }
 
   private disconnectAudioGraph() {
@@ -279,10 +288,16 @@ export class DoorbellAvStream {
     source.connect(audioInput);
 
     const now = context.currentTime;
-    // Recover quickly after a suspended tab or network stall instead of playing
-    // an old queue for seconds. Independent ADPCM blocks make this safe.
-    if (this.nextAudioStartTime < now || this.nextAudioStartTime - now > 0.5) {
-      this.nextAudioStartTime = now + 0.03;
+    // A PCM block is 64 ms and JPEG messages share this WebSocket. Keep enough
+    // audio queued to absorb a delayed JPEG send; the old 30 ms start reserve
+    // caused repeated underruns that sounded like popping/static. After a genuine
+    // underrun or suspended tab, rebuild a small clean buffer instead of
+    // immediately starting another block into the same network jitter.
+    if (
+      this.nextAudioStartTime <= now ||
+      this.nextAudioStartTime - now > AUDIO_MAX_BUFFER_SECONDS
+    ) {
+      this.nextAudioStartTime = now + AUDIO_START_BUFFER_SECONDS;
     }
 
     source.start(this.nextAudioStartTime);
