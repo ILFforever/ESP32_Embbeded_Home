@@ -44,8 +44,6 @@ unsigned long getLastHeartbeatTime();
 void fetchAndExecuteCommands();
 void fetchAndExecuteCommandsImmediate();
 bool executeCommand(String action, JsonObject params);
-void acknowledgeCommand(String commandId, bool success, String action,
-                        const char* errorMessage = nullptr,
-                        const char* statusOverride = nullptr);
+void acknowledgeCommand(String commandId, bool success, String action);
 
 #endif
