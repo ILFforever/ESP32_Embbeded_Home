@@ -58,11 +58,25 @@ extern int amp_status;
 #define SM_FOOTER_Y 278
 #define SM_FOOTER_Y2 290
 
-#define SM_COL_HEADER 0x0195 // deep blue, still used for the footer rule
-#define SM_COL_SELECT 0x02DF // brighter blue for the cursor row
-#define SM_COL_LABEL TFT_DARKGREY
-#define SM_COL_VALUE TFT_WHITE
-#define SM_COL_ITEM TFT_LIGHTGREY
+// This panel is wired BGR while the ST7789 driver is left in its RGB default:
+// TFT_RGB_ORDER is commented out in User_Setup.h, and ST7789_Defines.h then
+// falls back to TFT_MAD_RGB. Red and blue therefore arrive at the glass
+// exchanged, which is why a zero-red blue renders orange. Correcting it at the
+// driver would also flip the camera feed and the rest of the UI, so instead
+// every colour below is written as the colour we actually want to see and
+// pre-swapped here. Greys, white and black are symmetric and pass through
+// unchanged. Remove these wrappers if TFT_RGB_ORDER is ever set properly.
+#define SM_RB(c) ((uint16_t)((((uint16_t)(c) & 0x001F) << 11) |     \
+                             ((uint16_t)(c) & 0x07E0) |             \
+                             (((uint16_t)(c) >> 11) & 0x001F)))
+
+#define SM_COL_HEADER SM_RB(0x0195) // deep blue, still used for the footer rule
+#define SM_COL_SELECT SM_RB(0x02DF) // brighter blue for the cursor row
+#define SM_COL_LABEL SM_RB(TFT_DARKGREY)
+#define SM_COL_VALUE SM_RB(TFT_WHITE)
+#define SM_COL_ITEM SM_RB(TFT_LIGHTGREY)
+#define SM_COL_CONFIRM SM_RB(TFT_MAROON)
+#define SM_COL_TOAST SM_RB(TFT_GREENYELLOW)
 
 // Header gradient endpoints, kept as RGB565 components so the interpolation
 // below stays integer-only. Top #001E6E -> base #0045D6.
@@ -74,13 +88,14 @@ extern int amp_status;
 // Row accents. These reuse the colour language already in drawUIOverlay() -
 // cyan for information, green/amber/red for health - so the settings page does
 // not read as a different device.
-#define SM_ACC_INFO 0x05FF    // cyan
-#define SM_ACC_SYSTEM 0xFC80  // orange
-#define SM_ACC_DANGER TFT_RED // destructive item
-#define SM_ACC_NEUTRAL 0x8410 // grey, for Back / Exit
-#define SM_ACC_OK TFT_GREEN
-#define SM_ACC_WARN 0xFD20 // amber
-// Sentinel, not a real colour: resolved from live module health at draw time.
+#define SM_ACC_INFO SM_RB(0x05FF)    // cyan
+#define SM_ACC_SYSTEM SM_RB(0xFC80)  // orange
+#define SM_ACC_DANGER SM_RB(TFT_RED) // destructive item
+#define SM_ACC_NEUTRAL SM_RB(0x8410) // grey, for Back / Exit
+#define SM_ACC_OK SM_RB(TFT_GREEN)
+#define SM_ACC_WARN SM_RB(0xFD20) // amber
+// Sentinel, not a real colour: resolved from live module health at draw time,
+// so it is deliberately NOT passed through SM_RB - it is only ever compared.
 #define SM_ACC_LIVE 0x0001
 
 #define SM_INACTIVITY_TIMEOUT_MS 30000
@@ -364,7 +379,7 @@ static void drawHeaderGradient()
   {
     const uint8_t g = SM_GRAD_G0 + (SM_GRAD_G1 - SM_GRAD_G0) * y / (SM_HEADER_H - 1);
     const uint8_t b = SM_GRAD_B0 + (SM_GRAD_B1 - SM_GRAD_B0) * y / (SM_HEADER_H - 1);
-    tft.drawFastHLine(0, SM_TOP + y, SM_W, (uint16_t)(((uint16_t)g << 5) | b));
+    tft.drawFastHLine(0, SM_TOP + y, SM_W, SM_RB(((uint16_t)g << 5) | b));
   }
   tft.fillRect(0, SM_UNDERLINE_Y, SM_W, SM_UNDERLINE_H, SM_ACC_INFO);
 }
@@ -454,7 +469,7 @@ static void drawItem(uint8_t index)
   uint16_t fg = SM_COL_ITEM;
   if (awaitingConfirm)
   {
-    bg = TFT_MAROON;
+    bg = SM_COL_CONFIRM;
     fg = TFT_WHITE;
   }
   else if (selected)
@@ -499,7 +514,7 @@ static void drawToast()
   tft.setTextFont(2);
   tft.setTextDatum(TC_DATUM);
   tft.setTextPadding(0);
-  tft.setTextColor(TFT_GREENYELLOW, TFT_BLACK);
+  tft.setTextColor(SM_COL_TOAST, TFT_BLACK);
   tft.drawString(toastMsg, SM_W / 2, SM_TOAST_Y);
   tft.setTextDatum(TL_DATUM);
 }
