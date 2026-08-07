@@ -556,6 +556,7 @@ body {
    toggle; the name lives in aria-label and the tooltip. */
 
 .g-back {
+  appearance: none; border: 0; background: transparent; font: inherit; cursor: pointer;
   display: inline-flex; align-items: center; gap: 7px;
   font-size: 13.5px; font-weight: 500; color: var(--ink-2);
   text-decoration: none; padding: 6px 12px 6px 8px;
@@ -690,7 +691,7 @@ select {
 /* ---------- 8. FORM FIELDS ------------------------------- */
 .g-field { display: flex; flex-direction: column; gap: 6px; }
 .g-field > label { font-size: 12px; font-weight: 600; color: var(--ink-2); }
-.g-field input[type="text"], .g-field input[type="email"],
+.g-field input[type="text"], .g-field input[type="email"], .g-field input[type="url"],
 .g-field input[type="password"], .g-field input[type="number"],
 .g-field select, .g-field textarea {
   font: inherit; font-size: 14px; color: var(--ink);
@@ -990,27 +991,16 @@ select {
    number, spends the width on what the headline cannot hold: which
    devices, and when each was last heard. */
 .dash-hero { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--s-6); align-items: center; padding: 22px; }
-.dash-hero h2 { margin: 0 0 6px; font-size: 21px; font-weight: 600; letter-spacing: -.018em; }
+.dash-hero h2 {
+  display: flex; align-items: center; gap: 9px;
+  margin: 0 0 6px; font-size: 21px; font-weight: 600; letter-spacing: -.018em;
+}
 /* Classed, not `.dash-hero p`. That descendant rule also caught the
    tile's own .g-label and overrode it to 14px ink-2 on specificity. */
 .dash-hero__lede { margin: 0 0 var(--s-4); color: var(--ink-2); font-size: 14px; max-width: 60ch; }
 /* Nothing to put beside the copy — a rare state, but a half-empty grid
    is exactly the problem this rewrite exists to remove. */
 .dash-hero--solo { grid-template-columns: minmax(0, 1fr); }
-
-/* Tone on the surface, not only on a 9px dot. A wash off the leading
-   edge and a rail down the left are read before a word of the pane is
-   parsed. The dot stays: colour is never the only signal. box-shadow
-   restates --lift and --spec because it replaces .g-pane's, not adds. */
-.dash-hero.is-warn {
-  background: linear-gradient(101deg, var(--warn-bg) 0%, transparent 44%), var(--glass);
-  box-shadow: var(--lift), var(--spec), inset 3px 0 0 var(--warn);
-}
-.dash-hero.is-crit {
-  background: linear-gradient(101deg, var(--crit-bg) 0%, transparent 44%), var(--glass);
-  border-color: var(--crit-edge);
-  box-shadow: var(--lift), var(--spec), inset 3px 0 0 var(--crit);
-}
 
 .dash-hero__aside { padding: 15px 18px 13px; }
 .dash-hero__aside .g-label { margin: 0 0 2px; }
@@ -1061,6 +1051,105 @@ select {
 .dash-modal-grid--2 { grid-template-columns: repeat(2, 1fr); }
 .dash-modal-actions { display: flex; gap: var(--s-2); flex-wrap: wrap; }
 
+/* Broadcast is one setup flow, not a collection of cards. Speaker choice
+   and volume share a row; the source and commit actions then read straight
+   down the dialog. Hairlines group the steps without nesting more glass. */
+.g-modal__card--broadcast { width: min(100%, 860px); }
+.broadcast-editor { display: flex; flex-direction: column; }
+.broadcast-controls {
+  display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(240px, .65fr);
+  border-top: 1px solid var(--hairline); border-bottom: 1px solid var(--hairline);
+}
+.broadcast-section { min-width: 0; padding: var(--s-5) 0; }
+.broadcast-targets { padding-right: var(--s-6); }
+.broadcast-volume { padding-left: var(--s-6); border-left: 1px solid var(--hairline); }
+.broadcast-section__head {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: var(--s-3); margin-bottom: var(--s-4);
+}
+.broadcast-section__head .g-label { display: block; margin: 0 0 3px; }
+.broadcast-section__head h3,
+.broadcast-section__head label strong {
+  display: block; margin: 0; color: var(--ink);
+  font-size: 15px; font-weight: 600; letter-spacing: -.012em;
+}
+.broadcast-target-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--s-2); }
+.broadcast-target {
+  display: flex; align-items: center; gap: 10px; min-width: 0;
+  padding: 11px 12px;
+}
+.broadcast-target:hover:not([disabled]) { background: var(--raised); }
+.broadcast-target.is-selected {
+  color: var(--accent); border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 11%, transparent);
+}
+.broadcast-target[disabled] { opacity: .48; cursor: not-allowed; }
+.broadcast-target > svg { flex: none; }
+.broadcast-target__copy { min-width: 0; }
+.broadcast-target__copy strong { display: block; font-size: 12.5px; font-weight: 600; }
+.broadcast-target__copy small { display: flex; align-items: center; margin: 2px 0 0; white-space: nowrap; }
+.broadcast-target__copy small .g-dot { width: 6px; height: 6px; margin-right: 5px; }
+.broadcast-volume__value {
+  color: var(--ink); font-size: 26px; font-weight: 400;
+  font-variant-numeric: tabular-nums; letter-spacing: -.025em; line-height: 1;
+}
+.broadcast-volume__value small { color: var(--ink-3); font-size: 12px; font-weight: 500; margin-left: 3px; letter-spacing: 0; }
+.broadcast-volume .g-slider { margin-top: 2px; }
+.broadcast-volume__scale {
+  display: flex; justify-content: space-between; margin-top: 2px;
+  color: var(--ink-3); font-size: 10.5px;
+}
+.broadcast-source { padding: var(--s-5) 0; border-bottom: 1px solid var(--hairline); }
+.broadcast-source__head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--s-4); }
+.broadcast-source__head > label { color: var(--ink); font-size: 13px; }
+.broadcast-source__head > span { color: var(--ink-3); font-size: 11.5px; }
+.broadcast-source__fields { display: grid; grid-template-columns: minmax(0, 1fr) 180px; gap: var(--s-2); }
+.g-preset { position: relative; min-width: 0; }
+.g-preset__trigger {
+  appearance: none; width: 100%; min-height: 44px;
+  display: flex; align-items: center; justify-content: space-between; gap: var(--s-2);
+  padding: 10px 12px; border: 1px solid var(--outline); border-radius: var(--r-field);
+  background: var(--field-bg); color: var(--ink); font: inherit; font-size: 13px;
+  text-align: left; cursor: pointer;
+  transition: border-color .16s var(--ease), background .16s var(--ease);
+}
+.g-preset__trigger:hover,
+.g-preset__trigger[aria-expanded="true"] { border-color: var(--accent); background: var(--field-focus); }
+.g-preset__trigger:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.g-preset__trigger span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.g-preset__trigger svg { flex: none; transition: transform .18s var(--ease); }
+.g-preset__trigger[aria-expanded="true"] svg { transform: rotate(180deg); }
+.g-preset__menu {
+  position: fixed; z-index: 80;
+  display: flex; flex-direction: column; gap: 2px; padding: 6px;
+  max-height: calc(100vh - 16px); overflow-y: auto; overscroll-behavior: contain;
+  border: 1px solid var(--glass-edge); border-radius: var(--r-field);
+  background: var(--glass-solid); box-shadow: var(--lift);
+}
+.g-preset__option {
+  appearance: none; width: 100%; min-height: 38px;
+  display: grid; grid-template-columns: minmax(0, 1fr) 16px; align-items: center; gap: var(--s-2);
+  padding: 8px 10px; border: 0; border-radius: 8px;
+  background: transparent; color: var(--ink); font: inherit; font-size: 13px;
+  text-align: left; cursor: pointer;
+}
+.g-preset__option:hover,
+.g-preset__option:focus-visible { background: var(--raised-hi); outline: none; }
+.g-preset__option[aria-checked="true"] {
+  background: color-mix(in srgb, var(--accent) 13%, transparent); color: var(--accent);
+}
+.g-preset__option span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.g-preset__option svg { justify-self: end; }
+.broadcast-actions {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: var(--s-4); padding-top: var(--s-4);
+}
+.broadcast-actions > p {
+  display: flex; align-items: center; gap: 8px;
+  margin: 0; color: var(--ink-2); font-size: 12.5px;
+}
+.broadcast-actions .g-btn--primary svg { transform: translateX(1px); }
+
 /* Drill-down page compositions ported from doorbell.html and hub.html. */
 /* Two columns for the whole page, not three stacked grids.
    Live view is a fixed-height media box — about 360px of content — but it
@@ -1080,6 +1169,33 @@ select {
    scrolled, so it scrolls with everything else. */
 .doorbell-main,
 .doorbell-rail { display: grid; gap: var(--s-4); align-content: start; min-width: 0; }
+.doorbell-color-filter { position: absolute; pointer-events: none; }
+.doorbell-color-corrected { filter: url(#doorbell-swap-red-blue); }
+.doorbell-audio > header { align-items: flex-start; }
+.doorbell-audio > header .g-sub { margin-top: 3px; font-size: 12px; }
+.doorbell-audio__body { display: flex; flex-direction: column; }
+.doorbell-audio__source {
+  display: grid; grid-template-columns: minmax(0, 1fr) 190px; gap: var(--s-2);
+}
+.doorbell-audio__volume {
+  margin-top: var(--s-4); padding: var(--s-4) 0;
+  border-top: 1px solid var(--hairline); border-bottom: 1px solid var(--hairline);
+}
+.doorbell-audio__volume-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--s-4); }
+.doorbell-audio__volume-head label { color: var(--ink); font-size: 13px; font-weight: 600; }
+.doorbell-audio__volume-head output {
+  color: var(--ink); font-size: 22px; font-weight: 400;
+  font-variant-numeric: tabular-nums; letter-spacing: -.02em;
+}
+.doorbell-audio__volume-head output small { margin-left: 3px; color: var(--ink-3); font-size: 11px; font-weight: 500; letter-spacing: 0; }
+.doorbell-audio__volume .g-slider { margin-top: var(--s-2); }
+.doorbell-audio__scale {
+  display: flex; justify-content: space-between; margin-top: 2px;
+  color: var(--ink-3); font-size: 10.5px;
+}
+.doorbell-audio__actions { display: flex; align-items: center; gap: var(--s-2); padding-top: var(--s-4); }
+.doorbell-audio__actions .g-btn--primary svg { transform: translateX(1px); }
+.doorbell-audio__restart { margin-left: auto; }
 
 .hub-sensors {
   display: grid;
@@ -1346,6 +1462,23 @@ select {
   .g-card > header { flex-wrap: wrap; }
   .g-input-group input { padding-right: 13px; }
   .g-input-group select { position: static; transform: none; width: 100%; margin-top: 8px; }
+  .broadcast-controls { grid-template-columns: 1fr; }
+  .broadcast-targets { padding-right: 0; }
+  .broadcast-volume { padding-left: 0; border-left: 0; border-top: 1px solid var(--hairline); }
+  .broadcast-source__fields { grid-template-columns: 1fr; }
+  .broadcast-source__head { align-items: flex-start; flex-direction: column; gap: 2px; }
+  .broadcast-actions { align-items: flex-start; flex-direction: column; }
+  .doorbell-audio__source { grid-template-columns: 1fr; }
+  .doorbell-audio__actions { flex-wrap: wrap; }
+}
+
+@media (max-width: 520px) {
+  .broadcast-target-grid { grid-template-columns: 1fr; }
+  .broadcast-actions,
+  .broadcast-actions .dash-modal-actions { width: 100%; }
+  .broadcast-actions .g-btn { flex: 1; }
+  .doorbell-audio__actions .g-btn { flex: 1; }
+  .doorbell-audio__restart { flex-basis: 100% !important; margin-left: 0; }
 }
 
 /* ---------- TOUCH TARGETS --------------------------------

@@ -12,7 +12,10 @@ import {
   Settings,
   Database,
   ArrowLeft,
+  Play,
+  Square,
   UserPlus,
+  X,
 } from "lucide-react";
 import ProtectedRoute from "@/components/auth/ProtectedRoute";
 import { useAuth } from "@/context/AuthContext";
@@ -32,6 +35,7 @@ import type { FaceDatabaseInfo, Visitor } from "@/services/devices.service";
 import type { Device } from "@/types/dashboard";
 import { notify, confirmDialog } from '@/components/glass/GlassRuntime';
 import { useModalTransition } from '@/components/glass/useModalTransition';
+import StationPresetPicker from '@/components/glass/StationPresetPicker';
 
 interface ActivityEvent {
   id: string;
@@ -1083,6 +1087,23 @@ export default function DoorbellControlPage() {
   return (
     <ProtectedRoute>
       <div className="g-page">
+        {/* The door camera currently sends BGR-labelled image data. Swap
+            red and blue after decode so the live feed and saved captures
+            render as sRGB without affecting images elsewhere in the app. */}
+        <svg className="doorbell-color-filter" aria-hidden="true" width="0" height="0">
+          <defs>
+            <filter id="doorbell-swap-red-blue" colorInterpolationFilters="sRGB">
+              <feColorMatrix
+                type="matrix"
+                values="0 0 1 0 0
+                        0 1 0 0 0
+                        1 0 0 0 0
+                        0 0 0 1 0"
+              />
+            </filter>
+          </defs>
+        </svg>
+
         <div className="g-pane g-bar">
           <button className="g-back" type="button" onClick={() => router.push("/dashboard")} title="Back to dashboard">
             <ArrowLeft size={16} aria-hidden="true" />
@@ -1093,9 +1114,6 @@ export default function DoorbellControlPage() {
           <button className="g-theme" type="button" aria-label="Switch between light and dark" title="Switch theme">
             <svg className="g-theme__moon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z" /></svg>
             <svg className="g-theme__sun" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M19.1 4.9l-1.4 1.4M6.3 17.7l-1.4 1.4" /></svg>
-          </button>
-          <button className="g-icon-btn" type="button" onClick={() => setShowSettings(true)} aria-label="Doorbell settings">
-            <Settings size={16} aria-hidden="true" />
           </button>
           <span className={`g-pill${statusTone}`}><i /> {getStatusText()}</span>
         </div>
@@ -1141,6 +1159,7 @@ export default function DoorbellControlPage() {
                   </div>
                 ) : effectiveDeviceId && cameraActive ? (
                   <img
+                    className="doorbell-color-corrected"
                     src={`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000"}/api/v1/stream/camera/${effectiveDeviceId}`}
                     alt="Live camera feed"
                     style={{ width: "100%", height: "100%", minHeight: 320, objectFit: "contain", display: "block" }}
@@ -1183,9 +1202,9 @@ export default function DoorbellControlPage() {
 
             <section className="g-pane g-card doorbell-people">
               <header><h2>Recognised people</h2><span className={`g-chip ${dbHealthOk ? "g-chip--ok" : "g-chip--warn"}`}>{dbHealthOk ? "Database healthy" : dbStatusLabel}</span></header>
-              <div className="g-grid g-grid--2" style={{ marginBottom: "var(--s-4)" }}>
-                <div className="g-tile"><p className="g-label">People enrolled</p><div className="g-metric-sm g-num" style={{ marginTop: 6 }}>{faceDatabaseInfo?.count ?? 0}</div></div>
-                <div className="g-tile"><p className="g-label">Device id</p><div className="g-mono" style={{ marginTop: 8, fontSize: "14px" }}>{effectiveDeviceId || "N/A"}</div></div>
+              <div className="g-tile" style={{ marginBottom: "var(--s-4)" }}>
+                <p className="g-label">People enrolled</p>
+                <div className="g-metric-sm g-num" style={{ marginTop: 6 }}>{faceDatabaseInfo?.count ?? 0}</div>
               </div>
               <p className="g-label" style={{ marginBottom: 8 }}>Enrolled</p>
               {faceDatabaseInfo?.faces?.length ? (
@@ -1206,22 +1225,27 @@ export default function DoorbellControlPage() {
             </section>
 
             <section className="g-pane g-card doorbell-audio">
-              <header><h2>Chime and audio</h2><span className="g-chip">Volume {ampVolume}/21</span></header>
-              <div className="g-stack">
+              <header>
+                <div>
+                  <h2>Chime and audio</h2>
+                  <p className="g-sub">Play a station through the doorbell speaker.</p>
+                </div>
+                <span className="g-label">Doorbell speaker</span>
+              </header>
+              <div className="doorbell-audio__body">
                 <div className="g-field g-field--mono">
-                  <label htmlFor="db-url">Stream URL</label>
-                  <div className="g-input-group">
-                    <input id="db-url" type="text" value={ampUrl} onChange={(e) => setAmpUrl(e.target.value)} placeholder="Enter stream URL" />
-                    <select aria-label="Preset station" value="" onChange={(e) => setAmpUrl(e.target.value)}>
-                      <option value="">Choose</option>
-                      <option value="https://stream.live.vc.bbcmedia.co.uk/bbc_world_service_east_asia">BBC World Service</option>
-                      <option value="https://play.streamafrica.net/japancitypop">Japan City Pop</option>
-                      <option value="http://stream.radioparadise.com/aac-128">Radio Paradise</option>
-                    </select>
+                  <label htmlFor="db-url">Audio source</label>
+                  <div className="doorbell-audio__source">
+                    <input id="db-url" type="url" value={ampUrl} onChange={(e) => setAmpUrl(e.target.value)} placeholder="Paste a stream URL" />
+                    <StationPresetPicker value={ampUrl} onChange={setAmpUrl} ariaLabel="Choose a doorbell station preset" />
                   </div>
                 </div>
-                <div className="g-field">
-                  <label htmlFor="db-vol">Volume · <output>{ampVolume}</output> of 21</label>
+
+                <div className="doorbell-audio__volume">
+                  <div className="doorbell-audio__volume-head">
+                    <label htmlFor="db-vol">Playback volume</label>
+                    <output htmlFor="db-vol">{ampVolume}<small>/21</small></output>
+                  </div>
                   <input
                     id="db-vol"
                     className="g-slider"
@@ -1234,11 +1258,22 @@ export default function DoorbellControlPage() {
                     onTouchEnd={(e) => handleVolumeSend(parseInt((e.target as HTMLInputElement).value))}
                     style={{ backgroundImage: `linear-gradient(to right, var(--accent) 0 ${(ampVolume / 21) * 100}%, var(--sunken) ${(ampVolume / 21) * 100}% 100%)` }}
                   />
+                  <div className="doorbell-audio__scale" aria-hidden="true"><span>Quiet</span><span>Full</span></div>
                 </div>
-                <div className="g-row" style={{ gap: "var(--s-2)" }}>
-                  <button className="g-btn g-btn--primary" type="button" onClick={handlePlayAmplifier} disabled={commandLoading === "amp_play"} style={{ flex: 1 }}>{commandLoading === "amp_play" ? "Sending" : "Play"}</button>
-                  <button className="g-btn g-btn--ghost" type="button" onClick={handleStopAmplifier} disabled={commandLoading === "amp_stop"} style={{ flex: 1 }}>{commandLoading === "amp_stop" ? "Stopping" : "Stop"}</button>
-                  <button className="g-btn g-btn--ghost" type="button" onClick={handleRestartAmplifier} disabled={commandLoading === "amp_restart"} style={{ flex: 1 }}>Restart</button>
+
+                <div className="doorbell-audio__actions">
+                  <button className="g-btn g-btn--primary" type="button" onClick={handlePlayAmplifier} disabled={commandLoading === "amp_play"}>
+                    <Play size={16} aria-hidden="true" />
+                    {commandLoading === "amp_play" ? "Starting" : "Play stream"}
+                  </button>
+                  <button className="g-btn g-btn--ghost" type="button" onClick={handleStopAmplifier} disabled={commandLoading === "amp_stop"}>
+                    <Square size={15} aria-hidden="true" />
+                    {commandLoading === "amp_stop" ? "Stopping" : "Stop"}
+                  </button>
+                  <button className="g-btn g-btn--ghost doorbell-audio__restart" type="button" onClick={handleRestartAmplifier} disabled={commandLoading === "amp_restart"}>
+                    <RotateCw size={15} aria-hidden="true" />
+                    {commandLoading === "amp_restart" ? "Restarting" : "Restart amplifier"}
+                  </button>
                 </div>
               </div>
             </section>
@@ -1290,7 +1325,7 @@ export default function DoorbellControlPage() {
                     >
                       <span className="g-avatar__img">
                         {visitor.image ? (
-                          <img src={visitor.image} alt={visitor.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
+                          <img className="doorbell-color-corrected" src={visitor.image} alt={visitor.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
                         ) : (
                           <Users size={30} aria-hidden="true" />
                         )}
@@ -1348,7 +1383,7 @@ export default function DoorbellControlPage() {
       {wifiModal.render && (
         <div className={wifiModal.className} role="dialog" aria-modal="true" aria-labelledby="m-wifi-h" onClick={() => setShowWifiSettings(false)}>
           <div className="g-pane g-modal__card" onClick={(e) => e.stopPropagation()}>
-            <div className="g-modal__head"><div><h2 id="m-wifi-h">Amplifier Wi-Fi settings</h2><p>Send network credentials to the audio board.</p></div><button className="g-icon-btn" type="button" onClick={() => setShowWifiSettings(false)} aria-label="Close"><Power size={15} aria-hidden="true" /></button></div>
+            <div className="g-modal__head"><div><h2 id="m-wifi-h">Amplifier Wi-Fi settings</h2><p>Send network credentials to the audio board.</p></div><button className="g-icon-btn" type="button" onClick={() => setShowWifiSettings(false)} aria-label="Close"><X size={15} strokeWidth={2} aria-hidden="true" /></button></div>
             <div className="g-stack">
               <div className="g-field"><label htmlFor="wifi-ssid">Wi-Fi SSID</label><input id="wifi-ssid" type="text" value={wifiSsid} onChange={(e) => setWifiSsid(e.target.value)} /></div>
               <div className="g-field"><label htmlFor="wifi-password">Wi-Fi password</label><input id="wifi-password" type="password" value={wifiPassword} onChange={(e) => setWifiPassword(e.target.value)} /></div>
@@ -1361,7 +1396,7 @@ export default function DoorbellControlPage() {
       {addFaceModal.render && (
         <div className={addFaceModal.className} role="dialog" aria-modal="true" aria-labelledby="m-addface-h" onClick={closeAddFaceModal}>
           <div className="g-pane g-modal__card" onClick={(e) => e.stopPropagation()}>
-            <div className="g-modal__head"><div><h2 id="m-addface-h">Add a person</h2><p>They need to stand in front of the camera while the doorbell captures their face.</p></div><button className="g-icon-btn" type="button" onClick={closeAddFaceModal} aria-label="Close"><Power size={15} aria-hidden="true" /></button></div>
+            <div className="g-modal__head"><div><h2 id="m-addface-h">Add a person</h2><p>They need to stand in front of the camera while the doorbell captures their face.</p></div><button className="g-icon-btn" type="button" onClick={closeAddFaceModal} aria-label="Close"><X size={15} strokeWidth={2} aria-hidden="true" /></button></div>
             <div className="g-field"><label htmlFor="face-name">Their name</label><input id="face-name" type="text" value={newFaceName} onChange={(e) => setNewFaceName(e.target.value)} placeholder="Mum" disabled={commandLoading === "add_face"} /><span className="g-field__hint">Shown in the activity log whenever they are recognised.</span></div>
             <div className="g-modal__foot"><button className="g-btn g-btn--ghost" type="button" onClick={closeAddFaceModal} disabled={commandLoading === "add_face"}>Cancel</button><button className="g-btn g-btn--primary" type="button" onClick={handleSubmitAddFace} disabled={commandLoading === "add_face"}>{commandLoading === "add_face" ? "Processing" : "Start capture"}</button></div>
           </div>
@@ -1371,7 +1406,7 @@ export default function DoorbellControlPage() {
       {renameFaceModal.render && (
         <div className={renameFaceModal.className} role="dialog" aria-modal="true" aria-labelledby="m-rename-h" onClick={closeRenameFaceModal}>
           <div className="g-pane g-modal__card" onClick={(e) => e.stopPropagation()}>
-            <div className="g-modal__head"><div><h2 id="m-rename-h">Rename a person</h2><p>Changes the name on their stored face, not the face itself.</p></div><button className="g-icon-btn" type="button" onClick={closeRenameFaceModal} aria-label="Close"><Power size={15} aria-hidden="true" /></button></div>
+            <div className="g-modal__head"><div><h2 id="m-rename-h">Rename a person</h2><p>Changes the name on their stored face, not the face itself.</p></div><button className="g-icon-btn" type="button" onClick={closeRenameFaceModal} aria-label="Close"><X size={15} strokeWidth={2} aria-hidden="true" /></button></div>
             <div className="g-stack">
               <div className="g-field"><label htmlFor="rename-face-id">Face ID</label><input id="rename-face-id" type="number" min="1" value={renameFaceId} onChange={(e) => setRenameFaceId(parseInt(e.target.value) || 1)} disabled={commandLoading === "rename_face"} /></div>
               <div className="g-field"><label htmlFor="rename-face-name">New name</label><input id="rename-face-name" type="text" value={renameNewName} onChange={(e) => setRenameNewName(e.target.value)} placeholder="Natthapat" disabled={commandLoading === "rename_face"} /></div>
@@ -1393,7 +1428,7 @@ export default function DoorbellControlPage() {
       {settingsModal.render && (
         <div className={settingsModal.className} role="dialog" aria-modal="true" aria-labelledby="m-settings-h" onClick={() => setShowSettings(false)}>
           <div className="g-pane g-modal__card" onClick={(e) => e.stopPropagation()}>
-            <div className="g-modal__head"><div><h2 id="m-settings-h">Doorbell settings</h2><p>Only change this if the app should point at a different board.</p></div><button className="g-icon-btn" type="button" onClick={() => setShowSettings(false)} aria-label="Close"><Power size={15} aria-hidden="true" /></button></div>
+            <div className="g-modal__head"><div><h2 id="m-settings-h">Doorbell settings</h2><p>Only change this if the app should point at a different board.</p></div><button className="g-icon-btn" type="button" onClick={() => setShowSettings(false)} aria-label="Close"><X size={15} strokeWidth={2} aria-hidden="true" /></button></div>
             <div className="g-field g-field--mono"><label htmlFor="dev-id">Device ID</label><input id="dev-id" type="text" value={customDeviceId} onChange={(e) => setCustomDeviceId(e.target.value)} placeholder="db_001" /><span className="g-field__hint">Leave blank to use whatever the server reports.</span></div>
             <div className="g-modal__foot"><button className="g-btn g-btn--ghost" type="button" onClick={handleClearSettings}>Use server default</button><button className="g-btn g-btn--primary" type="button" onClick={handleSaveSettings}>Save</button></div>
           </div>
@@ -1403,11 +1438,11 @@ export default function DoorbellControlPage() {
       {visitorModal.render && shownVisitor && (
         <div className={visitorModal.className} role="dialog" aria-modal="true" aria-labelledby="m-visitor-h" onClick={() => setShowVisitorDetails(false)}>
           <div className="g-pane g-modal__card g-modal__card--wide" onClick={(e) => e.stopPropagation()}>
-            <div className="g-modal__head"><div><h2 id="m-visitor-h">{shownVisitor.name}</h2><p>{shownVisitor.recognized ? "Recognised visitor" : "Unknown visitor"}</p></div><button className="g-icon-btn" type="button" onClick={() => setShowVisitorDetails(false)} aria-label="Close"><Power size={15} aria-hidden="true" /></button></div>
+            <div className="g-modal__head"><div><h2 id="m-visitor-h">{shownVisitor.name}</h2><p>{shownVisitor.recognized ? "Recognised visitor" : "Unknown visitor"}</p></div><button className="g-icon-btn" type="button" onClick={() => setShowVisitorDetails(false)} aria-label="Close"><X size={15} strokeWidth={2} aria-hidden="true" /></button></div>
             <div className="g-grid g-grid--2">
               <div className={`g-avatar ${shownVisitor.recognized ? "g-avatar--known" : "g-avatar--unknown"}`}>
                 <div className="g-avatar__img" style={{ maxWidth: 240, width: "100%", justifySelf: "center" }}>
-                  {shownVisitor.image ? <img src={shownVisitor.image} alt={shownVisitor.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <Users size={48} aria-hidden="true" />}
+                  {shownVisitor.image ? <img className="doorbell-color-corrected" src={shownVisitor.image} alt={shownVisitor.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <Users size={48} aria-hidden="true" />}
                 </div>
               </div>
               <div className="g-stack">
@@ -1420,7 +1455,6 @@ export default function DoorbellControlPage() {
                 {shownVisitor.confidence > 0 && <div><div className="g-meter-row"><span className="g-label">Confidence</span><b>{(shownVisitor.confidence * 100).toFixed(0)}%</b></div><div className="g-meter"><i className={shownVisitor.recognized ? "" : "is-warn"} style={{ width: `${shownVisitor.confidence * 100}%` }} /></div></div>}
               </div>
             </div>
-            <div className="g-modal__foot"><button className="g-btn g-btn--ghost" type="button" onClick={() => setShowVisitorDetails(false)}>Close</button></div>
           </div>
         </div>
       )}

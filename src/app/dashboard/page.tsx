@@ -395,13 +395,24 @@ export default function DashboardPage() {
         content = null;
     }
 
+    const modalHeading = shownCard === 'music'
+      ? {
+          title: 'Broadcast',
+          detail: 'Play an internet radio stream through your available speakers.',
+        }
+      : {
+          title: shownCard.replace(/-/g, ' '),
+          detail: 'Live details from Arduino888.',
+        };
+    const modalHeadingId = `dashboard-${shownCard}-title`;
+
     return (
-      <div className={cardModal.className} role="dialog" aria-modal="true" onClick={closeExpandedCard}>
-        <div className="g-pane g-modal__card g-modal__card--wide" onClick={(e) => e.stopPropagation()}>
+      <div className={cardModal.className} role="dialog" aria-modal="true" aria-labelledby={modalHeadingId} onClick={closeExpandedCard}>
+        <div className={`g-pane g-modal__card g-modal__card--wide ${shownCard === 'music' ? 'g-modal__card--broadcast' : ''}`} onClick={(e) => e.stopPropagation()}>
           <div className="g-modal__head">
             <div>
-              <h2>{shownCard.replace(/-/g, ' ')}</h2>
-              <p>Live details from Arduino888.</p>
+              <h2 id={modalHeadingId}>{modalHeading.title}</h2>
+              <p>{modalHeading.detail}</p>
             </div>
             <button className="g-icon-btn" onClick={closeExpandedCard} aria-label="Close">
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
@@ -441,7 +452,7 @@ export default function DashboardPage() {
                   then doors, then devices, then a genuinely urgent recent
                   alert. */}
               <h2>
-                <span className={`g-dot g-dot--${home.tone}`} />{' '}
+                <span className={`g-dot g-dot--${home.tone}`} aria-hidden="true" />
                 {home.headline}
               </h2>
               <p className="dash-hero__lede">{home.detail}</p>

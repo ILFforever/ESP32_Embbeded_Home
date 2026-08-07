@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import ProtectedRoute from '@/components/auth/ProtectedRoute';
 import {
@@ -214,6 +214,8 @@ export default function HubControlPage() {
 
   const [streamUrl, setStreamUrl] = useState('');
   const [volume, setVolume] = useState(10);
+  // True while the user is dragging the volume slider, so the poll leaves it alone
+  const volumeHeldRef = useRef(false);
   const [ampLoading, setAmpLoading] = useState(false);
   const [micActive, setMicActive] = useState(false);
   const [recentActivity, setRecentActivity] = useState<any[]>([]);
@@ -244,9 +246,15 @@ export default function HubControlPage() {
 
           try {
             const streaming = await getHubAmpStreaming(hub.device_id);
-            if (streaming?.amplifier) {
-              setAmpStreaming(streaming.amplifier);
-              setVolume(streaming.amplifier.volume_level || 10);
+            // Always store the result, including null, so the card can tell
+            // "not playing" apart from "we have no idea"
+            setAmpStreaming(streaming?.amplifier ?? null);
+
+            // Only adopt the reported volume while the user is not touching the
+            // slider, otherwise the poll fights their drag
+            const reportedVolume = streaming?.amplifier?.volume_level;
+            if (typeof reportedVolume === 'number' && !volumeHeldRef.current) {
+              setVolume(reportedVolume);
             }
           } catch (err) {
             console.error('Failed to fetch hub amplifier streaming:', err);
@@ -383,11 +391,15 @@ export default function HubControlPage() {
   };
 
   const handleVolumeChange = (newVolume: number) => {
+    volumeHeldRef.current = true;
     setVolume(newVolume);
   };
 
   const handleVolumeSend = async (finalVolume: number) => {
-    if (!hubDevice) return;
+    if (!hubDevice) {
+      volumeHeldRef.current = false;
+      return;
+    }
 
     try {
       await sendCommand(hubDevice.device_id, 'amp_volume', { level: finalVolume });
@@ -395,6 +407,12 @@ export default function HubControlPage() {
     } catch (error) {
       console.error('Error setting volume:', error);
       void notify('Failed to set volume. Please try again.');
+    } finally {
+      // Hold the slider a little longer so the amp has time to report the new
+      // level back, otherwise the next poll snaps it to the old value
+      setTimeout(() => {
+        volumeHeldRef.current = false;
+      }, 4000);
     }
   };
 
@@ -445,7 +463,32 @@ export default function HubControlPage() {
   const airHistory = useMemo(() => sensorHistory.map((r) => historyValue(r, 'pm2_5')).filter((v) => typeof v === 'number'), [sensorHistory]);
 
   const currentUrl = ampStreaming?.current_url || '';
-  const isPlaying = Boolean(ampStreaming?.is_playing || ampStreaming?.is_streaming);
+  const isPlaying = Boolean(ampStreaming?.is_playing);
+  // The hub is reporting, but the amplifier board itself is not answering it
+  const ampUnreachable = Boolean(ampStreaming?.reported) && ampStreaming?.is_reachable === false;
+  // Nothing has reported at all, so playback state is genuinely unknown
+  const ampStateUnknown = !ampStreaming || ampStreaming.reported === false;
+
+  const ampStatusLabel = ampStateUnknown
+    ? 'No status'
+    : ampUnreachable
+      ? 'Not responding'
+      : isPlaying
+        ? 'Playing'
+        : 'Stopped';
+
+  const ampStatusChipClass = ampUnreachable
+    ? 'g-chip g-chip--warn'
+    : isPlaying
+      ? 'g-chip g-chip--ok'
+      : 'g-chip';
+
+  const nowStreamingText = currentUrl
+    || (ampStateUnknown
+      ? 'Waiting for the hub to report'
+      : ampUnreachable
+        ? 'Amplifier is not responding to the hub'
+        : 'Nothing playing');
 
   const renderToolbar = () => (
     <div className="g-pane g-bar">
@@ -710,13 +753,16 @@ const renderSensorCard = (
               <section className="g-pane g-card hub-a-audio">
                 <header>
                   <h2>Amplifier</h2>
-                  <span className={isPlaying ? 'g-chip g-chip--ok' : 'g-chip'}>{isPlaying ? 'Playing' : 'Stopped'}</span>
+                  <span className={ampStatusChipClass}>{ampStatusLabel}</span>
                 </header>
 
                 <div className="g-tile" style={{ marginBottom: 'var(--s-4)' }}>
                   <p className="g-label">Now streaming</p>
-                  <p className="g-mono" style={{ margin: '6px 0 0', overflowWrap: 'anywhere' }}>
-                    {currentUrl || 'No stream selected'}
+                  <p
+                    className={currentUrl ? 'g-mono' : undefined}
+                    style={{ margin: '6px 0 0', overflowWrap: 'anywhere' }}
+                  >
+                    {nowStreamingText}
                   </p>
                 </div>
 

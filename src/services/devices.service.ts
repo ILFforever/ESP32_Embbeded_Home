@@ -1113,17 +1113,26 @@ export async function sendHubAlert(deviceId: string, params: HubAlertParams): Pr
 }
 
 // Hub amplifier streaming status interface
+export interface HubAmpState {
+  // false when the hub has never reported, or its report expired
+  reported: boolean;
+  // false when the hub is reporting but the amplifier is not answering it
+  is_reachable: boolean;
+  is_streaming: boolean;
+  is_playing: boolean;
+  current_url: string | null;
+  source?: 'stream' | 'spiffs';
+  // null when unknown - do not conflate with volume 0
+  volume_level: number | null;
+  amp_wifi_connected?: boolean;
+  reported_at: any;
+  device_id: string;
+}
+
 export interface HubAmpStreamingResponse {
   status: string;
   device_id: string;
-  amplifier: {
-    is_streaming: boolean;
-    current_url: string | null;
-    volume_level: number;
-    is_playing: boolean;
-    timestamp: any;
-    device_id: string;
-  };
+  amplifier: HubAmpState;
 }
 
 // Get Hub amplifier streaming status

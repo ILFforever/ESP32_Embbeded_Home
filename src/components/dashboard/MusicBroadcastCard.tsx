@@ -3,6 +3,7 @@
 import React, { useEffect, useId, useState } from 'react';
 import { Bell, Home, Music2, Play, Square, Volume2, X } from 'lucide-react';
 import { useModalTransition } from '@/components/glass/useModalTransition';
+import StationPresetPicker from '@/components/glass/StationPresetPicker';
 import { sendCommand, getAllDevices, findHubDevice } from '@/services/devices.service';
 import type { Device } from '@/types/dashboard';
 
@@ -13,17 +14,18 @@ interface MusicBroadcastCardProps {
 type BroadcastTarget = 'doorbell' | 'hub' | 'both';
 type NoticeTone = 'ok' | 'warn' | 'crit';
 
-const presets = [
-  { label: 'BBC World Service', value: 'https://stream.live.vc.bbcmedia.co.uk/bbc_world_service_east_asia' },
-  { label: 'Japan City Pop', value: 'https://play.streamafrica.net/japancitypop' },
-  { label: 'Radio Paradise', value: 'http://stream.radioparadise.com/aac-128' },
-];
-
 function targetLabel(target: BroadcastTarget | null) {
   if (target === 'both') return 'both devices';
   if (target === 'hub') return 'the hub';
   if (target === 'doorbell') return 'the doorbell';
   return 'the selected device';
+}
+
+function targetName(target: BroadcastTarget | null) {
+  if (target === 'both') return 'Doorbell + hub';
+  if (target === 'hub') return 'Hub';
+  if (target === 'doorbell') return 'Doorbell';
+  return 'None selected';
 }
 
 function targetIcon(target: BroadcastTarget) {
@@ -200,17 +202,20 @@ export function MusicBroadcastCard({ isExpanded = false }: MusicBroadcastCardPro
     label: string;
   }) => (
     <button
-      className={`g-action ${target === value ? 'g-chip--ok' : ''}`}
+      className={`g-action broadcast-target ${target === value ? 'is-selected' : ''}`}
       type="button"
       onClick={() => setTarget(value)}
       disabled={!online}
       aria-pressed={target === value}
     >
-      <span className="g-row">
-        {targetIcon(value)}
-        <span>{label}</span>
+      {targetIcon(value)}
+      <span className="broadcast-target__copy">
+        <strong>{label}</strong>
+        <small>
+          <i className={`g-dot g-dot--${online ? 'ok' : 'off'}`} aria-hidden="true" />
+          {value === 'both' && online ? '2 speakers' : online ? 'Online' : 'Offline'}
+        </small>
       </span>
-      <small>{online ? 'Online' : 'Offline'}</small>
     </button>
   );
 
@@ -218,10 +223,12 @@ export function MusicBroadcastCard({ isExpanded = false }: MusicBroadcastCardPro
 
   return (
     <>
-      <header>
-        <h2>Broadcast</h2>
-        <span className="g-label">{target ? targetLabel(target) : 'No target'}</span>
-      </header>
+      {!isExpanded && (
+        <header>
+          <h2>Broadcast</h2>
+          <span className="g-label">{target ? targetLabel(target) : 'No target'}</span>
+        </header>
+      )}
 
       {!isExpanded ? (
         <div className="g-row">
@@ -243,75 +250,94 @@ export function MusicBroadcastCard({ isExpanded = false }: MusicBroadcastCardPro
           </div>
         </div>
       ) : (
-        <div className="g-stack">
-          <div className="dash-modal-grid dash-modal-grid--2">
-            <div className="g-tile">
-              <p className="g-label">Target</p>
-              <div className="g-grid g-grid--3" style={{ marginTop: 'var(--s-3)' }}>
+        <div className="broadcast-editor">
+          <div className="broadcast-controls">
+            <section className="broadcast-section broadcast-targets" aria-labelledby="broadcast-target-heading">
+              <div className="broadcast-section__head">
+                <div>
+                  <p className="g-label">Speakers</p>
+                  <h3 id="broadcast-target-heading">Where should it play?</h3>
+                </div>
+                <span className="g-chip">{targetName(target)}</span>
+              </div>
+              <div className="broadcast-target-grid">
                 <TargetButton value="doorbell" label="Doorbell" online={Boolean(doorbellDevice?.online)} />
                 <TargetButton value="hub" label="Hub" online={Boolean(hubDevice?.online)} />
                 <TargetButton value="both" label="Both" online={Boolean(doorbellDevice?.online && hubDevice?.online)} />
               </div>
-            </div>
+            </section>
 
-            <div className="g-tile">
-              <p className="g-label">Volume</p>
-              <div className="g-field" style={{ marginTop: 'var(--s-3)' }}>
-                <label htmlFor={volumeId}>Level · <output>{volume}</output> of 21</label>
-                <input
-                  id={volumeId}
-                  className="g-slider"
-                  type="range"
-                  min="0"
-                  max="21"
-                  value={volume}
-                  onChange={(e) => handleVolumeChange(parseInt(e.target.value, 10))}
-                  onMouseUp={(e) => handleVolumeSend(parseInt((e.target as HTMLInputElement).value, 10))}
-                  onTouchEnd={(e) => handleVolumeSend(parseInt((e.target as HTMLInputElement).value, 10))}
-                  style={{ backgroundImage: volumeFill }}
-                />
+            <section className="broadcast-section broadcast-volume">
+              <div className="broadcast-section__head">
+                <label htmlFor={volumeId}>
+                  <span className="g-label">Volume</span>
+                  <strong>Playback level</strong>
+                </label>
+                <output className="broadcast-volume__value" htmlFor={volumeId}>
+                  {volume}<small>/21</small>
+                </output>
               </div>
-            </div>
+              <input
+                id={volumeId}
+                className="g-slider"
+                type="range"
+                min="0"
+                max="21"
+                value={volume}
+                onChange={(e) => handleVolumeChange(parseInt(e.target.value, 10))}
+                onMouseUp={(e) => handleVolumeSend(parseInt((e.target as HTMLInputElement).value, 10))}
+                onTouchEnd={(e) => handleVolumeSend(parseInt((e.target as HTMLInputElement).value, 10))}
+                style={{ backgroundImage: volumeFill }}
+              />
+              <div className="broadcast-volume__scale" aria-hidden="true">
+                <span>Quiet</span>
+                <span>Full</span>
+              </div>
+            </section>
           </div>
 
-          <div className="g-field">
-            <label htmlFor="broadcast-stream-url">Stream URL</label>
-            <div className="g-input-group">
+          <div className="g-field broadcast-source">
+            <div className="broadcast-source__head">
+              <label htmlFor="broadcast-stream-url">Stream source</label>
+              <span>Paste a direct audio URL or choose a station.</span>
+            </div>
+            <div className="broadcast-source__fields">
               <input
                 id="broadcast-stream-url"
-                type="text"
+                type="url"
                 value={streamUrl}
                 onChange={(e) => setStreamUrl(e.target.value)}
                 placeholder="Paste a stream URL"
               />
-              <select value="" onChange={(e) => setStreamUrl(e.target.value)} aria-label="Choose a stream preset">
-                <option value="">Preset</option>
-                {presets.map(preset => (
-                  <option key={preset.value} value={preset.value}>{preset.label}</option>
-                ))}
-              </select>
+              <StationPresetPicker value={streamUrl} onChange={setStreamUrl} />
             </div>
           </div>
 
-          <div className="dash-modal-actions">
-            <button
-              className="g-btn g-btn--primary"
-              type="button"
-              onClick={handlePlay}
-              disabled={loading || !isDeviceAvailable(target) || !streamUrl.trim()}
-            >
-              <Play size={16} aria-hidden="true" />
-              {loading ? 'Starting' : 'Play'}
-            </button>
-            <button
-              className="g-btn g-btn--ghost"
-              type="button"
-              onClick={handleStop}
-              disabled={loading || !isDeviceAvailable(target)}
-            >
-              <Square size={16} aria-hidden="true" />
-              {loading ? 'Stopping' : 'Stop'}
-            </button>
+          <div className="broadcast-actions">
+            <p>
+              <i className={`g-dot g-dot--${isDeviceAvailable(target) ? 'ok' : 'off'}`} aria-hidden="true" />
+              {isDeviceAvailable(target) ? `Ready on ${targetName(target)}` : 'Choose an online speaker'}
+            </p>
+            <div className="dash-modal-actions">
+              <button
+                className="g-btn g-btn--primary"
+                type="button"
+                onClick={handlePlay}
+                disabled={loading || !isDeviceAvailable(target) || !streamUrl.trim()}
+              >
+                <Play size={16} aria-hidden="true" />
+                {loading ? 'Starting' : 'Start broadcast'}
+              </button>
+              <button
+                className="g-btn g-btn--ghost"
+                type="button"
+                onClick={handleStop}
+                disabled={loading || !isDeviceAvailable(target)}
+              >
+                <Square size={16} aria-hidden="true" />
+                {loading ? 'Stopping' : 'Stop playback'}
+              </button>
+            </div>
           </div>
         </div>
       )}
