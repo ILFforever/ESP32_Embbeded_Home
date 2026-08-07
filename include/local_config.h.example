@@ -11,6 +11,7 @@
 #define DOORBELL_DEVICE_ID "db_001"
 #define DOORBELL_DEVICE_TYPE "doorbell"
 #define DEVICE_AUTH_TOKEN "device-token-from-registration"
+#define COMMAND_STALE_AFTER_SECONDS 300UL
 
 #define WEATHER_API_KEY "openweathermap-key"
 #define WEATHER_CITY "Bangkok"

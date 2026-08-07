@@ -10,6 +10,8 @@
 #include "slave_state_manager.h"
 #include "streaming_state.h"
 #include "lcd_helper.h"
+#include "app_config.h"
+#include <time.h>
 
 // Configuration variables (set via initHeartbeat)
 const char *BACKEND_SERVER_URL = "";
@@ -377,23 +379,69 @@ void fetchAndExecuteCommandsImmediate()
   if (httpResponseCode == 200)
   {
     String response = http.getString();
+    Serial.printf("[Commands] Pending response received (%u bytes)\n",
+                  static_cast<unsigned int>(response.length()));
 
-    // Parse response
-    StaticJsonDocument<2048> responseDoc;
+    // Pending responses can contain a backlog of commands. Keep the document
+    // on the heap so a large batch does not consume the NetworkManager stack.
+    // Twice the serialized size leaves room for ArduinoJson's object slots and
+    // duplicated strings while remaining bounded by the HTTP response itself.
+    size_t jsonCapacity = response.length() * 2 + 1024;
+    if (jsonCapacity < 2048)
+    {
+      jsonCapacity = 2048;
+    }
+    DynamicJsonDocument responseDoc(jsonCapacity);
     DeserializationError error = deserializeJson(responseDoc, response);
 
-    if (!error && responseDoc.containsKey("commands"))
+    if (error)
+    {
+      Serial.printf("[Commands] Failed to parse pending response: %s "
+                    "(response: %u bytes, JSON capacity: %u bytes)\n",
+                    error.c_str(),
+                    static_cast<unsigned int>(response.length()),
+                    static_cast<unsigned int>(responseDoc.capacity()));
+    }
+    else if (!responseDoc.containsKey("commands"))
+    {
+      Serial.println("[Commands] Pending response is missing the 'commands' field");
+    }
+    else
     {
       JsonArray commands = responseDoc["commands"];
       int commandCount = commands.size();
+      time_t currentTime = time(nullptr);
+      bool clockIsValid = currentTime >= 1700000000;
+      int staleCommandCount = 0;
 
       Serial.printf("[Commands] Fetched %d pending command(s)\n", commandCount);
+      if (!clockIsValid && commandCount > 0)
+      {
+        Serial.println("[Commands] Clock not synchronized - deferring commands to prevent stale replay");
+        http.end();
+        return;
+      }
 
+      // Execute fresh commands first, in their original order. A large stale
+      // backlog must not delay the user's current command while each old entry
+      // is acknowledged over HTTP.
       for (JsonObject cmd : commands)
       {
         String commandId = cmd["id"].as<String>();
         String action = cmd["action"].as<String>();
         JsonObject params = cmd["params"];
+
+        JsonObject createdAt = cmd["created_at"];
+        uint32_t createdAtSeconds = createdAt["_seconds"] | 0U;
+        bool isStale = clockIsValid && createdAtSeconds > 0 &&
+                       static_cast<uint64_t>(currentTime) > createdAtSeconds &&
+                       (static_cast<uint64_t>(currentTime) - createdAtSeconds) > COMMAND_STALE_AFTER_SECONDS;
+
+        if (isStale)
+        {
+          staleCommandCount++;
+          continue;
+        }
 
         Serial.printf("[Commands] Executing: %s (ID: %s)\n", action.c_str(), commandId.c_str());
 
@@ -423,6 +471,41 @@ void fetchAndExecuteCommandsImmediate()
 
         // Acknowledge execution
         acknowledgeCommand(commandId, success, action);
+      }
+
+      if (staleCommandCount > 0)
+      {
+        Serial.printf("[Commands] Clearing %d command(s) older than %lu seconds\n",
+                      staleCommandCount,
+                      static_cast<unsigned long>(COMMAND_STALE_AFTER_SECONDS));
+
+        for (JsonObject cmd : commands)
+        {
+          JsonObject createdAt = cmd["created_at"];
+          uint32_t createdAtSeconds = createdAt["_seconds"] | 0U;
+          if (createdAtSeconds == 0 || static_cast<uint64_t>(currentTime) <= createdAtSeconds)
+          {
+            continue;
+          }
+
+          uint32_t commandAgeSeconds =
+              static_cast<uint32_t>(static_cast<uint64_t>(currentTime) - createdAtSeconds);
+          if (commandAgeSeconds <= COMMAND_STALE_AFTER_SECONDS)
+          {
+            continue;
+          }
+
+          String commandId = cmd["id"].as<String>();
+          String action = cmd["action"].as<String>();
+          char errorMessage[96];
+          snprintf(errorMessage, sizeof(errorMessage),
+                   "Command expired after %lu seconds",
+                   static_cast<unsigned long>(commandAgeSeconds));
+          Serial.printf("[Commands] Expiring stale command: %s (ID: %s, age: %lu seconds)\n",
+                        action.c_str(), commandId.c_str(),
+                        static_cast<unsigned long>(commandAgeSeconds));
+          acknowledgeCommand(commandId, false, action, errorMessage, "stale");
+        }
       }
     }
   }
@@ -758,7 +841,8 @@ bool executeCommand(String action, JsonObject params)
 // ============================================================================
 // Acknowledge command execution to backend
 // ============================================================================
-void acknowledgeCommand(String commandId, bool success, String action)
+void acknowledgeCommand(String commandId, bool success, String action,
+                        const char *errorMessage, const char *statusOverride)
 {
   if (WiFi.status() != WL_CONNECTED)
   {
@@ -783,6 +867,10 @@ void acknowledgeCommand(String commandId, bool success, String action)
   doc["device_id"] = DEVICE_ID;
   doc["command_id"] = commandId;
   doc["success"] = success;
+  if (statusOverride != nullptr)
+  {
+    doc["status"] = statusOverride;
+  }
 
   char resultMsg[96];
   if (success)
@@ -792,7 +880,8 @@ void acknowledgeCommand(String commandId, bool success, String action)
   }
   else
   {
-    snprintf(resultMsg, sizeof(resultMsg), "Failed to execute: %s", action.c_str());
+    snprintf(resultMsg, sizeof(resultMsg), "%s",
+             errorMessage != nullptr ? errorMessage : "Command execution failed");
     doc["error"] = resultMsg;
   }
 
@@ -805,7 +894,8 @@ void acknowledgeCommand(String commandId, bool success, String action)
   if (httpResponseCode == 200)
   {
     Serial.printf("[Commands] ✓ Acknowledged command %s (%s)\n",
-                  commandId.c_str(), success ? "success" : "failed");
+                  commandId.c_str(),
+                  statusOverride != nullptr ? statusOverride : (success ? "success" : "failed"));
   }
   else
   {

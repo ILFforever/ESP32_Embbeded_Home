@@ -29,6 +29,12 @@
 #define DEVICE_AUTH_TOKEN "device-token-from-registration"
 #endif
 
+// Remote commands are real-time actions. If the doorbell was offline or unable
+// to parse its queue, do not replay old camera/audio actions after recovery.
+#ifndef COMMAND_STALE_AFTER_SECONDS
+#define COMMAND_STALE_AFTER_SECONDS 300UL
+#endif
+
 #ifndef WEATHER_API_KEY
 #define WEATHER_API_KEY "YOUR_API_KEY_HERE"
 #endif
