@@ -178,13 +178,16 @@ struct ScreenDef
   const MenuItem *items;
   uint8_t itemCount;
   uint8_t infoLines; // dynamic lines drawn above the item list
+  bool strip;        // show the live CAM/AMP/NET dots
 };
 
+// The dot strip is a top-level summary, so it only appears on the main menu.
+// The submenus reclaim its 20px and start their content that much higher.
 static const ScreenDef SCREENS[] = {
-    {"SETTINGS", MAIN_ITEMS, sizeof(MAIN_ITEMS) / sizeof(MAIN_ITEMS[0]), 0},
-    {"DEVICE INFO", INFO_ITEMS, sizeof(INFO_ITEMS) / sizeof(INFO_ITEMS[0]), 8},
-    {"MODULE STATUS", MODULE_ITEMS, sizeof(MODULE_ITEMS) / sizeof(MODULE_ITEMS[0]), 2},
-    {"SYSTEM", SYSTEM_ITEMS, sizeof(SYSTEM_ITEMS) / sizeof(SYSTEM_ITEMS[0]), 0},
+    {"SETTINGS", MAIN_ITEMS, sizeof(MAIN_ITEMS) / sizeof(MAIN_ITEMS[0]), 0, true},
+    {"DEVICE INFO", INFO_ITEMS, sizeof(INFO_ITEMS) / sizeof(INFO_ITEMS[0]), 8, false},
+    {"MODULE STATUS", MODULE_ITEMS, sizeof(MODULE_ITEMS) / sizeof(MODULE_ITEMS[0]), 2, false},
+    {"SYSTEM", SYSTEM_ITEMS, sizeof(SYSTEM_ITEMS) / sizeof(SYSTEM_ITEMS[0]), 0, false},
 };
 
 // ---------------------------------------------------------------------------
@@ -209,6 +212,15 @@ static char toastMsg[40] = "";
 static unsigned long toastTime = 0;
 static bool toastDirty = false;
 
+// Ping result tracking. There is no way to match a pong to the ping that
+// prompted it - the handler in uart_commands.cpp drops the seq and only stamps
+// last_pong_time, and the background ping task is firing every second anyway.
+// So this reports liveness, not round-trip time: a pong stamped after we sent
+// means the module is answering, whichever packet it was answering.
+static bool pingWaiting = false;
+static unsigned long pingSentAt = 0;
+#define SM_PING_TIMEOUT_MS 2500
+
 static void markActivity()
 {
   lastActivity = millis();
@@ -227,14 +239,27 @@ static void clearConfirm()
   confirmTime = 0;
 }
 
+// First y below the header block - past the dot strip on the main menu, past
+// the header underline everywhere else.
+static int contentTop()
+{
+  return SCREENS[screen].strip ? (SM_STRIP_Y + SM_STRIP_H)
+                               : (SM_UNDERLINE_Y + SM_UNDERLINE_H);
+}
+
+static int infoTop()
+{
+  return contentTop() + 2;
+}
+
 static int listTop()
 {
   const ScreenDef &s = SCREENS[screen];
-  // Deepest screen is Device Info: 66 + 8*17 + 4 = 206, two rows ending at 252,
-  // which stays clear of the toast line at 256.
+  // Deepest screen is Device Info: 46 + 8*17 + 4 = 186, two rows ending at 232,
+  // well clear of the toast line at 256.
   if (s.infoLines == 0)
-    return SM_STRIP_Y + SM_STRIP_H + 6;
-  return SM_INFO_Y + s.infoLines * SM_INFO_LINE_H + SM_LIST_GAP;
+    return contentTop() + 6;
+  return infoTop() + s.infoLines * SM_INFO_LINE_H + SM_LIST_GAP;
 }
 
 // Combined health of the two slave modules. -1 is disconnected; 0 and above
@@ -359,8 +384,8 @@ static uint8_t buildInfoLines()
     infoLines[1].label = "Amp";
     snprintf(infoLines[1].value, sizeof(infoLines[1].value), "%s", ampStateText(amp_status));
 
-    // Frame counters deliberately left out - they are on the Device Info screen
-    // already, and a third line here would push the six rows into the toast.
+    // Frame counters deliberately left out - the Device Info screen already
+    // reports them, and this screen is about the modules themselves.
     return 2;
   }
 
@@ -437,7 +462,7 @@ static void drawInfoValues()
   tft.setTextFont(2);
   for (uint8_t i = 0; i < count; i++)
   {
-    const int y = SM_INFO_Y + i * SM_INFO_LINE_H;
+    const int y = infoTop() + i * SM_INFO_LINE_H;
 
     tft.setTextDatum(TL_DATUM);
     tft.setTextPadding(0);
@@ -534,7 +559,8 @@ static void drawScreen()
   tft.setTextColor(TFT_WHITE);
   tft.drawString(s.title, SM_W / 2, SM_TOP + SM_HEADER_H / 2);
 
-  drawStatusStrip(true);
+  if (s.strip)
+    drawStatusStrip(true);
   drawInfoValues();
 
   for (uint8_t i = 0; i < s.itemCount; i++)
@@ -590,10 +616,12 @@ static void runAction(uint8_t action)
     break;
 
   case ACT_PING_MODULES:
+    pingSentAt = millis();
+    pingWaiting = true;
     sendUARTPing();
     sendUART2Ping();
     sendUARTCommand("get_status");
-    showToast("Ping sent");
+    showToast("Pinging modules...");
     break;
 
   case ACT_TEST_SOUND:
@@ -676,6 +704,7 @@ void openSettingsMenu()
   clearConfirm();
   toastMsg[0] = '\0';
   toastDirty = false;
+  pingWaiting = false;
   needFullRedraw = true;
   needCursorRedraw = false;
   lastValueRefresh = 0;
@@ -692,6 +721,7 @@ void closeSettingsMenu()
   menuActive = false;
   clearConfirm();
   toastMsg[0] = '\0';
+  pingWaiting = false;
 
   // Hand the panel back. The UI sprites repaint themselves on the next
   // drawUIOverlay() pass; videoBandDirty forces the clock screen to clear and
@@ -760,7 +790,30 @@ void settingsMenuTick()
     return;
   }
 
-  if (toastMsg[0] != '\0' && now - toastTime > SM_TOAST_DURATION_MS)
+  // Resolve an outstanding ping: signed subtraction so a millis() rollover
+  // between send and reply does not read as "no pong".
+  if (pingWaiting)
+  {
+    const bool camOk = (long)(last_pong_time - pingSentAt) >= 0;
+    const bool ampOk = (long)(last_amp_pong_time - pingSentAt) >= 0;
+
+    if ((camOk && ampOk) || (now - pingSentAt > SM_PING_TIMEOUT_MS))
+    {
+      pingWaiting = false;
+      if (camOk && ampOk)
+        showToast("Pong: CAM ok, AMP ok");
+      else if (camOk)
+        showToast("Pong: CAM ok, AMP silent");
+      else if (ampOk)
+        showToast("Pong: CAM silent, AMP ok");
+      else
+        showToast("No pong from either");
+    }
+  }
+
+  // The "Pinging..." toast has to outlive the normal 2s while the reply is
+  // still outstanding, or it clears before the result replaces it.
+  if (toastMsg[0] != '\0' && !pingWaiting && now - toastTime > SM_TOAST_DURATION_MS)
   {
     toastMsg[0] = '\0';
     toastDirty = true;
@@ -775,10 +828,11 @@ void settingsMenuTick()
     needCursorRedraw = true;
   }
 
-  // The status strip and the live Module Status accent exist on every screen,
-  // so this refresh is unconditional - not gated on the screen having an info
-  // block the way it used to be.
-  const bool refreshValues = (now - lastValueRefresh >= SM_VALUE_REFRESH_MS);
+  // Screens with neither a dot strip nor an info block have nothing that ticks,
+  // so they skip the refresh entirely rather than taking the mutex for nothing.
+  const ScreenDef &cur = SCREENS[screen];
+  const bool refreshValues = (cur.strip || cur.infoLines > 0) &&
+                             (now - lastValueRefresh >= SM_VALUE_REFRESH_MS);
 
   if (!needFullRedraw && !needCursorRedraw && !refreshValues && !toastDirty && !confirmExpired)
     return;
@@ -805,7 +859,8 @@ void settingsMenuTick()
     }
     if (refreshValues)
     {
-      drawStatusStrip(false);
+      if (cur.strip)
+        drawStatusStrip(false);
       drawInfoValues();
 
       // Repaint the live-accent rows only when the health colour actually
