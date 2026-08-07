@@ -1020,6 +1020,7 @@ export default function DoorbellControlPage() {
     }
     if (event.type === "command") {
       const status = event.data?.status || "pending";
+      if (status === "stale") return "Stale";
       return status.charAt(0).toUpperCase() + status.slice(1);
     }
     if (event.type === "heartbeat") {
@@ -1043,6 +1044,7 @@ export default function DoorbellControlPage() {
       const status = event.data?.status || "pending";
       if (status === "completed") return "status-safe";
       if (status === "failed") return "status-danger";
+      if (status === "stale") return "status-warning";
       return "status-warning";
     }
     if (event.type === "heartbeat" || event.type === "device_state") {
