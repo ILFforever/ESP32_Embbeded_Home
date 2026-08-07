@@ -3,6 +3,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import ProtectedRoute from '@/components/auth/ProtectedRoute';
 import GlassBar from '@/components/glass/GlassBar';
+import { PageSkeleton } from '@/components/glass/Skeleton';
 import { DoorCard } from '@/components/dashboard/DoorCard';
 import { NfcManagementCard } from '@/components/dashboard/NfcManagementCard';
 import { getAlerts, getAllDevices, getLockStatus } from '@/services/devices.service';
@@ -123,13 +124,7 @@ export default function AccessPage() {
   if (loading) {
     return (
       <ProtectedRoute>
-        <div className="g-waiting">
-          <div className="g-waiting__inner">
-            <div className="g-spinner" aria-hidden="true" />
-            <h1>Access &amp; cards</h1>
-            <p aria-live="polite">Checking locks and enrolled cards.</p>
-          </div>
-        </div>
+        <PageSkeleton label="Checking locks and enrolled cards." variant="access" />
       </ProtectedRoute>
     );
   }

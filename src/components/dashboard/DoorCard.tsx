@@ -2,7 +2,9 @@ import React, { useEffect, useState } from 'react';
 import { Lock, RefreshCw, Unlock, X } from 'lucide-react';
 import type { DoorWindow } from '@/types/dashboard';
 import { relativeTime } from '@/utils/time';
+import { batteryLabel, batteryText } from '@/utils/battery';
 import { useModalTransition } from '@/components/glass/useModalTransition';
+import { ContentSkeleton } from '@/components/glass/Skeleton';
 import {
   sendCommand,
   getLockStatus,
@@ -47,13 +49,16 @@ function formatUptime(ms: number | null | undefined) {
   return `${hours}h ${minutes}m`;
 }
 
-function batteryDash(battery?: number) {
-  const pct = Math.max(0, Math.min(100, battery ?? 0));
+/* Both of these took the battery alone, so an offline lock drew a full ring
+   from whatever it last reported. See utils/battery: only a current reading
+   fills the ring. */
+function batteryDash(battery: number | undefined, online: boolean) {
+  const pct = online && battery != null ? Math.max(0, Math.min(100, battery)) : 0;
   return `${((pct / 100) * RING_CIRCUMFERENCE).toFixed(1)} ${RING_CIRCUMFERENCE}`;
 }
 
-function ringClass(battery?: number) {
-  if (battery == null) return 'g-ring__fill is-idle';
+function ringClass(battery: number | undefined, online: boolean) {
+  if (!online || battery == null) return 'g-ring__fill is-idle';
   if (battery <= 20) return 'g-ring__fill is-crit';
   if (battery <= 40) return 'g-ring__fill is-warn';
   return 'g-ring__fill';
@@ -237,14 +242,14 @@ export function DoorCard({ doorsWindows, isExpanded = false, hideHeader = false 
             <span className={`g-dot g-dot--${online ? tone : 'off'}`} />
             <strong>{door.name}</strong>
           </div>
-          <svg className="g-ring" viewBox="0 0 24 24" aria-label={`${door.name} battery ${door.battery ?? 0} percent`}>
+          <svg className="g-ring" viewBox="0 0 24 24" role="img" aria-label={batteryLabel(door.name, door.battery, online)}>
             <circle className="g-ring__track" cx="12" cy="12" r="9" />
             <circle
-              className={ringClass(door.battery)}
+              className={ringClass(door.battery, online)}
               cx="12"
               cy="12"
               r="9"
-              strokeDasharray={batteryDash(door.battery)}
+              strokeDasharray={batteryDash(door.battery, online)}
               transform="rotate(-90 12 12)"
             />
           </svg>
@@ -252,7 +257,10 @@ export function DoorCard({ doorsWindows, isExpanded = false, hideHeader = false 
 
         <div className="g-row g-row--between" style={{ marginTop: 'var(--s-3)' }}>
           <span className={statusChipClass(online ? tone : 'idle')}>{online ? statusCopy(door.status) : 'Offline'}</span>
-          <span className="g-num">{door.battery ?? 0}%</span>
+          {/* "0%" for a lock that never reported a battery read as flat. */}
+          <span className={online && door.battery != null ? 'g-num' : 'g-dim'}>
+            {batteryText(door.battery, online)}
+          </span>
         </div>
 
         <p className="g-sub">{door.location} · changed {formatTimestamp(door.last_changed)}</p>
@@ -390,11 +398,7 @@ export function DoorCard({ doorsWindows, isExpanded = false, hideHeader = false 
             </div>
 
             {fetchingStatus && !shownStatus ? (
-              <div className="g-empty">
-                <RefreshCw size={32} className="spinning" aria-hidden="true" />
-                <strong>Loading lock status</strong>
-                <p>Waiting for the lock to report back.</p>
-              </div>
+              <ContentSkeleton label="Loading lock status." rows={2} tiles={3} />
             ) : shownStatus ? (
               <div className="g-stack">
                 <div className="dash-modal-grid">
@@ -438,8 +442,9 @@ export function DoorCard({ doorsWindows, isExpanded = false, hideHeader = false 
                     type="button"
                     onClick={() => statusModal.value && fetchLockStatus(statusModal.value.doorId)}
                     disabled={fetchingStatus}
+                    aria-busy={fetchingStatus}
                   >
-                    <RefreshCw size={16} className={fetchingStatus ? 'spinning' : ''} aria-hidden="true" />
+                    <RefreshCw size={16} aria-hidden="true" />
                     Refresh
                   </button>
                 </div>

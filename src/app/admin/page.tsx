@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import ProtectedRoute from '@/components/auth/ProtectedRoute';
 import GlassBar from '@/components/glass/GlassBar';
+import { PageSkeleton } from '@/components/glass/Skeleton';
 import { AdminManagementCard } from '@/components/dashboard/AdminManagementCard';
 import { getAllDevices } from '@/services/devices.service';
 import type { DevicesStatus } from '@/types/dashboard';
@@ -67,13 +68,7 @@ export default function AdminPage() {
   if (loading) {
     return (
       <ProtectedRoute requireAdmin>
-        <div className="g-waiting">
-          <div className="g-waiting__inner">
-            <div className="g-spinner" aria-hidden="true" />
-            <h1>Admin</h1>
-            <p aria-live="polite">Loading people and enrolled boards.</p>
-          </div>
-        </div>
+        <PageSkeleton label="Loading people and enrolled boards." variant="admin" />
       </ProtectedRoute>
     );
   }

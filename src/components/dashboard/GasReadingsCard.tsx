@@ -89,9 +89,10 @@ export function GasReadingsCard({ gasReadings, isExpanded = false, hideHeader = 
             className="g-icon-btn"
             onClick={(e) => { e.stopPropagation(); handleRefresh(); }}
             disabled={refetching}
+            aria-busy={refetching}
             aria-label="Refresh gas readings"
           >
-            <RefreshCw size={17} className={refetching ? 'spinning' : ''} aria-hidden="true" />
+            <RefreshCw size={17} aria-hidden="true" />
           </button>
         </header>
       )}
@@ -162,8 +163,9 @@ export function GasReadingsCard({ gasReadings, isExpanded = false, hideHeader = 
               className="g-btn g-btn--ghost"
               onClick={(e) => { e.stopPropagation(); handleRefresh(); }}
               disabled={refetching}
+              aria-busy={refetching}
             >
-              <RefreshCw size={16} className={refetching ? 'spinning' : ''} aria-hidden="true" />
+              <RefreshCw size={16} aria-hidden="true" />
               Refresh
             </button>
           </div>

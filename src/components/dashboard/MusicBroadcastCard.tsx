@@ -3,8 +3,14 @@
 import React, { useEffect, useId, useState } from 'react';
 import { Bell, Home, Music2, Play, Square, Volume2, X } from 'lucide-react';
 import { useModalTransition } from '@/components/glass/useModalTransition';
-import StationPresetPicker from '@/components/glass/StationPresetPicker';
-import { sendCommand, getAllDevices, findHubDevice } from '@/services/devices.service';
+import StationPresetPicker, { STATION_PRESETS } from '@/components/glass/StationPresetPicker';
+import {
+  sendCommand,
+  getAllDevices,
+  findHubDevice,
+  getHubAmpStreaming,
+  type HubAmpState,
+} from '@/services/devices.service';
 import type { Device } from '@/types/dashboard';
 
 interface MusicBroadcastCardProps {
@@ -13,6 +19,36 @@ interface MusicBroadcastCardProps {
 
 type BroadcastTarget = 'doorbell' | 'hub' | 'both';
 type NoticeTone = 'ok' | 'warn' | 'crit';
+type PlaybackSnapshot = {
+  checked: boolean;
+  doorbell: HubAmpState | null;
+  hub: HubAmpState | null;
+};
+
+const VOLUME_STORAGE_KEY = 'arduino888.broadcast.volume';
+const VOLUME_CHANGE_EVENT = 'arduino888:broadcast-volume-change';
+
+function parseSavedVolume(value: string | null) {
+  if (value === null) return null;
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed >= 0 && parsed <= 21 ? parsed : null;
+}
+
+async function loadPlaybackSnapshot(
+  doorbell: Device | null,
+  hub: Device | null,
+): Promise<PlaybackSnapshot> {
+  const [doorbellResponse, hubResponse] = await Promise.all([
+    doorbell ? getHubAmpStreaming(doorbell.device_id) : Promise.resolve(null),
+    hub ? getHubAmpStreaming(hub.device_id) : Promise.resolve(null),
+  ]);
+
+  return {
+    checked: true,
+    doorbell: doorbellResponse?.amplifier ?? null,
+    hub: hubResponse?.amplifier ?? null,
+  };
+}
 
 function targetLabel(target: BroadcastTarget | null) {
   if (target === 'both') return 'both devices';
@@ -43,6 +79,11 @@ export function MusicBroadcastCard({ isExpanded = false }: MusicBroadcastCardPro
   const [loading, setLoading] = useState(false);
   const [doorbellDevice, setDoorbellDevice] = useState<Device | null>(null);
   const [hubDevice, setHubDevice] = useState<Device | null>(null);
+  const [playback, setPlayback] = useState<PlaybackSnapshot>({
+    checked: false,
+    doorbell: null,
+    hub: null,
+  });
   const [notice, setNotice] = useState<{ tone: NoticeTone; title: string; message: string } | null>(null);
   /* Latched, so the card keeps its text while it animates out — the
      close handlers null the state immediately. */
@@ -50,14 +91,44 @@ export function MusicBroadcastCard({ isExpanded = false }: MusicBroadcastCardPro
   const shownNotice = noticeModal.value;
 
   useEffect(() => {
+    const savedVolume = parseSavedVolume(window.localStorage.getItem(VOLUME_STORAGE_KEY));
+    if (savedVolume !== null) setVolume(savedVolume);
+
+    const handleStoredVolume = (event: StorageEvent) => {
+      if (event.key !== VOLUME_STORAGE_KEY) return;
+      const nextVolume = parseSavedVolume(event.newValue);
+      if (nextVolume !== null) setVolume(nextVolume);
+    };
+    const handleLocalVolume = (event: Event) => {
+      const nextVolume = (event as CustomEvent<number>).detail;
+      if (Number.isInteger(nextVolume) && nextVolume >= 0 && nextVolume <= 21) {
+        setVolume(nextVolume);
+      }
+    };
+
+    window.addEventListener('storage', handleStoredVolume);
+    window.addEventListener(VOLUME_CHANGE_EVENT, handleLocalVolume);
+    return () => {
+      window.removeEventListener('storage', handleStoredVolume);
+      window.removeEventListener(VOLUME_CHANGE_EVENT, handleLocalVolume);
+    };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+
     const fetchDevices = async () => {
       try {
         const devicesStatus = await getAllDevices();
-        const doorbell = devicesStatus.devices.find((d) => d.type === 'doorbell');
-        const hub = findHubDevice(devicesStatus.devices);
+        const doorbell = devicesStatus.devices.find((d) => d.type === 'doorbell') ?? null;
+        const hub = findHubDevice(devicesStatus.devices) ?? null;
+        const nextPlayback = await loadPlaybackSnapshot(doorbell, hub);
 
-        setDoorbellDevice(doorbell || null);
-        setHubDevice(hub || null);
+        if (!active) return;
+
+        setDoorbellDevice(doorbell);
+        setHubDevice(hub);
+        setPlayback(nextPlayback);
 
         setTarget((prevTarget) => {
           if (prevTarget !== null) return prevTarget;
@@ -77,7 +148,10 @@ export function MusicBroadcastCard({ isExpanded = false }: MusicBroadcastCardPro
 
     fetchDevices();
     const interval = setInterval(fetchDevices, 5000);
-    return () => clearInterval(interval);
+    return () => {
+      active = false;
+      clearInterval(interval);
+    };
   }, []);
 
   useEffect(() => {
@@ -125,7 +199,8 @@ export function MusicBroadcastCard({ isExpanded = false }: MusicBroadcastCardPro
       }
 
       await Promise.all(promises);
-      showNotice('ok', 'Broadcast started', `Music is now playing on ${targetLabel(target)}.`);
+      setPlayback(await loadPlaybackSnapshot(doorbellDevice, hubDevice));
+      showNotice('ok', 'Start command sent', `The playback status will confirm when audio starts on ${targetLabel(target)}.`);
     } catch (error) {
       console.error('Error broadcasting music:', error);
       showNotice('crit', 'Broadcast did not start', 'Check the selected device and try again.');
@@ -153,7 +228,8 @@ export function MusicBroadcastCard({ isExpanded = false }: MusicBroadcastCardPro
       }
 
       await Promise.all(promises);
-      showNotice('ok', 'Broadcast stopped', `Playback stopped on ${targetLabel(target)}.`);
+      setPlayback(await loadPlaybackSnapshot(doorbellDevice, hubDevice));
+      showNotice('ok', 'Stop command sent', `The playback status will confirm when audio stops on ${targetLabel(target)}.`);
     } catch (error) {
       console.error('Error stopping music:', error);
       showNotice('crit', 'Broadcast did not stop', 'Check the selected device and try again.');
@@ -164,6 +240,8 @@ export function MusicBroadcastCard({ isExpanded = false }: MusicBroadcastCardPro
 
   const handleVolumeChange = (newVolume: number) => {
     setVolume(newVolume);
+    window.localStorage.setItem(VOLUME_STORAGE_KEY, String(newVolume));
+    window.dispatchEvent(new CustomEvent<number>(VOLUME_CHANGE_EVENT, { detail: newVolume }));
   };
 
   const handleVolumeSend = async (finalVolume: number) => {
@@ -221,12 +299,40 @@ export function MusicBroadcastCard({ isExpanded = false }: MusicBroadcastCardPro
 
   const volumeFill = `linear-gradient(to right, var(--accent) 0 ${(volume / 21) * 100}%, var(--sunken) ${(volume / 21) * 100}% 100%)`;
 
+  const knownPlayback = [
+    { name: 'Doorbell', device: doorbellDevice, state: playback.doorbell },
+    { name: 'Hub', device: hubDevice, state: playback.hub },
+  ];
+  const playingDevices = knownPlayback.filter(({ state }) => state?.reported && state.is_playing);
+  const onlineDevices = knownPlayback.filter(({ device }) => device?.online);
+  const playbackConfirmedIdle = playback.checked
+    && onlineDevices.length > 0
+    && onlineDevices.every(({ state }) => state?.reported && !state.is_playing);
+  const isPlaying = playingDevices.length > 0;
+  const playingLocation = playingDevices.map(({ name }) => name).join(' + ');
+  const playingUrl = playingDevices.find(({ state }) => state?.current_url)?.state?.current_url;
+  const playingStation = STATION_PRESETS.find(({ value }) => value === playingUrl)?.label;
+  const playbackTitle = isPlaying
+    ? `${playingStation ?? 'Audio'} is playing`
+    : playbackConfirmedIdle
+      ? 'Nothing is playing'
+      : playback.checked
+        ? 'Playback status unavailable'
+        : 'Checking playback';
+  const playbackMessage = isPlaying
+    ? `Playing on ${playingLocation}.`
+    : playbackConfirmedIdle
+      ? 'The available speakers are currently idle.'
+      : playback.checked
+        ? 'A speaker has not reported its playback state yet.'
+        : 'Waiting for the speakers to report their current state.';
+
   return (
     <>
       {!isExpanded && (
         <header>
           <h2>Broadcast</h2>
-          <span className="g-label">{target ? targetLabel(target) : 'No target'}</span>
+          <span className="g-label">{isPlaying ? `Playing · ${playingLocation}` : target ? targetLabel(target) : 'No target'}</span>
         </header>
       )}
 
@@ -235,18 +341,9 @@ export function MusicBroadcastCard({ isExpanded = false }: MusicBroadcastCardPro
           <div className="g-tile" aria-hidden="true">
             <Volume2 size={24} color="currentColor" />
           </div>
-          {/* "Volume 10 of 21 · waiting for a device" is the control panel
-              describing its own slider position. On the home page the only
-              question is whether you can play something through the house
-              right now. The volume lives in the expanded view, next to the
-              slider that changes it. */}
           <div>
-            <strong>{isDeviceAvailable(target) ? 'Ready to play' : 'No speaker available'}</strong>
-            <p className="g-sub">
-              {isDeviceAvailable(target)
-                ? `Sound will come out of the ${target === 'both' ? 'doorbell and hub' : target}.`
-                : 'The doorbell and hub are offline, so there is nothing to play through.'}
-            </p>
+            <strong>{isDeviceAvailable(target) ? playbackTitle : 'No speaker available'}</strong>
+            <p className="g-sub">{isDeviceAvailable(target) ? playbackMessage : 'The doorbell and hub are offline, so there is nothing to play through.'}</p>
           </div>
         </div>
       ) : (
@@ -315,8 +412,8 @@ export function MusicBroadcastCard({ isExpanded = false }: MusicBroadcastCardPro
 
           <div className="broadcast-actions">
             <p>
-              <i className={`g-dot g-dot--${isDeviceAvailable(target) ? 'ok' : 'off'}`} aria-hidden="true" />
-              {isDeviceAvailable(target) ? `Ready on ${targetName(target)}` : 'Choose an online speaker'}
+              <i className={`g-dot g-dot--${isPlaying ? 'ok' : playbackConfirmedIdle ? 'off' : 'warn'}`} aria-hidden="true" />
+              {isDeviceAvailable(target) ? `${playbackTitle}${isPlaying ? ` on ${playingLocation}` : ''}` : 'Choose an online speaker'}
             </p>
             <div className="dash-modal-actions">
               <button
@@ -326,7 +423,7 @@ export function MusicBroadcastCard({ isExpanded = false }: MusicBroadcastCardPro
                 disabled={loading || !isDeviceAvailable(target) || !streamUrl.trim()}
               >
                 <Play size={16} aria-hidden="true" />
-                {loading ? 'Starting' : 'Start broadcast'}
+                {loading ? 'Sending' : isPlaying ? 'Update broadcast' : 'Start broadcast'}
               </button>
               <button
                 className="g-btn g-btn--ghost"

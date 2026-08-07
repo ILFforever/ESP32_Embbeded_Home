@@ -3,6 +3,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import ProtectedRoute from '@/components/auth/ProtectedRoute';
 import GlassBar from '@/components/glass/GlassBar';
+import { PageSkeleton } from '@/components/glass/Skeleton';
 import { getAlerts, getAllDevices, getGasReadingsForDashboard, getLockStatus } from '@/services/devices.service';
 import type { Alert, BackendDevice, DevicesStatus, GasReading } from '@/types/dashboard';
 import { alertLevelToType } from '@/types/dashboard';
@@ -124,15 +125,7 @@ export default function PlanPage() {
   };
 
   if (loading) {
-    return (
-      <div className="g-waiting">
-        <div className="g-waiting__inner">
-          <div className="g-spinner" aria-hidden="true" />
-          <h1>Ground floor</h1>
-          <p aria-live="polite">Placing devices on the plan.</p>
-        </div>
-      </div>
-    );
+    return <PageSkeleton label="Placing devices on the plan." variant="plan" />;
   }
 
   return (

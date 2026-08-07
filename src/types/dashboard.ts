@@ -51,9 +51,17 @@ export interface Alert {
   message: string;
   source: string;
   tags: string[];
+  /* What the doorbell actually sends with a face-detection alert. The
+     type listed only the two fields the UI happened to read, so every
+     fixture written from a real API response failed to typecheck against
+     it — the type was describing the consumer, not the payload. */
   metadata?: {
     image_url?: string;
     confidence?: number;
+    /* Recognised person's name, or "Unknown". */
+    name?: string;
+    /* Groups an alert with the capture it came from. */
+    event_id?: string;
   };
   timestamp: string;
   read: boolean;

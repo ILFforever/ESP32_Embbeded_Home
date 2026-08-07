@@ -27,6 +27,7 @@ import type { BackendDevice } from '@/types/dashboard';
 import { notify, confirmDialog } from '@/components/glass/GlassRuntime';
 import { relativeTime } from '@/utils/time';
 import { useModalTransition } from '@/components/glass/useModalTransition';
+import { ContentSkeleton } from '@/components/glass/Skeleton';
 import {
   ArrowLeft,
   Mic,
@@ -691,7 +692,9 @@ const renderSensorCard = (
         </div>
 
         {loading ? (
-          <section className="g-pane g-card">{renderEmpty('Loading hub data', 'Fetching sensors, amplifier state, and recent activity.')}</section>
+          <section className="g-pane g-card">
+            <ContentSkeleton label="Loading hub sensors, amplifier state, and recent activity." rows={4} tiles={3} />
+          </section>
         ) : (
           <>
             <section className="hub-sensors">
@@ -819,7 +822,7 @@ const renderSensorCard = (
                       Stop
                     </button>
                     <button className="g-btn g-btn--ghost" type="button" onClick={handleRestartAmp} disabled={ampLoading || !hubDevice?.online}>
-                      <RotateCw size={16} className={ampLoading ? 'rotating' : ''} />
+                      <RotateCw size={16} />
                       Restart
                     </button>
                   </div>
@@ -950,7 +953,7 @@ const renderSensorCard = (
                 Cancel
               </button>
               <button className="g-btn g-btn--danger" type="button" onClick={handleRestart} disabled={restarting || !hubDevice?.online}>
-                {restarting ? <RefreshCw size={16} className="rotating" /> : <Power size={16} />}
+                {restarting ? <RefreshCw size={16} /> : <Power size={16} />}
                 {restarting ? 'Restarting' : 'Restart'}
               </button>
             </div>

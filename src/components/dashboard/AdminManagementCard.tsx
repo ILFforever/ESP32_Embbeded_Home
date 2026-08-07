@@ -6,6 +6,7 @@ import { UserData, deleteAdmin, deleteUser, getAdmins, getUsers, registerUser } 
 import { deleteDevice, getDeviceStatusText, registerDevice } from '@/services/devices.service';
 import type { BackendDevice } from '@/types/dashboard';
 import { useModalTransition } from '@/components/glass/useModalTransition';
+import { ContentSkeleton } from '@/components/glass/Skeleton';
 
 interface AdminManagementCardProps {
   isExpanded?: boolean;
@@ -378,7 +379,7 @@ export function AdminManagementCard({
           </div>
         ) : (
           <div className="g-stack">
-            {loading && <div className="g-empty"><strong>Loading people</strong><p>Fetching admin and user records.</p></div>}
+            {loading && <ContentSkeleton label="Loading people and user records." rows={4} />}
             {error && <div className="g-chip g-chip--crit" role="alert">{error}</div>}
 
             {/* Each action sits in the header of the thing it changes, the

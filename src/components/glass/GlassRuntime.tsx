@@ -151,6 +151,25 @@ function applyLens(force = false): void {
   const defs = ensureDefs();
   const theme = getCurrentTheme();
 
+  // Light theme only. Refraction needs a bright, detailed backdrop to bend;
+  // on the dark theme it smears the ground into a grey smudge at the rim and
+  // reads as a rendering fault rather than glass. Dark is flat by design —
+  // the bar falls back to the plain token blur from .g-pane. Tear down any
+  // filter a previous light-theme pass installed; the theme-change listener
+  // calls this with force=true, so the switch back re-installs it.
+  if (theme === 'dark') {
+    bars.forEach((bar) => {
+      if (bar.dataset.lensId) {
+        document.getElementById(bar.dataset.lensId)?.remove();
+        delete bar.dataset.lensId;
+      }
+      delete bar.dataset.lensSig;
+      bar.style.removeProperty('backdrop-filter');
+      bar.style.removeProperty('-webkit-backdrop-filter');
+    });
+    return;
+  }
+
   bars.forEach((bar) => {
     const w = Math.round(bar.offsetWidth);
     const h = Math.round(bar.offsetHeight);

@@ -12,6 +12,7 @@ import {
 import { RefreshCw, Thermometer } from 'lucide-react';
 import type { TemperatureData } from '@/types/dashboard';
 import Sparkline from '@/components/glass/Sparkline';
+import { ContentSkeleton } from '@/components/glass/Skeleton';
 import { labelForId } from '@/utils/deviceNames';
 import { lastSeenLabel, relativeTime } from '@/utils/time';
 import {
@@ -168,18 +169,16 @@ export function TemperatureCard({ isExpanded = false, hideHeader = false }: Temp
             className="g-icon-btn"
             onClick={(e) => { e.stopPropagation(); fetchTemperatureData(); }}
             disabled={refetching}
+            aria-busy={refetching}
             aria-label="Refresh temperature data"
           >
-            <RefreshCw size={17} className={refetching ? 'spinning' : ''} aria-hidden="true" />
+            <RefreshCw size={17} aria-hidden="true" />
           </button>
         </header>
       )}
 
       {loading ? (
-        <div className="g-empty">
-          <strong>Loading climate readings</strong>
-          <p>Waiting for the sensors to report back.</p>
-        </div>
+        <ContentSkeleton label="Loading climate readings." rows={3} />
       ) : !isExpanded ? (
         temperatureData.length > 0 ? (() => {
           /* One hero reading with its trend, then the rest as a quiet row.
@@ -269,8 +268,9 @@ export function TemperatureCard({ isExpanded = false, hideHeader = false }: Temp
               className="g-btn g-btn--ghost"
               onClick={(e) => { e.stopPropagation(); fetchTemperatureData(); }}
               disabled={refetching}
+              aria-busy={refetching}
             >
-              <RefreshCw size={16} className={refetching ? 'spinning' : ''} aria-hidden="true" />
+              <RefreshCw size={16} aria-hidden="true" />
               Refresh
             </button>
           </div>

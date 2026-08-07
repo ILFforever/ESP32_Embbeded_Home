@@ -1,9 +1,10 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { AlertCircle, CreditCard, Loader, PlusCircle, Shield, User, X } from 'lucide-react';
+import { AlertCircle, CreditCard, PlusCircle, Shield, User, X } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { useModalTransition } from '@/components/glass/useModalTransition';
+import { ContentSkeleton } from '@/components/glass/Skeleton';
 import {
   getUsersWithNfc,
   enableAddCardMode,
@@ -288,7 +289,7 @@ export function NfcManagementCard({ isExpanded = false, hideHeader = false }: Nf
 
       {isAddingOwnCard && (
         <StatusMessage kind="wait">
-          <span className="g-row"><Loader size={17} /> Waiting for a card scan on {deviceId}.</span>
+          <span className="g-row"><CreditCard size={17} /> Waiting for a card scan on {deviceId}.</span>
         </StatusMessage>
       )}
 
@@ -299,7 +300,7 @@ export function NfcManagementCard({ isExpanded = false, hideHeader = false }: Nf
         </div>
 
         {loading && !currentUserNfc ? (
-          <div className="g-empty"><strong>Loading cards</strong><p>Fetching registered NFC cards.</p></div>
+          <ContentSkeleton label="Loading registered NFC cards." rows={2} />
         ) : currentUserNfc?.nfc_cards && currentUserNfc.nfc_cards.length > 0 ? (
           <div className="g-list">
             {currentUserNfc.nfc_cards.map((cardId) => (
@@ -334,7 +335,7 @@ export function NfcManagementCard({ isExpanded = false, hideHeader = false }: Nf
         {renderDevicePicker()}
         {addingUser && (
           <StatusMessage kind="wait">
-            <span className="g-row"><Loader size={17} /> Waiting for {addingUser.name} to scan a card.</span>
+            <span className="g-row"><CreditCard size={17} /> Waiting for {addingUser.name} to scan a card.</span>
           </StatusMessage>
         )}
       </div>
@@ -475,7 +476,7 @@ export function NfcManagementCard({ isExpanded = false, hideHeader = false }: Nf
               <div className="g-metric-sm g-num">{users.length}</div>
             </div>
           </div>
-          {loading && <div className="g-empty"><strong>Loading NFC data</strong><p>Fetching card holders and reader state.</p></div>}
+          {loading && <ContentSkeleton label="Loading card holders and reader state." rows={3} tiles={3} />}
           {isAdminView ? renderAdminView() : renderUserView()}
         </div>
       )}

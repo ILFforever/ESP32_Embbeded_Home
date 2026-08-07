@@ -8,188 +8,133 @@ import type { Alert } from '@/types/dashboard';
 export interface ScoredAlert extends Alert {
   score: number;
   scoreBreakdown?: {
-    levelScore: number;
-    readStatusScore: number;
-    recencyScore: number;
-    recognitionScore: number;
-    confidenceScore: number;
-    tagBasedScore: number; // New score component
+    severity: number;
+    tagBoost: number;
+    recencyFactor: number;
+    readFactor: number;
   };
 }
 
 /**
- * Calculate priority score for an alert
- * Score ranges from 0 to ~100+
+ * Calculate priority score for an alert. 0 to ~100.
+ *
+ * Severity decides what an alert is worth. Recency and read state only
+ * scale it. That distinction is the whole design, and it used to be
+ * missing: every component was additive, so unread (30 points) plus
+ * arrived-in-the-last-hour (20 points) reached the 50-point urgent
+ * threshold on their own, before severity was consulted at all.
+ *
+ * A routine "Command 'amp_volume' completed" — INFO, the lowest severity
+ * there is — scored 10 + 30 + 20 = 60, which the UI labels high priority
+ * and counts as urgent. Nothing about it was urgent except that it was
+ * new, and everything is new once. That is where "96 urgent" came from.
+ *
+ * Multiplying instead means a routine acknowledgement cannot climb: an
+ * unread INFO alert peaks at 12 however recent it is, while an unread
+ * IMPORTANT one stays above the urgent line for days.
  */
 export function calculateAlertScore(alert: Alert, currentTime: Date = new Date()): number {
-  let score = 0;
-
-  // 1. Alert Level Score (0-40 points)
-  const levelScore = getAlertLevelScore(alert.level);
-  score += levelScore;
-
-  // 2. Read Status Score (0-30 points)
-  const readStatusScore = alert.read ? 0 : 30;
-  score += readStatusScore;
-
-  // 3. Recency Score (0-20 points)
-  const recencyScore = getRecencyScore(alert.timestamp, currentTime);
-  score += recencyScore;
-
-  // 4. Recognition Score for face-detection alerts (0-10 points)
-  const recognitionScore = getRecognitionScore(alert);
-  score += recognitionScore;
-
-  // 5. Confidence Score for recognized faces (0-10 points)
-  const confidenceScore = getConfidenceScore(alert);
-  score += confidenceScore;
-
-  // 6. Tag-based Score for specific events (e.g., device restarts)
-  const tagBasedScore = getTagBasedScore(alert);
-  score += tagBasedScore;
-
-  return Math.round(score * 10) / 10; // Round to 1 decimal place
+  return calculateAlertScoreWithBreakdown(alert, currentTime).score;
 }
 
 /**
  * Calculate detailed score breakdown for an alert
  */
 export function calculateAlertScoreWithBreakdown(alert: Alert, currentTime: Date = new Date()): ScoredAlert {
-  const levelScore = getAlertLevelScore(alert.level);
-  const readStatusScore = alert.read ? 0 : 30;
-  const recencyScore = getRecencyScore(alert.timestamp, currentTime);
-  const recognitionScore = getRecognitionScore(alert);
-  const confidenceScore = getConfidenceScore(alert);
-  const tagBasedScore = getTagBasedScore(alert); // Calculate new score
+  const severity = getSeverityScore(alert.level);
+  /* Added before scaling, not after. A tag says something about the event
+     itself — a board dropped off the network, a battery is nearly flat —
+     so it belongs with severity and should fade at the same rate. */
+  const tagBoost = getTagBoost(alert);
+  const recencyFactor = getRecencyFactor(alert.timestamp, currentTime);
+  const readFactor = alert.read ? 0.5 : 1;
 
-  const totalScore = levelScore + readStatusScore + recencyScore + recognitionScore + confidenceScore + tagBasedScore;
+  const totalScore = (severity + tagBoost) * recencyFactor * readFactor;
 
   return {
     ...alert,
     score: Math.round(totalScore * 10) / 10,
-    scoreBreakdown: {
-      levelScore,
-      readStatusScore,
-      recencyScore,
-      recognitionScore,
-      confidenceScore,
-      tagBasedScore, // Add to breakdown
-    },
+    scoreBreakdown: { severity, tagBoost, recencyFactor, readFactor },
   };
 }
 
 /**
- * Score based on alert level
- * IMPORTANT: 40 points
- * WARN: 25 points
- * INFO: 10 points
+ * What an alert is worth before anything modifies it.
+ *
+ * These sit deliberately either side of the category thresholds: a fresh
+ * unread WARN lands on 'high' and counts as urgent, a fresh unread INFO
+ * lands on 'low' and does not. Everything else moves an alert down from
+ * there, or up only when a tag says the event is more than its level.
  */
-function getAlertLevelScore(level: 'INFO' | 'WARN' | 'IMPORTANT'): number {
+function getSeverityScore(level: 'INFO' | 'WARN' | 'IMPORTANT'): number {
   switch (level) {
     case 'IMPORTANT':
-      return 40;
+      return 72;
     case 'WARN':
-      return 25;
+      return 52;
     case 'INFO':
-      return 10;
+      return 12;
     default:
       return 0;
   }
 }
 
 /**
- * Score based on how recent the alert is
- * Returns 0-20 points with exponential decay
- * - Last hour: 20 points
- * - Last 6 hours: 15-20 points
- * - Last day: 10-15 points
- * - Last week: 5-10 points
- * - Older: 0-5 points
+ * How much of its severity an alert keeps as it ages. Never zero — an
+ * important alert from last month still outranks a routine one from this
+ * morning, which is the ordering a person expects and the old additive
+ * recency score could not produce.
+ *
+ * - Last hour:  1.00
+ * - Last 6h:    0.92 - 1.00
+ * - Last day:   0.80 - 0.92
+ * - Last week:  0.60 - 0.80
+ * - Older:      0.50 - 0.60, decaying
  */
-function getRecencyScore(timestamp: string, currentTime: Date): number {
+function getRecencyFactor(timestamp: string, currentTime: Date): number {
   const alertTime = new Date(timestamp);
   const diffMs = currentTime.getTime() - alertTime.getTime();
   const diffHours = diffMs / (1000 * 60 * 60);
 
-  if (diffHours < 1) return 20;
-  if (diffHours < 6) return 20 - (diffHours - 1) * 1; // 15-20
-  if (diffHours < 24) return 15 - ((diffHours - 6) / 18) * 5; // 10-15
-  if (diffHours < 168) return 10 - ((diffHours - 24) / 144) * 5; // 5-10 (1 week)
+  if (diffHours < 1) return 1;
+  if (diffHours < 6) return 1 - ((diffHours - 1) / 5) * 0.08;
+  if (diffHours < 24) return 0.92 - ((diffHours - 6) / 18) * 0.12;
+  if (diffHours < 168) return 0.8 - ((diffHours - 24) / 144) * 0.2;
 
-  // Older than a week: exponential decay from 5 to 0
   const diffDays = diffMs / (1000 * 60 * 60 * 24);
-  return Math.max(0, 5 * Math.exp(-(diffDays - 7) / 7));
+  return 0.5 + 0.1 * Math.exp(-(diffDays - 7) / 7);
 }
 
 /**
- * Score based on face recognition status
- * Unknown faces are higher priority than known faces
- * - Unknown person: 10 points
- * - Known person: 0 points
- * - Non-face-detection: 0 points
+ * Events whose level understates them. A board reporting its own restart
+ * at INFO is still a board that restarted, and a low battery is a job to
+ * do whatever level it arrives at.
+ *
+ * Face detection is here too: an unrecognised person is worth more than
+ * the same alert about someone known, and a shaky match on a known face
+ * is worth more than a confident one, because a bad match is the case a
+ * person actually needs to look at.
  */
-function getRecognitionScore(alert: Alert): number {
+function getTagBoost(alert: Alert): number {
   const tags = getAlertTags(alert);
+  let boost = 0;
 
-  if (!tags.includes('face-detection')) {
-    return 0;
+  if (tags.includes('device-offline')) boost += 20;
+  else if (tags.includes('battery-low')) boost += 20;
+  else if (tags.includes('device-restart')) boost += 15;
+  else if (tags.includes('firmware-update')) boost += 10;
+  else if (tags.includes('device-online')) boost += 5;
+
+  if (tags.includes('face-detection')) {
+    if (tags.includes('unknown')) {
+      boost += 10;
+    } else {
+      const confidence = alert.metadata?.confidence ?? 1;
+      boost += Math.max(0, 8 * (1 - confidence));
+    }
   }
 
-  if (tags.includes('unknown')) {
-    return 10;
-  }
-
-  return 0;
-}
-
-/**
- * Score based on recognition confidence
- * Lower confidence = higher priority (less certain = needs attention)
- * Only applies to recognized faces (INFO level face-detection alerts)
- * - Confidence 0: 10 points
- * - Confidence 0.5: 5 points
- * - Confidence 1.0: 0 points
- */
-function getConfidenceScore(alert: Alert): number {
-  const tags = getAlertTags(alert);
-
-  // Only apply to recognized faces
-  if (!tags.includes('face-detection') || tags.includes('unknown')) {
-    return 0;
-  }
-
-  // Get confidence from metadata
-  const confidence = alert.metadata?.confidence ?? 1;
-
-  // Invert confidence: lower confidence = higher score
-  // Confidence ranges from 0 to 1, score ranges from 10 to 0
-  return Math.max(0, 10 * (1 - confidence));
-}
-
-/**
- * Score based on specific alert tags
- * This helps prioritize certain events that might not have a high level
- * but are still important for system monitoring.
- */
-function getTagBasedScore(alert: Alert): number {
-  const tags = getAlertTags(alert);
-
-  if (tags.includes('device-restart')) {
-    return 15; // e.g., a device unexpectedly restarted
-  }
-  if (tags.includes('device-offline')) {
-    return 20; // A device went offline, potentially critical
-  }
-  if (tags.includes('device-online')) {
-    return 5; // A device came back online, good to know but low priority
-  }
-  if (tags.includes('firmware-update')) {
-    return 10; // Firmware update status
-  }
-  if (tags.includes('battery-low')) {
-    return 20; // Low battery is a high-priority warning
-  }
-  return 0;
+  return boost;
 }
 
 function getAlertTags(alert: Alert): string[] {

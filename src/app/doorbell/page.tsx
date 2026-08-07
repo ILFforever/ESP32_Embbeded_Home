@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import {
   Camera,
@@ -36,6 +36,8 @@ import type { Device } from "@/types/dashboard";
 import { notify, confirmDialog } from '@/components/glass/GlassRuntime';
 import { useModalTransition } from '@/components/glass/useModalTransition';
 import StationPresetPicker from '@/components/glass/StationPresetPicker';
+import { PageSkeleton } from '@/components/glass/Skeleton';
+import { DoorbellAvStream } from "@/services/doorbell-stream.service";
 
 interface ActivityEvent {
   id: string;
@@ -156,6 +158,8 @@ export default function DoorbellControlPage() {
   const [streamConnecting, setStreamConnecting] = useState(false);
   const [audioContext, setAudioContext] = useState<AudioContext | null>(null);
   const [audioDebugInfo, setAudioDebugInfo] = useState<string>("Initializing...");
+  const [videoFrameUrl, setVideoFrameUrl] = useState<string | null>(null);
+  const avStreamRef = useRef<DoorbellAvStream | null>(null);
 
   // Load saved device_id from localStorage on mount
   useEffect(() => {
@@ -166,168 +170,51 @@ export default function DoorbellControlPage() {
     }
   }, []);
 
-  // Handle raw PCM audio streaming
+  const streamDeviceId = savedDeviceId || doorbellDevice?.device_id || null;
+
+  // One WebSocket carries timestamped JPEG and compressed audio packets.
   useEffect(() => {
-    let abortController: AbortController | null = null;
-    let audioQueue: AudioBufferSourceNode[] = [];
-    let nextStartTime = 0;
-
-    const streamAudio = async () => {
-      if (!micActive || audioMuted || !audioContext) {
-        return;
-      }
-
-      abortController = new AbortController();
-
-      // Retry logic - wait for stream to become available
-      const MAX_RETRIES = 20;
-      const RETRY_DELAY = 1000; // 1 second between retries
-      let retryCount = 0;
-      let response: Response | null = null;
-
-      setAudioDebugInfo("Waiting for audio stream to start...");
-
-      while (retryCount < MAX_RETRIES && !abortController.signal.aborted) {
-        try {
-          console.log(`[Audio] Attempt ${retryCount + 1}/${MAX_RETRIES} - Connecting to stream...`);
-          setAudioDebugInfo(`Connecting... (attempt ${retryCount + 1}/${MAX_RETRIES})`);
-
-          response = await fetch(
-            "https://embedded-smarthome.fly.dev/api/v1/stream/audio/db_001",
-            { signal: abortController.signal }
-          );
-
-          if (response.ok) {
-            console.log(`[Audio] ✓ Stream connected on attempt ${retryCount + 1}`);
-            break;
-          }
-
-          console.log(`[Audio] Stream not ready (status: ${response.status}), retrying...`);
-          retryCount++;
-
-          if (retryCount < MAX_RETRIES) {
-            await new Promise(resolve => setTimeout(resolve, RETRY_DELAY));
-          }
-        } catch (error: any) {
-          if (error.name === 'AbortError') {
-            console.log("[Audio] Connection aborted");
-            return;
-          }
-          console.log(`[Audio] Connection error on attempt ${retryCount + 1}:`, error.message);
-          retryCount++;
-
-          if (retryCount < MAX_RETRIES) {
-            await new Promise(resolve => setTimeout(resolve, RETRY_DELAY));
-          }
-        }
-      }
-
-      if (!response || !response.ok) {
-        const errorMsg = `Failed to connect after ${MAX_RETRIES} attempts. Please ensure mic is streaming.`;
-        console.error("[Audio]", errorMsg);
-        setAudioDebugInfo(errorMsg);
-        setStreamError(errorMsg);
-        return;
-      }
-
-      try {
-        setAudioDebugInfo("Connected! Processing audio...");
-        const reader = response.body?.getReader();
-
-        if (!reader) {
-          throw new Error("Failed to get reader from response");
-        }
-
-        const CHUNK_SIZE = 1024; // Process 1024 samples (2048 bytes) at a time
-        let buffer = new Uint8Array(0);
-
-        while (true) {
-          const { done, value } = await reader.read();
-
-          if (done) {
-            console.log("[Audio] Stream ended");
-            setAudioDebugInfo("Stream ended");
-            break;
-          }
-
-          // Append new data to buffer
-          const newBuffer = new Uint8Array(buffer.length + value.length);
-          newBuffer.set(buffer);
-          newBuffer.set(value, buffer.length);
-          buffer = newBuffer;
-
-          // Process complete chunks
-          while (buffer.length >= CHUNK_SIZE * 2) {
-            // Extract chunk (2 bytes per sample for 16-bit audio)
-            const chunkBytes = buffer.slice(0, CHUNK_SIZE * 2);
-            buffer = buffer.slice(CHUNK_SIZE * 2);
-
-            // Convert bytes to 16-bit PCM samples
-            const samples = new Int16Array(chunkBytes.buffer);
-
-            // Create audio buffer
-            const audioBuffer = audioContext.createBuffer(1, samples.length, 16000);
-            const channelData = audioBuffer.getChannelData(0);
-
-            // Convert Int16 to Float32 (normalize to -1.0 to 1.0)
-            for (let i = 0; i < samples.length; i++) {
-              channelData[i] = samples[i] / 32768.0;
-            }
-
-            // Create and schedule audio source
-            const source = audioContext.createBufferSource();
-            source.buffer = audioBuffer;
-            source.connect(audioContext.destination);
-
-            // Schedule playback
-            const currentTime = audioContext.currentTime;
-            if (nextStartTime < currentTime) {
-              nextStartTime = currentTime;
-            }
-            source.start(nextStartTime);
-            nextStartTime += audioBuffer.duration;
-
-            audioQueue.push(source);
-
-            // Clean up old sources
-            if (audioQueue.length > 10) {
-              const oldSource = audioQueue.shift();
-              oldSource?.disconnect();
-            }
-
-            setAudioDebugInfo(`Playing audio (${audioQueue.length} buffers queued)`);
-          }
-        }
-      } catch (error: any) {
-        if (error.name !== 'AbortError') {
-          console.error("[Audio] Stream error:", error);
-          setAudioDebugInfo("Error: " + error.message);
-          setStreamError("Audio stream error: " + error.message);
-        }
-      }
-    };
-
-    if (micActive && !audioMuted && audioContext) {
-      streamAudio();
+    if ((!cameraActive && !micActive) || !streamDeviceId) {
+      avStreamRef.current?.disconnect();
+      avStreamRef.current = null;
+      setVideoFrameUrl(null);
+      return;
     }
 
-    // Cleanup function
+    let currentFrameUrl: string | null = null;
+    const stream = new DoorbellAvStream({
+      apiUrl: process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000",
+      deviceId: streamDeviceId,
+      onVideoFrame: (jpeg) => {
+        if (currentFrameUrl) URL.revokeObjectURL(currentFrameUrl);
+        currentFrameUrl = URL.createObjectURL(jpeg);
+        setVideoFrameUrl(currentFrameUrl);
+        setStreamError(null);
+      },
+      onStatus: setAudioDebugInfo,
+      onError: setStreamError,
+    });
+
+    avStreamRef.current = stream;
+    stream.setAudioContext(audioContext);
+    stream.setMuted(audioMuted);
+    stream.connect();
+
     return () => {
-      if (abortController) {
-        abortController.abort();
-      }
-      audioQueue.forEach(source => {
-        try {
-          source.stop();
-          source.disconnect();
-        } catch (e) {
-          // Ignore errors when stopping
-        }
-      });
-      audioQueue = [];
-      nextStartTime = 0;
+      stream.disconnect();
+      if (avStreamRef.current === stream) avStreamRef.current = null;
+      if (currentFrameUrl) URL.revokeObjectURL(currentFrameUrl);
+      setVideoFrameUrl(null);
     };
-  }, [micActive, audioMuted, audioContext]);
+  }, [cameraActive, micActive, streamDeviceId]);
+
+  useEffect(() => {
+    avStreamRef.current?.setAudioContext(audioContext);
+  }, [audioContext]);
+
+  useEffect(() => {
+    avStreamRef.current?.setMuted(audioMuted);
+  }, [audioMuted]);
 
   // Get the effective device_id (custom or from backend)
   const getEffectiveDeviceId = () => {
@@ -539,6 +426,17 @@ export default function DoorbellControlPage() {
         }
         setAudioDebugInfo("Audio stopped");
       } else {
+        // Create/resume Web Audio while this user gesture is still active.
+        // Browsers commonly reject audio startup after the later network awaits.
+        let streamAudioContext = audioContext;
+        if (!streamAudioContext) {
+          streamAudioContext = new (window.AudioContext || (window as any).webkitAudioContext)({
+            sampleRate: 16000,
+          });
+          setAudioContext(streamAudioContext);
+        }
+        void streamAudioContext.resume();
+
         // Starting camera - need to wait for stream to be ready
         console.log("[Camera] Sending camera_start command (backend will also start mic)...");
         await sendCommand(deviceId, 'camera_start');
@@ -561,13 +459,6 @@ export default function DoorbellControlPage() {
           console.log("[Mic] ✓ Mic activated (via camera_start), audio will start streaming");
           setAudioDebugInfo("Starting audio stream...");
 
-          // Initialize audio context
-          if (!audioContext) {
-            const ctx = new (window.AudioContext || (window as any).webkitAudioContext)({
-              sampleRate: 16000,
-            });
-            setAudioContext(ctx);
-          }
         } else {
           console.error("[Camera] ✗ Stream did not start in time");
           setStreamError("Camera started but stream is not available yet. Please wait a moment and try again.");
@@ -607,10 +498,14 @@ export default function DoorbellControlPage() {
       return;
     }
 
-    // Toggle mute state
-    setAudioMuted(!audioMuted);
+    const nextMuted = !audioMuted;
+    setAudioMuted(nextMuted);
 
-    if (!audioMuted) {
+    if (!nextMuted && audioContext?.state === "suspended") {
+      void audioContext.resume();
+    }
+
+    if (nextMuted) {
       console.log("[Mic] ✓ Audio muted (frontend only)");
       setAudioDebugInfo("Audio muted");
     } else {
@@ -1086,6 +981,14 @@ export default function DoorbellControlPage() {
     return new Date(value).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" });
   };
 
+  if (loading) {
+    return (
+      <ProtectedRoute>
+        <PageSkeleton label="Checking the doorbell connection." variant="device" />
+      </ProtectedRoute>
+    );
+  }
+
   return (
     <ProtectedRoute>
       <div className="g-page">
@@ -1159,19 +1062,17 @@ export default function DoorbellControlPage() {
                     <Camera size={40} aria-hidden="true" />
                     <p style={{ margin: 0 }}>Connecting to camera stream<br /><span className="g-dim">Waiting for the ESP32 stream.</span></p>
                   </div>
-                ) : effectiveDeviceId && cameraActive ? (
+                ) : effectiveDeviceId && cameraActive && videoFrameUrl ? (
                   <img
                     className="doorbell-color-corrected"
-                    src={`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000"}/api/v1/stream/camera/${effectiveDeviceId}`}
+                    src={videoFrameUrl}
                     alt="Live camera feed"
                     style={{ width: "100%", height: "100%", minHeight: 320, objectFit: "contain", display: "block" }}
-                    onError={() => setStreamError("Failed to load camera stream. Make sure the camera is streaming.")}
-                    onLoad={() => setStreamError(null)}
                   />
                 ) : (
                   <div className="g-media__empty">
                     <Camera size={40} aria-hidden="true" />
-                    <p style={{ margin: 0 }}>{!effectiveDeviceId ? "No device paired" : "Camera is not active"}<br /><span className="g-dim">Start the camera to view the live stream.</span></p>
+                    <p style={{ margin: 0 }}>{!effectiveDeviceId ? "No device paired" : cameraActive ? "Waiting for the first frame" : "Camera is not active"}<br /><span className="g-dim">{cameraActive ? "The combined stream is connected and warming up." : "Start the camera to view the live stream."}</span></p>
                   </div>
                 )}
               </div>
@@ -1186,7 +1087,7 @@ export default function DoorbellControlPage() {
                   <Mic size={20} aria-hidden="true" style={{ color: "var(--accent)", flex: "none" }} />
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: "14px", fontWeight: 600 }}>Audio stream {audioMuted ? "muted" : "playing"}</div>
-                    <div className="g-sub" style={{ margin: "2px 0 0", fontSize: "12px" }}>PCM · 16 kHz · mono</div>
+                    <div className="g-sub" style={{ margin: "2px 0 0", fontSize: "12px" }}>IMA ADPCM · 16 kHz · mono</div>
                   </div>
                   <span className={`g-chip ${audioMuted ? "g-chip--warn" : "g-chip--ok"}`}>{audioMuted ? "Muted" : "Connected"}</span>
                 </div>
@@ -1194,10 +1095,10 @@ export default function DoorbellControlPage() {
 
               {effectiveDeviceId && micActive && !audioMuted && (
                 <div className="g-log" style={{ marginTop: "var(--s-4)" }}>
-                  <div><strong>Raw PCM audio processor</strong></div>
+                  <div><strong>Combined audio/video WebSocket</strong></div>
                   <div>Status: {audioDebugInfo}</div>
-                  <div>Stream URL: https://embedded-smarthome.fly.dev/api/v1/stream/audio/db_001</div>
-                  <div>Format: PCM s16le, 16 kHz, mono</div>
+                  <div>Transport: one timestamped binary stream</div>
+                  <div>Format: JPEG 5 FPS + IMA ADPCM 16 kHz mono</div>
                 </div>
               )}
             </section>
@@ -1283,33 +1184,21 @@ export default function DoorbellControlPage() {
             <section className="g-pane g-card">
               <header><h2>Submodule command</h2><span className="g-label">Maintenance</span></header>
               <div className="g-grid g-grid--2">
-                <button className="g-action g-action--icon" type="button" onClick={handleCameraRestart} disabled={commandLoading === "camera_restart"}>
-                  <Camera size={18} aria-hidden="true" />
-                  <span className="g-action__copy">
-                    <strong>{commandLoading === "camera_restart" ? "Restarting camera" : "Restart camera"}</strong>
-                    <small>Use this when the live stream stops responding.</small>
-                  </span>
+                <button className="g-action" type="button" onClick={handleCameraRestart} disabled={commandLoading === "camera_restart"}>
+                  <Camera size={18} aria-hidden="true" /> {commandLoading === "camera_restart" ? "Restarting camera" : "Restart camera"}
+                  <small>Use this when the live stream stops responding.</small>
                 </button>
-                <button className="g-action g-action--icon" type="button" onClick={handleRestartAmplifier} disabled={commandLoading === "amp_restart"}>
-                  <Volume2 size={18} aria-hidden="true" />
-                  <span className="g-action__copy">
-                    <strong>{commandLoading === "amp_restart" ? "Restarting amplifier" : "Restart amplifier"}</strong>
-                    <small>Restarts only the audio board.</small>
-                  </span>
+                <button className="g-action" type="button" onClick={handleRestartAmplifier} disabled={commandLoading === "amp_restart"}>
+                  <Volume2 size={18} aria-hidden="true" /> {commandLoading === "amp_restart" ? "Restarting amplifier" : "Restart amplifier"}
+                  <small>Restarts only the audio board.</small>
                 </button>
-                <button className="g-action g-action--icon" type="button" onClick={() => setShowWifiSettings(true)} disabled={commandLoading === "amp_wifi"}>
-                  <Settings size={18} aria-hidden="true" />
-                  <span className="g-action__copy">
-                    <strong>Amplifier Wi-Fi</strong>
-                    <small>Send SSID and password to the amplifier.</small>
-                  </span>
+                <button className="g-action" type="button" onClick={() => setShowWifiSettings(true)} disabled={commandLoading === "amp_wifi"}>
+                  <Settings size={18} aria-hidden="true" /> Amplifier Wi-Fi
+                  <small>Send SSID and password to the amplifier.</small>
                 </button>
-                <button className="g-action g-action--icon" type="button" onClick={handleSystemRestart} disabled={commandLoading === "system_restart"}>
-                  <Power size={18} aria-hidden="true" />
-                  <span className="g-action__copy">
-                    <strong>{commandLoading === "system_restart" ? "Restarting system" : "Restart doorbell"}</strong>
-                    <small>The device will be offline for about 30 seconds.</small>
-                  </span>
+                <button className="g-action" type="button" onClick={handleSystemRestart} disabled={commandLoading === "system_restart"}>
+                  <Power size={18} aria-hidden="true" /> {commandLoading === "system_restart" ? "Restarting system" : "Restart doorbell"}
+                  <small>The device will be offline for about 30 seconds.</small>
                 </button>
               </div>
             </section>

@@ -4,6 +4,7 @@ import React, { useEffect, useState } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import ProtectedRoute from '@/components/auth/ProtectedRoute';
 import GlassBar from '@/components/glass/GlassBar';
+import { PageSkeleton } from '@/components/glass/Skeleton';
 import { useModalTransition } from '@/components/glass/useModalTransition';
 import { AlertsCard } from '@/components/dashboard/AlertsCard';
 import { TemperatureCard } from '@/components/dashboard/TemperatureCard';
@@ -366,15 +367,7 @@ export default function DashboardPage() {
   })();
 
   if (loading) {
-    return (
-      <div className="g-waiting">
-        <div className="g-waiting__inner">
-          <div className="g-spinner" aria-hidden="true" />
-          <h1>{greeting()}</h1>
-          <p aria-live="polite">Checking doors, air and devices.</p>
-        </div>
-      </div>
-    );
+    return <PageSkeleton label="Checking doors, air and devices." variant="dashboard" />;
   }
 
   // Render expanded card content with more details
@@ -437,7 +430,10 @@ export default function DashboardPage() {
               </svg>
             </button>
           </div>
-          {content}
+          {/* The card itself no longer scrolls — this does. The title and
+              the close button used to slide away with the content, so a
+              long list scrolled its own heading off the top. */}
+          <div className="g-modal__body">{content}</div>
         </div>
       </div>
     );

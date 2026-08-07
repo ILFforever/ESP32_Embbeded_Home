@@ -2,6 +2,7 @@
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
+import { PageSkeleton } from '@/components/glass/Skeleton';
 
 export default function Home() {
   const router = useRouter();
@@ -33,16 +34,5 @@ export default function Home() {
     }
   }, [isAuthenticated, isLoading, router]);
 
-  /* Only on screen for a moment, but it was using .loading-page /
-     .loading-spinner — classes deleted with the old stylesheet — so it
-     rendered completely unstyled. */
-  return (
-    <div className="g-waiting">
-      <div className="g-waiting__inner">
-        <div className="g-spinner" aria-hidden="true" />
-        <h1>Arduino888 Smart Home</h1>
-        <p aria-live="polite">Checking whether you are signed in.</p>
-      </div>
-    </div>
-  );
+  return <PageSkeleton label="Checking whether you are signed in." />;
 }

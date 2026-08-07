@@ -17,7 +17,7 @@ const exampleAlerts: Alert[] = [
     message: "Unknown person detected at door",
     source: "db_001",
     tags: ["face-detection", "unknown"],
-    metadata: {
+    metadata: {
       event_id: "test123",
       name: "Unknown",
       confidence: 0,
@@ -35,7 +35,7 @@ const exampleAlerts: Alert[] = [
     message: "Face detected: HAM",
     source: "db_001",
     tags: ["face-detection", "recognized"],
-    metadata: {
+    metadata: {
       event_id: "test456",
       name: "HAM",
       confidence: 0.51,
@@ -53,7 +53,7 @@ const exampleAlerts: Alert[] = [
     message: "Face detected: HAM",
     source: "db_001",
     tags: ["face-detection", "recognized"],
-    metadata: {
+    metadata: {
       event_id: "test789",
       name: "HAM",
       confidence: 0.95,
@@ -71,7 +71,7 @@ const exampleAlerts: Alert[] = [
     message: "Unknown person detected at door",
     source: "db_001",
     tags: ["face-detection", "unknown"],
-    metadata: {
+    metadata: {
       event_id: "test101",
       name: "Unknown",
       confidence: 0,
@@ -105,11 +105,10 @@ exampleAlerts.forEach((alert, index) => {
   console.log(`Alert ${index + 1}: ${alert.message}`);
   console.log(`  Total Score: ${scored.score}`);
   console.log(`  Breakdown:`);
-  console.log(`    - Level Score: ${scored.scoreBreakdown?.levelScore}`);
-  console.log(`    - Read Status Score: ${scored.scoreBreakdown?.readStatusScore}`);
-  console.log(`    - Recency Score: ${scored.scoreBreakdown?.recencyScore.toFixed(1)}`);
-  console.log(`    - Recognition Score: ${scored.scoreBreakdown?.recognitionScore}`);
-  console.log(`    - Confidence Score: ${scored.scoreBreakdown?.confidenceScore.toFixed(1)}`);
+  console.log(`    - Severity: ${scored.scoreBreakdown?.severity}`);
+  console.log(`    - Tag Boost: ${scored.scoreBreakdown?.tagBoost.toFixed(1)}`);
+  console.log(`    - Recency Factor: x${scored.scoreBreakdown?.recencyFactor.toFixed(2)}`);
+  console.log(`    - Read Factor: x${scored.scoreBreakdown?.readFactor.toFixed(2)}`);
   console.log(`  Priority Category: ${scored.score >= 70 ? 'CRITICAL' : scored.score >= 50 ? 'HIGH' : scored.score >= 30 ? 'MEDIUM' : 'LOW'}`);
   console.log('');
 });
@@ -122,45 +121,27 @@ sorted.forEach((alert, index) => {
 });
 
 /**
- * Expected scoring behavior:
+ * Expected scoring behavior. Score = (severity + tagBoost) x recency x read.
  *
  * 1. Critical unread system alert (10 min ago):
- *    - Level: 40 (IMPORTANT)
- *    - Read: 30 (unread)
- *    - Recency: 20 (recent)
- *    - Recognition: 0 (not face detection)
- *    - Confidence: 0 (not applicable)
- *    = ~90 points (CRITICAL priority)
+ *    (72 IMPORTANT + 0) x 1.00 x 1 = ~72 (CRITICAL)
  *
  * 2. Recent unread unknown person (30 min ago):
- *    - Level: 25 (WARN)
- *    - Read: 30 (unread)
- *    - Recency: 20 (very recent)
- *    - Recognition: 10 (unknown)
- *    - Confidence: 0 (not applicable)
- *    = ~85 points (CRITICAL priority)
+ *    (52 WARN + 10 unknown face) x 1.00 x 1 = ~62 (HIGH, urgent)
  *
  * 3. Recent unread low confidence known person (1 hour ago):
- *    - Level: 10 (INFO)
- *    - Read: 30 (unread)
- *    - Recency: 20 (recent)
- *    - Recognition: 0 (known)
- *    - Confidence: 4.9 (low confidence = higher score)
- *    = ~65 points (HIGH priority)
+ *    (12 INFO + 3.9 shaky match) x 1.00 x 1 = ~16 (LOW)
  *
  * 4. Recent unread high confidence known person (2 hours ago):
- *    - Level: 10 (INFO)
- *    - Read: 30 (unread)
- *    - Recency: 19 (recent)
- *    - Recognition: 0 (known)
- *    - Confidence: 0.5 (high confidence = low score)
- *    = ~60 points (HIGH priority)
+ *    (12 INFO + 0.4) x 0.98 x 1 = ~12 (LOW)
  *
  * 5. Old read unknown person (7 days ago):
- *    - Level: 25 (WARN)
- *    - Read: 0 (read)
- *    - Recency: ~5 (old)
- *    - Recognition: 10 (unknown)
- *    - Confidence: 0 (not applicable)
- *    = ~40 points (MEDIUM priority)
+ *    (52 WARN + 10 unknown face) x 0.60 x 0.5 = ~19 (LOW)
+ *
+ * Cases 3 and 4 are the point of the rewrite. Under the old additive
+ * model they scored ~65 and ~60 — both HIGH, both counted as urgent —
+ * because unread (30) and recent (20) alone cleared the 50-point urgent
+ * threshold before severity was consulted. A recognised housemate walking
+ * through their own front door is not an urgent event, and neither is a
+ * board acknowledging a volume command.
  */

@@ -21,10 +21,11 @@
      both directions. CSS has no mixins; the duplication is deliberate.
 
    TWO RULES THAT MATTER MORE THAN THE REST
-     - The lens (real refraction) belongs ONLY on the sticky toolbar.
-       See glass.js. On cards it costs ~6x in scroll frame time and
-       shows nothing, because cards sit on wallpaper with no detail
-       behind them to bend.
+     - The lens (real refraction) belongs ONLY on the sticky toolbar,
+       and ONLY in the light theme. See GlassRuntime.tsx. On cards it
+       costs ~6x in scroll frame time and shows nothing, because cards
+       sit on wallpaper with no detail behind them to bend. On dark it
+       shows nothing either — see 1b, dark is a flat theme.
      - Radii are concentric: inner radius = outer − padding. A 26px
        pane with 12px padding gets a 14px inner tile.
    ============================================================ */
@@ -77,6 +78,10 @@
   --rim-a:    rgba(255,255,255,.50);
   --rim-b:    rgba(255,255,255,.42);
   --rim-c:    rgba(255,255,255,.28);
+  /* the top-edge highlight on a small filled shape: meter fills, and
+     anything else that wants to look moulded rather than printed.
+     Transparent on dark, which is a flat theme. */
+  --gloss:    rgba(255,255,255,.28);
 
   /* raised translucent surfaces: ghost buttons, pills, icon buttons */
   --raised:      rgba(255,255,255,.62);
@@ -133,13 +138,26 @@
 }
 
 /* ---------- 1b. TOKENS · DARK ----------------------------- *
-   Not an inversion. On a dark ground the shadow stack barely reads,
-   so depth shifts onto the edge light: the bevel highlight goes up in
-   relative terms while the fills go down. The glass becomes a tinted
-   dark veil rather than a white one — a white veil on dark grey turns
-   milky and kills the wallpaper behind it. Semantic hues are relit
-   (lighter, slightly desaturated) to hold contrast against ink that
-   is now pale.                                                       */
+   Not an inversion, and not the light theme's material either. Dark is
+   FLAT. Everything the light theme uses to say "glass" — the sheen, the
+   rim thickening, the bevel, the stacked cast shadow, the refracting
+   toolbar — is what turns a dark surface milky and smudged. A white veil
+   over dark grey reads as fog, not glass, and a highlight that is only
+   4% of the surface reads as a rendering artefact rather than light.
+
+   So on dark the material is: an opaque-ish flat fill, one hairline
+   border, and nothing else. Depth comes from the fill step between
+   ground → pane → tile, not from light. The lens is off (GlassRuntime
+   short-circuits on the dark theme) and the wallpaper drops to a faint
+   tonal drift so panes sit on an even field.
+
+   Semantic hues are relit (lighter, slightly desaturated) to hold
+   contrast against ink that is now pale.
+
+   Shadow tokens that must stay flat here are written as zero-value
+   shadows, not `none` — --spec and --lift-sm appear inside comma lists
+   (`box-shadow: var(--lift), var(--spec)`), where `none` is invalid and
+   would drop the whole declaration.                                   */
 @media (prefers-color-scheme: dark) {
   :root {
     color-scheme: dark;
@@ -162,54 +180,62 @@
     --crit-bg:  rgba(221,135,126,.15);
     --crit-edge:rgba(221,135,126,.32);
 
-    --ground:   #171B21;
-    --wall-op:  .5;
-    --wall-1:   #2E4A6B;  --wall-1t: rgba(46,74,107,0);
-    --wall-2:   #5A4B36;  --wall-2t: rgba(90,75,54,0);
-    --wall-3:   #2C4A3B;  --wall-3t: rgba(44,74,59,0);
-    --wall-4:   #453A55;  --wall-4t: rgba(69,58,85,0);
-    --wall-5:   #56383A;  --wall-5t: rgba(86,56,58,0);
-    --wall-6:   #2A4457;  --wall-6t: rgba(42,68,87,0);
+    /* Low-chroma wallpaper. The saturated blobs were only ever there to
+       give the lens something to bend; with the lens off they just make
+       the page look stained under near-opaque panes. */
+    --ground:   #14171C;
+    --wall-op:  .45;
+    --wall-1:   #242C38;  --wall-1t: rgba(36,44,56,0);
+    --wall-2:   #302C26;  --wall-2t: rgba(48,44,38,0);
+    --wall-3:   #242E2A;  --wall-3t: rgba(36,46,42,0);
+    --wall-4:   #2A2733;  --wall-4t: rgba(42,39,51,0);
+    --wall-5:   #302729;  --wall-5t: rgba(48,39,41,0);
+    --wall-6:   #222C36;  --wall-6t: rgba(34,44,54,0);
 
-    --glass:      rgba(56,64,76,.5);
-    --glass-solid:rgba(38,44,53,.92);
-    --glass-2:    rgba(70,79,93,.55);
-    --glass-edge: rgba(255,255,255,.13);
-    --blur:       18px;
-    --sat:        135%;
+    /* Flat fills, one step apart. Blur stays small and saturation
+       neutral — with the fill this opaque there is nothing to see
+       through, and a heavy blur is pure compositing cost. */
+    --glass:      rgba(30,35,43,.88);
+    --glass-solid:rgba(30,35,43,.98);
+    --glass-2:    rgba(40,46,56,.9);
+    --glass-edge: rgba(255,255,255,.07);
+    --blur:       10px;
+    --sat:        105%;
 
-    --sheen-a:  rgba(255,255,255,.11);
-    --sheen-b:  rgba(255,255,255,.028);
-    --rim-a:    rgba(255,255,255,.14);
-    --rim-b:    rgba(255,255,255,.10);
-    --rim-c:    rgba(255,255,255,.045);
+    /* no sheen, no rim: the pane's ::before / ::after paint nothing */
+    --sheen-a:  rgba(255,255,255,0);
+    --sheen-b:  rgba(255,255,255,0);
+    --rim-a:    rgba(255,255,255,0);
+    --rim-b:    rgba(255,255,255,0);
+    --rim-c:    rgba(255,255,255,0);
+    --gloss:    rgba(255,255,255,0);
 
-    --raised:      rgba(255,255,255,.085);
-    --raised-hi:   rgba(255,255,255,.16);
-    --raised-edge: rgba(255,255,255,.14);
+    --raised:      rgba(255,255,255,.055);
+    --raised-hi:   rgba(255,255,255,.10);
+    --raised-edge: rgba(255,255,255,.09);
 
-    --hairline: rgba(255,255,255,.085);
-    --sunken:   rgba(0,0,0,.32);
-    --outline:  rgba(255,255,255,.15);
+    --hairline: rgba(255,255,255,.07);
+    --sunken:   rgba(0,0,0,.25);
+    --outline:  rgba(255,255,255,.13);
 
-    --field-bg:   rgba(10,13,17,.4);
-    --field-focus:rgba(10,13,17,.62);
-    --knob:       #F1F4F7;
-    --knob-shadow:0 1px 2px rgba(0,0,0,.5), 0 3px 8px rgba(0,0,0,.35);
-    --seg-bg:     rgba(0,0,0,.3);
-    --seg-on:     rgba(255,255,255,.15);
-    --seg-on-shadow: inset 0 1px 0 rgba(255,255,255,.14), 0 2px 6px rgba(0,0,0,.3);
+    --field-bg:   rgba(0,0,0,.22);
+    --field-focus:rgba(0,0,0,.34);
+    --knob:       #E7EAEE;
+    --knob-shadow:0 1px 2px rgba(0,0,0,.45);
+    --seg-bg:     rgba(0,0,0,.22);
+    --seg-on:     rgba(255,255,255,.11);
+    --seg-on-shadow: none;
 
-    --veil:     rgba(6,8,11,.55);
-    --modal-bg: rgba(42,49,59,.86);
+    --veil:     rgba(6,8,11,.6);
+    --modal-bg: rgba(28,33,41,.97);
 
-    --lift: 0 1px 2px rgba(0,0,0,.4),
-            0 8px 20px rgba(0,0,0,.28),
-            0 24px 56px rgba(0,0,0,.22);
-    --spec: inset 1px 1px 0 rgba(255,255,255,.17),
-            inset -1px -1px 0 rgba(0,0,0,.3);
-    --lift-sm: 0 1px 2px rgba(0,0,0,.35);
-    --accent-glow: 0 1px 2px rgba(0,0,0,.35), 0 6px 16px rgba(140,168,198,.22);
+    /* One contact shadow. Panes are separated from the ground by their
+       fill and their border, not by a cast. Overlays keep --lift too;
+       at this weight it reads as a seam, which is what we want. */
+    --lift: 0 1px 2px rgba(0,0,0,.28);
+    --spec: inset 0 0 0 0 rgba(0,0,0,0);
+    --lift-sm: 0 0 0 0 rgba(0,0,0,0);
+    --accent-glow: 0 1px 2px rgba(0,0,0,.3);
 
     --media-bg: #0D1014;
   }
@@ -225,29 +251,30 @@
   --ok: #74B492; --warn: #DBAC5E; --crit: #DD877E;
   --ok-bg: rgba(116,180,146,.16); --warn-bg: rgba(219,172,94,.16);
   --crit-bg: rgba(221,135,126,.15); --crit-edge: rgba(221,135,126,.32);
-  --ground: #171B21; --wall-op: .5;
-  --wall-1: #2E4A6B; --wall-1t: rgba(46,74,107,0);
-  --wall-2: #5A4B36; --wall-2t: rgba(90,75,54,0);
-  --wall-3: #2C4A3B; --wall-3t: rgba(44,74,59,0);
-  --wall-4: #453A55; --wall-4t: rgba(69,58,85,0);
-  --wall-5: #56383A; --wall-5t: rgba(86,56,58,0);
-  --wall-6: #2A4457; --wall-6t: rgba(42,68,87,0);
-  --glass: rgba(56,64,76,.5); --glass-solid: rgba(38,44,53,.92);
-  --glass-2: rgba(70,79,93,.55); --glass-edge: rgba(255,255,255,.13);
-  --blur: 18px; --sat: 135%;
-  --sheen-a: rgba(255,255,255,.11); --sheen-b: rgba(255,255,255,.028);
-  --rim-a: rgba(255,255,255,.14); --rim-b: rgba(255,255,255,.10); --rim-c: rgba(255,255,255,.045);
-  --raised: rgba(255,255,255,.085); --raised-hi: rgba(255,255,255,.16); --raised-edge: rgba(255,255,255,.14);
-  --hairline: rgba(255,255,255,.085); --sunken: rgba(0,0,0,.32); --outline: rgba(255,255,255,.15);
-  --field-bg: rgba(10,13,17,.4); --field-focus: rgba(10,13,17,.62);
-  --knob: #F1F4F7; --knob-shadow: 0 1px 2px rgba(0,0,0,.5), 0 3px 8px rgba(0,0,0,.35);
-  --seg-bg: rgba(0,0,0,.3); --seg-on: rgba(255,255,255,.15);
-  --seg-on-shadow: inset 0 1px 0 rgba(255,255,255,.14), 0 2px 6px rgba(0,0,0,.3);
-  --veil: rgba(6,8,11,.55); --modal-bg: rgba(42,49,59,.86);
-  --lift: 0 1px 2px rgba(0,0,0,.4), 0 8px 20px rgba(0,0,0,.28), 0 24px 56px rgba(0,0,0,.22);
-  --spec: inset 1px 1px 0 rgba(255,255,255,.17), inset -1px -1px 0 rgba(0,0,0,.3);
-  --lift-sm: 0 1px 2px rgba(0,0,0,.35);
-  --accent-glow: 0 1px 2px rgba(0,0,0,.35), 0 6px 16px rgba(140,168,198,.22);
+  --ground: #14171C; --wall-op: .45;
+  --wall-1: #242C38; --wall-1t: rgba(36,44,56,0);
+  --wall-2: #302C26; --wall-2t: rgba(48,44,38,0);
+  --wall-3: #242E2A; --wall-3t: rgba(36,46,42,0);
+  --wall-4: #2A2733; --wall-4t: rgba(42,39,51,0);
+  --wall-5: #302729; --wall-5t: rgba(48,39,41,0);
+  --wall-6: #222C36; --wall-6t: rgba(34,44,54,0);
+  --glass: rgba(30,35,43,.88); --glass-solid: rgba(30,35,43,.98);
+  --glass-2: rgba(40,46,56,.9); --glass-edge: rgba(255,255,255,.07);
+  --blur: 10px; --sat: 105%;
+  --sheen-a: rgba(255,255,255,0); --sheen-b: rgba(255,255,255,0);
+  --rim-a: rgba(255,255,255,0); --rim-b: rgba(255,255,255,0); --rim-c: rgba(255,255,255,0);
+  --gloss: rgba(255,255,255,0);
+  --raised: rgba(255,255,255,.055); --raised-hi: rgba(255,255,255,.10); --raised-edge: rgba(255,255,255,.09);
+  --hairline: rgba(255,255,255,.07); --sunken: rgba(0,0,0,.25); --outline: rgba(255,255,255,.13);
+  --field-bg: rgba(0,0,0,.22); --field-focus: rgba(0,0,0,.34);
+  --knob: #E7EAEE; --knob-shadow: 0 1px 2px rgba(0,0,0,.45);
+  --seg-bg: rgba(0,0,0,.22); --seg-on: rgba(255,255,255,.11);
+  --seg-on-shadow: none;
+  --veil: rgba(6,8,11,.6); --modal-bg: rgba(28,33,41,.97);
+  --lift: 0 1px 2px rgba(0,0,0,.28);
+  --spec: inset 0 0 0 0 rgba(0,0,0,0);
+  --lift-sm: 0 0 0 0 rgba(0,0,0,0);
+  --accent-glow: 0 1px 2px rgba(0,0,0,.3);
   --media-bg: #0D1014;
 }
 :root[data-theme="light"] {
@@ -269,6 +296,7 @@
   --blur: 16px; --sat: 150%;
   --sheen-a: rgba(255,255,255,.58); --sheen-b: rgba(255,255,255,.14);
   --rim-a: rgba(255,255,255,.50); --rim-b: rgba(255,255,255,.42); --rim-c: rgba(255,255,255,.28);
+  --gloss: rgba(255,255,255,.28);
   --raised: rgba(255,255,255,.62); --raised-hi: rgba(255,255,255,.88); --raised-edge: rgba(255,255,255,.85);
   --hairline: rgba(35,39,43,.07); --sunken: rgba(96,106,120,.14); --outline: rgba(96,106,120,.24);
   --field-bg: rgba(255,255,255,.72); --field-focus: #FFFFFF;
@@ -441,6 +469,35 @@ body {
   box-shadow: var(--lift-sm), inset 0 1px 0 var(--sheen-a);
 }
 
+/* ---------- 4b. SCROLLBARS -------------------------------
+   Every scroll surface in the app, the page included. The platform bar
+   is an opaque ~17px gutter that cuts a hard grey stripe down the edge
+   of a glass pane and does not follow the theme. This one is thin, sits
+   on a transparent track, and is built from the ink tokens so it darkens
+   and lightens with everything else.
+
+   Firefox reads scrollbar-width/-color; WebKit and Chromium read the
+   pseudo-elements. Both are needed — neither substitutes for the other.
+   The thumb is inset by a transparent border with background-clip, so it
+   floats in the gutter rather than filling it edge to edge. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--ink-3) 50%, transparent) transparent;
+}
+::-webkit-scrollbar { width: 11px; height: 11px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-corner { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background-color: color-mix(in srgb, var(--ink-3) 50%, transparent);
+  border-radius: var(--r-chip);
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background-color: color-mix(in srgb, var(--ink-3) 82%, transparent);
+  background-clip: content-box;
+}
+
 /* ---------- 5. TYPOGRAPHY --------------------------------- */
 .g-label {
   font-size: 11px; font-weight: 600; letter-spacing: .075em;
@@ -449,6 +506,10 @@ body {
 .g-num { font-variant-numeric: tabular-nums; font-weight: 300; letter-spacing: -.03em; }
 .g-mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
 .g-sub { color: var(--ink-2); font-size: 13px; margin: var(--s-2) 0 0; }
+/* Its top margin is for stacked prose. As a flex item beside a chip or a
+   button that margin becomes an 8px vertical offset, which is why the
+   pagination readout sat low against its own Previous/Next buttons. */
+.g-row > .g-sub { margin: 0; }
 .g-dim { color: var(--ink-3); }
 
 .g-title { padding: 12px 6px 2px; }
@@ -687,7 +748,7 @@ body {
 .g-waiting,
 .g-modal { -webkit-user-select: none; user-select: none; }
 
-.g-btn, .g-action, .g-switch, .g-icon-btn, .g-theme, .g-back,
+.g-btn, .g-action, .g-filter, .g-switch, .g-icon-btn, .g-theme, .g-back,
 .g-seg a, .g-seg button, .pl-hit, [role="button"] {
   -webkit-tap-highlight-color: transparent;
 }
@@ -849,7 +910,7 @@ select {
 .g-meter { height: 8px; border-radius: var(--r-chip); background: var(--sunken); position: relative; }
 .g-meter i {
   position: absolute; inset: 0 auto 0 0; border-radius: var(--r-chip);
-  background: var(--ok); box-shadow: inset 0 1px 0 rgba(255,255,255,.28);
+  background: var(--ok); box-shadow: inset 0 1px 0 var(--gloss);
 }
 .g-meter i.is-warn { background: var(--warn); }
 .g-meter i.is-crit { background: var(--crit); }
@@ -887,6 +948,28 @@ select {
 .g-list__row > .g-dot { margin-top: 6px; }
 .g-list__row p { margin: 0; font-size: 13.5px; line-height: 1.4; }
 .g-list__row p span { display: block; color: var(--ink-3); font-size: 12px; margin-top: 3px; }
+
+/* How many times the same event repeated. Reads as a quantity beside the
+   sentence, not as another status pill — the row already has a dot and,
+   when it earns one, a priority chip. */
+.g-list__count {
+  margin-left: 8px; padding: 1px 7px; border-radius: var(--r-chip);
+  background: var(--sunken); color: var(--ink-3);
+  font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums;
+}
+
+/* A per-row action appears under the pointer. On a list of 150 rows a
+   labelled button on each one is the loudest thing on screen and the
+   least important; the row is its label. Hidden only where there is a
+   real pointer — on touch there is no hover to reveal it — and always
+   present for the keyboard, which is why this is opacity and not
+   display. */
+.g-list__act { transition: opacity .14s var(--ease); }
+@media (hover: hover) {
+  .g-list__act { opacity: 0; }
+  .g-list__row--act:hover .g-list__act,
+  .g-list__act:focus-visible { opacity: 1; }
+}
 
 /* Routine INFO alerts stay available without competing with events that
    need a homeowner's attention. Native details/summary keeps the disclosure
@@ -926,6 +1009,32 @@ select {
   padding: 3px 10px; border-radius: var(--r-chip);
   background: var(--sunken); color: var(--ink-2);
 }
+/* Category toggles. A chip, because that is what a filter is — the old
+   markup used .g-action, a bordered 11px-padded box built for primary
+   actions, so four filters read as four things to do. */
+.g-filters { display: flex; flex-wrap: wrap; gap: var(--s-2); }
+.g-filter {
+  font: inherit; font-size: 12.5px; line-height: 1.3;
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 7px 12px; border-radius: var(--r-chip);
+  border: 1px solid var(--outline); background: transparent;
+  color: var(--ink-2); cursor: pointer;
+  transition: background .16s var(--ease), border-color .16s var(--ease), color .16s var(--ease);
+}
+.g-filter > svg { flex: none; }
+.g-filter:hover { border-color: var(--accent); color: var(--ink); }
+.g-filter small {
+  font-size: 11.5px; color: var(--ink-3); font-variant-numeric: tabular-nums;
+}
+/* Filled, not tinted at the border. Selection has to survive a glance
+   across a wrapped row of eight of these. */
+.g-filter[aria-pressed="true"] {
+  background: var(--accent); border-color: var(--accent); color: var(--on-accent);
+}
+.g-filter[aria-pressed="true"] small { color: var(--on-accent); opacity: .7; }
+.g-filter:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.g-filter--clear { border-style: dashed; color: var(--ink-3); }
+
 .g-chip--ok   { background: var(--ok-bg);   color: var(--ok); }
 .g-chip--warn { background: var(--warn-bg); color: var(--warn); }
 .g-chip--crit { background: var(--crit-bg); color: var(--crit); }
@@ -1267,28 +1376,106 @@ select {
 }
 
 /* ---------- 9b. WAITING STATES ---------------------------
-   Intermediate screens were missed by the migration and still
-   referenced .dashboard-loading / .loading-page / .loading-spinner,
-   all of which were deleted with the old stylesheet — so they rendered
-   completely unstyled. .spinning was missing too, which meant every
-   refresh icon was silently not animating.
-
-   Copy says what is happening and what is being waited on, not
-   "LOADING SYSTEM...". Under prefers-reduced-motion the global rule
-   stops the rotation; the text still carries the meaning.
+   First loads mirror the page that is about to arrive. This keeps the
+   layout stable and tells the eye what is being prepared without a
+   spinner becoming the loudest object on an otherwise calm screen.
 --------------------------------------------------------- */
-@keyframes g-spin { to { transform: rotate(360deg); } }
-
-.spinning { animation: g-spin 900ms linear infinite; transform-origin: 50% 50%; }
-
-.g-spinner {
-  width: 34px; height: 34px; flex: none;
-  border-radius: 50%;
-  border: 3px solid var(--sunken);
-  border-top-color: var(--accent);
-  animation: g-spin 800ms linear infinite;
+@keyframes g-skeleton-sweep {
+  from { transform: translateX(-115%); }
+  to { transform: translateX(115%); }
 }
-.g-spinner--sm { width: 20px; height: 20px; border-width: 2px; }
+
+.g-sr-only {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
+}
+
+.g-skeleton {
+  position: relative;
+  display: block;
+  overflow: hidden;
+  background: var(--sunken);
+  border: 1px solid color-mix(in srgb, var(--ink) 4%, transparent);
+  border-radius: 7px;
+}
+.g-skeleton::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(100deg, transparent 20%, color-mix(in srgb, var(--ink) 8%, transparent) 50%, transparent 80%);
+  transform: translateX(-115%);
+  animation: g-skeleton-sweep 1.65s var(--ease) infinite;
+}
+.g-skeleton--circle { width: 34px; height: 34px; border-radius: 50%; }
+.g-skeleton--pill { width: 76px; height: 27px; border-radius: 999px; }
+.g-skeleton--toolbar-title { width: 90px; height: 14px; }
+.g-skeleton--heading { width: min(270px, 62vw); height: 31px; border-radius: 9px; }
+.g-skeleton--lede { width: min(520px, 78vw); height: 14px; }
+.g-skeleton--eyebrow { width: 78px; height: 10px; }
+.g-skeleton--metric { width: 112px; height: 29px; border-radius: 8px; }
+.g-skeleton--card-title { width: 112px; height: 17px; }
+.g-skeleton--feature { width: 58%; height: 54px; margin-top: 3px; border-radius: 11px; }
+.g-skeleton--line { width: 86%; height: 12px; }
+.g-skeleton--line-short { width: 56%; height: 10px; }
+.g-skeleton--dot { width: 11px; height: 11px; border-radius: 50%; flex: none; }
+
+.g-skeleton-page > [aria-hidden="true"] { display: contents; }
+.g-skeleton-toolbar {
+  min-height: 62px;
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  padding: 10px 12px;
+}
+.g-skeleton-title { display: grid; gap: 11px; padding: 4px 2px 0; }
+.g-skeleton-metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--s-4); }
+.g-skeleton-metric { min-height: 104px; gap: 16px; justify-content: center; }
+.g-skeleton-layout { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--s-4); }
+.g-skeleton-card { min-height: 190px; gap: 17px; }
+.g-skeleton-card > header { margin: 0; }
+.g-skeleton-page--dashboard .g-skeleton-card:nth-child(1),
+.g-skeleton-page--dashboard .g-skeleton-card:nth-child(2) { min-height: 230px; }
+.g-skeleton-page--access .g-skeleton-layout { grid-template-columns: 1fr; }
+.g-skeleton-page--access .g-skeleton-card { min-height: 220px; }
+.g-skeleton-page--admin .g-skeleton-layout { grid-template-columns: repeat(2, 1fr); }
+.g-skeleton-page--admin .g-skeleton-card { min-height: 360px; }
+.g-skeleton-page--plan .g-skeleton-layout { grid-template-columns: minmax(0, 1.55fr) minmax(280px, 1fr); }
+.g-skeleton-page--plan .g-skeleton-card:first-child { min-height: 460px; }
+.g-skeleton-page--plan .g-skeleton-card:last-child { min-height: 300px; }
+.g-skeleton-page--device .g-skeleton-layout { grid-template-columns: repeat(2, 1fr); }
+.g-skeleton-page--device .g-skeleton-card:first-child { grid-column: 1 / -1; min-height: 250px; }
+
+.g-content-skeleton { width: 100%; }
+.g-content-skeleton > [aria-hidden="true"] { display: grid; gap: var(--s-4); }
+.g-content-skeleton__tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--s-3); }
+.g-content-skeleton__tile {
+  min-height: 92px;
+  display: grid;
+  align-content: center;
+  gap: 14px;
+  padding: 14px;
+  border-radius: var(--r-sm);
+  background: var(--sunken);
+  border: 1px solid var(--hairline);
+}
+.g-content-skeleton__rows { display: grid; gap: 2px; }
+.g-content-skeleton__row {
+  min-height: 58px;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: var(--s-3);
+  border-top: 1px solid var(--hairline);
+}
+.g-content-skeleton__row:first-child { border-top: 0; }
+.g-content-skeleton__row > div { display: grid; gap: 8px; }
 
 /* Full-page waiting screen: root redirect, auth check, first load. */
 .g-waiting {
@@ -1364,14 +1551,27 @@ select {
   -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
 }
 .g-modal[hidden] { display: none; }
+/* The card was the scroll container, which meant its own heading and
+   close button scrolled away, and .g-pane's sheen — absolutely positioned
+   against it — slid off with them. The head is now fixed and the body
+   scrolls beneath it. */
 .g-modal__card {
-  width: min(100%, 620px); max-height: min(86vh, 900px); overflow-y: auto;
+  width: min(100%, 620px); max-height: min(86vh, 900px);
+  display: flex; flex-direction: column;
   padding: var(--s-6);
   background: var(--modal-bg);
   -webkit-backdrop-filter: blur(24px) saturate(var(--sat)); backdrop-filter: blur(24px) saturate(var(--sat));
 }
+/* min-height:0 or the flex item refuses to shrink below its content and
+   the card grows past max-height instead of scrolling. The negative
+   margin lets the scrollbar sit in the card's padding rather than
+   stealing width from the rows. */
+.g-modal__body {
+  min-height: 0; overflow-y: auto; overscroll-behavior: contain;
+  padding-right: 12px; margin-right: -12px;
+}
 .g-modal__card--wide { width: min(100%, 940px); }
-.g-modal__head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--s-4); margin-bottom: var(--s-4); }
+.g-modal__head { flex: none; display: flex; align-items: flex-start; justify-content: space-between; gap: var(--s-4); margin-bottom: var(--s-4); }
 .g-modal__head h2 { margin: 0; font-size: 21px; font-weight: 600; letter-spacing: -.018em; }
 .g-modal__head p { margin: 5px 0 0; color: var(--ink-2); font-size: 13.5px; }
 .g-modal__foot { display: flex; gap: var(--s-2); justify-content: flex-end; margin-top: var(--s-6); flex-wrap: wrap; }
@@ -1442,6 +1642,8 @@ select {
 @media (max-width: 1100px) {
   .g-grid--4 { grid-template-columns: repeat(2, 1fr); }
   .g-grid--3 { grid-template-columns: repeat(2, 1fr); }
+  .g-skeleton-metrics { grid-template-columns: repeat(2, 1fr); }
+  .g-skeleton-layout { grid-template-columns: repeat(2, 1fr); }
 }
 @media (max-width: 780px) {
   .g-page { padding: 16px 16px 32px; }
@@ -1455,6 +1657,16 @@ select {
      blocks is pure scroll cost. */
   .g-grid--stats { grid-template-columns: repeat(3, 1fr); gap: var(--s-2); }
   .g-grid--stats .g-tile { padding: 12px 13px; }
+  .g-skeleton-layout,
+  .g-skeleton-page--admin .g-skeleton-layout,
+  .g-skeleton-page--plan .g-skeleton-layout,
+  .g-skeleton-page--device .g-skeleton-layout { grid-template-columns: 1fr; }
+  .g-skeleton-page--device .g-skeleton-card:first-child { grid-column: auto; }
+  .g-skeleton-card,
+  .g-skeleton-page--admin .g-skeleton-card,
+  .g-skeleton-page--plan .g-skeleton-card:first-child,
+  .g-skeleton-page--plan .g-skeleton-card:last-child { min-height: 190px; }
+  .g-content-skeleton__tiles { grid-template-columns: repeat(2, 1fr); }
   .g-grid--stats .g-metric-sm { font-size: 26px; }
   .g-title h1 { font-size: 27px; }
   .g-metric-lg { font-size: 42px; }
@@ -1513,6 +1725,7 @@ select {
 --------------------------------------------------------- */
 @media (pointer: coarse) {
   .g-btn,
+  .g-filter,
   .g-action { min-height: 44px; }
 
   .g-icon-btn,

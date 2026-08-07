@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { Cpu, Droplet, Radio, Thermometer, Wind, Zap } from 'lucide-react';
 import type { DevicesStatus, Device } from '@/types/dashboard';
 import { relativeTime } from '@/utils/time';
+import { batteryLabel, batteryText } from '@/utils/battery';
 import { useModalTransition } from '@/components/glass/useModalTransition';
 import {
   getDeviceStatusClass as getStatusClass,
@@ -185,8 +186,8 @@ export function SystemStatusCard({ devicesStatus, isExpanded = false }: SystemSt
                   </button>
                   {battery !== undefined && (
                     <div className="g-row" style={{ gridColumn: '2 / 4', marginTop: 'var(--s-1)' }}>
-                      <BatteryRing battery={battery} online={device.online} label={`${device.name || deviceKind(device)} battery ${battery} percent`} />
-                      <span className="g-mono g-dim">{battery}%</span>
+                      <BatteryRing battery={battery} online={device.online} label={batteryLabel(device.name || deviceKind(device), battery, device.online)} />
+                      <span className="g-mono g-dim">{batteryText(battery, device.online)}</span>
                     </div>
                   )}
                 </div>
@@ -294,9 +295,11 @@ export function SystemStatusCard({ devicesStatus, isExpanded = false }: SystemSt
                         <BatteryRing
                           battery={battery}
                           online={device.online}
-                          label={`${device.name || deviceKind(device)} battery ${battery ?? 0} percent`}
+                          label={batteryLabel(device.name || deviceKind(device), battery, device.online)}
                         />
-                        <span className={battery === undefined ? 'g-dim' : 'g-num'}>{battery === undefined ? 'Unknown' : `${battery}%`}</span>
+                        <span className={device.online && battery !== undefined ? 'g-num' : 'g-dim'}>
+                          {batteryText(battery, device.online)}
+                        </span>
                       </div>
                     </td>
                     <td>{formatTimestamp(device.last_seen)}</td>
