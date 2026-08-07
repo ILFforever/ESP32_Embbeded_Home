@@ -272,11 +272,14 @@ const getAlerts = async (req, res) => {
         //if (isLockCommand) return;
 
         const isFailed = cmdData.status === 'failed';
+        const isStale = cmdData.status === 'stale';
 
         // Determine alert level
         let alertLevel = ALERT_LEVELS.INFO;
         if (isFailed) {
           alertLevel = ALERT_LEVELS.ERROR; // Failed commands are errors
+        } else if (isStale) {
+          alertLevel = ALERT_LEVELS.WARN;
         }
 
         // Apply level filter
@@ -291,7 +294,8 @@ const getAlerts = async (req, res) => {
         const isRead = readStatusMap.has(alertId);
 
         // Format message
-        const message = `${deviceId}: Command '${cmdData.action}' ${isFailed ? 'failed' : 'completed'}`;
+        const commandStatusLabel = isFailed ? 'failed' : (isStale ? 'stale' : 'completed');
+        const message = `${deviceId}: Command '${cmdData.action}' ${commandStatusLabel}`;
 
         alerts.push({
           id: alertId,
@@ -1013,10 +1017,13 @@ const getAlertsForESP32 = async (req, res) => {
         if (isLockCommand) return;
 
         const isFailed = cmdData.status === 'failed';
+        const isStale = cmdData.status === 'stale';
 
         let alertLevel = ALERT_LEVELS.INFO;
         if (isFailed) {
           alertLevel = ALERT_LEVELS.ERROR;
+        } else if (isStale) {
+          alertLevel = ALERT_LEVELS.WARN;
         }
 
         if (level && alertLevel !== level) return;
@@ -1030,7 +1037,8 @@ const getAlertsForESP32 = async (req, res) => {
 
         if (read !== undefined && isRead !== (read === 'true')) return;
 
-        const message = `${deviceId}: Command '${cmdData.action}' ${isFailed ? 'failed' : 'completed'}`;
+        const commandStatusLabel = isFailed ? 'failed' : (isStale ? 'stale' : 'completed');
+        const message = `${deviceId}: Command '${cmdData.action}' ${commandStatusLabel}`;
 
         alerts.push({
           id: alertId,

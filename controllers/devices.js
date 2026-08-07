@@ -1404,11 +1404,11 @@ const fetchPendingCommands = async (req, res) => {
 
 // ============================================================================
 // @route   POST /api/v1/devices/commands/ack
-// @desc    Device acknowledges command execution (success or failure)
+// @desc    Device acknowledges command execution (completed, failed, or stale)
 // ============================================================================
 const acknowledgeCommand = async (req, res) => {
   try {
-    const { device_id, command_id, success, result, error } = req.body;
+    const { device_id, command_id, success, result, error, status: requestedStatus } = req.body;
 
     if (!device_id || !command_id) {
       return res.status(400).json({
@@ -1416,6 +1416,17 @@ const acknowledgeCommand = async (req, res) => {
         message: 'device_id and command_id are required'
       });
     }
+
+    if (requestedStatus && requestedStatus !== 'stale') {
+      return res.status(400).json({
+        status: 'error',
+        message: "status override must be 'stale'"
+      });
+    }
+
+    const commandStatus = requestedStatus === 'stale'
+      ? 'stale'
+      : (success ? 'completed' : 'failed');
 
     const db = getFirestore();
     const commandRef = db
@@ -1435,19 +1446,23 @@ const acknowledgeCommand = async (req, res) => {
 
     // Update command status
     await commandRef.update({
-      status: success ? 'completed' : 'failed',
+      status: commandStatus,
       executed_at: admin.firestore.FieldValue.serverTimestamp(),
       result: result || null,
       error: error || null
     });
 
-    console.log(`[AckCommand] ${device_id} - Command ${command_id} ${success ? 'completed' : 'failed'}`);
+    console.log(`[AckCommand] ${device_id} - Command ${command_id} ${commandStatus}`);
 
     // Send email notification for all commands (both success and failure)
     const commandData = commandDoc.data();
     const isLockCommand = commandData.action === 'lock' || commandData.action === 'unlock';
 
-    if (!success) {
+    if (commandStatus === 'stale') {
+      // Expired commands are expected cleanup, not device failures. Persist the
+      // status for activity history without sending failure notification email.
+      console.log(`[AckCommand] ${device_id} - Stale command recorded without notification`);
+    } else if (commandStatus === 'failed') {
       // Failed command - error alert
       console.log(`[AckCommand] ${device_id} - Command failed, sending email notification`);
       sendAlertNotification({
@@ -1501,7 +1516,8 @@ const acknowledgeCommand = async (req, res) => {
 
     res.json({
       status: 'ok',
-      message: 'Command acknowledgment received'
+      message: 'Command acknowledgment received',
+      command_status: commandStatus
     });
 
   } catch (error) {
