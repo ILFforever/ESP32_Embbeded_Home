@@ -181,7 +181,38 @@ struct NFCCardData {
 
 **Note:** Video streaming is handled by the camera module (slave ESP32), not the LCD ESP32. The LCD ESP32 only receives frames via SPI for local display.
 
-#### 6. Main Program (`main.cpp`)
+#### 6. Settings Menu (`settings_menu.cpp/h`)
+**Purpose:** Full-screen, two-button settings page
+
+**Entry/exit gesture:** press Doorbell + Call together and release both inside
+`BUTTON_HOLD_THRESHOLD_MS` (1s). Holding both for 3s remains the system-reboot
+gesture - the two cannot collide because the settings toggle only fires *below*
+the hold threshold. Detection lives in `checkButtons()`, which also sets
+`pressHandled` on both buttons so their individual short-press actions (ring
+doorbell / toggle stream) do not also fire on release.
+
+**Navigation:** Call = cursor down (wraps), Doorbell = select. There is no hold
+gesture inside the page - every screen carries walk-to `Back` and `Exit` rows,
+and holding a button while the page is open is deliberately inert so the normal
+hold actions (preview mode, stop camera) cannot fire. Auto-closes after 30s of
+inactivity. Destructive items (the three reboots) arm on the first press and
+only fire on a second press within 3s.
+
+**Screens:** Main -> Device Info (live IP/RSSI/uptime/heap/frame counters),
+Module Status (camera + amp state, re-ping, test sound, reboot either module),
+System (reconnect WiFi/MQTT, refresh weather, reboot device).
+
+**Panel ownership:** while open the page owns the whole 240x320 panel.
+`drawUIOverlay()`, `ProcessFrame()` and `showUploadingScreen()` all return early
+on `isSettingsMenuActive()`; ProcessFrame still calls `ackFrame()` so the SPI
+task keeps draining. On close the screen is cleared and `videoBandDirty` forces
+an immediate clock repaint rather than a black band until the next second tick.
+
+**Rendering:** direct to the TFT, no sprite (same DRAM reason as the video
+band). Full redraw only on screen change; cursor moves repaint just the two
+affected rows and live values repaint themselves with `setTextPadding()`.
+
+#### 7. Main Program (`main.cpp`)
 **Purpose:** UI rendering, task orchestration
 
 **UI Layout:**
@@ -234,6 +265,7 @@ Boot logs `[MEM]` lines after sprite creation and at end of setup.
 - `taskCheckButtons` (10ms) - Check button state
 - `taskCheckSlaveSync` (1000ms) - Check slave mode sync
 - `taskUpdateWeather` (1800000ms) - Update weather every 30 minutes
+- `taskSettingsMenu` (50ms) - Settings page redraw + inactivity timeout
 
 **Performance:**
 - RAM: 16.7% (54,752 bytes)

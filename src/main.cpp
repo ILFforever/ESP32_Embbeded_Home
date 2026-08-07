@@ -20,6 +20,7 @@
 #include "logger.h"
 #include "face_detection_sender.h"
 #include "network_manager.h"
+#include "settings_menu.h"
 #include "app_config.h"
 #include <TJpg_Decoder.h>
 #include <cstring>
@@ -207,6 +208,7 @@ Task taskUpdateWeather(1800000, TASK_FOREVER, &updateWeather);                //
 Task taskSendServerHeartbeat(60000, TASK_FOREVER, &sendServerHeartbeatTask);  // Send heartbeat to server every 60s
 Task taskProcessDoorbellMQTT(100, TASK_FOREVER, &processDoorbellMQTT);        // Process MQTT connection every 100ms
 Task taskReportHeap(10000, TASK_FOREVER, &reportHeapTask);                    // Report heap/stack/SPI stats every 10s
+Task taskSettingsMenu(50, TASK_FOREVER, &settingsMenuTick);                   // Redraw settings page / inactivity timeout
 
 void setup()
 {
@@ -429,6 +431,7 @@ void setup()
   myscheduler.addTask(taskCheckTimers);
   myscheduler.addTask(taskProcessDoorbellMQTT);
   myscheduler.addTask(taskReportHeap);
+  myscheduler.addTask(taskSettingsMenu);
   taskCheckUART.enable();
   taskCheckUART2.enable();
   taskSendPing.enable();
@@ -447,6 +450,7 @@ void setup()
   taskCheckTimers.enable();
   taskProcessDoorbellMQTT.enable();
   taskReportHeap.enable();
+  taskSettingsMenu.enable();
 
   last_pong_time = millis();
   last_amp_pong_time = millis();
@@ -604,6 +608,14 @@ void ProcessFrame()
   if (!spiMaster.isFrameReady())
     return;
 
+  // The settings page owns the panel while it is open. Ack the frame anyway so
+  // the SPI task keeps draining and does not stall behind a full buffer.
+  if (isSettingsMenuActive())
+  {
+    spiMaster.ackFrame();
+    return;
+  }
+
   // Acquire mutex for thread-safe TFT access
   if (xSemaphoreTake(tftMutex, pdMS_TO_TICKS(20)) != pdTRUE)
   {
@@ -749,6 +761,10 @@ void lcdhandoff() // check if we need to hand off LCD to ProcessFrame
 // Draw UI overlay (status bar, icons, etc.)
 void drawUIOverlay()
 {
+  // Settings page is full-screen and owns the panel - do not paint over it
+  if (isSettingsMenuActive())
+    return;
+
   // Acquire mutex for thread-safe TFT access
   if (xSemaphoreTake(tftMutex, pdMS_TO_TICKS(10)) != pdTRUE)
   {
@@ -803,7 +819,10 @@ void drawUIOverlay()
     // padding so each field overwrites its own previous value. Only a state
     // change clears the whole band, which keeps the per-second tick flicker-free.
     static int lastClockUpdate = -1;
-    if (lastClockUpdate != (int)(now / 1000) || lastDrawnStatus != slave_status)
+    // videoBandDirty is also a trigger, not just a reason to clear: leaving the
+    // settings page must repaint the clock straight away rather than leaving a
+    // black band until the next one-second tick.
+    if (lastClockUpdate != (int)(now / 1000) || lastDrawnStatus != slave_status || videoBandDirty)
     {
       lastClockUpdate = (int)(now / 1000);
 
@@ -1604,8 +1623,15 @@ void updateButtonState(ButtonState &btn, int pin, const char *buttonName)
 
           Serial.printf("[BTN] %s held\n", buttonName);
 
+          if (isSettingsMenuActive())
+          {
+            // Holding a button does nothing inside the settings page - leaving
+            // is done by walking the cursor to the on-screen Back/Exit row.
+            // The normal hold actions (preview mode, stop camera) must not fire
+            // while the page is open.
+          }
           // Handle button hold action
-          if (strcmp(buttonName, "Doorbell") == 0)
+          else if (strcmp(buttonName, "Doorbell") == 0)
           {
             // Step 1: Start preview mode (camera + detection, no recognition yet)
             updateStatusMsg("Preview mode - Press again to recognize", true, "Standing By");
@@ -1646,8 +1672,20 @@ void updateButtonState(ButtonState &btn, int pin, const char *buttonName)
       {
         btn.pressHandled = true;
 
+        if (isSettingsMenuActive())
+        {
+          // Settings page navigation: Call walks the list, Doorbell activates
+          if (strcmp(buttonName, "Call") == 0)
+          {
+            settingsMenuNext();
+          }
+          else
+          {
+            settingsMenuSelect();
+          }
+        }
         // Handle button press action (short press)
-        if (strcmp(buttonName, "Doorbell") == 0)
+        else if (strcmp(buttonName, "Doorbell") == 0)
         {
           // Check if in preview mode - if so, trigger recognition
           if (preview_mode_active)
@@ -1726,6 +1764,47 @@ void checkButtons()
 {
   updateButtonState(doorbellButton, Doorbell_bt, "Doorbell");
   updateButtonState(callButton, Call_bt, "Call");
+
+  // Combined gesture: both buttons down together, both released before the hold
+  // threshold, toggles the settings page. Holding both for 3s is still the
+  // system reboot, handled in updateButtonState() - the two cannot overlap
+  // because this only fires below BUTTON_HOLD_THRESHOLD_MS.
+  static bool bothPressArmed = false;
+  static unsigned long bothPressStart = 0;
+
+  bool bothDown = doorbellButton.currentState && callButton.currentState;
+
+  if (bothDown && !bothPressArmed)
+  {
+    bothPressArmed = true;
+    bothPressStart = millis();
+
+    // Suppress the individual short-press actions, which would otherwise both
+    // fire on release (ringing the doorbell and toggling the stream).
+    doorbellButton.pressHandled = true;
+    callButton.pressHandled = true;
+  }
+  else if (!bothDown && bothPressArmed)
+  {
+    bothPressArmed = false;
+    unsigned long heldTogether = millis() - bothPressStart;
+
+    // holdHandled means one of them had already fired its own hold action
+    // before the other joined - that was not an intentional combined press.
+    bool cleanGesture = !doorbellButton.holdHandled && !callButton.holdHandled;
+
+    if (cleanGesture && heldTogether < BUTTON_HOLD_THRESHOLD_MS)
+    {
+      if (isSettingsMenuActive())
+      {
+        closeSettingsMenu();
+      }
+      else
+      {
+        openSettingsMenu();
+      }
+    }
+  }
 }
 
 // Task: Check if slave mode is synchronized and recover if needed

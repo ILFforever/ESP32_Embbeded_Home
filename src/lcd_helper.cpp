@@ -1,4 +1,5 @@
 #include "lcd_helper.h"
+#include "settings_menu.h"
 #include <TFT_eSPI.h>
 
 extern TFT_eSPI tft;
@@ -7,6 +8,10 @@ extern SemaphoreHandle_t tftMutex;
 // Fill video area with uploading message
 void showUploadingScreen()
 {
+  // The settings page is full-screen and owns the panel while it is open
+  if (isSettingsMenuActive())
+    return;
+
   if (xSemaphoreTake(tftMutex, pdMS_TO_TICKS(100)) == pdTRUE)
   {
     // Drawn straight to the panel - the video area has no backing sprite
