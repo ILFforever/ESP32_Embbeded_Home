@@ -51,6 +51,8 @@ struct StreamStats {
     uint32_t audio_chunks_sent;
     uint32_t audio_chunks_failed;
     uint32_t audio_queue_overflows;
+    uint32_t audio_bytes_raw;
+    uint32_t audio_bytes_encoded;
     uint32_t last_send_duration_ms;
 };
 
